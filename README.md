@@ -16,8 +16,8 @@ Implemented translation slices:
 - complex arithmetic from `src/math/complex.js`;
 - statistics, random distributions, histogram generation and vectorized
   arithmetic from `src/math/statistics.js`;
-- linear systems, determinants, symmetric eigensystems and initial integration
-  algorithms from `src/math/numerics.js`;
+- linear systems, determinants, symmetric eigensystems, integration, root
+  finding, domain search and minimization from `src/math/numerics.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 

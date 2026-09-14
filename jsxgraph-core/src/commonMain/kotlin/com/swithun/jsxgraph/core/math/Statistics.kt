@@ -39,10 +39,6 @@ data class BoxPlotSummary(
     val outliers: DoubleArray,
 )
 
-fun interface RandomSource {
-    fun nextDouble(): Double
-}
-
 data class HistogramOptions(
     val bins: Int = 10,
     val range: ClosedFloatingPointRange<Double>? = null,

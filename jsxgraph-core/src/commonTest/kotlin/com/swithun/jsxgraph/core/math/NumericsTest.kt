@@ -189,8 +189,165 @@ class NumericsTest {
         )
     }
 
+    @Test
+    fun derivativeAndNewtonMatchOfficialReferenceValues() {
+        assertEquals(
+            expected = 12.00000000021184,
+            actual = Numerics.D { value -> value * value * value }(2.0),
+            absoluteTolerance = 1e-12,
+        )
+        assertEquals(
+            expected = 1.9999999999868976,
+            actual = Numerics.Newton({ value -> value - 2.0 }, 0.0),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            expected = -2.0000000000000178,
+            actual = Numerics.Newton(
+                function = { value -> value * value - 4.0 },
+                initialValue = 0.0,
+                random = RandomSource { 0.25 },
+            ),
+            absoluteTolerance = 1e-14,
+        )
+    }
+
+    @Test
+    fun bracketAndBrentRootMatchOfficialReferenceValues() {
+        assertContentEquals(
+            expected = doubleArrayOf(0.0, -2.0, 2.0, 0.0),
+            actual = Numerics.findBracket({ value -> value - 2.0 }, 0.0),
+        )
+        assertEquals(
+            expected = 2.0,
+            actual = Numerics.fzero({ value -> value - 2.0 }, 0.0),
+        )
+
+        val function = { value: Double -> value * value * value - value - 2.0 }
+        assertEquals(
+            expected = 1.5213796959100443,
+            actual = valueOf(Numerics.fzero(function, doubleArrayOf(1.0, 2.0))),
+            absoluteTolerance = 1e-14,
+        )
+    }
+
+    @Test
+    fun chandrupatlaAndRootMatchOfficialReferenceValues() {
+        val fixedRandom = RandomSource { 0.25 }
+        assertEquals(
+            expected = 5.0,
+            actual = Numerics.chandrupatla(
+                function = { value -> (value - 5.0) * (value - 5.0) },
+                initialValue = 0.0,
+                random = fixedRandom,
+            ),
+        )
+
+        val function = { value: Double -> value * value * value - value - 2.0 }
+        assertEquals(
+            expected = 1.5213797122439434,
+            actual = valueOf(
+                Numerics.chandrupatla(
+                    function = function,
+                    interval = doubleArrayOf(1.0, 2.0),
+                    random = fixedRandom,
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            expected = 1.5213797122439434,
+            actual = valueOf(
+                Numerics.root(
+                    function = function,
+                    interval = doubleArrayOf(1.0, 2.0),
+                    random = fixedRandom,
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            expected = 0.9999999999999999,
+            actual = valueOf(
+                Numerics.root(
+                    function = { value -> (value - 1.0) * (value - 1.0) },
+                    interval = doubleArrayOf(0.0, 4.0),
+                    random = fixedRandom,
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+    }
+
+    @Test
+    fun domainAndMinimumMatchOfficialReferenceValues() {
+        val squareRootDomain = { value: Double -> kotlin.math.sqrt(value) }
+        assertContentEquals(
+            expected = doubleArrayOf(-0.00020428174445492973, 5.0),
+            actual = arrayValueOf(
+                Numerics.findDomain(squareRootDomain, doubleArrayOf(-5.0, 5.0)),
+            ),
+        )
+        assertContentEquals(
+            expected = doubleArrayOf(0.00020428174562965915, 5.0),
+            actual = arrayValueOf(
+                Numerics.findDomain(
+                    function = squareRootDomain,
+                    interval = doubleArrayOf(-5.0, 5.0),
+                    outer = false,
+                ),
+            ),
+        )
+        assertEquals(
+            expected = 1.5,
+            actual = valueOf(
+                Numerics.fminbr(
+                    function = { value -> (value - 1.5) * (value - 1.5) + 2.0 },
+                    interval = doubleArrayOf(-4.0, 7.0),
+                ),
+            ),
+        )
+        assertEquals(
+            expected = 2.0,
+            actual = valueOf(
+                Numerics.fminbr(
+                    function = { value ->
+                        if (value < 0.0) Double.NaN else (value - 2.0) * (value - 2.0)
+                    },
+                    interval = doubleArrayOf(-5.0, 8.0),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun rootAndMinimumIntervalsReportInvalidInput() {
+        val invalidInterval = doubleArrayOf(1.0)
+        val function = { value: Double -> value }
+
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.findDomain(function, invalidInterval),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.fminbr(function, invalidInterval),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.fzero(function, invalidInterval),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.chandrupatla(function, invalidInterval),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.root(function, invalidInterval),
+        )
+    }
+
     private fun valueOf(result: GMResult<Double, NumericsError>): Double =
         assertIs<GMResult.Ok<Double>>(result).value
+
+    private fun arrayValueOf(
+        result: GMResult<DoubleArray, NumericsError>,
+    ): DoubleArray = assertIs<GMResult.Ok<DoubleArray>>(result).value
 
     private fun assertMatrixEquals(
         expected: Array<DoubleArray>,

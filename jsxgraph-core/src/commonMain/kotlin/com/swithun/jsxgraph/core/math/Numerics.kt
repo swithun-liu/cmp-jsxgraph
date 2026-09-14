@@ -11,7 +11,10 @@ import com.swithun.jsxgraph.core.GMResult
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.sign
 import kotlin.math.sin
+import kotlin.math.sqrt
+import kotlin.random.Random
 
 sealed interface NumericsError {
     data class DimensionMismatch(
@@ -58,6 +61,11 @@ object Numerics {
         val nodes: DoubleArray,
         val weights: DoubleArray,
     )
+
+    private val defaultRandomSource = RandomSource { Random.nextDouble() }
+
+    var maxIterationsRoot: Int = 80
+    var maxIterationsMinimize: Int = 500
 
     // JSXGraph: src/math/numerics.js -> Gauss
     @Suppress("FunctionName")
@@ -439,6 +447,527 @@ object Numerics {
             }
         }
         return GMResult.Ok(halfWidth * result)
+    }
+
+    // JSXGraph: src/math/numerics.js -> D
+    @Suppress("FunctionName")
+    fun D(function: (Double) -> Double): (Double) -> Double = { value ->
+        val step = 0.00001
+        (function(value + step) - function(value - step)) / (2.0 * step)
+    }
+
+    // JSXGraph: src/math/numerics.js -> Newton
+    @Suppress("FunctionName")
+    fun Newton(
+        function: (Double) -> Double,
+        initialValue: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        var value = initialValue
+        var functionValue = function(value)
+        var iteration = 0
+        while (iteration < 50 && abs(functionValue) > Mat.eps) {
+            val derivative = D(function)(value)
+            if (abs(derivative) > Mat.eps) {
+                value -= functionValue / derivative
+            } else {
+                value += random.nextDouble() * 0.2 - 1.0
+            }
+            functionValue = function(value)
+            iteration += 1
+        }
+        return value
+    }
+
+    // JSXGraph: src/math/numerics.js -> findBracket
+    fun findBracket(
+        function: (Double) -> Double,
+        initialValue: Double,
+    ): DoubleArray {
+        var start = initialValue
+        var startValue = function(start)
+        val scale = if (start == 0.0) 1.0 else start
+        val candidates = doubleArrayOf(
+            start - 0.1 * scale,
+            start + 0.1 * scale,
+            start - 1.0,
+            start + 1.0,
+            start - 0.5 * scale,
+            start + 0.5 * scale,
+            start - 0.6 * scale,
+            start + 0.6 * scale,
+            start - scale,
+            start + scale,
+            start - 2.0 * scale,
+            start + 2.0 * scale,
+            start - 5.0 * scale,
+            start + 5.0 * scale,
+            start - 10.0 * scale,
+            start + 10.0 * scale,
+            start - 50.0 * scale,
+            start + 50.0 * scale,
+            start - 100.0 * scale,
+            start + 100.0 * scale,
+        )
+
+        var end = candidates[0]
+        var endValue = Double.NaN
+        for (candidate in candidates) {
+            end = candidate
+            endValue = function(end)
+            if (startValue * endValue <= 0.0) {
+                break
+            }
+        }
+
+        if (end < start) {
+            val coordinate = start
+            start = end
+            end = coordinate
+
+            val value = startValue
+            startValue = endValue
+            endValue = value
+        }
+        return doubleArrayOf(start, startValue, end, endValue)
+    }
+
+    // JSXGraph: src/math/numerics.js -> fzero
+    fun fzero(
+        function: (Double) -> Double,
+        initialValue: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        val bracket = findBracket(function, initialValue)
+        if (bracket[1] * bracket[3] > 0.0) {
+            return Newton(function, bracket[0], random)
+        }
+        return fzeroBracketed(
+            function = function,
+            initialStart = bracket[0],
+            initialStartValue = bracket[1],
+            initialEnd = bracket[2],
+            initialEndValue = bracket[3],
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> fzero
+    fun fzero(
+        function: (Double) -> Double,
+        interval: DoubleArray,
+    ): GMResult<Double, NumericsError> {
+        val domain = when (val result = findDomain(function, interval)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val startValue = function(domain[0])
+        val endValue = function(domain[1])
+        if (startValue * endValue > 0.0) {
+            return fminbr(function, domain)
+        }
+        return GMResult.Ok(
+            fzeroBracketed(
+                function = function,
+                initialStart = domain[0],
+                initialStartValue = startValue,
+                initialEnd = domain[1],
+                initialEndValue = endValue,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> chandrupatla
+    fun chandrupatla(
+        function: (Double) -> Double,
+        initialValue: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        val randomScale = 1.0 + random.nextDouble() * 0.001
+        val bracket = findBracket(function, initialValue)
+        if (bracket[1] * bracket[3] > 0.0) {
+            return Newton(function, bracket[0], random)
+        }
+        return chandrupatlaBracketed(
+            function = function,
+            start = bracket[0],
+            startValue = bracket[1],
+            end = bracket[2],
+            endValue = bracket[3],
+            randomScale = randomScale,
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> chandrupatla
+    fun chandrupatla(
+        function: (Double) -> Double,
+        interval: DoubleArray,
+        random: RandomSource = defaultRandomSource,
+    ): GMResult<Double, NumericsError> {
+        if (interval.size < 2) {
+            return GMResult.Err(NumericsError.InvalidInterval(interval.size))
+        }
+
+        val randomScale = 1.0 + random.nextDouble() * 0.001
+        val startValue = function(interval[0])
+        val endValue = function(interval[1])
+        if (startValue * endValue > 0.0) {
+            return fminbr(function, interval)
+        }
+        return GMResult.Ok(
+            chandrupatlaBracketed(
+                function = function,
+                start = interval[0],
+                startValue = startValue,
+                end = interval[1],
+                endValue = endValue,
+                randomScale = randomScale,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> root
+    fun root(
+        function: (Double) -> Double,
+        initialValue: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double = chandrupatla(function, initialValue, random)
+
+    // JSXGraph: src/math/numerics.js -> root
+    fun root(
+        function: (Double) -> Double,
+        interval: DoubleArray,
+        random: RandomSource = defaultRandomSource,
+    ): GMResult<Double, NumericsError> = chandrupatla(function, interval, random)
+
+    // JSXGraph: src/math/numerics.js -> findDomain
+    fun findDomain(
+        function: (Double) -> Double,
+        interval: DoubleArray,
+        outer: Boolean = true,
+    ): GMResult<DoubleArray, NumericsError> {
+        if (interval.size < 2) {
+            return GMResult.Err(NumericsError.InvalidInterval(interval.size))
+        }
+
+        val result = interval.copyOf()
+        val goldenRemainder = 1.0 - 1.0 / 1.61803398875
+        val epsilon = 0.001
+        val maxIterations = 20
+
+        var start = result[0]
+        var end = result[1]
+        var functionValue = function(start)
+        if (functionValue.isNaN()) {
+            var iteration = 0
+            while (end - start > epsilon && iteration < maxIterations) {
+                val candidate = (end - start) * goldenRemainder + start
+                functionValue = function(candidate)
+                if (functionValue.isNaN()) {
+                    start = candidate
+                } else {
+                    end = candidate
+                }
+                iteration += 1
+            }
+            result[0] = if (outer) start else end
+        }
+
+        start = result[0]
+        end = result[1]
+        functionValue = function(end)
+        if (functionValue.isNaN()) {
+            var iteration = 0
+            while (end - start > epsilon && iteration < maxIterations) {
+                val candidate = end - (end - start) * goldenRemainder
+                functionValue = function(candidate)
+                if (functionValue.isNaN()) {
+                    end = candidate
+                } else {
+                    start = candidate
+                }
+                iteration += 1
+            }
+            result[1] = if (outer) end else start
+        }
+        return GMResult.Ok(result)
+    }
+
+    // JSXGraph: src/math/numerics.js -> fminbr
+    fun fminbr(
+        function: (Double) -> Double,
+        interval: DoubleArray,
+    ): GMResult<Double, NumericsError> {
+        val domain = when (val result = findDomain(function, interval)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        var start = domain[0]
+        var end = domain[1]
+        val goldenSectionRatio = (3.0 - sqrt(5.0)) * 0.5
+        val tolerance = Mat.eps
+        val squareRootEpsilon = Mat.eps
+        var previousBest = start + goldenSectionRatio * (end - start)
+        var previousBestValue = function(previousBest)
+        var best = previousBest
+        var olderBest = previousBest
+        var bestValue = previousBestValue
+        var olderBestValue = previousBestValue
+        var iteration = 0
+
+        while (iteration < maxIterationsMinimize) {
+            val range = end - start
+            val middle = (start + end) * 0.5
+            val actualTolerance =
+                squareRootEpsilon * abs(best) + tolerance / 3.0
+            if (abs(best - middle) + range * 0.5 <= 2.0 * actualTolerance) {
+                return GMResult.Ok(best)
+            }
+
+            var newStep = goldenSectionRatio * if (best < middle) end - best else start - best
+            if (abs(best - previousBest) >= actualTolerance) {
+                val firstProduct = (best - previousBest) * (bestValue - olderBestValue)
+                var denominator = (best - olderBest) * (bestValue - previousBestValue)
+                var numerator =
+                    (best - olderBest) * denominator -
+                        (best - previousBest) * firstProduct
+                denominator = 2.0 * (denominator - firstProduct)
+
+                if (denominator > 0.0) {
+                    numerator = -numerator
+                } else {
+                    denominator = -denominator
+                }
+                if (
+                    abs(numerator) < abs(newStep * denominator) &&
+                    numerator > denominator * (start - best + 2.0 * actualTolerance) &&
+                    numerator < denominator * (end - best - 2.0 * actualTolerance)
+                ) {
+                    newStep = numerator / denominator
+                }
+            }
+
+            if (abs(newStep) < actualTolerance) {
+                newStep = if (newStep > 0.0) actualTolerance else -actualTolerance
+            }
+
+            val candidate = best + newStep
+            val candidateValue = function(candidate)
+            if (candidateValue <= bestValue) {
+                if (candidate < best) {
+                    end = best
+                } else {
+                    start = best
+                }
+
+                olderBest = previousBest
+                previousBest = best
+                best = candidate
+                olderBestValue = previousBestValue
+                previousBestValue = bestValue
+                bestValue = candidateValue
+            } else {
+                if (candidate < best) {
+                    start = candidate
+                } else {
+                    end = candidate
+                }
+
+                if (candidateValue <= previousBestValue || previousBest == best) {
+                    olderBest = previousBest
+                    previousBest = candidate
+                    olderBestValue = previousBestValue
+                    previousBestValue = candidateValue
+                } else if (
+                    candidateValue <= olderBestValue ||
+                    olderBest == best ||
+                    olderBest == previousBest
+                ) {
+                    olderBest = candidate
+                    olderBestValue = candidateValue
+                }
+            }
+            iteration += 1
+        }
+        return GMResult.Ok(best)
+    }
+
+    private fun fzeroBracketed(
+        function: (Double) -> Double,
+        initialStart: Double,
+        initialStartValue: Double,
+        initialEnd: Double,
+        initialEndValue: Double,
+    ): Double {
+        var start = initialStart
+        var end = initialEnd
+        var startValue = initialStartValue
+        var endValue = initialEndValue
+        if (abs(startValue) <= Mat.eps) {
+            return start
+        }
+        if (abs(endValue) <= Mat.eps) {
+            return end
+        }
+
+        var opposite = start
+        var oppositeValue = startValue
+        var iteration = 0
+        while (iteration < maxIterationsRoot) {
+            val previousStep = end - start
+            if (abs(oppositeValue) < abs(endValue)) {
+                start = end
+                end = opposite
+                opposite = start
+
+                startValue = endValue
+                endValue = oppositeValue
+                oppositeValue = startValue
+            }
+
+            val actualTolerance = 2.0 * Mat.eps * abs(end) + Mat.eps * 0.5
+            var newStep = (opposite - end) * 0.5
+            if (abs(newStep) <= actualTolerance || abs(endValue) <= Mat.eps) {
+                return end
+            }
+
+            if (abs(previousStep) >= actualTolerance && abs(startValue) > abs(endValue)) {
+                val oppositeDistance = opposite - end
+                var numerator: Double
+                var denominator: Double
+                if (start == opposite) {
+                    val ratio = endValue / startValue
+                    numerator = oppositeDistance * ratio
+                    denominator = 1.0 - ratio
+                } else {
+                    denominator = startValue / oppositeValue
+                    val oppositeRatio = endValue / oppositeValue
+                    val startRatio = endValue / startValue
+                    numerator =
+                        startRatio *
+                        (
+                            oppositeDistance * denominator * (denominator - oppositeRatio) -
+                                (end - start) * (oppositeRatio - 1.0)
+                        )
+                    denominator =
+                        (denominator - 1.0) *
+                        (oppositeRatio - 1.0) *
+                        (startRatio - 1.0)
+                }
+
+                if (numerator > 0.0) {
+                    denominator = -denominator
+                } else {
+                    numerator = -numerator
+                }
+                if (
+                    numerator <
+                    0.75 * oppositeDistance * denominator -
+                    abs(actualTolerance * denominator) * 0.5 &&
+                    numerator < abs(previousStep * denominator * 0.5)
+                ) {
+                    newStep = numerator / denominator
+                }
+            }
+
+            if (abs(newStep) < actualTolerance) {
+                newStep = if (newStep > 0.0) actualTolerance else -actualTolerance
+            }
+
+            start = end
+            startValue = endValue
+            end += newStep
+            endValue = function(end)
+            if (
+                (endValue > 0.0 && oppositeValue > 0.0) ||
+                (endValue < 0.0 && oppositeValue < 0.0)
+            ) {
+                opposite = start
+                oppositeValue = startValue
+            }
+            iteration += 1
+        }
+        return end
+    }
+
+    private fun chandrupatlaBracketed(
+        function: (Double) -> Double,
+        start: Double,
+        startValue: Double,
+        end: Double,
+        endValue: Double,
+        randomScale: Double,
+    ): Double {
+        var firstPoint = start
+        var secondPoint = end
+        var firstValue = startValue
+        var secondValue = endValue
+        var discardedPoint = Double.NaN
+        var discardedValue = Double.NaN
+        var interpolationFraction = 0.5 * randomScale
+        var bestPoint = firstPoint
+        var iteration = 0
+
+        do {
+            val candidate =
+                firstPoint + interpolationFraction * (secondPoint - firstPoint)
+            val candidateValue = function(candidate)
+
+            if (sign(candidateValue) == sign(firstValue)) {
+                discardedPoint = firstPoint
+                firstPoint = candidate
+                discardedValue = firstValue
+                firstValue = candidateValue
+            } else {
+                discardedPoint = secondPoint
+                secondPoint = firstPoint
+                discardedValue = secondValue
+                secondValue = firstValue
+            }
+            firstPoint = candidate
+            firstValue = candidateValue
+
+            bestPoint = firstPoint
+            var bestValue = firstValue
+            if (abs(secondValue) < abs(firstValue)) {
+                bestPoint = secondPoint
+                bestValue = secondValue
+            }
+            val tolerance = 2.0 * Mat.eps * abs(bestPoint) + 0.5 * 0.00001
+            val relativeTolerance = tolerance / abs(secondPoint - firstPoint)
+            if (relativeTolerance > 0.5 || bestValue == 0.0) {
+                break
+            }
+
+            val pointRatio =
+                (firstPoint - secondPoint) / (discardedPoint - secondPoint)
+            val valueRatio =
+                (firstValue - secondValue) / (discardedValue - secondValue)
+            val lowerBound = 1.0 - sqrt(1.0 - pointRatio)
+            val upperBound = sqrt(pointRatio)
+            interpolationFraction = if (lowerBound < valueRatio && valueRatio < upperBound) {
+                val discardedRatio =
+                    (discardedPoint - firstPoint) / (secondPoint - firstPoint)
+                val firstToSecond = firstValue / (secondValue - firstValue)
+                val discardedToSecond =
+                    discardedValue / (secondValue - discardedValue)
+                val firstToDiscarded = firstValue / (discardedValue - firstValue)
+                val secondToDiscarded =
+                    secondValue / (discardedValue - secondValue)
+                firstToSecond * discardedToSecond +
+                    firstToDiscarded * secondToDiscarded * discardedRatio
+            } else {
+                0.5 * randomScale
+            }
+            if (interpolationFraction < relativeTolerance) {
+                interpolationFraction = relativeTolerance
+            }
+            if (interpolationFraction > 1.0 - relativeTolerance) {
+                interpolationFraction = 1.0 - relativeTolerance
+            }
+            iteration += 1
+        } while (iteration <= maxIterationsRoot)
+        return bestPoint
     }
 
     private fun legendreRule(order: Int): LegendreRule? = when (order) {
