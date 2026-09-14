@@ -11,6 +11,8 @@ import com.swithun.jsxgraph.core.GMResult
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -77,6 +79,13 @@ sealed interface NumericsError {
         val weightCount: Int,
         val nodeCount: Int,
     ) : NumericsError
+
+    data class InvalidIntegrationLimit(val limit: Int) : NumericsError
+
+    data class InvalidIntegrationTolerance(
+        val epsilonRelative: Double,
+        val epsilonAbsolute: Double,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -93,6 +102,26 @@ data class NewtonCotesConfig(
 data class RombergConfig(
     val maxIterations: Int = 20,
     val epsilon: Double = 0.0000001,
+)
+
+enum class GaussKronrodRule {
+    FIFTEEN,
+    TWENTY_ONE,
+    THIRTY_ONE,
+}
+
+data class QagConfig(
+    val limit: Int = 15,
+    val epsilonRelative: Double = 0.0000001,
+    val epsilonAbsolute: Double = 0.0000001,
+    val rule: GaussKronrodRule = GaussKronrodRule.FIFTEEN,
+)
+
+data class GaussKronrodResult(
+    val value: Double,
+    val absoluteError: Double,
+    val absoluteResult: Double,
+    val absoluteDeviation: Double,
 )
 
 data class JacobiResult(
@@ -123,6 +152,161 @@ object Numerics {
         val nodes: DoubleArray,
         val weights: DoubleArray,
     )
+
+    private data class IntegrationSubinterval(
+        val start: Double,
+        val end: Double,
+        val result: Double,
+        val error: Double,
+    )
+
+    private class IntegrationWorkspace(
+        interval: DoubleArray,
+        private val limit: Int,
+    ) {
+        private var size = 0
+        private var maximumErrorPosition = 0
+        private var currentIndex = 0
+        private val starts = DoubleArray(limit)
+        private val ends = DoubleArray(limit)
+        private val results = DoubleArray(limit)
+        private val errors = DoubleArray(limit)
+        private val order = IntArray(limit)
+        private val levels = IntArray(limit)
+
+        init {
+            starts[0] = interval[0]
+            ends[0] = interval[1]
+        }
+
+        fun setInitialResult(
+            result: Double,
+            error: Double,
+        ) {
+            size = 1
+            results[0] = result
+            errors[0] = error
+        }
+
+        fun update(
+            firstStart: Double,
+            firstEnd: Double,
+            firstResult: Double,
+            firstError: Double,
+            secondStart: Double,
+            secondEnd: Double,
+            secondResult: Double,
+            secondError: Double,
+        ) {
+            val maximumErrorIndex = currentIndex
+            val newIndex = size
+            val newLevel = levels[currentIndex] + 1
+            if (secondError > firstError) {
+                starts[maximumErrorIndex] = secondStart
+                results[maximumErrorIndex] = secondResult
+                errors[maximumErrorIndex] = secondError
+                levels[maximumErrorIndex] = newLevel
+
+                starts[newIndex] = firstStart
+                ends[newIndex] = firstEnd
+                results[newIndex] = firstResult
+                errors[newIndex] = firstError
+                levels[newIndex] = newLevel
+            } else {
+                ends[maximumErrorIndex] = firstEnd
+                results[maximumErrorIndex] = firstResult
+                errors[maximumErrorIndex] = firstError
+                levels[maximumErrorIndex] = newLevel
+
+                starts[newIndex] = secondStart
+                ends[newIndex] = secondEnd
+                results[newIndex] = secondResult
+                errors[newIndex] = secondError
+                levels[newIndex] = newLevel
+            }
+            size += 1
+            sortErrors()
+        }
+
+        fun retrieve(): IntegrationSubinterval {
+            val index = currentIndex
+            return IntegrationSubinterval(
+                start = starts[index],
+                end = ends[index],
+                result = results[index],
+                error = errors[index],
+            )
+        }
+
+        fun sumResults(): Double {
+            var sum = 0.0
+            for (index in 0 until size) {
+                sum += results[index]
+            }
+            return sum
+        }
+
+        fun subintervalTooSmall(
+            firstStart: Double,
+            secondStart: Double,
+            secondEnd: Double,
+        ): Boolean {
+            val machineEpsilon = 2.2204460492503131e-16
+            val minimumValue = 2.2250738585072014e-308
+            val threshold =
+                (1.0 + 100.0 * machineEpsilon) *
+                    (abs(secondStart) + 1000.0 * minimumValue)
+            return abs(firstStart) <= threshold && abs(secondEnd) <= threshold
+        }
+
+        private fun sortErrors() {
+            val last = size - 1
+            var errorPosition = maximumErrorPosition
+            var maximumErrorIndex = order[errorPosition]
+            if (last < 2) {
+                order[0] = 0
+                order[1] = 1
+                currentIndex = maximumErrorIndex
+                return
+            }
+
+            val maximumError = errors[maximumErrorIndex]
+            while (
+                errorPosition > 0 &&
+                maximumError > errors[order[errorPosition - 1]]
+            ) {
+                order[errorPosition] = order[errorPosition - 1]
+                errorPosition -= 1
+            }
+
+            val top = if (last < limit / 2.0 + 2.0) {
+                last
+            } else {
+                limit - last + 1
+            }
+            var index = errorPosition + 1
+            while (index < top && maximumError < errors[order[index]]) {
+                order[index - 1] = order[index]
+                index += 1
+            }
+            order[index - 1] = maximumErrorIndex
+
+            val minimumError = errors[last]
+            var reverseIndex = top - 1
+            while (
+                reverseIndex > index - 2 &&
+                minimumError >= errors[order[reverseIndex]]
+            ) {
+                order[reverseIndex + 1] = order[reverseIndex]
+                reverseIndex -= 1
+            }
+            order[reverseIndex + 1] = last
+
+            maximumErrorIndex = order[errorPosition]
+            currentIndex = maximumErrorIndex
+            maximumErrorPosition = errorPosition
+        }
+    }
 
     private val defaultRandomSource = RandomSource { Random.nextDouble() }
 
@@ -537,6 +721,288 @@ object Numerics {
         }
         return GMResult.Ok(halfWidth * result)
     }
+
+    // JSXGraph: src/math/numerics.js -> GaussKronrod15
+    @Suppress("FunctionName")
+    fun GaussKronrod15(
+        interval: DoubleArray,
+        function: (Double) -> Double,
+    ): GMResult<GaussKronrodResult, NumericsError> =
+        gaussKronrod(
+            interval = interval,
+            function = function,
+            abscissae = doubleArrayOf(
+                0.991455371120812639206854697526329,
+                0.949107912342758524526189684047851,
+                0.864864423359769072789712788640926,
+                0.741531185599394439863864773280788,
+                0.58608723546769113029414483825873,
+                0.405845151377397166906606412076961,
+                0.207784955007898467600689403773245,
+                0.0,
+            ),
+            gaussWeights = doubleArrayOf(
+                0.129484966168869693270611432679082,
+                0.27970539148927666790146777142378,
+                0.381830050505118944950369775488975,
+                0.417959183673469387755102040816327,
+            ),
+            kronrodWeights = doubleArrayOf(
+                0.02293532201052922496373200805897,
+                0.063092092629978553290700663189204,
+                0.104790010322250183839876322541518,
+                0.140653259715525918745189590510238,
+                0.16900472663926790282658342659855,
+                0.190350578064785409913256402421014,
+                0.204432940075298892414161999234649,
+                0.209482141084727828012999174891714,
+            ),
+        )
+
+    // JSXGraph: src/math/numerics.js -> GaussKronrod21
+    @Suppress("FunctionName")
+    fun GaussKronrod21(
+        interval: DoubleArray,
+        function: (Double) -> Double,
+    ): GMResult<GaussKronrodResult, NumericsError> =
+        gaussKronrod(
+            interval = interval,
+            function = function,
+            abscissae = doubleArrayOf(
+                0.995657163025808080735527280689003,
+                0.973906528517171720077964012084452,
+                0.930157491355708226001207180059508,
+                0.865063366688984510732096688423493,
+                0.780817726586416897063717578345042,
+                0.679409568299024406234327365114874,
+                0.562757134668604683339000099272694,
+                0.433395394129247190799265943165784,
+                0.294392862701460198131126603103866,
+                0.14887433898163121088482600112972,
+                0.0,
+            ),
+            gaussWeights = doubleArrayOf(
+                0.066671344308688137593568809893332,
+                0.149451349150580593145776339657697,
+                0.219086362515982043995534934228163,
+                0.269266719309996355091226921569469,
+                0.295524224714752870173892994651338,
+            ),
+            kronrodWeights = doubleArrayOf(
+                0.011694638867371874278064396062192,
+                0.03255816230796472747881897245939,
+                0.05475589657435199603138130024458,
+                0.07503967481091995276704314091619,
+                0.093125454583697605535065465083366,
+                0.109387158802297641899210590325805,
+                0.123491976262065851077958109831074,
+                0.134709217311473325928054001771707,
+                0.142775938577060080797094273138717,
+                0.147739104901338491374841515972068,
+                0.149445554002916905664936468389821,
+            ),
+        )
+
+    // JSXGraph: src/math/numerics.js -> GaussKronrod31
+    @Suppress("FunctionName")
+    fun GaussKronrod31(
+        interval: DoubleArray,
+        function: (Double) -> Double,
+    ): GMResult<GaussKronrodResult, NumericsError> =
+        gaussKronrod(
+            interval = interval,
+            function = function,
+            abscissae = doubleArrayOf(
+                0.998002298693397060285172840152271,
+                0.987992518020485428489565718586613,
+                0.967739075679139134257347978784337,
+                0.937273392400705904307758947710209,
+                0.897264532344081900882509656454496,
+                0.848206583410427216200648320774217,
+                0.790418501442465932967649294817947,
+                0.724417731360170047416186054613938,
+                0.650996741297416970533735895313275,
+                0.570972172608538847537226737253911,
+                0.485081863640239680693655740232351,
+                0.394151347077563369897207370981045,
+                0.299180007153168812166780024266389,
+                0.201194093997434522300628303394596,
+                0.101142066918717499027074231447392,
+                0.0,
+            ),
+            gaussWeights = doubleArrayOf(
+                0.030753241996117268354628393577204,
+                0.070366047488108124709267416450667,
+                0.107159220467171935011869546685869,
+                0.139570677926154314447804794511028,
+                0.166269205816993933553200860481209,
+                0.186161000015562211026800561866423,
+                0.198431485327111576456118326443839,
+                0.202578241925561272880620199967519,
+            ),
+            kronrodWeights = doubleArrayOf(
+                0.005377479872923348987792051430128,
+                0.015007947329316122538374763075807,
+                0.025460847326715320186874001019653,
+                0.03534636079137584622203794847836,
+                0.04458975132476487660822729937328,
+                0.05348152469092808726534314723943,
+                0.062009567800670640285139230960803,
+                0.069854121318728258709520077099147,
+                0.076849680757720378894432777482659,
+                0.083080502823133021038289247286104,
+                0.088564443056211770647275443693774,
+                0.093126598170825321225486872747346,
+                0.096642726983623678505179907627589,
+                0.099173598721791959332393173484603,
+                0.10076984552387559504494666261757,
+                0.101330007014791549017374792767493,
+            ),
+        )
+
+    // JSXGraph: src/math/numerics.js -> Qag
+    @Suppress("FunctionName")
+    fun Qag(
+        interval: DoubleArray,
+        function: (Double) -> Double,
+        config: QagConfig = QagConfig(),
+    ): GMResult<Double, NumericsError> {
+        if (interval.size < 2) {
+            return GMResult.Err(NumericsError.InvalidInterval(interval.size))
+        }
+        if (config.limit !in 1..1000) {
+            return GMResult.Err(NumericsError.InvalidIntegrationLimit(config.limit))
+        }
+        if (
+            config.epsilonAbsolute <= 0.0 &&
+            (
+                config.epsilonRelative < 50.0 * Mat.eps ||
+                    config.epsilonRelative < 0.5e-28
+            )
+        ) {
+            return GMResult.Err(
+                NumericsError.InvalidIntegrationTolerance(
+                    epsilonRelative = config.epsilonRelative,
+                    epsilonAbsolute = config.epsilonAbsolute,
+                ),
+            )
+        }
+
+        val workspace = IntegrationWorkspace(interval, 1000)
+        val initial = when (val result = applyGaussKronrod(config.rule, interval, function)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        workspace.setInitialResult(initial.value, initial.absoluteError)
+        var tolerance = max(
+            config.epsilonAbsolute,
+            config.epsilonRelative * abs(initial.value),
+        )
+        val roundOff = 50.0 * 2.2204460492503131e-16 * initial.absoluteResult
+        if (initial.absoluteError <= roundOff && initial.absoluteError > tolerance) {
+            return GMResult.Ok(Double.NEGATIVE_INFINITY)
+        }
+        if (
+            (
+                initial.absoluteError <= tolerance &&
+                    initial.absoluteError != initial.absoluteDeviation
+            ) ||
+            initial.absoluteError == 0.0
+        ) {
+            return GMResult.Ok(initial.value)
+        }
+        if (config.limit == 1) {
+            return GMResult.Ok(Double.NEGATIVE_INFINITY)
+        }
+
+        var area = initial.value
+        var errorSum = initial.absoluteError
+        var iteration = 1
+        var roundoffType1 = 0
+        var roundoffType2 = 0
+        var errorType = 0
+        do {
+            val largestError = workspace.retrieve()
+            val firstStart = largestError.start
+            val firstEnd = 0.5 * (largestError.start + largestError.end)
+            val secondStart = firstEnd
+            val secondEnd = largestError.end
+
+            val first = when (
+                val result = applyGaussKronrod(
+                    config.rule,
+                    doubleArrayOf(firstStart, firstEnd),
+                    function,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val second = when (
+                val result = applyGaussKronrod(
+                    config.rule,
+                    doubleArrayOf(secondStart, secondEnd),
+                    function,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val combinedArea = first.value + second.value
+            val combinedError = first.absoluteError + second.absoluteError
+            errorSum += combinedError - largestError.error
+            area += combinedArea - largestError.result
+
+            if (
+                first.absoluteDeviation != first.absoluteError &&
+                second.absoluteDeviation != second.absoluteError
+            ) {
+                val delta = largestError.result - combinedArea
+                if (
+                    abs(delta) <= 1.0e-5 * abs(combinedArea) &&
+                    combinedError >= 0.99 * largestError.error
+                ) {
+                    roundoffType1 += 1
+                }
+                if (iteration >= 10 && combinedError > largestError.error) {
+                    roundoffType2 += 1
+                }
+            }
+
+            tolerance = max(config.epsilonAbsolute, config.epsilonRelative * abs(area))
+            if (errorSum > tolerance) {
+                if (roundoffType1 >= 6 || roundoffType2 >= 20) {
+                    errorType = 2
+                }
+                if (workspace.subintervalTooSmall(firstStart, secondStart, secondEnd)) {
+                    errorType = 3
+                }
+            }
+            workspace.update(
+                firstStart = firstStart,
+                firstEnd = firstEnd,
+                firstResult = first.value,
+                firstError = first.absoluteError,
+                secondStart = secondStart,
+                secondEnd = secondEnd,
+                secondResult = second.value,
+                secondError = second.absoluteError,
+            )
+            iteration += 1
+        } while (
+            iteration < config.limit &&
+            errorType == 0 &&
+            errorSum > tolerance
+        )
+        return GMResult.Ok(workspace.sumResults())
+    }
+
+    // JSXGraph: src/math/numerics.js -> I
+    @Suppress("FunctionName")
+    fun I(
+        interval: DoubleArray,
+        function: (Double) -> Double,
+    ): GMResult<Double, NumericsError> = Qag(interval, function)
 
     // JSXGraph: src/math/numerics.js -> splineDef
     fun splineDef(
@@ -1468,6 +1934,125 @@ object Numerics {
             iteration += 1
         } while (iteration <= maxIterationsRoot)
         return bestPoint
+    }
+
+    private fun applyGaussKronrod(
+        rule: GaussKronrodRule,
+        interval: DoubleArray,
+        function: (Double) -> Double,
+    ): GMResult<GaussKronrodResult, NumericsError> = when (rule) {
+        GaussKronrodRule.FIFTEEN -> GaussKronrod15(interval, function)
+        GaussKronrodRule.TWENTY_ONE -> GaussKronrod21(interval, function)
+        GaussKronrodRule.THIRTY_ONE -> GaussKronrod31(interval, function)
+    }
+
+    // JSXGraph: src/math/numerics.js -> _gaussKronrod
+    private fun gaussKronrod(
+        interval: DoubleArray,
+        function: (Double) -> Double,
+        abscissae: DoubleArray,
+        gaussWeights: DoubleArray,
+        kronrodWeights: DoubleArray,
+    ): GMResult<GaussKronrodResult, NumericsError> {
+        if (interval.size < 2) {
+            return GMResult.Err(NumericsError.InvalidInterval(interval.size))
+        }
+
+        val count = abscissae.size
+        val center = 0.5 * (interval[0] + interval[1])
+        val halfLength = 0.5 * (interval[1] - interval[0])
+        val absoluteHalfLength = abs(halfLength)
+        val centerValue = function(center)
+        var gaussResult = 0.0
+        var kronrodResult = centerValue * kronrodWeights[count - 1]
+        var absoluteResult = abs(kronrodResult)
+        val firstValues = DoubleArray(count - 1)
+        val secondValues = DoubleArray(count - 1)
+
+        if (count % 2 == 0) {
+            gaussResult = centerValue * gaussWeights[count / 2 - 1]
+        }
+
+        for (index in 0 until (count - 1) / 2) {
+            val abscissaIndex = index * 2 + 1
+            val abscissa = halfLength * abscissae[abscissaIndex]
+            val firstValue = function(center - abscissa)
+            val secondValue = function(center + abscissa)
+            val sum = firstValue + secondValue
+            firstValues[abscissaIndex] = firstValue
+            secondValues[abscissaIndex] = secondValue
+            gaussResult += gaussWeights[index] * sum
+            kronrodResult += kronrodWeights[abscissaIndex] * sum
+            absoluteResult +=
+                kronrodWeights[abscissaIndex] *
+                (abs(firstValue) + abs(secondValue))
+        }
+
+        for (index in 0 until count / 2) {
+            val abscissaIndex = index * 2
+            val abscissa = halfLength * abscissae[abscissaIndex]
+            val firstValue = function(center - abscissa)
+            val secondValue = function(center + abscissa)
+            firstValues[abscissaIndex] = firstValue
+            secondValues[abscissaIndex] = secondValue
+            kronrodResult +=
+                kronrodWeights[abscissaIndex] * (firstValue + secondValue)
+            absoluteResult +=
+                kronrodWeights[abscissaIndex] *
+                (abs(firstValue) + abs(secondValue))
+        }
+
+        val mean = kronrodResult * 0.5
+        var absoluteDeviation =
+            kronrodWeights[count - 1] * abs(centerValue - mean)
+        for (index in 0 until count - 1) {
+            absoluteDeviation +=
+                kronrodWeights[index] *
+                (
+                    abs(firstValues[index] - mean) +
+                        abs(secondValues[index] - mean)
+                )
+        }
+
+        val rawError = (kronrodResult - gaussResult) * halfLength
+        val value = kronrodResult * halfLength
+        absoluteResult *= absoluteHalfLength
+        absoluteDeviation *= absoluteHalfLength
+        return GMResult.Ok(
+            GaussKronrodResult(
+                value = value,
+                absoluteError = rescaleIntegrationError(
+                    error = rawError,
+                    absoluteResult = absoluteResult,
+                    absoluteDeviation = absoluteDeviation,
+                ),
+                absoluteResult = absoluteResult,
+                absoluteDeviation = absoluteDeviation,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> _rescale_error
+    private fun rescaleIntegrationError(
+        error: Double,
+        absoluteResult: Double,
+        absoluteDeviation: Double,
+    ): Double {
+        var result = abs(error)
+        if (absoluteDeviation != 0.0 && result != 0.0) {
+            val scale = (200.0 * result / absoluteDeviation).pow(1.5)
+            result = if (scale < 1.0) absoluteDeviation * scale else absoluteDeviation
+        }
+
+        val minimumValue = 2.2250738585072014e-308
+        val machineEpsilon = 2.2204460492503131e-16
+        if (absoluteResult > minimumValue / (50.0 * machineEpsilon)) {
+            val minimumError = 50.0 * machineEpsilon * absoluteResult
+            if (minimumError > result) {
+                result = minimumError
+            }
+        }
+        return result
     }
 
     private fun validateJacobian(

@@ -190,6 +190,130 @@ class NumericsTest {
     }
 
     @Test
+    fun gaussKronrodRulesMatchOfficialReferenceDetails() {
+        val interval = doubleArrayOf(0.0, kotlin.math.PI)
+        val function = { value: Double -> kotlin.math.sin(value) }
+        val expectedDeviations = doubleArrayOf(
+            0.8377822123396637,
+            0.8333083422586608,
+            0.8405260379684187,
+        )
+        val results = arrayOf(
+            gaussKronrodValueOf(Numerics.GaussKronrod15(interval, function)),
+            gaussKronrodValueOf(Numerics.GaussKronrod21(interval, function)),
+            gaussKronrodValueOf(Numerics.GaussKronrod31(interval, function)),
+        )
+
+        for (index in results.indices) {
+            assertEquals(2.0, results[index].value)
+            assertEquals(
+                2.220446049250313e-14,
+                results[index].absoluteError,
+                absoluteTolerance = 1e-28,
+            )
+            assertEquals(2.0, results[index].absoluteResult)
+            assertEquals(
+                expectedDeviations[index],
+                results[index].absoluteDeviation,
+                absoluteTolerance = 1e-15,
+            )
+        }
+    }
+
+    @Test
+    fun adaptiveGaussKronrodAndIntegralAliasMatchOfficialReference() {
+        assertEquals(
+            expected = 1.0 / 3.0,
+            actual = valueOf(
+                Numerics.Qag(
+                    interval = doubleArrayOf(0.0, 1.0),
+                    function = { value -> value * value },
+                ),
+            ),
+        )
+        assertEquals(
+            expected = 2.0,
+            actual = valueOf(
+                Numerics.Qag(
+                    interval = doubleArrayOf(0.0, kotlin.math.PI),
+                    function = { value -> kotlin.math.sin(value) },
+                ),
+            ),
+        )
+        assertEquals(
+            expected = 0.13768112771232224,
+            actual = valueOf(
+                Numerics.Qag(
+                    interval = doubleArrayOf(0.0, 100.0),
+                    function = { value -> kotlin.math.sin(value) },
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            expected = 0.13768112771231206,
+            actual = valueOf(
+                Numerics.Qag(
+                    interval = doubleArrayOf(0.0, 100.0),
+                    function = { value -> kotlin.math.sin(value) },
+                    config = QagConfig(rule = GaussKronrodRule.THIRTY_ONE),
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            expected = 2.6666666666666665,
+            actual = valueOf(
+                Numerics.I(
+                    interval = doubleArrayOf(0.0, 2.0),
+                    function = { value -> value * value },
+                ),
+            ),
+        )
+        assertEquals(
+            expected = Double.NEGATIVE_INFINITY,
+            actual = valueOf(
+                Numerics.Qag(
+                    interval = doubleArrayOf(0.0, 100.0),
+                    function = { value -> kotlin.math.sin(value) },
+                    config = QagConfig(limit = 1),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun adaptiveGaussKronrodReportsInvalidConfiguration() {
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.GaussKronrod15(doubleArrayOf(0.0)) { it },
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidIntegrationLimit>>(
+            Numerics.Qag(
+                interval = doubleArrayOf(0.0, 1.0),
+                function = { it },
+                config = QagConfig(limit = 0),
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidIntegrationLimit>>(
+            Numerics.Qag(
+                interval = doubleArrayOf(0.0, 1.0),
+                function = { it },
+                config = QagConfig(limit = 1001),
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidIntegrationTolerance>>(
+            Numerics.Qag(
+                interval = doubleArrayOf(0.0, 1.0),
+                function = { it },
+                config = QagConfig(
+                    epsilonRelative = 0.0,
+                    epsilonAbsolute = 0.0,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun naturalSplineMatchesOfficialReferenceAndSortsInputs() {
         val knots = doubleArrayOf(3.0, 1.0, 2.0, 4.0)
         val values = doubleArrayOf(9.0, 1.0, 4.0, 16.0)
@@ -736,6 +860,10 @@ class NumericsTest {
     private fun trajectoryValueOf(
         result: GMResult<Array<DoubleArray>, NumericsError>,
     ): Array<DoubleArray> = assertIs<GMResult.Ok<Array<DoubleArray>>>(result).value
+
+    private fun gaussKronrodValueOf(
+        result: GMResult<GaussKronrodResult, NumericsError>,
+    ): GaussKronrodResult = assertIs<GMResult.Ok<GaussKronrodResult>>(result).value
 
     private fun assertMatrixEquals(
         expected: Array<DoubleArray>,

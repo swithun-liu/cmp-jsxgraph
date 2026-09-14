@@ -41,6 +41,9 @@ practical.
 - `Numerics.rungeKutta` returns `GMResult` for invalid intervals, step counts,
   Butcher tableaus, and derivative-vector dimensions. String method names
   retain the upstream fallback to Euler for unknown values.
+- Gauss-Kronrod and QAG integration return `GMResult` for invalid intervals,
+  workspace limits, and impossible tolerance configurations. QAG exposes the
+  three upstream quadrature rules through `GaussKronrodRule`.
 - `Numerics.Romberg` honors its documented default configuration. JSXGraph
   `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
