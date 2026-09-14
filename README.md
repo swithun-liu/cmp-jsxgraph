@@ -1,7 +1,7 @@
 # CMP JSXGraph
 
-Pure Kotlin Multiplatform translation of JSXGraph, with Compose Multiplatform
-rendering planned through Compose Canvas.
+Pure Kotlin Multiplatform translation of JSXGraph with an early Compose
+Multiplatform Canvas renderer.
 
 ## Status
 
@@ -24,7 +24,14 @@ Implemented translation slices:
   perpendicular/circumcenter constructions, and analytic intersections from
   `src/math/geometry.js`;
 - event emitter behavior from `src/utils/event.js`;
-- homogeneous user/screen coordinate conversion from `src/base/coords.js`.
+- homogeneous user/screen coordinate conversion from `src/base/coords.js`;
+- an interactive Compose geometry playground backed by the translated
+  line-circle intersection math.
+- a separate `jsxgraph-debug-ui` comparison dependency with Source, official
+  JSXGraph `1.13.3`, and native Compose previews.
+
+The playground is a renderer and interaction test surface. It is not yet a
+JSXGraph input parser or a complete element renderer.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -60,7 +67,13 @@ JDK 17 or newer is required.
 
 ```bash
 ./gradlew :jsxgraph-core:allTests
+./gradlew :jsxgraph-compose:allTests :jsxgraph-debug-ui:allTests
+./gradlew :sample:androidApp:assembleDebug
+ANDROID_SERIAL=<device-serial> ./tools/capture-android-parity.sh
 ```
+
+See [`docs/testing.md`](docs/testing.md) for the screenshot parity and stable
+gates.
 
 ## Coordinates
 
@@ -68,7 +81,8 @@ The project group and package namespace include the author name:
 
 - package root: `com.swithun.jsxgraph`
 - core artifact: `com.swithun:jsxgraph-core`
-- Compose artifact (planned): `com.swithun:jsxgraph-compose`
+- Compose artifact: `com.swithun:jsxgraph-compose`
+- debug comparison artifact: `com.swithun:jsxgraph-debug-ui`
 
 ## License
 

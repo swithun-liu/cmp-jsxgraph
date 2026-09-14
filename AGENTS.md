@@ -58,3 +58,13 @@ git clone --depth 1 --branch <tag> https://github.com/jsxgraph/jsxgraph.git thir
 
 - 翻译的几何/数值逻辑要有对拍思路：以官方 JSXGraph 行为为参考，对关键变换/算法写单元测试验证。
 - 提交的代码必须能通过 `./gradlew :jsxgraph-core:allTests`（或对应任务）。
+
+## 9. 渲染对拍与 Stable 门禁
+
+- `jsxgraph-debug-ui` 必须保持为独立调试依赖，生产模块不得依赖它。
+- 官方 JSXGraph 只能在 debug-ui 的隔离渲染器中运行；`jsxgraph-core` 和
+  `jsxgraph-compose` 仍然禁止 WebView 和 JavaScript 引擎。
+- 同一个 source 必须同时驱动官方渲染与 CMP 渲染，不得为任一侧静默替换为手写等价图。
+- 每批渲染能力都要生成 Source / Official / Native 截图和 contact sheet，
+  检查空白、裁切、重叠、几何位置、颜色、线型、文本与交互差异。
+- 达到 `stable` 前必须满足 `docs/testing.md` 的完整门禁；单个 Demo 或单次截图通过不能标记 stable。

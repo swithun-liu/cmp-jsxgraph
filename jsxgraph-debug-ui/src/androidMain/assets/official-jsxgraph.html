@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; frame-src 'none'"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Official JSXGraph</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="jsxgraph-1.13.3.css">
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #fcfdfe;
+    }
+
+    #jxgbox {
+      position: fixed;
+      inset: 0;
+      border: 0;
+      background: #fcfdfe;
+    }
+
+    #error {
+      display: none;
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      padding: 24px;
+      align-items: center;
+      justify-content: center;
+      color: #b91c1c;
+      font: 13px/1.45 Arial, sans-serif;
+      text-align: center;
+      white-space: pre-wrap;
+    }
+  </style>
+  <script defer src="jsxgraphcore-1.13.3.js"></script>
+</head>
+<body>
+  <div id="jxgbox" class="jxgbox" aria-label="Official JSXGraph rendering"></div>
+  <div id="error" role="alert"></div>
+  <script>
+    (() => {
+      const boardElement = document.querySelector("#jxgbox");
+      const errorElement = document.querySelector("#error");
+      let board = null;
+      let requestId = 0;
+
+      const waitForLayout = async () => {
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+      };
+
+      const waitForContainerSize = async () => {
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          const bounds = boardElement.getBoundingClientRect();
+          if (bounds.width > 0 && bounds.height > 0) {
+            return;
+          }
+          await new Promise(requestAnimationFrame);
+        }
+        throw new Error("Official JSXGraph container has no visible size");
+      };
+
+      const showError = (message) => {
+        boardElement.style.display = "none";
+        errorElement.style.display = "flex";
+        errorElement.textContent = message;
+        window.CmpJsxGraphBridge?.onRenderError(message);
+      };
+
+      window.renderDiagram = async (source) => {
+        const currentRequest = ++requestId;
+        try {
+          const documentSource = JSON.parse(source);
+          await waitForContainerSize();
+          if (currentRequest !== requestId) {
+            return;
+          }
+          if (board !== null) {
+            JXG.JSXGraph.freeBoard(board);
+            board = null;
+          }
+          errorElement.style.display = "none";
+          boardElement.style.display = "block";
+          boardElement.replaceChildren();
+
+          board = JXG.JSXGraph.initBoard("jxgbox", {
+            boundingbox: documentSource.boundingBox,
+            axis: true,
+            grid: true,
+            keepaspectratio: true,
+            showCopyright: false,
+            showNavigation: false,
+            pan: { enabled: false },
+            zoom: { enabled: false },
+          });
+
+          const xValues = [];
+          const sineValues = [];
+          const parabolaValues = [];
+          for (let index = 0; index <= 240; index += 1) {
+            const x = -6 + (12 * index) / 240;
+            xValues.push(x);
+            sineValues.push(
+              documentSource.sine.amplitude *
+                Math.sin(x * documentSource.sine.frequency),
+            );
+            parabolaValues.push(
+              documentSource.parabola.quadratic * x * x +
+                documentSource.parabola.constant,
+            );
+          }
+
+          board.create(
+            "curve",
+            [xValues, sineValues],
+            {
+              strokeColor: "#246BCE",
+              strokeWidth: 2.5,
+              fixed: true,
+              highlight: false,
+            },
+          );
+          board.create(
+            "curve",
+            [xValues, parabolaValues],
+            {
+              strokeColor: "#D9553F",
+              strokeWidth: 2.5,
+              fixed: true,
+              highlight: false,
+            },
+          );
+
+          const circle = board.create(
+            "circle",
+            [documentSource.circle.center, documentSource.circle.radius],
+            {
+              strokeColor: "#16877A",
+              strokeWidth: 2.5,
+              fixed: true,
+              highlight: false,
+              center: { visible: false },
+            },
+          );
+          const line = board.create(
+            "line",
+            [documentSource.fixedPoint, documentSource.controlPoint],
+            {
+              strokeColor: "#49545D",
+              strokeWidth: 2,
+              fixed: true,
+              highlight: false,
+              point1: { visible: false },
+              point2: { visible: false },
+            },
+          );
+
+          [0, 1].forEach((index) => {
+            board.create("intersection", [line, circle, index], {
+              face: "o",
+              size: 4,
+              strokeColor: "#16877A",
+              fillColor: "#FCFDFE",
+              strokeWidth: 2.5,
+              fixed: true,
+              highlight: false,
+              name: "",
+            });
+          });
+          board.create("point", documentSource.fixedPoint, {
+            face: "o",
+            size: 3,
+            strokeColor: "#6F7780",
+            fillColor: "#6F7780",
+            fixed: true,
+            highlight: false,
+            name: "",
+          });
+          board.create("point", documentSource.controlPoint, {
+            face: "o",
+            size: 6,
+            strokeColor: "#E0A11A",
+            fillColor: "#E0A11A",
+            fixed: true,
+            highlight: false,
+            name: "",
+          });
+
+          board.fullUpdate();
+          await waitForLayout();
+          if (currentRequest !== requestId) {
+            return;
+          }
+          window.CmpJsxGraphBridge?.onRenderReady(
+            String(boardElement.clientWidth),
+            String(boardElement.clientHeight),
+          );
+        } catch (failure) {
+          if (currentRequest !== requestId) {
+            return;
+          }
+          showError(failure?.message ?? String(failure));
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

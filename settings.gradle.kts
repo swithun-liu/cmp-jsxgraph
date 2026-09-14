@@ -23,3 +23,6 @@ dependencyResolutionManagement {
 rootProject.name = "cmp-jsxgraph"
 
 include(":jsxgraph-core")
+include(":jsxgraph-compose")
+include(":jsxgraph-debug-ui")
+include(":sample:androidApp")

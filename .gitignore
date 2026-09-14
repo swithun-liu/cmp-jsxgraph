@@ -4,6 +4,7 @@
 kotlin-js-store/
 .DS_Store
 **/build/
+captures/local/
 local.properties
 .env
 .env.*

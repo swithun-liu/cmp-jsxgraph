@@ -29,6 +29,15 @@ The translated probability and geometry functions retain their upstream
 source-file attribution. `src/math/probfuncs.js` and `src/math/geometry.js`
 also list Andreas Walter among their copyright holders.
 
+The debug-only visual comparison dependency includes the unmodified upstream
+distribution files:
+
+- `jsxgraph-debug-ui/src/androidMain/assets/jsxgraphcore-1.13.3.js`
+- `jsxgraph-debug-ui/src/androidMain/assets/jsxgraph-1.13.3.css`
+
+These assets are used only to render the official JSXGraph reference and remain
+covered by the JSXGraph MIT license above.
+
 The probability functions retain JSXGraph's Cephes-derived implementation:
 
 Cephes Math Library Release 2.9, November 2000. Copyright 1984, 1987, 1988,
@@ -51,3 +60,17 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Arimo
+
+The Compose renderer bundles Arimo Regular as an Arial-compatible font for
+JSXGraph text parity.
+
+Arimo is distributed under the Apache License 2.0. The complete license text
+is included at:
+
+`third_party/licenses/ARIMO-APACHE-2.0.txt`
+
+Project:
+
+https://fonts.google.com/specimen/Arimo
