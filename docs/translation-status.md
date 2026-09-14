@@ -12,7 +12,8 @@
 | Upstream source | Upstream symbols | Kotlin target | Status |
 | --- | --- | --- | --- |
 | `src/base/constants.js` | `COORDS_BY_USER`, `COORDS_BY_SCREEN` | `base/Const.kt` | Translated |
-| `src/math/math.js` | `eps`, `hypot` | `math/Mat.kt` | Translated dependency subset |
+| `src/math/math.js` | `JXG.Math` | `math/Mat.kt` | Translated |
+| `src/math/probfuncs.js` | `Mat.ProbFuncs` | `math/ProbFuncs.kt` | Translated |
 | `src/utils/event.js` | `EventEmitter.trigger`, `on`, `off` | `utils/EventEmitter.kt` | Translated |
 | `src/base/board.js` | coordinate origin, zoom, units | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |

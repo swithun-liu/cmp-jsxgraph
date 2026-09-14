@@ -25,6 +25,12 @@ Copyright (C) 2008-2012
 - Alfred Wassermann
 - Peter Wilfahrt
 
+The translated probability functions retain JSXGraph's Cephes-derived
+implementation:
+
+Cephes Math Library Release 2.9, November 2000. Copyright 1984, 1987, 1988,
+1992, 2000 by Stephen L. Moshier.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights

@@ -11,7 +11,8 @@ use. The current compatibility baseline is JSXGraph `1.13.3`.
 Implemented translation slices:
 
 - coordinate constants from `src/base/constants.js`;
-- numeric helpers used by coordinates from `src/math/math.js`;
+- core numeric, matrix, combinatoric, special and probability functions from
+  `src/math/math.js` and `src/math/probfuncs.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 
@@ -25,7 +26,9 @@ function names. This makes upstream JSXGraph changes reviewable as explicit
 translation diffs instead of independent reimplementations.
 
 See [docs/translation-status.md](docs/translation-status.md) for the exact
-upstream commit and source-to-Kotlin mapping.
+upstream commit and source-to-Kotlin mapping. Intentional edge-case
+differences are tracked in
+[docs/translation-deviations.md](docs/translation-deviations.md).
 
 The intended runtime pipeline is:
 

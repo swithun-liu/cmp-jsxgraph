@@ -10,8 +10,8 @@ package com.swithun.jsxgraph.core.base
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.EventEmitter
 import com.swithun.jsxgraph.core.utils.EventHandler
+import com.swithun.jsxgraph.core.utils.JsMath
 import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
@@ -48,9 +48,9 @@ internal class Coords(
     private fun usr2screen(doRound: Boolean?) {
         val origin = board.origin.scrCoords
         if (doRound == true) {
-            scrCoords[0] = jsRound(usrCoords[0])
-            scrCoords[1] = jsRound(usrCoords[0] * origin[1] + usrCoords[1] * board.unitX)
-            scrCoords[2] = jsRound(usrCoords[0] * origin[2] - usrCoords[2] * board.unitY)
+            scrCoords[0] = JsMath.round(usrCoords[0])
+            scrCoords[1] = JsMath.round(usrCoords[0] * origin[1] + usrCoords[1] * board.unitX)
+            scrCoords[2] = JsMath.round(usrCoords[0] * origin[2] - usrCoords[2] * board.unitY)
         } else {
             scrCoords[0] = usrCoords[0]
             scrCoords[1] = usrCoords[0] * origin[1] + usrCoords[1] * board.unitX
@@ -175,12 +175,6 @@ internal class Coords(
 
     private fun DoubleArray.valueOrNaN(index: Int): Double =
         if (index in indices) this[index] else Double.NaN
-
-    private fun jsRound(value: Double): Double = when {
-        value == 0.0 -> value
-        value < 0.0 && value >= -0.5 -> -0.0
-        else -> floor(value + 0.5)
-    }
 
     internal companion object {
         const val UPDATE_EVENT = "update"
