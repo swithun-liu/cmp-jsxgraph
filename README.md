@@ -13,10 +13,11 @@ Implemented translation slices:
 - coordinate constants from `src/base/constants.js`;
 - core numeric, matrix, combinatoric, special and probability functions from
   `src/math/math.js` and `src/math/probfuncs.js`;
+- complex arithmetic from `src/math/complex.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 
-Symbolic algebra (`src/math/symbolic.js`) is intentionally out of scope for
+Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
 
 ## Translation Model
@@ -29,6 +30,8 @@ See [docs/translation-status.md](docs/translation-status.md) for the exact
 upstream commit and source-to-Kotlin mapping. Intentional edge-case
 differences are tracked in
 [docs/translation-deviations.md](docs/translation-deviations.md).
+Production milestones and acceptance gates are tracked in
+[docs/production-roadmap.md](docs/production-roadmap.md).
 
 The intended runtime pipeline is:
 

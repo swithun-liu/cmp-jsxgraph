@@ -28,6 +28,8 @@ Copyright (C) 2008-2012
 The translated probability functions retain JSXGraph's Cephes-derived
 implementation:
 
+`src/math/probfuncs.js` also lists Andreas Walter among its copyright holders.
+
 Cephes Math Library Release 2.9, November 2000. Copyright 1984, 1987, 1988,
 1992, 2000 by Stephen L. Moshier.
 

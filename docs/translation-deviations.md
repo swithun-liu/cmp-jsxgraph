@@ -6,7 +6,7 @@ practical.
 
 ## Unsupported
 
-- `src/math/symbolic.js`: Symbolic/CAS operations and symbolic locus
+- `src/unused/symbolic.js`: Symbolic/CAS operations and symbolic locus
   derivation are not implemented.
 
 ## Kotlin Runtime Adaptations
@@ -16,6 +16,9 @@ practical.
   differently from malformed JavaScript arrays.
 - `EventEmitter` passes the registered context as an explicit callback
   argument because Kotlin has no dynamic JavaScript `this`.
+- `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
+  Extremely large values and unsupported digit counts do not reproduce
+  JavaScript `Number.toFixed` exceptions byte-for-byte.
 - Native math functions can differ from JavaScript by a few final binary
   digits. Official-reference assertions use narrow numeric tolerances.
 
