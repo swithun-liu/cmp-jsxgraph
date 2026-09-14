@@ -190,6 +190,90 @@ class NumericsTest {
     }
 
     @Test
+    fun naturalSplineMatchesOfficialReferenceAndSortsInputs() {
+        val knots = doubleArrayOf(3.0, 1.0, 2.0, 4.0)
+        val values = doubleArrayOf(9.0, 1.0, 4.0, 16.0)
+
+        val secondDerivatives = arrayValueOf(Numerics.splineDef(knots, values))
+
+        assertContentEquals(doubleArrayOf(1.0, 2.0, 3.0, 4.0), knots)
+        assertContentEquals(doubleArrayOf(1.0, 4.0, 9.0, 16.0), values)
+        assertContentEquals(doubleArrayOf(0.0, 2.4, 2.4, 0.0), secondDerivatives)
+        assertEquals(
+            expected = 6.2,
+            actual = valueOf(
+                Numerics.splineEval(2.5, knots, values, secondDerivatives),
+            ),
+        )
+        assertContentEquals(
+            expected = doubleArrayOf(1.0, 4.0, 9.0, 16.0),
+            actual = arrayValueOf(
+                Numerics.splineEval(
+                    evaluationPoints = doubleArrayOf(1.0, 2.0, 3.0, 4.0),
+                    knots = knots,
+                    values = values,
+                    secondDerivatives = secondDerivatives,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun splineDefinitionPreservesOfficialLengthAndTwoPointBehavior() {
+        val twoKnots = doubleArrayOf(2.0, 1.0)
+        val twoValues = doubleArrayOf(4.0, 1.0)
+        assertContentEquals(
+            doubleArrayOf(0.0, 0.0),
+            arrayValueOf(Numerics.splineDef(twoKnots, twoValues)),
+        )
+        assertContentEquals(doubleArrayOf(2.0, 1.0), twoKnots)
+        assertContentEquals(doubleArrayOf(4.0, 1.0), twoValues)
+
+        val knots = doubleArrayOf(3.0, 1.0, 2.0, 9.0)
+        val values = doubleArrayOf(9.0, 1.0, 4.0)
+        assertContentEquals(
+            doubleArrayOf(0.0, 3.0, 0.0),
+            arrayValueOf(Numerics.splineDef(knots, values)),
+        )
+        assertContentEquals(doubleArrayOf(1.0, 2.0, 3.0, 9.0), knots)
+        assertContentEquals(doubleArrayOf(1.0, 4.0, 9.0), values)
+    }
+
+    @Test
+    fun splineReportsInvalidDataAndOutOfDomainValues() {
+        assertIs<GMResult.Err<NumericsError.InvalidSplineDefinition>>(
+            Numerics.splineDef(doubleArrayOf(1.0), doubleArrayOf(2.0)),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidSplineEvaluation>>(
+            Numerics.splineEval(
+                value = 1.5,
+                knots = doubleArrayOf(1.0, 2.0, 3.0),
+                values = doubleArrayOf(1.0, 4.0, 9.0),
+                secondDerivatives = doubleArrayOf(0.0, 0.0),
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.SplineValueOutOfDomain>>(
+            Numerics.splineEval(
+                value = 0.5,
+                knots = doubleArrayOf(1.0, 2.0, 3.0),
+                values = doubleArrayOf(1.0, 2.0, 3.0),
+                secondDerivatives = doubleArrayOf(0.0, 0.0, 0.0),
+            ),
+        )
+
+        val arrayError = assertIs<GMResult.Err<NumericsError.SplineValueOutOfDomain>>(
+            Numerics.splineEval(
+                evaluationPoints = doubleArrayOf(1.5, 4.0),
+                knots = doubleArrayOf(1.0, 2.0, 3.0),
+                values = doubleArrayOf(1.0, 2.0, 3.0),
+                secondDerivatives = doubleArrayOf(0.0, 0.0, 0.0),
+            ),
+        )
+        assertEquals(1, arrayError.error.index)
+        assertEquals(4.0, arrayError.error.value)
+    }
+
+    @Test
     fun derivativeAndNewtonMatchOfficialReferenceValues() {
         assertEquals(
             expected = 12.00000000021184,

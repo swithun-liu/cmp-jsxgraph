@@ -33,6 +33,24 @@ sealed interface NumericsError {
     ) : NumericsError
 
     data class InvalidQuadratureOrder(val order: Int) : NumericsError
+
+    data class InvalidSplineDefinition(
+        val knotCount: Int,
+        val valueCount: Int,
+    ) : NumericsError
+
+    data class InvalidSplineEvaluation(
+        val knotCount: Int,
+        val valueCount: Int,
+        val secondDerivativeCount: Int,
+    ) : NumericsError
+
+    data class SplineValueOutOfDomain(
+        val index: Int,
+        val value: Double,
+        val start: Double,
+        val end: Double,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -447,6 +465,159 @@ object Numerics {
             }
         }
         return GMResult.Ok(halfWidth * result)
+    }
+
+    // JSXGraph: src/math/numerics.js -> splineDef
+    fun splineDef(
+        knots: DoubleArray,
+        values: DoubleArray,
+    ): GMResult<DoubleArray, NumericsError> {
+        val size = minOf(knots.size, values.size)
+        if (size < 2) {
+            return GMResult.Err(
+                NumericsError.InvalidSplineDefinition(
+                    knotCount = knots.size,
+                    valueCount = values.size,
+                ),
+            )
+        }
+        if (size == 2) {
+            return GMResult.Ok(doubleArrayOf(0.0, 0.0))
+        }
+
+        val sortedData = MutableList(size) { index -> knots[index] to values[index] }
+        sortedData.sortWith { first, second ->
+            when {
+                first.first < second.first -> -1
+                first.first > second.first -> 1
+                else -> 0
+            }
+        }
+        for (index in 0 until size) {
+            knots[index] = sortedData[index].first
+            values[index] = sortedData[index].second
+        }
+
+        val distances = DoubleArray(size - 1)
+        for (index in distances.indices) {
+            distances[index] = knots[index + 1] - knots[index]
+        }
+        val deltas = DoubleArray(size - 2)
+        for (index in deltas.indices) {
+            deltas[index] =
+                6.0 * (values[index + 2] - values[index + 1]) / distances[index + 1] -
+                6.0 * (values[index + 1] - values[index]) / distances[index]
+        }
+
+        val diagonal = DoubleArray(size - 2)
+        val forwardSolution = DoubleArray(size - 2)
+        diagonal[0] = 2.0 * (distances[0] + distances[1])
+        forwardSolution[0] = deltas[0]
+        for (index in 0 until size - 3) {
+            val factor = distances[index + 1] / diagonal[index]
+            diagonal[index + 1] =
+                2.0 * (distances[index + 1] + distances[index + 2]) -
+                factor * distances[index + 1]
+            forwardSolution[index + 1] =
+                deltas[index + 1] - factor * forwardSolution[index]
+        }
+
+        val secondDerivatives = DoubleArray(size)
+        secondDerivatives[size - 3] =
+            forwardSolution[size - 3] / diagonal[size - 3]
+        for (index in size - 4 downTo 0) {
+            secondDerivatives[index] =
+                (
+                    forwardSolution[index] -
+                        distances[index + 1] * secondDerivatives[index + 1]
+                ) / diagonal[index]
+        }
+        for (index in size - 3 downTo 0) {
+            secondDerivatives[index + 1] = secondDerivatives[index]
+        }
+        secondDerivatives[0] = 0.0
+        secondDerivatives[size - 1] = 0.0
+        return GMResult.Ok(secondDerivatives)
+    }
+
+    // JSXGraph: src/math/numerics.js -> splineEval
+    fun splineEval(
+        value: Double,
+        knots: DoubleArray,
+        values: DoubleArray,
+        secondDerivatives: DoubleArray,
+    ): GMResult<Double, NumericsError> {
+        val size = minOf(knots.size, values.size)
+        val validationError = validateSplineEvaluation(
+            size = size,
+            knotCount = knots.size,
+            valueCount = values.size,
+            secondDerivativeCount = secondDerivatives.size,
+        )
+        if (validationError != null) {
+            return GMResult.Err(validationError)
+        }
+        if (value < knots[0] || value > knots[size - 1]) {
+            return GMResult.Err(
+                NumericsError.SplineValueOutOfDomain(
+                    index = 0,
+                    value = value,
+                    start = knots[0],
+                    end = knots[size - 1],
+                ),
+            )
+        }
+        return GMResult.Ok(
+            evaluateSpline(
+                value = value,
+                knots = knots,
+                values = values,
+                secondDerivatives = secondDerivatives,
+                size = size,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> splineEval
+    fun splineEval(
+        evaluationPoints: DoubleArray,
+        knots: DoubleArray,
+        values: DoubleArray,
+        secondDerivatives: DoubleArray,
+    ): GMResult<DoubleArray, NumericsError> {
+        val size = minOf(knots.size, values.size)
+        val validationError = validateSplineEvaluation(
+            size = size,
+            knotCount = knots.size,
+            valueCount = values.size,
+            secondDerivativeCount = secondDerivatives.size,
+        )
+        if (validationError != null) {
+            return GMResult.Err(validationError)
+        }
+
+        val result = DoubleArray(evaluationPoints.size)
+        for (index in evaluationPoints.indices) {
+            val value = evaluationPoints[index]
+            if (value < knots[0] || value > knots[size - 1]) {
+                return GMResult.Err(
+                    NumericsError.SplineValueOutOfDomain(
+                        index = index,
+                        value = value,
+                        start = knots[0],
+                        end = knots[size - 1],
+                    ),
+                )
+            }
+            result[index] = evaluateSpline(
+                value = value,
+                knots = knots,
+                values = values,
+                secondDerivatives = secondDerivatives,
+                size = size,
+            )
+        }
+        return GMResult.Ok(result)
     }
 
     // JSXGraph: src/math/numerics.js -> D
@@ -968,6 +1139,54 @@ object Numerics {
             iteration += 1
         } while (iteration <= maxIterationsRoot)
         return bestPoint
+    }
+
+    private fun validateSplineEvaluation(
+        size: Int,
+        knotCount: Int,
+        valueCount: Int,
+        secondDerivativeCount: Int,
+    ): NumericsError.InvalidSplineEvaluation? =
+        if (size < 2 || secondDerivativeCount < size) {
+            NumericsError.InvalidSplineEvaluation(
+                knotCount = knotCount,
+                valueCount = valueCount,
+                secondDerivativeCount = secondDerivativeCount,
+            )
+        } else {
+            null
+        }
+
+    private fun evaluateSpline(
+        value: Double,
+        knots: DoubleArray,
+        values: DoubleArray,
+        secondDerivatives: DoubleArray,
+        size: Int,
+    ): Double {
+        var intervalIndex = 1
+        while (intervalIndex < size && value > knots[intervalIndex]) {
+            intervalIndex += 1
+        }
+        intervalIndex -= 1
+
+        val intervalWidth = knots[intervalIndex + 1] - knots[intervalIndex]
+        val constant = values[intervalIndex]
+        val linear =
+            (values[intervalIndex + 1] - values[intervalIndex]) / intervalWidth -
+                intervalWidth / 6.0 *
+                (
+                    secondDerivatives[intervalIndex + 1] +
+                        2.0 * secondDerivatives[intervalIndex]
+                )
+        val quadratic = secondDerivatives[intervalIndex] / 2.0
+        val cubic =
+            (
+                secondDerivatives[intervalIndex + 1] -
+                    secondDerivatives[intervalIndex]
+            ) / (6.0 * intervalWidth)
+        val offset = value - knots[intervalIndex]
+        return constant + (linear + (quadratic + cubic * offset) * offset) * offset
     }
 
     private fun legendreRule(order: Int): LegendreRule? = when (order) {

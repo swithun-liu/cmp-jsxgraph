@@ -31,6 +31,10 @@ practical.
   injectable `RandomSource`. Their default behavior still uses the platform
   random source; injection makes fallback and interpolation parity tests
   deterministic.
+- `Numerics.splineDef` and `Numerics.splineEval` return `GMResult` for
+  malformed spline data. Out-of-domain evaluation is reported as
+  `SplineValueOutOfDomain`; upstream returns `NaN`, including a scalar `NaN`
+  when one item in an array request is out of range.
 - `Numerics.Romberg` honors its documented default configuration. JSXGraph
   `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
