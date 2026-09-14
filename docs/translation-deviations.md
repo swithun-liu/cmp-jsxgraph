@@ -47,6 +47,11 @@ practical.
 - `Numerics.polzeros` returns `GMResult` when explicit initial roots are
   missing. Constant polynomials return an empty root array; JSXGraph `1.13.3`
   throws while constructing automatic initial roots for a nonzero constant.
+- `Numerics.RamerDouglasPeucker` and `Numerics.Visvalingam` return `GMResult`
+  for invalid simplification parameters or an invalid internal point topology.
+  The upstream implementation can recurse indefinitely or fail while indexing
+  for those inputs. Ramer-Douglas-Peucker uses an explicit work stack to avoid
+  exhausting the Kotlin call stack on adversarial curves.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is

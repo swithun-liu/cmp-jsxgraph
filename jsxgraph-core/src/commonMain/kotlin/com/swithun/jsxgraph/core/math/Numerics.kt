@@ -8,6 +8,7 @@
 package com.swithun.jsxgraph.core.math
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Coords
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -91,6 +92,12 @@ sealed interface NumericsError {
         val expectedCount: Int,
         val actualCount: Int,
     ) : NumericsError
+
+    data class InvalidSimplificationTolerance(val tolerance: Double) : NumericsError
+
+    data class InvalidSimplificationPointCount(val pointCount: Int) : NumericsError
+
+    data class InvalidSimplificationTopology(val pointIndex: Int) : NumericsError
 }
 
 enum class IntegrationType {
@@ -153,6 +160,22 @@ data class ButcherTableau(
 )
 
 object Numerics {
+    private data class PolylineSplit(
+        val distance: Double,
+        val index: Int,
+    )
+
+    private data class VisvalingamNode(
+        var volume: Double,
+        val index: Int,
+    )
+
+    private data class VisvalingamLink(
+        var left: Int?,
+        var right: Int? = null,
+        val node: VisvalingamNode?,
+    )
+
     private data class LegendreRule(
         val nodes: DoubleArray,
         val weights: DoubleArray,
@@ -1863,6 +1886,288 @@ object Numerics {
             }
         }
         return GMResult.Ok(result.toTypedArray())
+    }
+
+    // JSXGraph: src/math/numerics.js -> RamerDouglasPeucker, _RDP, _RDPfindSplit
+    internal fun RamerDouglasPeucker(
+        points: List<Coords>,
+        tolerance: Double,
+        useUserCoordinates: Boolean = false,
+    ): GMResult<List<Coords>, NumericsError> {
+        if (!tolerance.isFinite() || tolerance < 0.0) {
+            return GMResult.Err(
+                NumericsError.InvalidSimplificationTolerance(tolerance),
+            )
+        }
+
+        val simplified = mutableListOf<Coords>()
+        var start = 0
+        while (true) {
+            while (start < points.size && points[start].hasNaNScreenCoordinates()) {
+                start += 1
+            }
+
+            var end = start + 1
+            while (end < points.size && !points[end].hasNaNScreenCoordinates()) {
+                end += 1
+            }
+            end -= 1
+
+            if (start < points.size && end > start) {
+                simplified += simplifyPolylineSegment(
+                    points = points,
+                    start = start,
+                    end = end,
+                    tolerance = tolerance,
+                    useUserCoordinates = useUserCoordinates,
+                )
+            }
+            if (start >= points.size) {
+                break
+            }
+            if (
+                end < points.lastIndex &&
+                points[end + 1].hasNaNScreenCoordinates()
+            ) {
+                simplified += points[end + 1]
+            }
+            start = end + 1
+        }
+        return GMResult.Ok(simplified)
+    }
+
+    // JSXGraph: src/math/numerics.js -> Visvalingam
+    internal fun Visvalingam(
+        points: List<Coords>,
+        numberOfIntermediatePoints: Int,
+    ): GMResult<List<Coords>, NumericsError> {
+        if (numberOfIntermediatePoints < 0) {
+            return GMResult.Err(
+                NumericsError.InvalidSimplificationPointCount(
+                    numberOfIntermediatePoints,
+                ),
+            )
+        }
+        if (points.size <= 2) {
+            return GMResult.Ok(points)
+        }
+
+        val links = arrayOfNulls<VisvalingamLink>(points.size)
+        val heap = mutableListOf<VisvalingamNode>()
+        links[0] = VisvalingamLink(left = null, node = null)
+
+        var left = 0
+        for (index in 1 until points.lastIndex) {
+            val volume = triangleVolume(
+                points[index - 1],
+                points[index],
+                points[index + 1],
+            )
+            if (!volume.isNaN()) {
+                val node = VisvalingamNode(volume = volume, index = index)
+                heap += node
+                links[index] = VisvalingamLink(
+                    left = left,
+                    node = node,
+                )
+                links[left]?.right = index
+                left = index
+            }
+        }
+
+        links[points.lastIndex] = VisvalingamLink(
+            left = left,
+            node = null,
+        )
+        links[left]?.right = points.lastIndex
+
+        var lastVolume = Double.NEGATIVE_INFINITY
+        while (heap.size > numberOfIntermediatePoints) {
+            heap.sortWith { first, second ->
+                when {
+                    first.volume < second.volume -> 1
+                    first.volume > second.volume -> -1
+                    else -> 0
+                }
+            }
+
+            val removed = heap.removeAt(heap.lastIndex)
+            val removedLink = links[removed.index]
+                ?: return GMResult.Err(
+                    NumericsError.InvalidSimplificationTopology(removed.index),
+                )
+            lastVolume = removed.volume
+            val leftIndex = removedLink.left
+                ?: return GMResult.Err(
+                    NumericsError.InvalidSimplificationTopology(removed.index),
+                )
+            val rightIndex = removedLink.right
+                ?: return GMResult.Err(
+                    NumericsError.InvalidSimplificationTopology(removed.index),
+                )
+            val leftLink = links[leftIndex]
+                ?: return GMResult.Err(
+                    NumericsError.InvalidSimplificationTopology(leftIndex),
+                )
+            val rightLink = links[rightIndex]
+                ?: return GMResult.Err(
+                    NumericsError.InvalidSimplificationTopology(rightIndex),
+                )
+            leftLink.right = rightIndex
+            rightLink.left = leftIndex
+
+            leftLink.left?.let { secondLeftIndex ->
+                val volume = triangleVolume(
+                    points[secondLeftIndex],
+                    points[leftIndex],
+                    points[rightIndex],
+                )
+                leftLink.node?.volume =
+                    if (volume >= lastVolume) volume else lastVolume
+            }
+            rightLink.right?.let { secondRightIndex ->
+                val volume = triangleVolume(
+                    points[leftIndex],
+                    points[rightIndex],
+                    points[secondRightIndex],
+                )
+                rightLink.node?.volume =
+                    if (volume >= lastVolume) volume else lastVolume
+            }
+        }
+
+        val simplified = mutableListOf(points.first())
+        var index = 0
+        while (index != points.lastIndex) {
+            index = links[index]?.right
+                ?: return GMResult.Err(
+                    NumericsError.InvalidSimplificationTopology(index),
+                )
+            simplified += points[index]
+        }
+        return GMResult.Ok(simplified)
+    }
+
+    private fun simplifyPolylineSegment(
+        points: List<Coords>,
+        start: Int,
+        end: Int,
+        tolerance: Double,
+        useUserCoordinates: Boolean,
+    ): List<Coords> {
+        val keep = BooleanArray(end - start + 1)
+        keep[0] = true
+        keep[keep.lastIndex] = true
+        val pending = mutableListOf(start to end)
+
+        while (pending.isNotEmpty()) {
+            val (segmentStart, segmentEnd) = pending.removeAt(pending.lastIndex)
+            val split = rdpFindSplit(
+                points = points,
+                start = segmentStart,
+                end = segmentEnd,
+                useUserCoordinates = useUserCoordinates,
+            )
+            if (split.distance > tolerance) {
+                keep[split.index - start] = true
+                pending += segmentStart to split.index
+                pending += split.index to segmentEnd
+            }
+        }
+
+        return buildList {
+            for (index in start..end) {
+                if (keep[index - start]) {
+                    add(points[index])
+                }
+            }
+        }
+    }
+
+    private fun rdpFindSplit(
+        points: List<Coords>,
+        start: Int,
+        end: Int,
+        useUserCoordinates: Boolean,
+    ): PolylineSplit {
+        if (end - start < 2) {
+            return PolylineSplit(distance = -1.0, index = start)
+        }
+
+        val startCoordinates = points[start].coordinates(useUserCoordinates)
+        val endCoordinates = points[end].coordinates(useUserCoordinates)
+        if (startCoordinates[1].isNaN() || startCoordinates[2].isNaN()) {
+            return PolylineSplit(distance = Double.NaN, index = start)
+        }
+        if (endCoordinates[1].isNaN() || endCoordinates[2].isNaN()) {
+            return PolylineSplit(distance = Double.NaN, index = end)
+        }
+
+        val lineX = clampSimplificationDifference(
+            endCoordinates[1] - startCoordinates[1],
+        )
+        val lineY = clampSimplificationDifference(
+            endCoordinates[2] - startCoordinates[2],
+        )
+        val denominator = lineX * lineX + lineY * lineY
+        var maximumSquaredDistance = 0.0
+        var splitIndex = start
+
+        for (index in start + 1 until end) {
+            val coordinates = points[index].coordinates(useUserCoordinates)
+            if (coordinates[1].isNaN() || coordinates[2].isNaN()) {
+                return PolylineSplit(distance = Double.NaN, index = index)
+            }
+
+            var pointX = clampSimplificationDifference(
+                coordinates[1] - startCoordinates[1],
+            )
+            var pointY = clampSimplificationDifference(
+                coordinates[2] - startCoordinates[2],
+            )
+            if (denominator > Mat.eps * Mat.eps) {
+                val lambda =
+                    (pointX * lineX + pointY * lineY) / denominator
+                val boundedLambda = lambda.coerceIn(0.0, 1.0)
+                pointX -= boundedLambda * lineX
+                pointY -= boundedLambda * lineY
+            }
+            val squaredDistance = pointX * pointX + pointY * pointY
+            if (squaredDistance > maximumSquaredDistance) {
+                maximumSquaredDistance = squaredDistance
+                splitIndex = index
+            }
+        }
+        return PolylineSplit(
+            distance = sqrt(maximumSquaredDistance),
+            index = splitIndex,
+        )
+    }
+
+    private fun triangleVolume(
+        first: Coords,
+        second: Coords,
+        third: Coords,
+    ): Double = abs(
+        det(
+            arrayOf(
+                first.usrCoords,
+                second.usrCoords,
+                third.usrCoords,
+            ),
+        ),
+    )
+
+    private fun Coords.coordinates(useUserCoordinates: Boolean): DoubleArray =
+        if (useUserCoordinates) usrCoords else scrCoords
+
+    private fun Coords.hasNaNScreenCoordinates(): Boolean =
+        (scrCoords[1] + scrCoords[2]).isNaN()
+
+    private fun clampSimplificationDifference(value: Double): Double = when (value) {
+        Double.POSITIVE_INFINITY -> 10000.0
+        Double.NEGATIVE_INFINITY -> -10000.0
+        else -> value
     }
 
     private fun fzeroBracketed(
