@@ -47,6 +47,10 @@ practical.
 - `Numerics.polzeros` returns `GMResult` when explicit initial roots are
   missing. Constant polynomials return an empty root array; JSXGraph `1.13.3`
   throws while constructing automatic initial roots for a nonzero constant.
+- The translated geometry primitives accept homogeneous coordinate and
+  standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
+  `Coords` overloads will wrap these functions when the element model is
+  translated; `PerpendicularPointRole` preserves identity-dependent branches.
 - `Numerics.Romberg` honors its documented default configuration. JSXGraph
   `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.

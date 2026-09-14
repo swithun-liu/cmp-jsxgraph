@@ -186,12 +186,86 @@ class GeometryTest {
     }
 
     @Test
+    fun geometricConstructionsMatchOfficialReferences() {
+        val origin = doubleArrayOf(1.0, 0.0, 0.0)
+        val horizontalPoint = doubleArrayOf(1.0, 2.0, 0.0)
+        val verticalPoint = doubleArrayOf(1.0, 0.0, 2.0)
+
+        assertContentEquals(
+            doubleArrayOf(
+                1.0,
+                0.7071067811865476,
+                0.7071067811865475,
+            ),
+            Geometry.angleBisector(
+                first = doubleArrayOf(1.0, 1.0, 0.0),
+                vertex = origin,
+                third = doubleArrayOf(1.0, 0.0, 1.0),
+            ),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 1.0, -3.0),
+            Geometry.reflection(
+                lineFirst = origin,
+                lineSecond = horizontalPoint,
+                point = doubleArrayOf(1.0, 1.0, 3.0),
+            ),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 1.2246467991473532e-16, 2.0),
+            Geometry.rotation(origin, horizontalPoint, PI / 2.0),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 1.0, 1.0),
+            Geometry.circumcenter(origin, horizontalPoint, verticalPoint),
+        )
+    }
+
+    @Test
+    fun perpendicularConstructionMatchesOfficialPointRoles() {
+        val first = doubleArrayOf(1.0, 0.0, 0.0)
+        val second = doubleArrayOf(1.0, 2.0, 0.0)
+        val general = Geometry.perpendicular(
+            lineFirst = first,
+            lineSecond = second,
+            point = doubleArrayOf(1.0, 1.0, 3.0),
+        )
+        assertContentEquals(doubleArrayOf(1.0, 1.0, -0.0), general.point)
+        assertTrue(general.change)
+
+        val atFirst = Geometry.perpendicular(
+            lineFirst = first,
+            lineSecond = second,
+            point = first,
+            pointRole = PerpendicularPointRole.FIRST_LINE_POINT,
+        )
+        assertContentEquals(doubleArrayOf(1.0, 0.0, -2.0), atFirst.point)
+        assertTrue(atFirst.change)
+
+        val atSecond = Geometry.perpendicular(
+            lineFirst = first,
+            lineSecond = second,
+            point = second,
+            pointRole = PerpendicularPointRole.SECOND_LINE_POINT,
+        )
+        assertContentEquals(doubleArrayOf(1.0, 2.0, 2.0), atSecond.point)
+        assertFalse(atSecond.change)
+    }
+
+    @Test
     fun lineAndCircleIntersectionsMatchOfficialReferences() {
         val verticalAxis = line(0.0, 1.0, 0.0)
         val horizontalAxis = line(0.0, 0.0, 1.0)
         assertContentEquals(
             doubleArrayOf(1.0, 0.0, 0.0),
             Geometry.meetLineLine(verticalAxis, horizontalAxis),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 0.0),
+            Geometry.meetLineLine(
+                line(0.0, 2.0, 0.0),
+                line(0.0, 0.0, 3.0),
+            ),
         )
         assertContentEquals(
             doubleArrayOf(0.0, -0.0, 1.0),

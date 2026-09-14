@@ -19,6 +19,17 @@ data class SegmentIntersection(
     val secondParameter: Double,
 )
 
+enum class PerpendicularPointRole {
+    FIRST_LINE_POINT,
+    SECOND_LINE_POINT,
+    OTHER,
+}
+
+data class PerpendicularResult(
+    val point: DoubleArray,
+    val change: Boolean,
+)
+
 object Geometry {
     // JSXGraph: src/math/geometry.js -> angle
     fun angle(
@@ -62,6 +73,226 @@ object Geometry {
             result += 6.2831853071795862
         }
         return result
+    }
+
+    // JSXGraph: src/math/geometry.js -> angleBisector
+    fun angleBisector(
+        first: DoubleArray,
+        vertex: DoubleArray,
+        third: DoubleArray,
+    ): DoubleArray {
+        if (vertex.valueOrNaN(0) == 0.0) {
+            return doubleArrayOf(
+                1.0,
+                (first.valueOrNaN(1) + third.valueOrNaN(1)) * 0.5,
+                (first.valueOrNaN(2) + third.valueOrNaN(2)) * 0.5,
+            )
+        }
+
+        val firstAngle = atan2(
+            first.valueOrNaN(2) - vertex.valueOrNaN(2),
+            first.valueOrNaN(1) - vertex.valueOrNaN(1),
+        )
+        val thirdAngle = atan2(
+            third.valueOrNaN(2) - vertex.valueOrNaN(2),
+            third.valueOrNaN(1) - vertex.valueOrNaN(1),
+        )
+        var angle = (firstAngle + thirdAngle) * 0.5
+        if (firstAngle > thirdAngle) {
+            angle += PI
+        }
+        return doubleArrayOf(
+            1.0,
+            kotlin.math.cos(angle) + vertex.valueOrNaN(1),
+            kotlin.math.sin(angle) + vertex.valueOrNaN(2),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> reflection
+    fun reflection(
+        lineFirst: DoubleArray,
+        lineSecond: DoubleArray,
+        point: DoubleArray,
+    ): DoubleArray {
+        val horizontalDirection =
+            lineSecond.valueOrNaN(1) - lineFirst.valueOrNaN(1)
+        val verticalDirection =
+            lineSecond.valueOrNaN(2) - lineFirst.valueOrNaN(2)
+        val horizontalOffset =
+            point.valueOrNaN(1) - lineFirst.valueOrNaN(1)
+        val verticalOffset =
+            point.valueOrNaN(2) - lineFirst.valueOrNaN(2)
+        val scale =
+            (
+                horizontalDirection * verticalOffset -
+                    verticalDirection * horizontalOffset
+            ) /
+                (
+                    horizontalDirection * horizontalDirection +
+                        verticalDirection * verticalDirection
+                )
+        return doubleArrayOf(
+            1.0,
+            point.valueOrNaN(1) + 2.0 * scale * verticalDirection,
+            point.valueOrNaN(2) - 2.0 * scale * horizontalDirection,
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> rotation
+    fun rotation(
+        center: DoubleArray,
+        point: DoubleArray,
+        angle: Double,
+    ): DoubleArray {
+        val horizontal = point.valueOrNaN(1) - center.valueOrNaN(1)
+        val vertical = point.valueOrNaN(2) - center.valueOrNaN(2)
+        val cosine = kotlin.math.cos(angle)
+        val sine = kotlin.math.sin(angle)
+        return doubleArrayOf(
+            1.0,
+            horizontal * cosine - vertical * sine + center.valueOrNaN(1),
+            horizontal * sine + vertical * cosine + center.valueOrNaN(2),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> perpendicular
+    fun perpendicular(
+        lineFirst: DoubleArray,
+        lineSecond: DoubleArray,
+        point: DoubleArray,
+        pointRole: PerpendicularPointRole = PerpendicularPointRole.OTHER,
+    ): PerpendicularResult {
+        val line = normalizedLine(lineFirst, lineSecond)
+        var horizontal: Double
+        var vertical: Double
+        var homogeneous: Double
+        var change: Boolean
+
+        when (pointRole) {
+            PerpendicularPointRole.FIRST_LINE_POINT -> {
+                horizontal =
+                    lineFirst.valueOrNaN(1) +
+                        lineSecond.valueOrNaN(2) -
+                        lineFirst.valueOrNaN(2)
+                vertical =
+                    lineFirst.valueOrNaN(2) -
+                        lineSecond.valueOrNaN(1) +
+                        lineFirst.valueOrNaN(1)
+                homogeneous =
+                    lineFirst.valueOrNaN(0) * lineSecond.valueOrNaN(0)
+                if (abs(homogeneous) < Mat.eps) {
+                    horizontal = lineSecond.valueOrNaN(2)
+                    vertical = -lineSecond.valueOrNaN(1)
+                }
+                change = true
+            }
+
+            PerpendicularPointRole.SECOND_LINE_POINT -> {
+                horizontal =
+                    lineSecond.valueOrNaN(1) +
+                        lineFirst.valueOrNaN(2) -
+                        lineSecond.valueOrNaN(2)
+                vertical =
+                    lineSecond.valueOrNaN(2) -
+                        lineFirst.valueOrNaN(1) +
+                        lineSecond.valueOrNaN(1)
+                homogeneous =
+                    lineFirst.valueOrNaN(0) * lineSecond.valueOrNaN(0)
+                if (abs(homogeneous) < Mat.eps) {
+                    horizontal = lineFirst.valueOrNaN(2)
+                    vertical = -lineFirst.valueOrNaN(1)
+                }
+                change = false
+            }
+
+            PerpendicularPointRole.OTHER -> {
+                val lineValue =
+                    point.valueOrNaN(0) * line[0] +
+                        point.valueOrNaN(1) * line[1] +
+                        point.valueOrNaN(2) * line[2]
+                if (abs(lineValue) < Mat.eps) {
+                    horizontal =
+                        point.valueOrNaN(1) +
+                            lineSecond.valueOrNaN(2) -
+                            point.valueOrNaN(2)
+                    vertical =
+                        point.valueOrNaN(2) -
+                            lineSecond.valueOrNaN(1) +
+                            point.valueOrNaN(1)
+                    homogeneous = lineSecond.valueOrNaN(0)
+                    if (abs(homogeneous) < Mat.eps) {
+                        horizontal = lineSecond.valueOrNaN(2)
+                        vertical = -lineSecond.valueOrNaN(1)
+                    }
+
+                    change = true
+                    if (
+                        abs(homogeneous) > Mat.eps &&
+                        abs(horizontal - point.valueOrNaN(1)) < Mat.eps &&
+                        abs(vertical - point.valueOrNaN(2)) < Mat.eps
+                    ) {
+                        horizontal =
+                            point.valueOrNaN(1) +
+                                lineFirst.valueOrNaN(2) -
+                                point.valueOrNaN(2)
+                        vertical =
+                            point.valueOrNaN(2) -
+                                lineFirst.valueOrNaN(1) +
+                                point.valueOrNaN(1)
+                        change = false
+                    }
+                } else {
+                    var perpendicularLine =
+                        crossProduct(
+                            doubleArrayOf(0.0, line[1], line[2]),
+                            point,
+                        )
+                    perpendicularLine = crossProduct(perpendicularLine, line)
+                    return PerpendicularResult(
+                        point = normalizeHomogeneous(perpendicularLine),
+                        change = true,
+                    )
+                }
+            }
+        }
+        return PerpendicularResult(
+            point = normalizeHomogeneous(
+                doubleArrayOf(homogeneous, horizontal, vertical),
+            ),
+            change = change,
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> circumcenter
+    fun circumcenter(
+        first: DoubleArray,
+        second: DoubleArray,
+        third: DoubleArray,
+    ): DoubleArray {
+        var direction = doubleArrayOf(
+            second.valueOrNaN(0) - first.valueOrNaN(0),
+            -second.valueOrNaN(2) + first.valueOrNaN(2),
+            second.valueOrNaN(1) - first.valueOrNaN(1),
+        )
+        var midpoint = doubleArrayOf(
+            (first.valueOrNaN(0) + second.valueOrNaN(0)) * 0.5,
+            (first.valueOrNaN(1) + second.valueOrNaN(1)) * 0.5,
+            (first.valueOrNaN(2) + second.valueOrNaN(2)) * 0.5,
+        )
+        val firstBisector = crossProduct(direction, midpoint)
+
+        direction = doubleArrayOf(
+            third.valueOrNaN(0) - second.valueOrNaN(0),
+            -third.valueOrNaN(2) + second.valueOrNaN(2),
+            third.valueOrNaN(1) - second.valueOrNaN(1),
+        )
+        midpoint = doubleArrayOf(
+            (second.valueOrNaN(0) + third.valueOrNaN(0)) * 0.5,
+            (second.valueOrNaN(1) + third.valueOrNaN(1)) * 0.5,
+            (second.valueOrNaN(2) + third.valueOrNaN(2)) * 0.5,
+        )
+        val secondBisector = crossProduct(direction, midpoint)
+        return normalizeHomogeneous(crossProduct(firstBisector, secondBisector))
     }
 
     // JSXGraph: src/math/geometry.js -> distance
@@ -266,7 +497,7 @@ object Geometry {
         if (abs(result[0]) < 1.0e-14) {
             result[0] = 0.0
         }
-        return result
+        return normalizeHomogeneous(result)
     }
 
     // JSXGraph: src/math/geometry.js -> meetLineCircle
@@ -471,6 +702,29 @@ object Geometry {
         first.valueOrNaN(0) * second.valueOrNaN(1) -
             first.valueOrNaN(1) * second.valueOrNaN(0),
     )
+
+    private fun normalizedLine(
+        first: DoubleArray,
+        second: DoubleArray,
+    ): DoubleArray {
+        val crossProduct = crossProduct(first, second)
+        val norm = Mat.hypot(crossProduct[1], crossProduct[2])
+        if (norm != 0.0) {
+            crossProduct[0] /= norm
+            crossProduct[1] /= norm
+            crossProduct[2] /= norm
+        }
+        return crossProduct
+    }
+
+    private fun normalizeHomogeneous(coordinates: DoubleArray): DoubleArray {
+        if (coordinates[0] != 0.0 && coordinates[0] != 1.0) {
+            coordinates[1] /= coordinates[0]
+            coordinates[2] /= coordinates[0]
+            coordinates[0] /= coordinates[0]
+        }
+        return coordinates
+    }
 
     private fun DoubleArray.valueOrNaN(index: Int): Double =
         if (index in indices) this[index] else Double.NaN
