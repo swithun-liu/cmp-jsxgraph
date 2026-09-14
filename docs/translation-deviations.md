@@ -21,6 +21,9 @@ practical.
   JavaScript `Number.toFixed` exceptions byte-for-byte.
 - Native math functions can differ from JavaScript by a few final binary
   digits. Official-reference assertions use narrow numeric tolerances.
+- Statistics filters `NaN` values before sorting percentile and boxplot data.
+  Upstream filters after sorting, which makes results depend on the
+  JavaScript engine's sort behavior when the comparator receives `NaN`.
 
 ## Safety Guards
 

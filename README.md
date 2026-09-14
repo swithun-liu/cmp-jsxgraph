@@ -14,6 +14,8 @@ Implemented translation slices:
 - core numeric, matrix, combinatoric, special and probability functions from
   `src/math/math.js` and `src/math/probfuncs.js`;
 - complex arithmetic from `src/math/complex.js`;
+- deterministic statistics and vectorized arithmetic from
+  `src/math/statistics.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 
