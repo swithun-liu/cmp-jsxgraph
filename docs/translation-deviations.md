@@ -44,6 +44,9 @@ practical.
 - Gauss-Kronrod and QAG integration return `GMResult` for invalid intervals,
   workspace limits, and impossible tolerance configurations. QAG exposes the
   three upstream quadrature rules through `GaussKronrodRule`.
+- `Numerics.polzeros` returns `GMResult` when explicit initial roots are
+  missing. Constant polynomials return an empty root array; JSXGraph `1.13.3`
+  throws while constructing automatic initial roots for a nonzero constant.
 - `Numerics.Romberg` honors its documented default configuration. JSXGraph
   `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.

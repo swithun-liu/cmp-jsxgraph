@@ -18,8 +18,8 @@ Implemented translation slices:
   arithmetic from `src/math/statistics.js`;
 - linear systems, determinants, symmetric eigensystems, fixed and adaptive
   integration, natural cubic splines, scalar and multidimensional root
-  finding, domain search, minimization, and Runge-Kutta ODE solvers from
-  `src/math/numerics.js`;
+  finding, complex polynomial roots, domain search, minimization, and
+  Runge-Kutta ODE solvers from `src/math/numerics.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 

@@ -314,6 +314,81 @@ class NumericsTest {
     }
 
     @Test
+    fun polynomialRootsMatchOfficialRealCoefficientReferences() {
+        assertComplexArrayEquals(
+            expected = arrayOf(
+                Complex(-1.0, -3.308722450212111e-24),
+                Complex(1.0, -6.949735925632083e-17),
+            ),
+            actual = rootsValueOf(Numerics.polzeros(doubleArrayOf(-1.0, 0.0, 1.0))),
+            tolerance = 1e-15,
+        )
+        assertComplexArrayEquals(
+            expected = arrayOf(
+                Complex(0.0, 0.0),
+                Complex(0.0, 0.0),
+                Complex(1.0, 0.0),
+            ),
+            actual = rootsValueOf(
+                Numerics.polzeros(doubleArrayOf(0.0, 0.0, -1.0, 1.0)),
+            ),
+            tolerance = 1e-15,
+        )
+        assertComplexArrayEquals(
+            expected = arrayOf(Complex(-1.0), Complex(1.0)),
+            actual = rootsValueOf(
+                Numerics.polzeros(
+                    coefficients = doubleArrayOf(-1.0, 0.0, 1.0, 5.0),
+                    degree = 2,
+                ),
+            ),
+            tolerance = 1e-15,
+        )
+    }
+
+    @Test
+    fun polynomialRootsMatchOfficialComplexCoefficientReference() {
+        assertComplexArrayEquals(
+            expected = arrayOf(
+                Complex(-0.7071067811865477, -0.7071067811865475),
+                Complex(0.7071067811865476, 0.7071067811865475),
+            ),
+            actual = rootsValueOf(
+                Numerics.polzeros(
+                    arrayOf(
+                        Complex(0.0, -1.0),
+                        Complex(),
+                        Complex(1.0),
+                    ),
+                ),
+            ),
+            tolerance = 1e-15,
+        )
+    }
+
+    @Test
+    fun polynomialRootsHandleDegenerateInputsWithoutMutationOrExceptions() {
+        val coefficients = doubleArrayOf(-1.0, 0.0, 1.0, 0.0, 0.0)
+        assertComplexArrayEquals(
+            expected = arrayOf(Complex(-1.0), Complex(1.0)),
+            actual = rootsValueOf(Numerics.polzeros(coefficients)),
+            tolerance = 1e-15,
+        )
+        assertContentEquals(doubleArrayOf(-1.0, 0.0, 1.0, 0.0, 0.0), coefficients)
+        assertEquals(0, rootsValueOf(Numerics.polzeros(doubleArrayOf(2.0))).size)
+        assertEquals(
+            0,
+            rootsValueOf(Numerics.polzeros(doubleArrayOf(0.0, 0.0, 0.0))).size,
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidInitialRootCount>>(
+            Numerics.polzeros(
+                coefficients = doubleArrayOf(-1.0, 0.0, 1.0),
+                initialValues = arrayOf(Complex()),
+            ),
+        )
+    }
+
+    @Test
     fun naturalSplineMatchesOfficialReferenceAndSortsInputs() {
         val knots = doubleArrayOf(3.0, 1.0, 2.0, 4.0)
         val values = doubleArrayOf(9.0, 1.0, 4.0, 16.0)
@@ -864,6 +939,32 @@ class NumericsTest {
     private fun gaussKronrodValueOf(
         result: GMResult<GaussKronrodResult, NumericsError>,
     ): GaussKronrodResult = assertIs<GMResult.Ok<GaussKronrodResult>>(result).value
+
+    private fun rootsValueOf(
+        result: GMResult<Array<Complex>, NumericsError>,
+    ): Array<Complex> = assertIs<GMResult.Ok<Array<Complex>>>(result).value
+
+    private fun assertComplexArrayEquals(
+        expected: Array<Complex>,
+        actual: Array<Complex>,
+        tolerance: Double,
+    ) {
+        assertEquals(expected.size, actual.size)
+        for (index in expected.indices) {
+            assertEquals(
+                expected = expected[index].real,
+                actual = actual[index].real,
+                absoluteTolerance = tolerance,
+                message = "Real mismatch at root $index",
+            )
+            assertEquals(
+                expected = expected[index].imaginary,
+                actual = actual[index].imaginary,
+                absoluteTolerance = tolerance,
+                message = "Imaginary mismatch at root $index",
+            )
+        }
+    }
 
     private fun assertMatrixEquals(
         expected: Array<DoubleArray>,

@@ -86,6 +86,11 @@ sealed interface NumericsError {
         val epsilonRelative: Double,
         val epsilonAbsolute: Double,
     ) : NumericsError
+
+    data class InvalidInitialRootCount(
+        val expectedCount: Int,
+        val actualCount: Int,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -1758,6 +1763,108 @@ object Numerics {
         return GMResult.Ok(best)
     }
 
+    // JSXGraph: src/math/numerics.js -> polzeros
+    fun polzeros(
+        coefficients: DoubleArray,
+        degree: Int? = null,
+        tolerance: Double = 2.220446049250313e-16,
+        maxIterations: Int = 30,
+        initialValues: Array<Complex>? = null,
+    ): GMResult<Array<Complex>, NumericsError> =
+        polzeros(
+            coefficients = Array(coefficients.size) { index ->
+                Complex(coefficients[index])
+            },
+            degree = degree,
+            tolerance = tolerance,
+            maxIterations = maxIterations,
+            initialValues = initialValues,
+        )
+
+    // JSXGraph: src/math/numerics.js -> polzeros
+    fun polzeros(
+        coefficients: Array<Complex>,
+        degree: Int? = null,
+        tolerance: Double = 2.220446049250313e-16,
+        maxIterations: Int = 30,
+        initialValues: Array<Complex>? = null,
+    ): GMResult<Array<Complex>, NumericsError> {
+        var coefficientCount = coefficients.size
+        if (degree != null && degree >= 0 && degree < coefficientCount - 1) {
+            coefficientCount = degree + 1
+        }
+
+        val complexCoefficients = ArrayList<Complex>(coefficientCount)
+        for (index in 0 until coefficientCount) {
+            complexCoefficients.add(Complex(coefficients[index]))
+        }
+
+        val firstNonZero = complexCoefficients.indexOfFirst { coefficient ->
+            coefficient.real != 0.0 || coefficient.imaginary != 0.0
+        }.let { index -> if (index < 0) 0 else index }
+        val obviousRoots = ArrayList<Complex>(firstNonZero)
+        repeat(firstNonZero) {
+            obviousRoots.add(Complex())
+        }
+        if (firstNonZero > 0) {
+            repeat(firstNonZero) {
+                complexCoefficients.removeAt(0)
+            }
+        }
+
+        while (
+            complexCoefficients.isNotEmpty() &&
+            complexCoefficients.last().real == 0.0 &&
+            complexCoefficients.last().imaginary == 0.0
+        ) {
+            complexCoefficients.removeAt(complexCoefficients.lastIndex)
+        }
+        if (complexCoefficients.size <= 1) {
+            return GMResult.Ok(obviousRoots.toTypedArray())
+        }
+
+        val rootCount = complexCoefficients.size - 1
+        val roots = if (initialValues != null) {
+            if (initialValues.size < rootCount) {
+                return GMResult.Err(
+                    NumericsError.InvalidInitialRootCount(
+                        expectedCount = rootCount,
+                        actualCount = initialValues.size,
+                    ),
+                )
+            }
+            Array(rootCount) { index -> Complex(initialValues[index]) }
+        } else {
+            initialPolynomialRoots(complexCoefficients)
+        }
+
+        val effectiveTolerance =
+            if (tolerance == 0.0 || tolerance.isNaN()) {
+                2.220446049250313e-16
+            } else {
+                tolerance
+            }
+        val effectiveMaxIterations = if (maxIterations == 0) 30 else maxIterations
+        aberthIteration(
+            coefficients = complexCoefficients,
+            tolerance = effectiveTolerance,
+            maxIterations = effectiveMaxIterations,
+            roots = roots,
+        )
+
+        val result = ArrayList<Complex>(obviousRoots.size + roots.size)
+        result.addAll(obviousRoots)
+        result.addAll(roots)
+        result.sortWith { first, second ->
+            when {
+                first.real < second.real -> -1
+                first.real > second.real -> 1
+                else -> 0
+            }
+        }
+        return GMResult.Ok(result.toTypedArray())
+    }
+
     private fun fzeroBracketed(
         function: (Double) -> Double,
         initialStart: Double,
@@ -1934,6 +2041,168 @@ object Numerics {
             iteration += 1
         } while (iteration <= maxIterationsRoot)
         return bestPoint
+    }
+
+    private fun hornerComplex(
+        coefficients: List<Complex>,
+        value: Complex,
+        derivative: Boolean = false,
+    ): Complex {
+        val degree = coefficients.size - 1
+        var result = if (derivative) {
+            C.mult(degree.toDouble(), coefficients[degree])
+        } else {
+            C.copy(coefficients[degree])
+        }
+        val end = if (derivative) 1 else 0
+        for (index in degree - 1 downTo end) {
+            result.mult(value)
+            result.add(
+                if (derivative) {
+                    C.mult(coefficients[index], index.toDouble())
+                } else {
+                    coefficients[index]
+                },
+            )
+        }
+        return result
+    }
+
+    private fun hornerReciprocal(
+        coefficients: List<Complex>,
+        value: Complex,
+        derivative: Boolean = false,
+    ): Complex {
+        val degree = coefficients.size - 1
+        var result = if (derivative) {
+            C.mult(degree.toDouble(), coefficients[0])
+        } else {
+            C.copy(coefficients[0])
+        }
+        val end = if (derivative) 1 else 0
+        for (index in degree - 1 downTo end) {
+            result.mult(value)
+            result.add(
+                if (derivative) {
+                    C.mult(coefficients[degree - index], index.toDouble())
+                } else {
+                    coefficients[degree - index]
+                },
+            )
+        }
+        return result
+    }
+
+    private fun hornerReal(
+        coefficients: DoubleArray,
+        value: Double,
+    ): Double {
+        var result = coefficients.last()
+        for (index in coefficients.lastIndex - 1 downTo 0) {
+            result = result * value + coefficients[index]
+        }
+        return result
+    }
+
+    private fun initialPolynomialRoots(
+        coefficients: List<Complex>,
+    ): Array<Complex> {
+        val degree = coefficients.size - 1
+        val angleStep = kotlin.math.PI * 2.0 / degree
+        val initialAngle = kotlin.math.PI / degree * 0.5
+        val center = C.mult(-1.0, coefficients[degree - 1])
+        center.div(C.mult(degree.toDouble(), coefficients[degree]))
+
+        val polynomialAtCenter = C.div(
+            hornerComplex(coefficients, center),
+            coefficients[degree],
+        )
+        var radius = C.abs(polynomialAtCenter).pow(1.0 / degree)
+        if (radius == 0.0) {
+            radius = 1.0
+        }
+        return Array(degree) { index ->
+            C.add(
+                center,
+                Complex(
+                    real = radius * cos(angleStep * index + initialAngle),
+                    imaginary = radius * sin(angleStep * index + initialAngle),
+                ),
+            )
+        }
+    }
+
+    private fun aberthIteration(
+        coefficients: List<Complex>,
+        tolerance: Double,
+        maxIterations: Int,
+        roots: Array<Complex>,
+    ) {
+        val done = BooleanArray(roots.size)
+        val stoppingCoefficients = DoubleArray(coefficients.size) { index ->
+            C.abs(coefficients[index]) * (4.0 * index + 1.0)
+        }
+        var completedCount = 0
+
+        for (iteration in 0 until maxIterations) {
+            if (completedCount >= roots.size) {
+                break
+            }
+            for (rootIndex in roots.indices) {
+                if (done[rootIndex]) {
+                    continue
+                }
+
+                var numerator = hornerComplex(coefficients, roots[rootIndex])
+                val rootMagnitude = C.abs(roots[rootIndex])
+                if (
+                    C.abs(numerator) <
+                    tolerance * hornerReal(stoppingCoefficients, rootMagnitude)
+                ) {
+                    done[rootIndex] = true
+                    completedCount += 1
+                    if (completedCount == roots.size) {
+                        break
+                    }
+                    continue
+                }
+
+                if (rootMagnitude > 1.0) {
+                    val reciprocalRoot = C.div(1.0, roots[rootIndex])
+                    val derivative = hornerReciprocal(
+                        coefficients,
+                        reciprocalRoot,
+                        derivative = true,
+                    )
+                    derivative.div(hornerReciprocal(coefficients, reciprocalRoot))
+                    derivative.mult(reciprocalRoot)
+                    numerator = C.sub(roots.size.toDouble(), derivative)
+                    numerator = C.div(roots[rootIndex], numerator)
+                } else {
+                    numerator.div(
+                        hornerComplex(
+                            coefficients,
+                            roots[rootIndex],
+                            derivative = true,
+                        ),
+                    )
+                }
+
+                var denominator = Complex()
+                for (otherIndex in roots.indices) {
+                    if (otherIndex == rootIndex) {
+                        continue
+                    }
+                    val reciprocalDifference =
+                        C.div(1.0, C.sub(roots[rootIndex], roots[otherIndex]))
+                    denominator.add(reciprocalDifference)
+                }
+                denominator.mult(numerator)
+                denominator = C.sub(1.0, denominator)
+                numerator.div(denominator)
+                roots[rootIndex].sub(numerator)
+            }
+        }
     }
 
     private fun applyGaussKronrod(
