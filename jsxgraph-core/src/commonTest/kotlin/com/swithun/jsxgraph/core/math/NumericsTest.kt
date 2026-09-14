@@ -274,6 +274,134 @@ class NumericsTest {
     }
 
     @Test
+    fun generalizedDampedNewtonMatchesOfficialTwoDimensionalReference() {
+        val initialValues = doubleArrayOf(1.0, 1.0)
+        val result = dampedNewtonValueOf(
+            Numerics.generalizedDampedNewton(
+                function = { parameters, _ ->
+                    doubleArrayOf(
+                        parameters[0] * parameters[0] + parameters[1] - 3.0,
+                        parameters[0] + parameters[1] * parameters[1] - 3.0,
+                    )
+                },
+                jacobian = { parameters, _ ->
+                    arrayOf(
+                        doubleArrayOf(2.0 * parameters[0], 1.0),
+                        doubleArrayOf(1.0, 2.0 * parameters[1]),
+                    )
+                },
+                dimension = 2,
+                initialValues = initialValues,
+                damping = 0.85,
+                epsilon = 1e-18,
+                maxSteps = 40,
+            ),
+        )
+
+        assertContentEquals(
+            expected = doubleArrayOf(1.3027756376239115, 1.3027756376239115),
+            actual = result.parameters,
+        )
+        assertEquals(3.037312195830457e-19, result.squaredResidual)
+        assertContentEquals(doubleArrayOf(1.0, 1.0), initialValues)
+    }
+
+    @Test
+    fun generalizedDampedNewtonMatchesOfficialArbitraryDimensionReference() {
+        val function = { parameters: DoubleArray, _: Int ->
+            doubleArrayOf(
+                parameters[0] - 1.0,
+                2.0 * parameters[1] - 4.0,
+                3.0 * parameters[2] - 9.0,
+            )
+        }
+        val jacobian = { _: DoubleArray, _: Int ->
+            arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0),
+                doubleArrayOf(0.0, 2.0, 0.0),
+                doubleArrayOf(0.0, 0.0, 3.0),
+            )
+        }
+        val result = dampedNewtonValueOf(
+            Numerics.generalizedDampedNewton(
+                function = function,
+                jacobian = jacobian,
+                dimension = 3,
+                initialValues = doubleArrayOf(0.0, 0.0, 0.0),
+                damping = 0.85,
+                epsilon = 1e-18,
+                maxSteps = 0,
+            ),
+        )
+
+        assertContentEquals(
+            expected = doubleArrayOf(
+                0.999999999980538,
+                1.999999999961076,
+                2.9999999999416143,
+            ),
+            actual = result.parameters,
+        )
+        assertEquals(3.7119280338439306e-20, result.squaredResidual)
+    }
+
+    @Test
+    fun generalizedDampedNewtonReportsMalformedAndSingularSystems() {
+        val constantFunction = { _: DoubleArray, dimension: Int ->
+            DoubleArray(dimension) { 1.0 }
+        }
+        val identityJacobian = { _: DoubleArray, dimension: Int ->
+            Mat.identity(dimension)
+        }
+
+        assertIs<GMResult.Err<NumericsError.InvalidSystemDimension>>(
+            Numerics.generalizedDampedNewton(
+                function = constantFunction,
+                jacobian = identityJacobian,
+                dimension = 3,
+                initialValues = doubleArrayOf(0.0, 0.0),
+                damping = 1.0,
+                epsilon = 1e-12,
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidFunctionResult>>(
+            Numerics.generalizedDampedNewton(
+                function = { _, _ -> doubleArrayOf(1.0) },
+                jacobian = identityJacobian,
+                dimension = 2,
+                initialValues = doubleArrayOf(0.0, 0.0),
+                damping = 1.0,
+                epsilon = 1e-12,
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidJacobian>>(
+            Numerics.generalizedDampedNewton(
+                function = constantFunction,
+                jacobian = { _, _ -> arrayOf(doubleArrayOf(1.0, 0.0)) },
+                dimension = 2,
+                initialValues = doubleArrayOf(0.0, 0.0),
+                damping = 1.0,
+                epsilon = 1e-12,
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.SingularMatrix>>(
+            Numerics.generalizedDampedNewton(
+                function = constantFunction,
+                jacobian = { _, _ ->
+                    arrayOf(
+                        doubleArrayOf(1.0, 2.0),
+                        doubleArrayOf(2.0, 4.0),
+                    )
+                },
+                dimension = 2,
+                initialValues = doubleArrayOf(0.0, 0.0),
+                damping = 1.0,
+                epsilon = 1e-12,
+            ),
+        )
+    }
+
+    @Test
     fun derivativeAndNewtonMatchOfficialReferenceValues() {
         assertEquals(
             expected = 12.00000000021184,
@@ -432,6 +560,10 @@ class NumericsTest {
     private fun arrayValueOf(
         result: GMResult<DoubleArray, NumericsError>,
     ): DoubleArray = assertIs<GMResult.Ok<DoubleArray>>(result).value
+
+    private fun dampedNewtonValueOf(
+        result: GMResult<DampedNewtonResult, NumericsError>,
+    ): DampedNewtonResult = assertIs<GMResult.Ok<DampedNewtonResult>>(result).value
 
     private fun assertMatrixEquals(
         expected: Array<DoubleArray>,

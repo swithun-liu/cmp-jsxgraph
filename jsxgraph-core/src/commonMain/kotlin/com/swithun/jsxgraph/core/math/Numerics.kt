@@ -51,6 +51,22 @@ sealed interface NumericsError {
         val start: Double,
         val end: Double,
     ) : NumericsError
+
+    data class InvalidSystemDimension(
+        val dimension: Int,
+        val initialValueCount: Int,
+    ) : NumericsError
+
+    data class InvalidFunctionResult(
+        val expectedCount: Int,
+        val actualCount: Int,
+    ) : NumericsError
+
+    data class InvalidJacobian(
+        val expectedDimension: Int,
+        val rowCount: Int,
+        val shortestRowSize: Int,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -72,6 +88,11 @@ data class RombergConfig(
 data class JacobiResult(
     val diagonalizedMatrix: Array<DoubleArray>,
     val eigenvectors: Array<DoubleArray>,
+)
+
+data class DampedNewtonResult(
+    val parameters: DoubleArray,
+    val squaredResidual: Double,
 )
 
 object Numerics {
@@ -620,6 +641,134 @@ object Numerics {
         return GMResult.Ok(result)
     }
 
+    // JSXGraph: src/math/numerics.js -> generalizedDampedNewton
+    fun generalizedDampedNewton(
+        function: (DoubleArray, Int) -> DoubleArray,
+        jacobian: (DoubleArray, Int) -> Array<DoubleArray>,
+        dimension: Int,
+        initialValues: DoubleArray,
+        damping: Double,
+        epsilon: Double,
+        maxSteps: Int = 40,
+    ): GMResult<DampedNewtonResult, NumericsError> {
+        if (dimension <= 0 || initialValues.size < dimension) {
+            return GMResult.Err(
+                NumericsError.InvalidSystemDimension(
+                    dimension = dimension,
+                    initialValueCount = initialValues.size,
+                ),
+            )
+        }
+
+        val stepLimit = if (maxSteps == 0) 40 else maxSteps
+        val parameters = initialValues.copyOf(dimension)
+        var functionValues = function(parameters, dimension)
+        if (functionValues.size < dimension) {
+            return GMResult.Err(
+                NumericsError.InvalidFunctionResult(
+                    expectedCount = dimension,
+                    actualCount = functionValues.size,
+                ),
+            )
+        }
+
+        functionValues = function(parameters, dimension)
+        if (functionValues.size < dimension) {
+            return GMResult.Err(
+                NumericsError.InvalidFunctionResult(
+                    expectedCount = dimension,
+                    actualCount = functionValues.size,
+                ),
+            )
+        }
+
+        var squaredResidual = Mat.innerProduct(functionValues, functionValues, dimension)
+        var iteration = 0
+        if (dimension == 2) {
+            var firstValue = functionValues[0]
+            var secondValue = functionValues[1]
+            squaredResidual =
+                firstValue * firstValue + secondValue * secondValue
+            while (squaredResidual > epsilon && iteration < stepLimit) {
+                val derivative = jacobian(parameters, dimension)
+                val jacobianError = validateJacobian(derivative, dimension)
+                if (jacobianError != null) {
+                    return GMResult.Err(jacobianError)
+                }
+
+                val firstFirst = derivative[0][0]
+                val firstSecond = derivative[0][1]
+                val secondFirst = derivative[1][0]
+                val secondSecond = derivative[1][1]
+                val determinant =
+                    firstFirst * secondSecond - firstSecond * secondFirst
+                if (abs(determinant) <= Mat.eps * Mat.eps) {
+                    return GMResult.Err(NumericsError.SingularMatrix)
+                }
+
+                parameters[0] -=
+                    damping *
+                    (secondSecond * firstValue - firstSecond * secondValue) /
+                    determinant
+                parameters[1] -=
+                    damping *
+                    (firstFirst * secondValue - secondFirst * firstValue) /
+                    determinant
+
+                functionValues = function(parameters, dimension)
+                if (functionValues.size < dimension) {
+                    return GMResult.Err(
+                        NumericsError.InvalidFunctionResult(
+                            expectedCount = dimension,
+                            actualCount = functionValues.size,
+                        ),
+                    )
+                }
+                firstValue = functionValues[0]
+                secondValue = functionValues[1]
+                squaredResidual =
+                    firstValue * firstValue + secondValue * secondValue
+                iteration += 1
+            }
+        } else {
+            while (squaredResidual > epsilon && iteration < stepLimit) {
+                val derivative = jacobian(parameters, dimension)
+                val jacobianError = validateJacobian(derivative, dimension)
+                if (jacobianError != null) {
+                    return GMResult.Err(jacobianError)
+                }
+                val inverse = Mat.inverse(derivative)
+                if (inverse.isEmpty()) {
+                    return GMResult.Err(NumericsError.SingularMatrix)
+                }
+                val step = Mat.matVecMult(inverse, functionValues)
+                for (index in 0 until dimension) {
+                    parameters[index] -= damping * step[index]
+                }
+
+                functionValues = function(parameters, dimension)
+                if (functionValues.size < dimension) {
+                    return GMResult.Err(
+                        NumericsError.InvalidFunctionResult(
+                            expectedCount = dimension,
+                            actualCount = functionValues.size,
+                        ),
+                    )
+                }
+                squaredResidual =
+                    Mat.innerProduct(functionValues, functionValues, dimension)
+                iteration += 1
+            }
+        }
+
+        return GMResult.Ok(
+            DampedNewtonResult(
+                parameters = parameters,
+                squaredResidual = squaredResidual,
+            ),
+        )
+    }
+
     // JSXGraph: src/math/numerics.js -> D
     @Suppress("FunctionName")
     fun D(function: (Double) -> Double): (Double) -> Double = { value ->
@@ -1139,6 +1288,22 @@ object Numerics {
             iteration += 1
         } while (iteration <= maxIterationsRoot)
         return bestPoint
+    }
+
+    private fun validateJacobian(
+        jacobian: Array<DoubleArray>,
+        dimension: Int,
+    ): NumericsError.InvalidJacobian? {
+        val shortestRowSize = jacobian.minOfOrNull { it.size } ?: 0
+        return if (jacobian.size != dimension || shortestRowSize < dimension) {
+            NumericsError.InvalidJacobian(
+                expectedDimension = dimension,
+                rowCount = jacobian.size,
+                shortestRowSize = shortestRowSize,
+            )
+        } else {
+            null
+        }
     }
 
     private fun validateSplineEvaluation(

@@ -17,8 +17,8 @@ Implemented translation slices:
 - statistics, random distributions, histogram generation and vectorized
   arithmetic from `src/math/statistics.js`;
 - linear systems, determinants, symmetric eigensystems, integration, natural
-  cubic splines, root finding, domain search and minimization from
-  `src/math/numerics.js`;
+  cubic splines, scalar and multidimensional root finding, domain search and
+  minimization from `src/math/numerics.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 

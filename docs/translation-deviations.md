@@ -35,6 +35,9 @@ practical.
   malformed spline data. Out-of-domain evaluation is reported as
   `SplineValueOutOfDomain`; upstream returns `NaN`, including a scalar `NaN`
   when one item in an array request is out of range.
+- `Numerics.generalizedDampedNewton` returns `GMResult` for malformed function
+  vectors, malformed Jacobians, and singular Jacobians. Upstream can instead
+  propagate `undefined`/`NaN` or fail later while indexing these values.
 - `Numerics.Romberg` honors its documented default configuration. JSXGraph
   `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
