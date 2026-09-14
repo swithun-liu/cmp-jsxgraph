@@ -402,6 +402,174 @@ class NumericsTest {
     }
 
     @Test
+    fun predefinedRungeKuttaMethodsMatchOfficialReferenceValues() {
+        val growth = { _: Double, state: DoubleArray -> doubleArrayOf(state[0]) }
+        assertMatrixEquals(
+            expected = arrayOf(
+                doubleArrayOf(1.0),
+                doubleArrayOf(1.5),
+                doubleArrayOf(2.25),
+                doubleArrayOf(3.375),
+                doubleArrayOf(5.0625),
+            ),
+            actual = trajectoryValueOf(
+                Numerics.rungeKutta(
+                    method = RungeKuttaMethod.EULER,
+                    initialValues = doubleArrayOf(1.0),
+                    interval = doubleArrayOf(0.0, 2.0),
+                    stepCount = 4,
+                    function = growth,
+                ),
+            ),
+        )
+        assertMatrixEquals(
+            expected = arrayOf(
+                doubleArrayOf(1.0),
+                doubleArrayOf(1.625),
+                doubleArrayOf(2.640625),
+                doubleArrayOf(4.291015625),
+                doubleArrayOf(6.972900390625),
+            ),
+            actual = trajectoryValueOf(
+                Numerics.rungeKutta(
+                    method = RungeKuttaMethod.HEUN,
+                    initialValues = doubleArrayOf(1.0),
+                    interval = doubleArrayOf(0.0, 2.0),
+                    stepCount = 4,
+                    function = growth,
+                ),
+            ),
+        )
+        assertMatrixEquals(
+            expected = arrayOf(
+                doubleArrayOf(1.0),
+                doubleArrayOf(1.6484375),
+                doubleArrayOf(2.71734619140625),
+                doubleArrayOf(4.47937536239624),
+                doubleArrayOf(7.383970323950052),
+            ),
+            actual = trajectoryValueOf(
+                Numerics.rungeKutta(
+                    method = RungeKuttaMethod.RK4,
+                    initialValues = doubleArrayOf(1.0),
+                    interval = doubleArrayOf(0.0, 2.0),
+                    stepCount = 4,
+                    function = growth,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun rungeKuttaSupportsSystemsCustomTableausAndOfficialFallback() {
+        val initialValues = doubleArrayOf(1.0, 0.0)
+        assertMatrixEquals(
+            expected = arrayOf(
+                doubleArrayOf(1.0, 0.0),
+                doubleArrayOf(0.8776041666666666, -0.47916666666666663),
+                doubleArrayOf(0.54058837890625, -0.8410373263888888),
+            ),
+            actual = trajectoryValueOf(
+                Numerics.rungeKutta(
+                    methodName = "rk4",
+                    initialValues = initialValues,
+                    interval = doubleArrayOf(0.0, 1.0),
+                    stepCount = 2,
+                    function = { _, state -> doubleArrayOf(state[1], -state[0]) },
+                ),
+            ),
+        )
+        assertContentEquals(doubleArrayOf(1.0, 0.0), initialValues)
+
+        var evaluationCount = 0
+        val customResult = trajectoryValueOf(
+            Numerics.rungeKutta(
+                tableau = ButcherTableau(
+                    stageCount = 1,
+                    coefficients = arrayOf(doubleArrayOf(0.0)),
+                    weights = doubleArrayOf(1.0),
+                    nodes = doubleArrayOf(0.0),
+                ),
+                initialValues = doubleArrayOf(1.0),
+                interval = doubleArrayOf(0.0, 1.0),
+                stepCount = 2,
+                function = { _, state ->
+                    evaluationCount += 1
+                    doubleArrayOf(state[0])
+                },
+            ),
+        )
+        assertMatrixEquals(
+            expected = arrayOf(
+                doubleArrayOf(1.0),
+                doubleArrayOf(1.5),
+                doubleArrayOf(2.25),
+            ),
+            actual = customResult,
+        )
+        assertEquals(3, evaluationCount)
+
+        assertMatrixEquals(
+            expected = customResult,
+            actual = trajectoryValueOf(
+                Numerics.rungeKutta(
+                    methodName = "unknown",
+                    initialValues = doubleArrayOf(1.0),
+                    interval = doubleArrayOf(0.0, 1.0),
+                    stepCount = 2,
+                    function = { _, state -> doubleArrayOf(state[0]) },
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun rungeKuttaReportsInvalidInputs() {
+        val function = { _: Double, state: DoubleArray -> state.copyOf() }
+        assertIs<GMResult.Err<NumericsError.InvalidInterval>>(
+            Numerics.rungeKutta(
+                method = RungeKuttaMethod.EULER,
+                initialValues = doubleArrayOf(1.0),
+                interval = doubleArrayOf(0.0),
+                stepCount = 1,
+                function = function,
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidRungeKuttaStepCount>>(
+            Numerics.rungeKutta(
+                method = RungeKuttaMethod.EULER,
+                initialValues = doubleArrayOf(1.0),
+                interval = doubleArrayOf(0.0, 1.0),
+                stepCount = 0,
+                function = function,
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidButcherTableau>>(
+            Numerics.rungeKutta(
+                tableau = ButcherTableau(
+                    stageCount = 2,
+                    coefficients = arrayOf(doubleArrayOf(0.0)),
+                    weights = doubleArrayOf(1.0, 1.0),
+                    nodes = doubleArrayOf(0.0, 1.0),
+                ),
+                initialValues = doubleArrayOf(1.0),
+                interval = doubleArrayOf(0.0, 1.0),
+                stepCount = 1,
+                function = function,
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidFunctionResult>>(
+            Numerics.rungeKutta(
+                method = RungeKuttaMethod.EULER,
+                initialValues = doubleArrayOf(1.0, 2.0),
+                interval = doubleArrayOf(0.0, 1.0),
+                stepCount = 1,
+                function = { _, _ -> doubleArrayOf(1.0) },
+            ),
+        )
+    }
+
+    @Test
     fun derivativeAndNewtonMatchOfficialReferenceValues() {
         assertEquals(
             expected = 12.00000000021184,
@@ -564,6 +732,10 @@ class NumericsTest {
     private fun dampedNewtonValueOf(
         result: GMResult<DampedNewtonResult, NumericsError>,
     ): DampedNewtonResult = assertIs<GMResult.Ok<DampedNewtonResult>>(result).value
+
+    private fun trajectoryValueOf(
+        result: GMResult<Array<DoubleArray>, NumericsError>,
+    ): Array<DoubleArray> = assertIs<GMResult.Ok<Array<DoubleArray>>>(result).value
 
     private fun assertMatrixEquals(
         expected: Array<DoubleArray>,

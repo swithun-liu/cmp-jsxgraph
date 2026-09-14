@@ -38,6 +38,9 @@ practical.
 - `Numerics.generalizedDampedNewton` returns `GMResult` for malformed function
   vectors, malformed Jacobians, and singular Jacobians. Upstream can instead
   propagate `undefined`/`NaN` or fail later while indexing these values.
+- `Numerics.rungeKutta` returns `GMResult` for invalid intervals, step counts,
+  Butcher tableaus, and derivative-vector dimensions. String method names
+  retain the upstream fallback to Euler for unknown values.
 - `Numerics.Romberg` honors its documented default configuration. JSXGraph
   `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.

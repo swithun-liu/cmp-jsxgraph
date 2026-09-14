@@ -67,6 +67,16 @@ sealed interface NumericsError {
         val rowCount: Int,
         val shortestRowSize: Int,
     ) : NumericsError
+
+    data class InvalidRungeKuttaStepCount(val stepCount: Int) : NumericsError
+
+    data class InvalidButcherTableau(
+        val stageCount: Int,
+        val coefficientRowCount: Int,
+        val invalidCoefficientRow: Int?,
+        val weightCount: Int,
+        val nodeCount: Int,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -95,6 +105,19 @@ data class DampedNewtonResult(
     val squaredResidual: Double,
 )
 
+enum class RungeKuttaMethod {
+    EULER,
+    HEUN,
+    RK4,
+}
+
+data class ButcherTableau(
+    val stageCount: Int,
+    val coefficients: Array<DoubleArray>,
+    val weights: DoubleArray,
+    val nodes: DoubleArray,
+)
+
 object Numerics {
     private data class LegendreRule(
         val nodes: DoubleArray,
@@ -105,6 +128,33 @@ object Numerics {
 
     var maxIterationsRoot: Int = 80
     var maxIterationsMinimize: Int = 500
+
+    val eulerTableau = ButcherTableau(
+        stageCount = 1,
+        coefficients = arrayOf(doubleArrayOf(0.0)),
+        weights = doubleArrayOf(1.0),
+        nodes = doubleArrayOf(0.0),
+    )
+    val heunTableau = ButcherTableau(
+        stageCount = 2,
+        coefficients = arrayOf(
+            doubleArrayOf(0.0, 0.0),
+            doubleArrayOf(1.0, 0.0),
+        ),
+        weights = doubleArrayOf(0.5, 0.5),
+        nodes = doubleArrayOf(0.0, 1.0),
+    )
+    val rk4Tableau = ButcherTableau(
+        stageCount = 4,
+        coefficients = arrayOf(
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.5, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.5, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 1.0, 0.0),
+        ),
+        weights = doubleArrayOf(1.0 / 6.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0),
+        nodes = doubleArrayOf(0.0, 0.5, 0.5, 1.0),
+    )
 
     // JSXGraph: src/math/numerics.js -> Gauss
     @Suppress("FunctionName")
@@ -774,6 +824,136 @@ object Numerics {
     fun D(function: (Double) -> Double): (Double) -> Double = { value ->
         val step = 0.00001
         (function(value + step) - function(value - step)) / (2.0 * step)
+    }
+
+    // JSXGraph: src/math/numerics.js -> rungeKutta
+    fun rungeKutta(
+        methodName: String,
+        initialValues: DoubleArray,
+        interval: DoubleArray,
+        stepCount: Int,
+        function: (Double, DoubleArray) -> DoubleArray,
+    ): GMResult<Array<DoubleArray>, NumericsError> {
+        val tableau = when (methodName) {
+            "rk4" -> rk4Tableau
+            "heun" -> heunTableau
+            else -> eulerTableau
+        }
+        return rungeKutta(tableau, initialValues, interval, stepCount, function)
+    }
+
+    // JSXGraph: src/math/numerics.js -> rungeKutta
+    fun rungeKutta(
+        method: RungeKuttaMethod,
+        initialValues: DoubleArray,
+        interval: DoubleArray,
+        stepCount: Int,
+        function: (Double, DoubleArray) -> DoubleArray,
+    ): GMResult<Array<DoubleArray>, NumericsError> {
+        val tableau = when (method) {
+            RungeKuttaMethod.EULER -> eulerTableau
+            RungeKuttaMethod.HEUN -> heunTableau
+            RungeKuttaMethod.RK4 -> rk4Tableau
+        }
+        return rungeKutta(tableau, initialValues, interval, stepCount, function)
+    }
+
+    // JSXGraph: src/math/numerics.js -> rungeKutta
+    fun rungeKutta(
+        tableau: ButcherTableau,
+        initialValues: DoubleArray,
+        interval: DoubleArray,
+        stepCount: Int,
+        function: (Double, DoubleArray) -> DoubleArray,
+    ): GMResult<Array<DoubleArray>, NumericsError> {
+        if (interval.size < 2) {
+            return GMResult.Err(NumericsError.InvalidInterval(interval.size))
+        }
+        if (stepCount <= 0) {
+            return GMResult.Err(NumericsError.InvalidRungeKuttaStepCount(stepCount))
+        }
+        if (initialValues.isEmpty()) {
+            return GMResult.Err(
+                NumericsError.InvalidSystemDimension(
+                    dimension = 0,
+                    initialValueCount = 0,
+                ),
+            )
+        }
+
+        val invalidCoefficientRow = (0 until tableau.stageCount).firstOrNull { row ->
+            row >= tableau.coefficients.size ||
+                tableau.coefficients[row].size < row
+        }
+        if (
+            tableau.stageCount <= 0 ||
+            invalidCoefficientRow != null ||
+            tableau.weights.size < tableau.stageCount ||
+            tableau.nodes.size < tableau.stageCount
+        ) {
+            return GMResult.Err(
+                NumericsError.InvalidButcherTableau(
+                    stageCount = tableau.stageCount,
+                    coefficientRowCount = tableau.coefficients.size,
+                    invalidCoefficientRow = invalidCoefficientRow,
+                    weightCount = tableau.weights.size,
+                    nodeCount = tableau.nodes.size,
+                ),
+            )
+        }
+
+        val step = (interval[1] - interval[0]) / stepCount
+        var time = interval[0]
+        val dimension = initialValues.size
+        val state = initialValues.copyOf()
+        val intermediateState = DoubleArray(dimension)
+        val result = ArrayList<DoubleArray>(stepCount + 1)
+
+        for (iteration in 0..stepCount) {
+            result.add(state.copyOf())
+            val stageDerivatives = ArrayList<DoubleArray>(tableau.stageCount)
+            for (stage in 0 until tableau.stageCount) {
+                intermediateState.fill(0.0)
+                for (previousStage in 0 until stage) {
+                    for (index in 0 until dimension) {
+                        intermediateState[index] +=
+                            tableau.coefficients[stage][previousStage] *
+                            step *
+                            stageDerivatives[previousStage][index]
+                    }
+                }
+                for (index in 0 until dimension) {
+                    intermediateState[index] += state[index]
+                }
+
+                val derivative = function(
+                    time + tableau.nodes[stage] * step,
+                    intermediateState,
+                )
+                if (derivative.size < dimension) {
+                    return GMResult.Err(
+                        NumericsError.InvalidFunctionResult(
+                            expectedCount = dimension,
+                            actualCount = derivative.size,
+                        ),
+                    )
+                }
+                stageDerivatives.add(derivative)
+            }
+
+            intermediateState.fill(0.0)
+            for (stage in 0 until tableau.stageCount) {
+                for (index in 0 until dimension) {
+                    intermediateState[index] +=
+                        tableau.weights[stage] * stageDerivatives[stage][index]
+                }
+            }
+            for (index in 0 until dimension) {
+                state[index] += step * intermediateState[index]
+            }
+            time += step
+        }
+        return GMResult.Ok(result.toTypedArray())
     }
 
     // JSXGraph: src/math/numerics.js -> Newton
