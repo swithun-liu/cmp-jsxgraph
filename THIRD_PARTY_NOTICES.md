@@ -25,10 +25,11 @@ Copyright (C) 2008-2012
 - Alfred Wassermann
 - Peter Wilfahrt
 
-The translated probability functions retain JSXGraph's Cephes-derived
-implementation:
+The translated probability and geometry functions retain their upstream
+source-file attribution. `src/math/probfuncs.js` and `src/math/geometry.js`
+also list Andreas Walter among their copyright holders.
 
-`src/math/probfuncs.js` also lists Andreas Walter among its copyright holders.
+The probability functions retain JSXGraph's Cephes-derived implementation:
 
 Cephes Math Library Release 2.9, November 2000. Copyright 1984, 1987, 1988,
 1992, 2000 by Stephen L. Moshier.
