@@ -21,7 +21,8 @@ Implemented translation slices:
   finding, complex polynomial roots, domain search, minimization, and
   Runge-Kutta ODE solvers from `src/math/numerics.js`;
 - foundational angle, distance, orientation, and point-to-line/segment
-  calculations from `src/math/geometry.js`;
+  calculations plus line/circle/segment intersections from
+  `src/math/geometry.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`.
 

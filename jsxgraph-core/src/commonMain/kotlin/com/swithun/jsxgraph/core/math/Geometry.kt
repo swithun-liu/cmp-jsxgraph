@@ -13,6 +13,12 @@ import kotlin.math.atan2
 import kotlin.math.floor
 import kotlin.math.sqrt
 
+data class SegmentIntersection(
+    val point: DoubleArray,
+    val firstParameter: Double,
+    val secondParameter: Double,
+)
+
 object Geometry {
     // JSXGraph: src/math/geometry.js -> angle
     fun angle(
@@ -245,11 +251,226 @@ object Geometry {
         return Mat.hypot(horizontal, vertical)
     }
 
+    // JSXGraph: src/math/geometry.js -> meetLineLine
+    fun meetLineLine(
+        firstLine: DoubleArray,
+        secondLine: DoubleArray,
+    ): DoubleArray {
+        val result = if (
+            (firstLine.valueOrNaN(5) + secondLine.valueOrNaN(5)).isNaN()
+        ) {
+            doubleArrayOf(0.0, 0.0, 0.0)
+        } else {
+            crossProduct(firstLine, secondLine)
+        }
+        if (abs(result[0]) < 1.0e-14) {
+            result[0] = 0.0
+        }
+        return result
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetLineCircle
+    fun meetLineCircle(
+        line: DoubleArray,
+        circle: DoubleArray,
+        intersectionIndex: Int,
+    ): DoubleArray {
+        if (circle.valueOrNaN(4) < Mat.eps) {
+            val centerX = circle.valueOrNaN(6)
+            val centerY = circle.valueOrNaN(7)
+            val lineValue =
+                line.valueOrNaN(0) +
+                    centerX * line.valueOrNaN(1) +
+                    centerY * line.valueOrNaN(2)
+            return if (abs(lineValue) < Mat.eps) {
+                doubleArrayOf(1.0, centerX, centerY)
+            } else {
+                doubleArrayOf(1.0, Double.NaN, Double.NaN)
+            }
+        }
+
+        val constant = circle.valueOrNaN(0)
+        val horizontal = circle.valueOrNaN(1)
+        val vertical = circle.valueOrNaN(2)
+        val quadratic = circle.valueOrNaN(3)
+        val lineConstant = line.valueOrNaN(0)
+        val lineHorizontal = line.valueOrNaN(1)
+        val lineVertical = line.valueOrNaN(2)
+
+        val linear =
+            horizontal * lineVertical - vertical * lineHorizontal
+        val scalar =
+            quadratic * lineConstant * lineConstant -
+                (
+                    horizontal * lineHorizontal +
+                        vertical * lineVertical
+                ) * lineConstant +
+                constant
+        var discriminant = linear * linear - 4.0 * quadratic * scalar
+        if (discriminant > -Mat.eps * Mat.eps) {
+            discriminant = sqrt(abs(discriminant))
+            val parameter = if (intersectionIndex == 0) {
+                (-linear + discriminant) / (2.0 * quadratic)
+            } else {
+                (-linear - discriminant) / (2.0 * quadratic)
+            }
+            return doubleArrayOf(
+                1.0,
+                -parameter * -lineVertical - lineConstant * lineHorizontal,
+                -parameter * lineHorizontal - lineConstant * lineVertical,
+            )
+        }
+        return doubleArrayOf(0.0, 0.0, 0.0)
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetCircleCircle
+    fun meetCircleCircle(
+        firstCircle: DoubleArray,
+        secondCircle: DoubleArray,
+        intersectionIndex: Int,
+    ): DoubleArray {
+        if (firstCircle.valueOrNaN(4) < Mat.eps) {
+            val center = doubleArrayOf(
+                firstCircle.valueOrNaN(6),
+                firstCircle.valueOrNaN(7),
+            )
+            val otherCenter = doubleArrayOf(
+                secondCircle.valueOrNaN(6),
+                secondCircle.valueOrNaN(7),
+            )
+            return if (
+                abs(distance(center, otherCenter) - secondCircle.valueOrNaN(5)) <
+                Mat.eps
+            ) {
+                doubleArrayOf(1.0, center[0], center[1])
+            } else {
+                doubleArrayOf(0.0, 0.0, 0.0)
+            }
+        }
+        if (secondCircle.valueOrNaN(4) < Mat.eps) {
+            val center = doubleArrayOf(
+                secondCircle.valueOrNaN(6),
+                secondCircle.valueOrNaN(7),
+            )
+            val otherCenter = doubleArrayOf(
+                firstCircle.valueOrNaN(6),
+                firstCircle.valueOrNaN(7),
+            )
+            return if (
+                abs(distance(center, otherCenter) - firstCircle.valueOrNaN(5)) <
+                Mat.eps
+            ) {
+                doubleArrayOf(1.0, center[0], center[1])
+            } else {
+                doubleArrayOf(0.0, 0.0, 0.0)
+            }
+        }
+
+        val radicalAxis = doubleArrayOf(
+            secondCircle.valueOrNaN(3) * firstCircle.valueOrNaN(0) -
+                firstCircle.valueOrNaN(3) * secondCircle.valueOrNaN(0),
+            secondCircle.valueOrNaN(3) * firstCircle.valueOrNaN(1) -
+                firstCircle.valueOrNaN(3) * secondCircle.valueOrNaN(1),
+            secondCircle.valueOrNaN(3) * firstCircle.valueOrNaN(2) -
+                firstCircle.valueOrNaN(3) * secondCircle.valueOrNaN(2),
+            0.0,
+            1.0,
+            Double.POSITIVE_INFINITY,
+            Double.POSITIVE_INFINITY,
+            Double.POSITIVE_INFINITY,
+        )
+        Mat.normalize(radicalAxis)
+        return meetLineCircle(radicalAxis, firstCircle, intersectionIndex)
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetSegmentSegment
+    fun meetSegmentSegment(
+        firstStart: DoubleArray,
+        firstEnd: DoubleArray,
+        secondStart: DoubleArray,
+        secondEnd: DoubleArray,
+    ): SegmentIntersection {
+        val firstLine = crossProduct(firstStart, firstEnd)
+        val secondLine = crossProduct(secondStart, secondEnd)
+        val point = crossProduct(firstLine, secondLine)
+        if (abs(point[0]) < Mat.eps) {
+            return SegmentIntersection(
+                point = point,
+                firstParameter = Double.POSITIVE_INFINITY,
+                secondParameter = Double.POSITIVE_INFINITY,
+            )
+        }
+
+        val homogeneous = point[0]
+        point[1] /= homogeneous
+        point[2] /= homogeneous
+        point[0] /= homogeneous
+
+        var coordinateIndex =
+            if (
+                abs(
+                    firstEnd.valueOrNaN(1) -
+                        firstEnd.valueOrNaN(0) * firstStart.valueOrNaN(1),
+                ) < Mat.eps
+            ) {
+                2
+            } else {
+                1
+            }
+        var startValue =
+            firstStart.valueOrNaN(coordinateIndex) / firstStart.valueOrNaN(0)
+        val firstParameter =
+            (point[coordinateIndex] - startValue) /
+                if (firstEnd.valueOrNaN(0) != 0.0) {
+                    firstEnd.valueOrNaN(coordinateIndex) /
+                        firstEnd.valueOrNaN(0) -
+                        startValue
+                } else {
+                    firstEnd.valueOrNaN(coordinateIndex)
+                }
+
+        coordinateIndex =
+            if (
+                abs(
+                    secondEnd.valueOrNaN(1) -
+                        secondEnd.valueOrNaN(0) * secondStart.valueOrNaN(1),
+                ) < Mat.eps
+            ) {
+                2
+            } else {
+                1
+            }
+        startValue =
+            secondStart.valueOrNaN(coordinateIndex) / secondStart.valueOrNaN(0)
+        val secondParameter =
+            (point[coordinateIndex] - startValue) /
+                if (secondEnd.valueOrNaN(0) != 0.0) {
+                    secondEnd.valueOrNaN(coordinateIndex) /
+                        secondEnd.valueOrNaN(0) -
+                        startValue
+                } else {
+                    secondEnd.valueOrNaN(coordinateIndex)
+                }
+        return SegmentIntersection(point, firstParameter, secondParameter)
+    }
+
     private fun clampInfiniteDifference(value: Double): Double = when (value) {
         Double.POSITIVE_INFINITY -> 1_000_000.0
         Double.NEGATIVE_INFINITY -> -1_000_000.0
         else -> value
     }
+
+    private fun crossProduct(
+        first: DoubleArray,
+        second: DoubleArray,
+    ): DoubleArray = doubleArrayOf(
+        first.valueOrNaN(1) * second.valueOrNaN(2) -
+            first.valueOrNaN(2) * second.valueOrNaN(1),
+        first.valueOrNaN(2) * second.valueOrNaN(0) -
+            first.valueOrNaN(0) * second.valueOrNaN(2),
+        first.valueOrNaN(0) * second.valueOrNaN(1) -
+            first.valueOrNaN(1) * second.valueOrNaN(0),
+    )
 
     private fun DoubleArray.valueOrNaN(index: Int): Double =
         if (index in indices) this[index] else Double.NaN
