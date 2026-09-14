@@ -4,15 +4,18 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT_DIR}/captures/local/android-parity/current}"
+PARITY_CASE_IDS="${PARITY_CASE_IDS:-baseline_geometry}"
 PACKAGE_NAME="com.swithun.jsxgraph.sample"
 ACTIVITY_NAME="${PACKAGE_NAME}/.MainActivity"
 READY_MARKER="jsxgraph-audit:ready"
 ERROR_MARKER="jsxgraph-audit:error:"
+CASE_MARKER_PREFIX="jsxgraph-case:"
 BOARD_MARKER="jsxgraph-parity-board"
 READY_TIMEOUT_SECONDS="${READY_TIMEOUT_SECONDS:-30}"
 CAPTURE_ATTEMPTS="${CAPTURE_ATTEMPTS:-3}"
 MIN_CAPTURE_BYTES="${MIN_CAPTURE_BYTES:-24000}"
 MIN_BOARD_SSIM="${MIN_BOARD_SSIM:-0.90}"
+SKIP_BUILD_INSTALL="${SKIP_BUILD_INSTALL:-false}"
 
 if ! command -v adb >/dev/null; then
     echo "adb is required to select and control the Android device." >&2
@@ -42,20 +45,45 @@ if [[ -z "${ANDROID_SERIAL}" ]]; then
 fi
 
 mkdir -p "${OUTPUT_DIR}"
+case_ids=()
+while IFS= read -r case_id; do
+    if [[ ! "${case_id}" =~ ^[a-z0-9_]+$ ]]; then
+        echo "Invalid parity case ID: ${case_id}" >&2
+        exit 1
+    fi
+    case_ids+=("${case_id}")
+done < <(
+    printf '%s\n' "${PARITY_CASE_IDS}" |
+        tr ', ' '\n\n' |
+        sed '/^$/d'
+)
+if [[ "${#case_ids[@]}" -eq 0 ]]; then
+    echo "PARITY_CASE_IDS must contain at least one case ID." >&2
+    exit 1
+fi
 
-"${ROOT_DIR}/gradlew" \
-    --project-dir "${ROOT_DIR}" \
-    :sample:androidApp:assembleDebug
+device_size="$(adb -s "${ANDROID_SERIAL}" shell wm size | tr '\r\n' ';')"
+device_density="$(adb -s "${ANDROID_SERIAL}" shell wm density | tr '\r\n' ';')"
+font_scale="$(adb -s "${ANDROID_SERIAL}" shell settings get system font_scale | tr -d '\r')"
+printf 'caseId\tssim\tminimum\tboardCrop\n' > "${OUTPUT_DIR}/summary.tsv"
 
-APK_PATH="${ROOT_DIR}/sample/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
-android run \
-    --device="${ANDROID_SERIAL}" \
-    --apks="${APK_PATH}" \
-    --activity="${PACKAGE_NAME}.MainActivity" \
-    --type=ACTIVITY
+if [[ "${SKIP_BUILD_INSTALL}" != "true" ]]; then
+    "${ROOT_DIR}/gradlew" \
+        --project-dir "${ROOT_DIR}" \
+        :sample:androidApp:assembleDebug
+
+    APK_PATH="${ROOT_DIR}/sample/androidApp/build/outputs/apk/debug/androidApp-debug.apk"
+    android run \
+        --device="${ANDROID_SERIAL}" \
+        --apks="${APK_PATH}" \
+        --activity="${PACKAGE_NAME}.MainActivity" \
+        --type=ACTIVITY
+fi
 
 capture_preview() {
-    local preview="$1"
+    local case_id="$1"
+    local preview="$2"
+    local case_output_dir="$3"
     local suffix
     local output_file
     local attempt
@@ -63,12 +91,13 @@ capture_preview() {
     local layout
 
     suffix="$(printf '%s' "${preview}" | tr '[:upper:]' '[:lower:]')"
-    output_file="${OUTPUT_DIR}/${suffix}.png"
+    output_file="${case_output_dir}/${suffix}.png"
     for ((attempt = 1; attempt <= CAPTURE_ATTEMPTS; attempt++)); do
         adb -s "${ANDROID_SERIAL}" shell am force-stop "${PACKAGE_NAME}"
         adb -s "${ANDROID_SERIAL}" shell am start \
             -n "${ACTIVITY_NAME}" \
             --es preview "${preview}" \
+            --es caseId "${case_id}" \
             >/dev/null
 
         deadline=$((SECONDS + READY_TIMEOUT_SECONDS))
@@ -78,11 +107,14 @@ capture_preview() {
                 continue
             fi
             if [[ "${layout}" == *"${ERROR_MARKER}"* ]]; then
-                echo "${preview} renderer reported an error." >&2
+                echo "${case_id}/${preview} renderer reported an error." >&2
                 echo "${layout}" >&2
                 return 1
             fi
-            if [[ "${layout}" == *"${READY_MARKER}"* ]]; then
+            if (
+                [[ "${layout}" == *"${READY_MARKER}"* ]] &&
+                [[ "${layout}" == *"${CASE_MARKER_PREFIX}${case_id}"* ]]
+            ); then
                 sleep 1
                 android screen capture \
                     --device="${ANDROID_SERIAL}" \
@@ -94,15 +126,18 @@ capture_preview() {
             fi
             sleep 1
         done
-        echo "${preview} capture attempt ${attempt} did not produce valid output." >&2
+        echo \
+            "${case_id}/${preview} capture attempt ${attempt} did not produce valid output." \
+            >&2
     done
-    echo "Timed out waiting for ${preview} renderer." >&2
+    echo "Timed out waiting for ${case_id}/${preview} renderer." >&2
     return 1
 }
 
 read_board_crop() {
+    local case_output_dir="$1"
     local remote_dump="/sdcard/cmp-jsxgraph-parity-$$.xml"
-    local local_dump="${OUTPUT_DIR}/layout.xml"
+    local local_dump="${case_output_dir}/layout.xml"
     local bounds
     local left
     local top
@@ -133,15 +168,17 @@ read_board_crop() {
 }
 
 compare_board_pixels() {
-    local crop="$1"
+    local case_id="$1"
+    local case_output_dir="$2"
+    local crop="$3"
     local output
     local ssim
 
     output="$(
         ffmpeg \
             -hide_banner \
-            -i "${OUTPUT_DIR}/official.png" \
-            -i "${OUTPUT_DIR}/native.png" \
+            -i "${case_output_dir}/official.png" \
+            -i "${case_output_dir}/native.png" \
             -lavfi \
             "[0:v]crop=${crop}[official];[1:v]crop=${crop}[native];[official][native]ssim" \
             -f null \
@@ -154,11 +191,22 @@ compare_board_pixels() {
         echo "${output}" >&2
         return 1
     fi
-    printf 'boardCrop=%s\nssim=%s\nminimum=%s\n' \
+    printf \
+        'caseId=%s\ndeviceSize=%s\ndeviceDensity=%s\nfontScale=%s\nboardCrop=%s\nssim=%s\nminimum=%s\n' \
+        "${case_id}" \
+        "${device_size}" \
+        "${device_density}" \
+        "${font_scale}" \
         "${crop}" \
         "${ssim}" \
         "${MIN_BOARD_SSIM}" \
-        > "${OUTPUT_DIR}/metrics.txt"
+        > "${case_output_dir}/metrics.txt"
+    printf '%s\t%s\t%s\t%s\n' \
+        "${case_id}" \
+        "${ssim}" \
+        "${MIN_BOARD_SSIM}" \
+        "${crop}" \
+        >> "${OUTPUT_DIR}/summary.tsv"
     if ! awk \
         -v actual="${ssim}" \
         -v minimum="${MIN_BOARD_SSIM}" \
@@ -168,23 +216,33 @@ compare_board_pixels() {
     fi
 }
 
-capture_preview Source
-capture_preview Official
-capture_preview Native
+parity_failed=false
+for case_id in "${case_ids[@]}"; do
+    case_output_dir="${OUTPUT_DIR}/${case_id}"
+    mkdir -p "${case_output_dir}"
+    capture_preview "${case_id}" Source "${case_output_dir}"
+    capture_preview "${case_id}" Official "${case_output_dir}"
+    capture_preview "${case_id}" Native "${case_output_dir}"
 
-board_crop="$(read_board_crop)"
-compare_board_pixels "${board_crop}"
+    board_crop="$(read_board_crop "${case_output_dir}")"
+    if ! compare_board_pixels "${case_id}" "${case_output_dir}" "${board_crop}"; then
+        parity_failed=true
+    fi
 
-ffmpeg \
-    -hide_banner \
-    -loglevel error \
-    -i "${OUTPUT_DIR}/source.png" \
-    -i "${OUTPUT_DIR}/official.png" \
-    -i "${OUTPUT_DIR}/native.png" \
-    -filter_complex "hstack=inputs=3" \
-    -frames:v 1 \
-    -y \
-    "${OUTPUT_DIR}/contact-sheet.png"
+    ffmpeg \
+        -hide_banner \
+        -loglevel error \
+        -i "${case_output_dir}/source.png" \
+        -i "${case_output_dir}/official.png" \
+        -i "${case_output_dir}/native.png" \
+        -filter_complex "hstack=inputs=3" \
+        -frames:v 1 \
+        -y \
+        "${case_output_dir}/contact-sheet.png"
+done
 
 echo "Parity captures: ${OUTPUT_DIR}"
-echo "Board SSIM: $(sed -n 's/^ssim=//p' "${OUTPUT_DIR}/metrics.txt")"
+cat "${OUTPUT_DIR}/summary.tsv"
+if [[ "${parity_failed}" == "true" ]]; then
+    exit 1
+fi

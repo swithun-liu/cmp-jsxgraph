@@ -58,7 +58,10 @@ import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import kotlin.math.floor
+import kotlin.math.log10
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import org.jetbrains.compose.resources.Font
@@ -286,26 +289,61 @@ private fun GeometryCanvas(
         },
     ) {
         val metrics = BoardMetrics(size.width, size.height)
+        val horizontalMajorStep = metrics.majorTickDistance(
+            metrics.right - metrics.left,
+            density,
+        )
+        val verticalMajorStep = metrics.majorTickDistance(
+            metrics.top - metrics.bottom,
+            density,
+        )
 
-        for (x in -6..6) {
-            val screenX = metrics.toScreen(Offset(x.toFloat(), 0f)).x
+        gridValues(
+            lower = metrics.left,
+            upper = metrics.right,
+            step = horizontalMajorStep,
+        ).forEach { x ->
+            val screenX = metrics.toScreen(Offset(x, 0f)).x
             drawLine(
-                color = if (x == 0) AxisColor else GridColor,
+                color = GridColor,
                 start = Offset(screenX, 0f),
                 end = Offset(screenX, size.height),
                 strokeWidth = 1.dp.toPx(),
             )
         }
-        for (y in -5..5) {
-            val screenY = metrics.toScreen(Offset(0f, y.toFloat())).y
+        gridValues(
+            lower = metrics.bottom,
+            upper = metrics.top,
+            step = verticalMajorStep,
+        ).forEach { y ->
+            val screenY = metrics.toScreen(Offset(0f, y)).y
             drawLine(
-                color = if (y == 0) AxisColor else GridColor,
+                color = GridColor,
                 start = Offset(0f, screenY),
                 end = Offset(size.width, screenY),
                 strokeWidth = 1.dp.toPx(),
             )
         }
-        drawAxisDecorations(metrics, textMeasurer, axisFontFamily)
+        val axisOrigin = metrics.toScreen(Offset.Zero)
+        drawLine(
+            color = AxisColor,
+            start = Offset(0f, axisOrigin.y),
+            end = Offset(size.width, axisOrigin.y),
+            strokeWidth = 1.dp.toPx(),
+        )
+        drawLine(
+            color = AxisColor,
+            start = Offset(axisOrigin.x, 0f),
+            end = Offset(axisOrigin.x, size.height),
+            strokeWidth = 1.dp.toPx(),
+        )
+        drawAxisDecorations(
+            metrics = metrics,
+            horizontalMajorStep = horizontalMajorStep,
+            verticalMajorStep = verticalMajorStep,
+            textMeasurer = textMeasurer,
+            fontFamily = axisFontFamily,
+        )
 
         drawFunction(
             metrics = metrics,
@@ -479,6 +517,8 @@ private fun calculateIntersections(
 // JSXGraph: src/options.js -> board.defaultAxes and axis.ticks defaults.
 private fun DrawScope.drawAxisDecorations(
     metrics: BoardMetrics,
+    horizontalMajorStep: Float,
+    verticalMajorStep: Float,
     textMeasurer: TextMeasurer,
     fontFamily: FontFamily,
 ) {
@@ -491,11 +531,11 @@ private fun DrawScope.drawAxisDecorations(
         letterSpacing = 0.sp,
     )
 
-    for (step in -29..29) {
-        if (step % 5 == 0) {
-            continue
-        }
-        val value = step / 5.0f
+    minorTickValues(
+        lower = metrics.left,
+        upper = metrics.right,
+        majorStep = horizontalMajorStep,
+    ).forEach { value ->
         val horizontal = metrics.toScreen(Offset(value, 0f))
         drawLine(
             color = tickColor,
@@ -503,6 +543,12 @@ private fun DrawScope.drawAxisDecorations(
             end = Offset(horizontal.x, axisOrigin.y + 5.dp.toPx()),
             strokeWidth = 1.dp.toPx(),
         )
+    }
+    minorTickValues(
+        lower = metrics.bottom,
+        upper = metrics.top,
+        majorStep = verticalMajorStep,
+    ).forEach { value ->
         val vertical = metrics.toScreen(Offset(0f, value))
         drawLine(
             color = tickColor,
@@ -512,12 +558,13 @@ private fun DrawScope.drawAxisDecorations(
         )
     }
 
-    for (value in -5..5) {
-        if (value == 0) {
-            continue
-        }
-        val horizontal = metrics.toScreen(Offset(value.toFloat(), 0f))
-        val horizontalLabel = textMeasurer.measure(value.toString(), textStyle)
+    gridValues(
+        lower = metrics.left,
+        upper = metrics.right,
+        step = horizontalMajorStep,
+    ).filterNot(::isZero).forEach { value ->
+        val horizontal = metrics.toScreen(Offset(value, 0f))
+        val horizontalLabel = textMeasurer.measure(formatAxisValue(value), textStyle)
         drawText(
             textLayoutResult = horizontalLabel,
             topLeft = Offset(
@@ -526,12 +573,13 @@ private fun DrawScope.drawAxisDecorations(
             ),
         )
     }
-    for (value in -4..4) {
-        if (value == 0) {
-            continue
-        }
-        val vertical = metrics.toScreen(Offset(0f, value.toFloat()))
-        val verticalLabel = textMeasurer.measure(value.toString(), textStyle)
+    gridValues(
+        lower = metrics.bottom,
+        upper = metrics.top,
+        step = verticalMajorStep,
+    ).filterNot(::isZero).forEach { value ->
+        val vertical = metrics.toScreen(Offset(0f, value))
+        val verticalLabel = textMeasurer.measure(formatAxisValue(value), textStyle)
         drawText(
             textLayoutResult = verticalLabel,
             topLeft = Offset(
@@ -586,6 +634,10 @@ private data class BoardMetrics(
     val height: Float,
 ) {
     val scale: Float = min(width / 12.0f, height / 10.0f)
+    val left: Float = -width * 0.5f / scale
+    val right: Float = width * 0.5f / scale
+    val top: Float = height * 0.5f / scale
+    val bottom: Float = -height * 0.5f / scale
 
     fun toScreen(point: Offset): Offset = Offset(
         x = width * 0.5f + point.x * scale,
@@ -596,6 +648,86 @@ private data class BoardMetrics(
         x = (point.x - width * 0.5f) / scale,
         y = (height * 0.5f - point.y) / scale,
     )
+
+    // JSXGraph: src/base/ticks.js -> getDistanceMajorTicks.
+    fun majorTickDistance(
+        visibleDistance: Float,
+        density: Float,
+    ): Float =
+        jsxGraphMajorTickDistance(
+            visibleDistance = visibleDistance,
+            // JSXGraph board units are CSS pixels, which correspond to Compose dp.
+            cssPixelsPerUnit = scale / density,
+        )
+}
+
+// JSXGraph: src/base/ticks.js -> getDistanceMajorTicks.
+internal fun jsxGraphMajorTickDistance(
+    visibleDistance: Float,
+    cssPixelsPerUnit: Float,
+): Float {
+    val maximumDistance = visibleDistance.toDouble() / 6.0
+    val minimumDistance = 5.0 / cssPixelsPerUnit * 5.0
+
+    var minimumDelta = 10.0.pow(floor(log10(minimumDistance)))
+    if (2.0 * minimumDelta >= minimumDistance) {
+        minimumDelta *= 2.0
+    } else if (5.0 * minimumDelta >= minimumDistance) {
+        minimumDelta *= 5.0
+    }
+
+    var maximumDelta = 10.0.pow(floor(log10(maximumDistance)))
+    if (5.0 * maximumDelta < maximumDistance) {
+        maximumDelta *= 5.0
+    } else if (2.0 * maximumDelta < maximumDistance) {
+        maximumDelta *= 2.0
+    }
+    return maxOf(minimumDelta, maximumDelta).toFloat()
+}
+
+// JSXGraph: src/math/math.js -> roundToStep and src/element/grid.js -> updateDataArray.
+private fun gridValues(
+    lower: Float,
+    upper: Float,
+    step: Float,
+): List<Float> {
+    val first = Mat.roundToStep(
+        value = lower.toDouble(),
+        step = step.toDouble(),
+    ).toFloat()
+    val values = mutableListOf<Float>()
+    var value = first
+    while (value <= upper + 1e-6f) {
+        if (value > lower + 1e-6f && value < upper - 1e-6f) {
+            values += value
+        }
+        value += step
+    }
+    return values
+}
+
+private fun minorTickValues(
+    lower: Float,
+    upper: Float,
+    majorStep: Float,
+): List<Float> {
+    val minorStep = majorStep / 5.0f
+    return gridValues(lower, upper, minorStep)
+        .filter { value ->
+            val majorIndex = value / majorStep
+            kotlin.math.abs(majorIndex - majorIndex.roundToInt()) > 1e-5f
+        }
+}
+
+private fun isZero(value: Float): Boolean = kotlin.math.abs(value) < 1e-6f
+
+private fun formatAxisValue(value: Float): String {
+    val rounded = value.roundToInt()
+    return if (kotlin.math.abs(value - rounded) < 1e-6f) {
+        rounded.toString()
+    } else {
+        value.toString()
+    }
 }
 
 private fun formatCoordinate(value: Float): String =

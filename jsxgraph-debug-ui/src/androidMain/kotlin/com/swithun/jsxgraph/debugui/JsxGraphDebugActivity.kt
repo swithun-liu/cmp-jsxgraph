@@ -19,6 +19,8 @@ class JsxGraphDebugActivity : ComponentActivity() {
                     initialPreview = JsxGraphDebugPreview.from(
                         intent.getStringExtra(EXTRA_PREVIEW),
                     ),
+                    parityCaseId = intent.getStringExtra(EXTRA_CASE_ID)
+                        ?: JsxGraphParityCorpus.DEFAULT_CASE_ID,
                 ),
             )
         }
@@ -26,5 +28,6 @@ class JsxGraphDebugActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_PREVIEW = "preview"
+        const val EXTRA_CASE_ID = "caseId"
     }
 }

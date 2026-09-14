@@ -11,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import com.swithun.jsxgraph.debugui.JsxGraphDebugApp
 import com.swithun.jsxgraph.debugui.JsxGraphDebugOptions
 import com.swithun.jsxgraph.debugui.JsxGraphDebugPreview
+import com.swithun.jsxgraph.debugui.JsxGraphParityCorpus
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,6 +23,8 @@ class MainActivity : ComponentActivity() {
                     initialPreview = JsxGraphDebugPreview.from(
                         intent.getStringExtra(EXTRA_PREVIEW),
                     ),
+                    parityCaseId = intent.getStringExtra(EXTRA_CASE_ID)
+                        ?: JsxGraphParityCorpus.DEFAULT_CASE_ID,
                 ),
             )
         }
@@ -29,5 +32,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_PREVIEW = "preview"
+        private const val EXTRA_CASE_ID = "caseId"
     }
 }

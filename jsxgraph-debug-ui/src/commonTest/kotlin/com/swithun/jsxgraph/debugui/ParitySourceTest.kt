@@ -8,6 +8,18 @@ import kotlin.test.assertIs
 
 class ParitySourceTest {
     @Test
+    fun parityCorpusHasUniqueResolvableCases() {
+        val cases = JsxGraphParityCorpus.cases
+        assertEquals(cases.size, cases.map { parityCase -> parityCase.id }.distinct().size)
+        assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find(JsxGraphParityCorpus.DEFAULT_CASE_ID),
+        )
+        assertIs<GMResult.Err<String>>(
+            JsxGraphParityCorpus.find("missing_case"),
+        )
+    }
+
+    @Test
     fun defaultSourceProducesTheNativeScene() {
         val scene = assertIs<GMResult.Ok<GeometryPlaygroundScene>>(
             parseParitySource(DEFAULT_PARITY_SOURCE),

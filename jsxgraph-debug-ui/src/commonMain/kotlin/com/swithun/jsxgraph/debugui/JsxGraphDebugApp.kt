@@ -7,6 +7,7 @@ package com.swithun.jsxgraph.debugui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -71,7 +72,8 @@ enum class JsxGraphDebugPreview {
 
 data class JsxGraphDebugOptions(
     val initialPreview: JsxGraphDebugPreview = JsxGraphDebugPreview.Native,
-    val source: String = DEFAULT_PARITY_SOURCE,
+    val parityCaseId: String = JsxGraphParityCorpus.DEFAULT_CASE_ID,
+    val sourceOverride: String? = null,
 )
 
 internal sealed interface OfficialRenderResult {
@@ -97,14 +99,23 @@ fun JsxGraphDebugApp(
     options: JsxGraphDebugOptions = JsxGraphDebugOptions(),
 ) {
     var preview by rememberSaveable { mutableStateOf(options.initialPreview) }
-    val parsedScene = remember(options.source) {
-        parseParitySource(options.source)
+    val parityCase = remember(options.parityCaseId, options.sourceOverride) {
+        resolveParityCase(options)
     }
-    var officialResult by remember(options.source) {
+    val parsedScene = remember(parityCase) {
+        when (parityCase) {
+            is GMResult.Ok -> parseParitySource(parityCase.value.source)
+            is GMResult.Err -> GMResult.Err(parityCase.error)
+        }
+    }
+    var officialResult by remember(parityCase) {
         mutableStateOf<OfficialRenderResult>(OfficialRenderResult.Loading)
     }
-    val auditStatus = when (preview) {
-        JsxGraphDebugPreview.Source -> "jsxgraph-audit:ready"
+    val renderStatus = when (preview) {
+        JsxGraphDebugPreview.Source -> when (parityCase) {
+            is GMResult.Ok -> "jsxgraph-audit:ready"
+            is GMResult.Err -> "jsxgraph-audit:error:${parityCase.error}"
+        }
         JsxGraphDebugPreview.Native -> when (parsedScene) {
             is GMResult.Ok -> "jsxgraph-audit:ready"
             is GMResult.Err -> "jsxgraph-audit:error:${parsedScene.error}"
@@ -114,6 +125,10 @@ fun JsxGraphDebugApp(
             is OfficialRenderResult.Ready -> "jsxgraph-audit:ready"
             is OfficialRenderResult.Error -> "jsxgraph-audit:error:${result.message}"
         }
+    }
+    val caseMarker = when (parityCase) {
+        is GMResult.Ok -> parityCase.value.id
+        is GMResult.Err -> options.parityCaseId
     }
 
     MaterialTheme(
@@ -127,13 +142,16 @@ fun JsxGraphDebugApp(
         Scaffold(
             modifier = Modifier
                 .fillMaxSize()
-                .semantics { contentDescription = auditStatus },
+                .semantics {
+                    contentDescription =
+                        "$renderStatus jsxgraph-case:$caseMarker"
+                },
             containerColor = MaterialTheme.colorScheme.background,
             contentWindowInsets = WindowInsets.safeDrawing,
         ) { contentPadding ->
             DebugContent(
                 contentPadding = contentPadding,
-                source = options.source,
+                parityCase = parityCase,
                 parsedScene = parsedScene,
                 preview = preview,
                 onPreviewChange = { preview = it },
@@ -146,100 +164,151 @@ fun JsxGraphDebugApp(
 @Composable
 private fun DebugContent(
     contentPadding: PaddingValues,
-    source: String,
+    parityCase: GMResult<JsxGraphParityCase, String>,
     parsedScene: GMResult<GeometryPlaygroundScene, String>,
     preview: JsxGraphDebugPreview,
     onPreviewChange: (JsxGraphDebugPreview) -> Unit,
     onOfficialResult: (OfficialRenderResult) -> Unit,
 ) {
-    Column(
+    val selectedCase = (parityCase as? GMResult.Ok)?.value
+    val caseIndex = selectedCase?.let { currentCase ->
+        JsxGraphParityCorpus.cases.indexOfFirst { candidate ->
+            candidate.id == currentCase.id
+        }
+    }?.takeIf { index -> index >= 0 }
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
             .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
+        val compactHeight = maxHeight < 600.dp
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(
+                if (compactHeight) 8.dp else 12.dp,
+            ),
         ) {
-            Column {
-                Text(
-                    text = "JSXGraph parity",
-                    style = MaterialTheme.typography.titleLarge,
-                    letterSpacing = 0.sp,
-                )
-                Text(
-                    text = "Reference 1.13.3",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    letterSpacing = 0.sp,
-                )
-            }
-            Text(
-                text = "case 1 / 1",
-                color = MaterialTheme.colorScheme.secondary,
-                style = MaterialTheme.typography.labelMedium,
-                letterSpacing = 0.sp,
-            )
-        }
-
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            JsxGraphDebugPreview.entries.forEachIndexed { index, item ->
-                SegmentedButton(
-                    selected = preview == item,
-                    onClick = { onPreviewChange(item) },
-                    shape = SegmentedButtonDefaults.itemShape(
-                        index = index,
-                        count = JsxGraphDebugPreview.entries.size,
-                    ),
-                    label = { Text(item.name, letterSpacing = 0.sp) },
-                )
-            }
-        }
-
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1.2f)
-                .semantics {
-                    contentDescription = "jsxgraph-parity-board"
-                },
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-            color = Color.White,
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
-            when (preview) {
-                JsxGraphDebugPreview.Source -> SourcePreview(source)
-                JsxGraphDebugPreview.Official -> OfficialJsxGraphDiagram(
-                    source = source,
-                    modifier = Modifier.fillMaxSize(),
-                    onRenderResult = onOfficialResult,
-                )
-                JsxGraphDebugPreview.Native -> when (parsedScene) {
-                    is GMResult.Ok -> JsxGraphGeometryPreview(
-                        scene = parsedScene.value,
-                        modifier = Modifier.fillMaxSize(),
+            if (!compactHeight) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Column {
+                        Text(
+                            text = "JSXGraph parity",
+                            style = MaterialTheme.typography.titleLarge,
+                            letterSpacing = 0.sp,
+                        )
+                        Text(
+                            text = "Reference 1.13.3",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            letterSpacing = 0.sp,
+                        )
+                    }
+                    Text(
+                        text = caseIndex?.let { index ->
+                            "case ${index + 1} / ${JsxGraphParityCorpus.cases.size}"
+                        } ?: "unknown case",
+                        color = MaterialTheme.colorScheme.secondary,
+                        style = MaterialTheme.typography.labelMedium,
+                        letterSpacing = 0.sp,
                     )
-                    is GMResult.Err -> ErrorPreview(parsedScene.error)
                 }
             }
-        }
 
-        Text(
-            text = when (preview) {
-                JsxGraphDebugPreview.Source -> "Parity fixture JSON"
-                JsxGraphDebugPreview.Official -> "Official JSXGraph 1.13.3"
-                JsxGraphDebugPreview.Native -> "Compose Canvas"
-            },
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelMedium,
-            letterSpacing = 0.sp,
-        )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                JsxGraphDebugPreview.entries.forEachIndexed { index, item ->
+                    SegmentedButton(
+                        selected = preview == item,
+                        onClick = { onPreviewChange(item) },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = index,
+                            count = JsxGraphDebugPreview.entries.size,
+                        ),
+                        label = { Text(item.name, letterSpacing = 0.sp) },
+                    )
+                }
+            }
+
+            val boardModifier = if (compactHeight) {
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            } else {
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1.2f)
+            }
+            Surface(
+                modifier = boardModifier.semantics {
+                    contentDescription = "jsxgraph-parity-board"
+                },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                color = Color.White,
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                when (parityCase) {
+                    is GMResult.Err -> ErrorPreview(parityCase.error)
+                    is GMResult.Ok -> when (preview) {
+                        JsxGraphDebugPreview.Source -> SourcePreview(
+                            parityCase.value.source,
+                        )
+                        JsxGraphDebugPreview.Official -> OfficialJsxGraphDiagram(
+                            source = parityCase.value.source,
+                            modifier = Modifier.fillMaxSize(),
+                            onRenderResult = onOfficialResult,
+                        )
+                        JsxGraphDebugPreview.Native -> when (parsedScene) {
+                            is GMResult.Ok -> JsxGraphGeometryPreview(
+                                scene = parsedScene.value,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            is GMResult.Err -> ErrorPreview(parsedScene.error)
+                        }
+                    }
+                }
+            }
+
+            if (!compactHeight) {
+                Text(
+                    text = "${selectedCase?.title ?: "Invalid parity case"} - " + when (preview) {
+                        JsxGraphDebugPreview.Source -> "Parity fixture JSON"
+                        JsxGraphDebugPreview.Official -> "Official JSXGraph 1.13.3"
+                        JsxGraphDebugPreview.Native -> "Compose Canvas"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    letterSpacing = 0.sp,
+                )
+            }
+        }
     }
 }
+
+private fun resolveParityCase(
+    options: JsxGraphDebugOptions,
+): GMResult<JsxGraphParityCase, String> =
+    when (val corpusCase = JsxGraphParityCorpus.find(options.parityCaseId)) {
+        is GMResult.Ok -> GMResult.Ok(
+            options.sourceOverride?.let { source ->
+                corpusCase.value.copy(source = source)
+            } ?: corpusCase.value,
+        )
+        is GMResult.Err -> options.sourceOverride?.let { source ->
+            GMResult.Ok(
+                JsxGraphParityCase(
+                    id = options.parityCaseId,
+                    title = "Custom source",
+                    source = source,
+                    features = emptySet(),
+                ),
+            )
+        } ?: corpusCase
+    }
 
 @Composable
 private fun SourcePreview(source: String) {
@@ -388,24 +457,3 @@ private fun JsonObject.offset(name: String): Offset? {
     }
     return Offset(x, y)
 }
-
-const val DEFAULT_PARITY_SOURCE: String = """
-{
-  "schemaVersion": 1,
-  "boundingBox": [-6, 5, 6, -5],
-  "fixedPoint": [-4, -2],
-  "controlPoint": [3.2, 2.1],
-  "circle": {
-    "center": [0.5, 0.6],
-    "radius": 2.35
-  },
-  "sine": {
-    "amplitude": 2,
-    "frequency": 0.8
-  },
-  "parabola": {
-    "quadratic": 0.16,
-    "constant": -2.5
-  }
-}
-"""

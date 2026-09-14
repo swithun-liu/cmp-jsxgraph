@@ -31,23 +31,43 @@ Capture the same source as source text, official JSXGraph, and Compose Canvas:
 
 ```bash
 ANDROID_SERIAL=<device-serial> ./tools/capture-android-parity.sh
+ANDROID_SERIAL=<device-serial> ./tools/capture-android-parity-matrix.sh
 ```
 
 The script writes ignored local evidence to:
 
 ```text
 captures/local/android-parity/current/
-├── source.png
-├── official.png
-├── native.png
-├── contact-sheet.png
-└── metrics.txt
+├── summary.tsv
+└── baseline_geometry/
+    ├── source.png
+    ├── official.png
+    ├── native.png
+    ├── contact-sheet.png
+    └── metrics.txt
 ```
 
 The script reads the board bounds from Compose semantics and compares the
 official and native board crops with FFmpeg SSIM. The provisional regression
 floor is `0.90` and can be overridden with `MIN_BOARD_SSIM`. This coarse metric
 detects large visual regressions; it does not replace contact-sheet review.
+Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
+corpus subset. Unknown IDs fail explicitly instead of falling back to the
+default case.
+
+`JsxGraphParityCorpus` is the source of truth for current slice cases. A case
+is added only after the native implementation supports every feature declared
+by that case. This slice corpus is separate from the future full JSXGraph
+stable corpus.
+
+The matrix script captures these logical window profiles and restores the
+device's previous size, density, and font scale on success or failure:
+
+- `400 x 400 dp`
+- `400 x 500 dp`
+- `610 x 500 dp`
+- `900 x 1000 dp`
+- `400 x 500 dp` at `1.5` font scale
 
 ## Comparison Contract
 
