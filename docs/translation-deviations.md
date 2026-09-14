@@ -22,6 +22,8 @@ practical.
 - `boxplot` and `weightedMean` use `GMResult` for empty-data and
   dimension-mismatch failures instead of returning mixed JavaScript types or
   throwing.
+- `Numerics.Gauss` returns `GMResult` for dimension and singular-matrix
+  failures instead of throwing.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
   Extremely large values and unsupported digit counts do not reproduce
   JavaScript `Number.toFixed` exceptions byte-for-byte.
