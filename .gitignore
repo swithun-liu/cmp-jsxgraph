@@ -1,0 +1,19 @@
+.gradle/
+.idea/
+.kotlin/
+kotlin-js-store/
+.DS_Store
+**/build/
+local.properties
+.env
+.env.*
+*.iml
+*.hprof
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+
+# Public upstream source is a local translation reference. The exact baseline
+# is recorded in AGENTS.md and THIRD_PARTY_NOTICES.md.
+third_party/jsxgraph-src/

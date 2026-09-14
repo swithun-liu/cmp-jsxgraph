@@ -1,0 +1,38 @@
+/*
+ * Kotlin translation of JSXGraph.
+ * Upstream: src/base/board.js
+ * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
+ * Bianca Valentin, Alfred Wassermann, and Peter Wilfahrt.
+ * Used under the MIT License option.
+ */
+package com.swithun.jsxgraph.core.base
+
+/**
+ * Initial translated slice of JXG.Board.
+ *
+ * Only the coordinate-system state required by [Coords] is present yet. The
+ * class remains internal until the public initBoard contract is translated.
+ */
+internal class Board(
+    originX: Double,
+    originY: Double,
+    unitX: Double,
+    unitY: Double,
+    internal var zoomX: Double = 1.0,
+    internal var zoomY: Double = 1.0,
+) {
+    internal class Origin(
+        val usrCoords: DoubleArray,
+        val scrCoords: DoubleArray,
+    )
+
+    // JSXGraph: src/base/board.js -> Board constructor origin initialization
+    internal val origin = Origin(
+        usrCoords = doubleArrayOf(1.0, 0.0, 0.0),
+        scrCoords = doubleArrayOf(1.0, originX, originY),
+    )
+
+    // JSXGraph: src/base/board.js -> Board constructor unitX / unitY
+    internal var unitX: Double = unitX * zoomX
+    internal var unitY: Double = unitY * zoomY
+}
