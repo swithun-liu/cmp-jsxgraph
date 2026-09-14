@@ -9,9 +9,17 @@ package com.swithun.jsxgraph.core.math
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Coords
+import kotlin.math.E
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.ln
 import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sqrt
+import kotlin.math.tan
+import kotlin.random.Random
 
 sealed interface StatisticsError {
     data object EmptyData : StatisticsError
@@ -31,7 +39,27 @@ data class BoxPlotSummary(
     val outliers: DoubleArray,
 )
 
+fun interface RandomSource {
+    fun nextDouble(): Double
+}
+
+data class HistogramOptions(
+    val bins: Int = 10,
+    val range: ClosedFloatingPointRange<Double>? = null,
+    val density: Boolean = false,
+    val cumulative: Boolean = false,
+)
+
+data class HistogramResult(
+    val counts: DoubleArray,
+    val bins: DoubleArray,
+)
+
 object Statistics {
+    private val defaultRandomSource = RandomSource { Random.nextDouble() }
+    private var hasGaussianSpare = false
+    private var gaussianSpare = 0.0
+
     // JSXGraph: src/math/statistics.js -> sum
     fun sum(values: DoubleArray): Double {
         var result = 0.0
@@ -252,6 +280,19 @@ object Statistics {
     fun div(first: DoubleArray, second: DoubleArray): DoubleArray =
         zipShortest(first, second) { left, right -> left / right }
 
+    // JSXGraph: src/math/statistics.js -> divide (deprecated alias)
+    @Deprecated("Use div")
+    fun divide(first: Double, second: Double): Double = div(first, second)
+
+    @Deprecated("Use div")
+    fun divide(first: DoubleArray, second: Double): DoubleArray = div(first, second)
+
+    @Deprecated("Use div")
+    fun divide(first: Double, second: DoubleArray): DoubleArray = div(first, second)
+
+    @Deprecated("Use div")
+    fun divide(first: DoubleArray, second: DoubleArray): DoubleArray = div(first, second)
+
     // JSXGraph: src/math/statistics.js -> mod
     fun mod(
         first: Double,
@@ -332,6 +373,362 @@ object Statistics {
                 slopes[firstIndex] * coordinates[firstIndex].usrCoords[1]
         }
         return doubleArrayOf(median(intercepts), median(slopes), -1.0)
+    }
+
+    // JSXGraph: src/math/statistics.js -> generateGaussian / randomNormal
+    fun generateGaussian(
+        mean: Double,
+        standardDeviation: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (hasGaussianSpare) {
+            hasGaussianSpare = false
+            return gaussianSpare * standardDeviation + mean
+        }
+
+        var first: Double
+        var second: Double
+        var squareSum: Double
+        do {
+            first = random.nextDouble() * 2.0 - 1.0
+            second = random.nextDouble() * 2.0 - 1.0
+            squareSum = first * first + second * second
+        } while (squareSum >= 1.0 || squareSum == 0.0)
+
+        val scale = sqrt(-2.0 * ln(squareSum) / squareSum)
+        gaussianSpare = second * scale
+        hasGaussianSpare = true
+        return mean + standardDeviation * first * scale
+    }
+
+    fun randomNormal(
+        mean: Double,
+        standardDeviation: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double = generateGaussian(mean, standardDeviation, random)
+
+    // JSXGraph: src/math/statistics.js -> randomUniform
+    fun randomUniform(
+        minimum: Double,
+        maximum: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double = random.nextDouble() * (maximum - minimum) + minimum
+
+    // JSXGraph: src/math/statistics.js -> randomExponential
+    fun randomExponential(
+        lambda: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (lambda <= 0.0) {
+            return Double.NaN
+        }
+
+        var value: Double
+        do {
+            value = random.nextDouble()
+        } while (value == 0.0)
+        return -ln(value) / lambda
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomGamma
+    fun randomGamma(
+        shape: Double,
+        scale: Double = 1.0,
+        threshold: Double = 0.0,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (shape <= 0.0) {
+            return Double.NaN
+        }
+
+        val resolvedScale = if (scale == 0.0 || scale.isNaN()) 1.0 else scale
+        val resolvedThreshold = if (threshold == 0.0 || threshold.isNaN()) 0.0 else threshold
+        if (shape == 1.0) {
+            return resolvedScale * randomExponential(1.0, random) + resolvedThreshold
+        }
+
+        var x: Double
+        if (shape < 1.0) {
+            val split = E / (shape + E)
+            var acceptance: Double
+            var draw: Double
+            do {
+                val branch = random.nextDouble()
+                do {
+                    draw = random.nextDouble()
+                } while (draw == 0.0)
+                if (branch < split) {
+                    x = draw.pow(1.0 / shape)
+                    acceptance = exp(-x)
+                } else {
+                    x = 1.0 - ln(draw)
+                    acceptance = x.pow(shape - 1.0)
+                }
+                draw = random.nextDouble()
+            } while (draw >= acceptance)
+            return resolvedScale * x + resolvedThreshold
+        }
+
+        var tangent: Double
+        var acceptanceDraw: Double
+        do {
+            tangent = tan(kotlin.math.PI * random.nextDouble())
+            x = sqrt(2.0 * shape - 1.0) * tangent + shape - 1.0
+            if (x > 0.0) {
+                acceptanceDraw = random.nextDouble()
+            } else {
+                acceptanceDraw = Double.POSITIVE_INFINITY
+                continue
+            }
+        } while (
+            x <= 0.0 ||
+            acceptanceDraw >
+            (1.0 + tangent * tangent) *
+            exp(
+                (shape - 1.0) * ln(x / (shape - 1.0)) -
+                    sqrt(2.0 * shape - 1.0) * tangent,
+            )
+        )
+        return resolvedScale * x + resolvedThreshold
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomBeta
+    fun randomBeta(
+        alpha: Double,
+        beta: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (alpha <= 0.0 || beta <= 0.0) {
+            return Double.NaN
+        }
+
+        val first = randomGamma(alpha, random = random)
+        val second = randomGamma(beta, random = random)
+        return first / (first + second)
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomChisquare
+    fun randomChisquare(
+        degreesOfFreedom: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (degreesOfFreedom <= 0.0) {
+            return Double.NaN
+        }
+        return 2.0 * randomGamma(degreesOfFreedom * 0.5, random = random)
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomF
+    fun randomF(
+        numeratorDegrees: Double,
+        denominatorDegrees: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (numeratorDegrees <= 0.0 || denominatorDegrees <= 0.0) {
+            return Double.NaN
+        }
+
+        val numerator = randomChisquare(numeratorDegrees, random)
+        val denominator = randomChisquare(denominatorDegrees, random)
+        return numerator * denominatorDegrees / (denominator * numeratorDegrees)
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomT
+    fun randomT(
+        degreesOfFreedom: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (degreesOfFreedom <= 0.0) {
+            return Double.NaN
+        }
+
+        val normal = randomNormal(0.0, 1.0, random)
+        val chiSquare = randomChisquare(degreesOfFreedom, random)
+        return normal / sqrt(chiSquare / degreesOfFreedom)
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomBinomial
+    fun randomBinomial(
+        trials: Double,
+        probability: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (probability < 0.0 || probability > 1.0 || trials < 0.0) {
+            return Double.NaN
+        }
+        if (probability == 0.0 || trials == 0.0) {
+            return 0.0
+        }
+        if (probability == 1.0) {
+            return trials
+        }
+        if (trials == 1.0) {
+            return if (random.nextDouble() < probability) 1.0 else 0.0
+        }
+        if (probability > 0.5) {
+            return trials - randomBinomial(trials, 1.0 - probability, random)
+        }
+
+        if (trials < 100.0) {
+            var result = -1.0
+            var consumedTrials = 0.0
+            val logFailureProbability = ln(1.0 - probability)
+            if (logFailureProbability == 0.0) {
+                return 0.0
+            }
+            do {
+                result += 1.0
+                consumedTrials += floor(ln(random.nextDouble()) / logFailureProbability) + 1.0
+            } while (consumedTrials < trials)
+            return result
+        }
+
+        val firstShape = 1.0 + floor(trials * 0.5)
+        val secondShape = trials - firstShape + 1.0
+        val beta = randomBeta(firstShape, secondShape, random)
+        return if (beta >= probability) {
+            randomBinomial(firstShape - 1.0, probability / beta, random)
+        } else {
+            firstShape +
+                randomBinomial(
+                    secondShape - 1.0,
+                    (probability - beta) / (1.0 - beta),
+                    random,
+                )
+        }
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomGeometric
+    fun randomGeometric(
+        probability: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (probability < 0.0 || probability > 1.0) {
+            return Double.NaN
+        }
+        return ceil(ln(random.nextDouble()) / ln(1.0 - probability))
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomPoisson
+    fun randomPoisson(
+        mean: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (mean <= 0.0) {
+            return Double.NaN
+        }
+
+        if (mean < 10.0) {
+            val threshold = exp(-mean)
+            var count = 0
+            var product = 1.0
+            do {
+                product *= random.nextDouble()
+                count += 1
+            } while (product > threshold)
+            return (count - 1).toDouble()
+        }
+
+        val shape = floor(7.0 / 8.0 * mean)
+        val gamma = randomGamma(shape, random = random)
+        return if (gamma < mean) {
+            shape + randomPoisson(mean - gamma, random)
+        } else {
+            randomBinomial(shape - 1.0, mean / gamma, random)
+        }
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomPareto
+    fun randomPareto(
+        shape: Double,
+        scale: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        val draw = random.nextDouble()
+        if (shape <= 0.0 || scale <= 0.0) {
+            return Double.NaN
+        }
+        return scale * (1.0 - draw).pow(-1.0 / shape)
+    }
+
+    // JSXGraph: src/math/statistics.js -> randomHypergeometric
+    fun randomHypergeometric(
+        good: Double,
+        bad: Double,
+        samples: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        if (good < 1.0 || bad < 1.0 || samples > good + bad) {
+            return Double.NaN
+        }
+
+        var remainingSamples = samples
+        val denominatorBase = good + bad - samples
+        val smallerGroup = min(good, bad)
+        var remainingSmallerGroup = smallerGroup
+        while (remainingSmallerGroup * remainingSamples > 0.0) {
+            val draw = random.nextDouble()
+            remainingSmallerGroup -=
+                floor(draw + remainingSmallerGroup / (denominatorBase + remainingSamples))
+            remainingSamples -= 1.0
+        }
+        val selectedFromSmallerGroup = smallerGroup - remainingSmallerGroup
+        return if (good <= bad) {
+            selectedFromSmallerGroup
+        } else {
+            samples - selectedFromSmallerGroup
+        }
+    }
+
+    // JSXGraph: src/math/statistics.js -> histogram
+    fun histogram(
+        values: DoubleArray,
+        options: HistogramOptions = HistogramOptions(),
+    ): HistogramResult {
+        val numberOfBins = if (options.bins == 0) 10 else options.bins
+        val minimum = options.range?.start ?: min(values)
+        val maximum = options.range?.endInclusive ?: max(values)
+        val delta = if (numberOfBins > 0) {
+            (maximum - minimum) / (numberOfBins - 1)
+        } else {
+            0.0
+        }
+
+        val counts = DoubleArray(maxOf(numberOfBins, 0))
+        val bins = DoubleArray(maxOf(numberOfBins, 0)) { index -> minimum + index * delta }
+        var outsideBinCount = 0
+        for (value in values) {
+            val bin = floor((value - minimum) / delta)
+            if (bin >= 0.0 && bin < numberOfBins.toDouble()) {
+                counts[bin.toInt()] += 1.0
+            } else {
+                outsideBinCount += 1
+            }
+        }
+
+        if (options.density) {
+            val normalizer = sum(counts) + outsideBinCount
+            for (index in counts.indices) {
+                counts[index] /= normalizer * delta
+            }
+        }
+
+        if (options.cumulative) {
+            if (options.density) {
+                for (index in counts.indices) {
+                    counts[index] *= delta
+                }
+            }
+            for (index in 1 until counts.size) {
+                counts[index] += counts[index - 1]
+            }
+        }
+        return HistogramResult(counts = counts, bins = bins)
+    }
+
+    internal fun resetGaussianState() {
+        hasGaussianSpare = false
+        gaussianSpare = 0.0
     }
 
     private fun zipShortest(

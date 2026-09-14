@@ -127,4 +127,104 @@ class StatisticsTest {
             Statistics.TheilSenRegression(coordinates),
         )
     }
+
+    @Test
+    fun randomDistributionAlgorithmsMatchOfficialReferenceWithFixedDraws() {
+        Statistics.resetGaussianState()
+        val gaussianRandom = sequenceRandom(0.75, 0.25)
+        assertEquals(
+            4.4976638334730925,
+            Statistics.generateGaussian(2.0, 3.0, gaussianRandom),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            -0.49766383347309295,
+            Statistics.generateGaussian(2.0, 3.0, gaussianRandom),
+            absoluteTolerance = 1e-14,
+        )
+
+        assertEquals(12.5, Statistics.randomUniform(10.0, 20.0, sequenceRandom(0.25)))
+        assertEquals(
+            0.34657359027997264,
+            Statistics.randomExponential(2.0, sequenceRandom(0.5)),
+            absoluteTolerance = 1e-15,
+        )
+        assertEquals(
+            1.125,
+            Statistics.randomGamma(
+                shape = 0.5,
+                scale = 2.0,
+                threshold = 1.0,
+                random = sequenceRandom(0.0, 0.25, 0.0),
+            ),
+        )
+        assertEquals(
+            2.7320508075688767,
+            Statistics.randomGamma(2.0, random = sequenceRandom(0.25, 0.0)),
+            absoluteTolerance = 1e-14,
+        )
+    }
+
+    @Test
+    fun discreteRandomAlgorithmsMatchOfficialReferenceWithFixedDraws() {
+        assertEquals(
+            2.0,
+            Statistics.randomBinomial(10.0, 0.2, sequenceRandom(0.5)),
+        )
+        assertEquals(
+            3.0,
+            Statistics.randomGeometric(0.25, sequenceRandom(0.5)),
+        )
+        assertEquals(
+            2.0,
+            Statistics.randomPoisson(2.0, sequenceRandom(0.5)),
+        )
+        assertEquals(
+            6.0,
+            Statistics.randomPareto(2.0, 3.0, sequenceRandom(0.75)),
+        )
+        assertEquals(
+            1.0,
+            Statistics.randomHypergeometric(4.0, 6.0, 3.0, sequenceRandom(0.2, 0.8, 0.4)),
+        )
+    }
+
+    @Test
+    fun histogramMatchesOfficialReferenceValues() {
+        val values = doubleArrayOf(0.0, 1.0, 2.0, 3.0, 4.0, 10.0)
+        val histogram = Statistics.histogram(
+            values,
+            HistogramOptions(bins = 3, range = 0.0..4.0),
+        )
+        assertContentEquals(doubleArrayOf(2.0, 2.0, 1.0), histogram.counts)
+        assertContentEquals(doubleArrayOf(0.0, 2.0, 4.0), histogram.bins)
+
+        val cumulativeDensity = Statistics.histogram(
+            values,
+            HistogramOptions(
+                bins = 3,
+                range = 0.0..4.0,
+                density = true,
+                cumulative = true,
+            ),
+        )
+        assertContentEquals(
+            doubleArrayOf(
+                0.3333333333333333,
+                0.6666666666666666,
+                0.8333333333333333,
+            ),
+            cumulativeDensity.counts,
+        )
+        assertContentEquals(doubleArrayOf(0.0, 2.0, 4.0), cumulativeDensity.bins)
+    }
+
+    private fun sequenceRandom(vararg values: Double): RandomSource {
+        var index = 0
+        return RandomSource {
+            val value = values[index % values.size]
+            index += 1
+            value
+        }
+    }
 }

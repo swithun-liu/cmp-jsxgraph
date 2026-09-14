@@ -15,7 +15,7 @@
 | `src/math/math.js` | `JXG.Math` | `math/Mat.kt` | Translated |
 | `src/math/probfuncs.js` | `Mat.ProbFuncs` | `math/ProbFuncs.kt` | Translated |
 | `src/math/complex.js` | `JXG.Complex`, `JXG.C` | `math/Complex.kt` | Translated |
-| `src/math/statistics.js` | deterministic statistics and array arithmetic through `TheilSenRegression` | `math/Statistics.kt` | Partially translated |
+| `src/math/statistics.js` | `Mat.Statistics` | `math/Statistics.kt` | Translated |
 | `src/utils/event.js` | `EventEmitter.trigger`, `on`, `off` | `utils/EventEmitter.kt` | Translated |
 | `src/base/board.js` | coordinate origin, zoom, units | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |

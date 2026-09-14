@@ -16,6 +16,12 @@ practical.
   differently from malformed JavaScript arrays.
 - `EventEmitter` passes the registered context as an explicit callback
   argument because Kotlin has no dynamic JavaScript `this`.
+- Random-distribution functions accept an injectable `RandomSource`. Their
+  default behavior still uses the platform random source; injection makes
+  algorithm parity tests deterministic.
+- `boxplot` and `weightedMean` use `GMResult` for empty-data and
+  dimension-mismatch failures instead of returning mixed JavaScript types or
+  throwing.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
   Extremely large values and unsupported digit counts do not reproduce
   JavaScript `Number.toFixed` exceptions byte-for-byte.
