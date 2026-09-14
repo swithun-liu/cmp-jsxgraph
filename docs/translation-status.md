@@ -16,7 +16,7 @@
 | `src/math/probfuncs.js` | `Mat.ProbFuncs` | `math/ProbFuncs.kt` | Translated |
 | `src/math/complex.js` | `JXG.Complex`, `JXG.C` | `math/Complex.kt` | Translated |
 | `src/math/statistics.js` | `Mat.Statistics` | `math/Statistics.kt` | Translated |
-| `src/math/numerics.js` | linear systems, determinants and Jacobi eigensolver | `math/Numerics.kt` | Partially translated |
+| `src/math/numerics.js` | linear algebra and Newton-Cotes, Romberg, Gauss-Legendre integration | `math/Numerics.kt` | Partially translated |
 | `src/utils/event.js` | `EventEmitter.trigger`, `on`, `off` | `utils/EventEmitter.kt` | Translated |
 | `src/base/board.js` | coordinate origin, zoom, units | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |

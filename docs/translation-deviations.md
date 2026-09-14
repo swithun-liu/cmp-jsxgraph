@@ -24,6 +24,10 @@ practical.
   throwing.
 - `Numerics.Gauss` returns `GMResult` for dimension and singular-matrix
   failures instead of throwing.
+- Numerical integration APIs return `GMResult` for invalid intervals, node
+  counts and quadrature orders.
+- `Numerics.Romberg` honors its documented default configuration. JSXGraph
+  `1.13.3` dereferences `config.eps` when the optional config is omitted.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
   Extremely large values and unsupported digit counts do not reproduce
   JavaScript `Number.toFixed` exceptions byte-for-byte.

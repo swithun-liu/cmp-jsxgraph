@@ -115,6 +115,83 @@ class NumericsTest {
         )
     }
 
+    @Test
+    fun newtonCotesRulesMatchOfficialReferenceValues() {
+        val function: (Double) -> Double = { value -> value * value }
+        assertEquals(
+            2.666666666666666,
+            valueOf(Numerics.NewtonCotes(doubleArrayOf(0.0, 2.0), function)),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            2.668367346938774,
+            valueOf(
+                Numerics.NewtonCotes(
+                    doubleArrayOf(0.0, 2.0),
+                    function,
+                    NewtonCotesConfig(28, IntegrationType.TRAPEZ),
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+        assertEquals(
+            2.6666666666666647,
+            valueOf(
+                Numerics.NewtonCotes(
+                    doubleArrayOf(0.0, 2.0),
+                    function,
+                    NewtonCotesConfig(28, IntegrationType.SIMPSON),
+                ),
+            ),
+            absoluteTolerance = 1e-14,
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidIntegrationNodeCount>>(
+            Numerics.NewtonCotes(
+                doubleArrayOf(0.0, 2.0),
+                function,
+                NewtonCotesConfig(3, IntegrationType.SIMPSON),
+            ),
+        )
+    }
+
+    @Test
+    fun rombergUsesDocumentedDefaultsAndMatchesOfficialConfiguredValue() {
+        val result = Numerics.Romberg(
+            interval = doubleArrayOf(0.0, 2.0),
+            function = { value -> value * value },
+        )
+
+        assertEquals(2.6666666666666665, valueOf(result), absoluteTolerance = 1e-14)
+    }
+
+    @Test
+    fun gaussLegendreOrdersMatchOfficialReferenceValues() {
+        val function: (Double) -> Double = { value -> value * value }
+        for (order in 2..18) {
+            val result = Numerics.GaussLegendre(
+                interval = doubleArrayOf(0.0, 2.0),
+                function = function,
+                requestedOrder = order,
+            )
+            assertEquals(
+                expected = 8.0 / 3.0,
+                actual = valueOf(result),
+                absoluteTolerance = 1e-14,
+                message = "Order $order",
+            )
+        }
+        assertEquals(
+            valueOf(Numerics.GaussLegendre(doubleArrayOf(0.0, 2.0), function, 18)),
+            valueOf(Numerics.GaussLegendre(doubleArrayOf(0.0, 2.0), function, 20)),
+        )
+        assertIs<GMResult.Err<NumericsError.InvalidQuadratureOrder>>(
+            Numerics.GaussLegendre(doubleArrayOf(0.0, 2.0), function, 1),
+        )
+    }
+
+    private fun valueOf(result: GMResult<Double, NumericsError>): Double =
+        assertIs<GMResult.Ok<Double>>(result).value
+
     private fun assertMatrixEquals(
         expected: Array<DoubleArray>,
         actual: Array<DoubleArray>,
