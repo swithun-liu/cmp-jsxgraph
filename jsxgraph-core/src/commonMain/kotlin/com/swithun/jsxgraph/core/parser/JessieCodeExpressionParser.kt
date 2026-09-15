@@ -62,9 +62,9 @@ internal sealed interface JessieCodeParserError {
  *
  * This slice implements `StatementList`, blocks, `if` statements, expression
  * statements, `while`/`do`/`for` loops, assignment, array and object literals.
- * Return/delete statements and function/map expressions are also covered. The
- * deprecated multi-board `use` statement and creator attributes are
- * intentionally left for later slices.
+ * Return/delete statements, function/map expressions, and creator attribute
+ * lists are also covered. The deprecated multi-board `use` statement is
+ * intentionally left for a later slice.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -731,10 +731,26 @@ private class ParserState(
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        var canHaveAttributes = false
 
         while (true) {
+            if (
+                canHaveAttributes &&
+                current().type in ATTRIBUTE_START_TOKENS
+            ) {
+                expression = when (
+                    val result = parseCallAttributes(expression)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                canHaveAttributes = false
+                continue
+            }
+
             expression = when (current().type) {
                 JessieCodeTokenType.DOT -> {
+                    canHaveAttributes = false
                     consume()
                     val property = when (
                         val result = expect(
@@ -767,6 +783,7 @@ private class ParserState(
                 }
 
                 JessieCodeTokenType.LEFT_BRACKET -> {
+                    canHaveAttributes = false
                     consume()
                     val index = when (
                         val result = nested(current().location) {
@@ -823,6 +840,7 @@ private class ParserState(
                     }
                     val argumentNodes = arguments.map { it.node }
                     val argumentDepths = arguments.map { it.depth }
+                    canHaveAttributes = true
                     when (
                         val result = operationWithRawChildren(
                             upstreamName = "op_execfun",
@@ -853,6 +871,85 @@ private class ParserState(
                 else -> return GMResult.Ok(expression)
             }
         }
+    }
+
+    // JSXGraph: CallExpression, AttributeList, and Attribute
+    private fun parseCallAttributes(
+        call: ParsedExpression,
+    ): ParserResult<ParsedExpression> {
+        val attributes = mutableListOf<ParsedExpression>()
+        while (true) {
+            val attribute = when (current().type) {
+                JessieCodeTokenType.IDENTIFIER -> {
+                    val token = consume()
+                    leaf(
+                        type = JessieCodeAstNodeType.VARIABLE,
+                        value = JessieCodeAstValue.Text(token.lexeme),
+                        token = token,
+                        isMath = true,
+                    )
+                }
+                JessieCodeTokenType.SHIFT_LEFT -> objectLiteral()
+                else -> return unexpected(
+                    ATTRIBUTE_START_TOKENS.toList(),
+                )
+            }
+            when (attribute) {
+                is GMResult.Ok -> attributes += attribute.value
+                is GMResult.Err -> return attribute
+            }
+
+            if (current().type != JessieCodeTokenType.COMMA) {
+                break
+            }
+            consume()
+        }
+
+        val existingChildren = call.node.children
+        if (
+            call.node.type != JessieCodeAstNodeType.OPERATION ||
+            (call.node.value as? JessieCodeAstValue.Text)?.value !=
+            "op_execfun" ||
+            existingChildren.size != 2
+        ) {
+            return unexpected(
+                listOf(JessieCodeTokenType.SEMICOLON),
+            )
+        }
+
+        var maxChildDepth = call.depth - 1
+        for (attribute in attributes) {
+            if (attribute.depth > maxChildDepth) {
+                maxChildDepth = attribute.depth
+            }
+        }
+        val depth = maxChildDepth + 1
+        if (depth > limits.maxAstDepth) {
+            return GMResult.Err(
+                JessieCodeParserError.AstDepthLimitExceeded(
+                    limit = limits.maxAstDepth,
+                    location = call.span.start,
+                ),
+            )
+        }
+
+        val lastAttribute = attributes.last()
+        return GMResult.Ok(
+            ParsedExpression(
+                node = call.node.copy(
+                    children = existingChildren + listOf(
+                        JessieCodeAstChild.NodeList(
+                            attributes.map { it.node },
+                        ),
+                        JessieCodeAstChild.BooleanFlag(true),
+                    ),
+                    isMath = false,
+                ),
+                span = span(call.span, lastAttribute.span),
+                depth = depth,
+                isLeftHandSideExpression = true,
+            ),
+        )
     }
 
     // JSXGraph: PrimaryExpression, BasicLiteral, and ArrayLiteral
@@ -1605,6 +1702,11 @@ private class ParserState(
             JessieCodeTokenType.NUMBER,
             JessieCodeTokenType.NAN,
             JessieCodeTokenType.INFINITY,
+        )
+
+        val ATTRIBUTE_START_TOKENS = setOf(
+            JessieCodeTokenType.IDENTIFIER,
+            JessieCodeTokenType.SHIFT_LEFT,
         )
 
         val LOGICAL_OR_OPERATORS = mapOf(

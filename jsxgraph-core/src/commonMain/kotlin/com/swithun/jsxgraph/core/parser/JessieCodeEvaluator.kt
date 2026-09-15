@@ -956,6 +956,49 @@ private class EvaluationState(
         node: JessieCodeAstNode,
         depth: Int,
     ): EvaluationResult {
+        val attributeNodes =
+            if (node.children.size > CALL_ARGUMENT_CHILD_COUNT) {
+                if (
+                    node.children.size !=
+                    CALL_WITH_ATTRIBUTES_CHILD_COUNT ||
+                    (
+                        node.children[3] as?
+                            JessieCodeAstChild.BooleanFlag
+                        )?.value != true
+                ) {
+                    return invalidAst(
+                        node,
+                        "Attributed op_execfun has an invalid shape.",
+                    )
+                }
+                when (val result = nodeListChild(node, 2)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            } else {
+                if (node.children.size != CALL_ARGUMENT_CHILD_COUNT) {
+                    return invalidAst(
+                        node,
+                        "op_execfun must contain a function and arguments.",
+                    )
+                }
+                null
+            }
+        val attributes = if (attributeNodes != null) {
+            when (
+                val result = evaluateCreatorAttributes(
+                    nodes = attributeNodes,
+                    depth = depth,
+                    location = node.location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        } else {
+            null
+        }
+
         val functionNode = when (val result = nodeChild(node, 0)) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
@@ -976,6 +1019,22 @@ private class EvaluationState(
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        val callable = function as? JessieCodeRuntimeValue.FunctionValue
+            ?: return GMResult.Err(
+                JessieCodeRuntimeError.NotCallable(
+                    valueType = typeName(function),
+                    location = node.location,
+                ),
+            )
+        if (attributes != null && callable.creator == null) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.UnexpectedCreatorAttributes(
+                    functionName = callable.name,
+                    location = node.location,
+                ),
+            )
+        }
+
         val arguments = mutableListOf<JessieCodeRuntimeValue>()
         for (argumentNode in argumentNodes) {
             when (val result = evaluate(argumentNode, depth + 1)) {
@@ -984,14 +1043,179 @@ private class EvaluationState(
             }
         }
 
-        val callable = function as? JessieCodeRuntimeValue.FunctionValue
-            ?: return GMResult.Err(
-                JessieCodeRuntimeError.NotCallable(
-                    valueType = typeName(function),
-                    location = node.location,
+        return callable.creator?.create(
+            parents = arguments,
+            attributes = attributes
+                ?: JessieCodeRuntimeValue.ObjectValue(emptyMap()),
+            location = node.location,
+        ) ?: callable.callable.call(arguments, node.location)
+    }
+
+    private fun evaluateCreatorAttributes(
+        nodes: List<JessieCodeAstNode>,
+        depth: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<
+        JessieCodeRuntimeValue.ObjectValue,
+        JessieCodeRuntimeError,
+        > {
+        val attributes = JessieCodeRuntimeValue.ObjectValue(emptyMap())
+        for (attributeNode in nodes) {
+            val attribute = when (
+                val result = evaluate(attributeNode, depth + 1)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            when (
+                val result = mergeAttributeValue(
+                    target = attributes,
+                    source = attribute,
+                    depth = 1,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(attributes)
+    }
+
+    // JSXGraph: src/utils/type.js -> deepCopy(..., toLower=true)
+    private fun mergeAttributeValue(
+        target: JessieCodeRuntimeValue.ObjectValue,
+        source: JessieCodeRuntimeValue,
+        depth: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        if (depth > limits.maxEvaluationDepth) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
+                    limit = limits.maxEvaluationDepth,
+                    location = location,
                 ),
             )
-        return callable.callable.call(arguments, node.location)
+        }
+        val entries = when (source) {
+            is JessieCodeRuntimeValue.ObjectValue ->
+                source.properties.entries.map { it.key to it.value }
+            is JessieCodeRuntimeValue.ArrayValue ->
+                source.values.mapIndexed { index, value ->
+                    index.toString() to value
+                } + source.properties.entries.map {
+                    it.key to it.value
+                }
+            else -> return GMResult.Ok(Unit)
+        }
+
+        for ((sourceKey, sourceValue) in entries) {
+            val key = sourceKey.lowercase()
+            if (
+                key !in target.properties &&
+                target.properties.size >= limits.maxCollectionSize
+            ) {
+                return GMResult.Err(
+                    JessieCodeRuntimeError.CollectionSizeLimitExceeded(
+                        limit = limits.maxCollectionSize,
+                        requestedSize =
+                            target.properties.size.toLong() + 1L,
+                        location = location,
+                    ),
+                )
+            }
+            val existing = target.properties[key]
+            if (
+                existing is JessieCodeRuntimeValue.ObjectValue &&
+                sourceValue is JessieCodeRuntimeValue.ObjectValue
+            ) {
+                when (
+                    val result = mergeAttributeValue(
+                        target = existing,
+                        source = sourceValue,
+                        depth = depth + 1,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            } else {
+                target.properties[key] = when (
+                    val result = copyAttributeValue(
+                        value = sourceValue,
+                        depth = depth + 1,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+        }
+        return GMResult.Ok(Unit)
+    }
+
+    private fun copyAttributeValue(
+        value: JessieCodeRuntimeValue,
+        depth: Int,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        if (depth > limits.maxEvaluationDepth) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
+                    limit = limits.maxEvaluationDepth,
+                    location = location,
+                ),
+            )
+        }
+        return when (value) {
+            is JessieCodeRuntimeValue.ObjectValue -> {
+                val copy = JessieCodeRuntimeValue.ObjectValue(emptyMap())
+                when (
+                    val result = mergeAttributeValue(
+                        target = copy,
+                        source = value,
+                        depth = depth,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> GMResult.Ok(copy)
+                    is GMResult.Err -> result
+                }
+            }
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                if (value.values.size > limits.maxCollectionSize) {
+                    return GMResult.Err(
+                        JessieCodeRuntimeError
+                            .CollectionSizeLimitExceeded(
+                                limit = limits.maxCollectionSize,
+                                requestedSize = value.values.size.toLong(),
+                                location = location,
+                            ),
+                    )
+                }
+                val values = mutableListOf<JessieCodeRuntimeValue>()
+                for (entry in value.values) {
+                    when (
+                        val result = copyAttributeValue(
+                            value = entry,
+                            depth = depth + 1,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> values += result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(values))
+            }
+            is JessieCodeRuntimeValue.ElementReference ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.StringValue(value.element.id),
+                )
+            else -> GMResult.Ok(value)
+        }
     }
 
     private fun evaluateProperty(
@@ -1147,6 +1371,28 @@ private class EvaluationState(
                     JessieCodeRuntimeValue.FunctionValue(
                         name = name,
                         callable = callable,
+                    ),
+                )
+            }
+            val creator = environment.creators[name]
+            if (creator != null) {
+                return GMResult.Ok(
+                    JessieCodeRuntimeValue.FunctionValue(
+                        name = name,
+                        callable = JessieCodeCallable {
+                                arguments,
+                                location,
+                            ->
+                            creator.create(
+                                parents = arguments,
+                                attributes =
+                                    JessieCodeRuntimeValue.ObjectValue(
+                                        emptyMap(),
+                                    ),
+                                location = location,
+                            )
+                        },
+                        creator = creator,
                     ),
                 )
             }
@@ -2146,6 +2392,8 @@ private class EvaluationState(
         const val INDEX_INTEGER_TOLERANCE = 1.0e-12
         const val MAX_JAVASCRIPT_ARRAY_INDEX = 4_294_967_294L
         const val MAX_JAVASCRIPT_ARRAY_LENGTH = 4_294_967_295L
+        const val CALL_ARGUMENT_CHILD_COUNT = 2
+        const val CALL_WITH_ATTRIBUTES_CHILD_COUNT = 4
         val NEGATIVE_ZERO_BITS = (-0.0).toBits()
         val ARRAY_INDEX = Regex("""^(0|[1-9][0-9]*)$""")
     }

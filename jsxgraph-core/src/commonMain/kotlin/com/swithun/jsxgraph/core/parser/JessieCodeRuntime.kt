@@ -67,6 +67,11 @@ internal sealed interface JessieCodeRuntimeError {
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
 
+    data class UnexpectedCreatorAttributes(
+        val functionName: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
     data class UnknownProperty(
         val receiverType: String,
         val property: String,
@@ -121,6 +126,14 @@ internal fun interface JessieCodeCallable {
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError>
 }
 
+internal fun interface JessieCodeCreator {
+    fun create(
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError>
+}
+
 /**
  * Values visible to the translated JessieCode interpreter.
  *
@@ -166,6 +179,7 @@ internal sealed interface JessieCodeRuntimeValue {
         val parameterNames: List<String> = emptyList(),
         val isMap: Boolean = false,
         val dependencies: Map<String, GeometryElement> = emptyMap(),
+        val creator: JessieCodeCreator? = null,
     ) : JessieCodeRuntimeValue
 
     class BoardReference(
@@ -233,6 +247,7 @@ internal object UnsupportedJessieCodeElementRuntime :
 internal data class JessieCodeRuntimeEnvironment(
     val variables: Map<String, JessieCodeRuntimeValue> = emptyMap(),
     val functions: Map<String, JessieCodeCallable> = emptyMap(),
+    val creators: Map<String, JessieCodeCreator> = emptyMap(),
     val board: Board? = null,
     val elementRuntime: JessieCodeElementRuntime =
         UnsupportedJessieCodeElementRuntime,

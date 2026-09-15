@@ -556,6 +556,43 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
+    fun creatorAttributeListsMatchOfficialAst() {
+        val call = expression(
+            "capture(1, 2) << strokeColor: \"red\", size: 3 >>;",
+        )
+        assertEquals(
+            "op_execfun(" +
+                "variable:capture," +
+                "list[number:1.0,number:2.0]," +
+                "list[" +
+                "op_proplst_val(" +
+                "op_proplst(" +
+                "op_prop(text:strokeColor,string:red)," +
+                "op_prop(text:size,number:3.0)))]," +
+                "flag:true)",
+            describe(call),
+        )
+        assertEquals(false, call.isMath)
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 7),
+            call.location,
+        )
+
+        val named = expression("capture(1) style;")
+        val attribute = assertIs<JessieCodeAstChild.NodeList>(
+            named.children[2],
+        ).value.single()
+        assertEquals("variable:style", describe(attribute))
+        assertEquals(true, attribute.isMath)
+        assertEquals(
+            true,
+            assertIs<JessieCodeAstChild.BooleanFlag>(
+                named.children[3],
+            ).value,
+        )
+    }
+
+    @Test
     fun unsupportedAndMalformedFunctionGrammarIsStructured() {
         val use = assertIs<
             JessieCodeParserError.UnsupportedSyntax
@@ -564,7 +601,7 @@ class JessieCodeExpressionParserTest {
 
         val attributes = assertIs<
             JessieCodeParserError.UnsupportedSyntax
-            >(error("foo() << a: 1 >>;"))
+            >(error("1 << a: 1 >>;"))
         assertEquals("call attribute lists", attributes.feature)
 
         val parameter = assertIs<
@@ -589,6 +626,17 @@ class JessieCodeExpressionParserTest {
         assertEquals(
             listOf(JessieCodeTokenType.ARROW),
             arrow.expected,
+        )
+
+        val attribute = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("capture(1) style, ;"))
+        assertEquals(
+            setOf(
+                JessieCodeTokenType.IDENTIFIER,
+                JessieCodeTokenType.SHIFT_LEFT,
+            ),
+            attribute.expected.toSet(),
         )
     }
 
@@ -833,6 +881,9 @@ class JessieCodeExpressionParserTest {
                         prefix = "text-list[",
                         postfix = "]",
                     )
+                }
+                is JessieCodeAstChild.BooleanFlag -> {
+                    "flag:${child.value}"
                 }
                 JessieCodeAstChild.EmptyObject -> "empty-object"
                 JessieCodeAstChild.Undefined -> "raw-undefined"

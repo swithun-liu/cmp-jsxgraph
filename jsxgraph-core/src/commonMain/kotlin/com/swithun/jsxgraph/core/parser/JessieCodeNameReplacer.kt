@@ -192,6 +192,7 @@ private class IdReplacementState(
                 }
                 is JessieCodeAstChild.Text,
                 is JessieCodeAstChild.TextList,
+                is JessieCodeAstChild.BooleanFlag,
                 JessieCodeAstChild.EmptyObject,
                 JessieCodeAstChild.Undefined,
                 -> Unit
@@ -333,6 +334,7 @@ private class ReplacementState(
                 }
                 is JessieCodeAstChild.Text,
                 is JessieCodeAstChild.TextList,
+                is JessieCodeAstChild.BooleanFlag,
                 JessieCodeAstChild.EmptyObject,
                 JessieCodeAstChild.Undefined,
                 -> Unit

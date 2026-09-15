@@ -54,6 +54,13 @@ internal sealed interface JessieCodeAstChild {
     ) : JessieCodeAstChild
 
     /**
+     * Upstream appends raw `true` to calls carrying creator attributes.
+     */
+    data class BooleanFlag(
+        val value: Boolean,
+    ) : JessieCodeAstChild
+
+    /**
      * Upstream passes a raw `{}` child to the `op_emptyobject` node.
      */
     data object EmptyObject : JessieCodeAstChild

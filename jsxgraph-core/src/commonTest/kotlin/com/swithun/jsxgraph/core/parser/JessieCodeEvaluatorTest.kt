@@ -378,6 +378,94 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun creatorAttributesMergeAndEvaluateBeforeParents() {
+        val calls = mutableListOf<CreatorCall>()
+        val order = mutableListOf<Double>()
+        val creator = JessieCodeCreator {
+                parents,
+                attributes,
+                _
+            ->
+            calls += CreatorCall(
+                parents = parents.toList(),
+                attributes = attributes,
+            )
+            GMResult.Ok(attributes)
+        }
+        val environment = JessieCodeRuntimeEnvironment(
+            functions = mapOf(
+                "record" to JessieCodeCallable { arguments, _ ->
+                    val value = assertIs<
+                        JessieCodeRuntimeValue.NumberValue
+                        >(arguments.first())
+                    order += value.value
+                    GMResult.Ok(value)
+                },
+            ),
+            creators = mapOf("capture" to creator),
+        )
+
+        val attributes = assertIs<JessieCodeRuntimeValue.ObjectValue>(
+            evaluate(
+                "base = << " +
+                    "Color: \"red\", " +
+                    "nested: << a: 1, b: 2 >> " +
+                    ">>; " +
+                    "capture(record(2)) base, << " +
+                    "color: \"blue\", " +
+                    "nested: << b: record(1), c: 4 >> " +
+                    ">>;",
+                environment,
+            ),
+        )
+
+        assertEquals(listOf(1.0, 2.0), order)
+        assertEquals(
+            JessieCodeRuntimeValue.StringValue("blue"),
+            attributes.properties["color"],
+        )
+        val nested = assertIs<JessieCodeRuntimeValue.ObjectValue>(
+            attributes.properties["nested"],
+        )
+        assertEquals(
+            mapOf<String, JessieCodeRuntimeValue>(
+                "a" to JessieCodeRuntimeValue.NumberValue(1.0),
+                "b" to JessieCodeRuntimeValue.NumberValue(1.0),
+                "c" to JessieCodeRuntimeValue.NumberValue(4.0),
+            ),
+            nested.properties,
+        )
+        assertEquals(
+            listOf(JessieCodeRuntimeValue.NumberValue(2.0)),
+            calls.single().parents,
+        )
+        assertSame(attributes, calls.single().attributes)
+    }
+
+    @Test
+    fun missingCreatorAttributesBecomeAnEmptyObject() {
+        var captured: JessieCodeRuntimeValue.ObjectValue? = null
+        val environment = JessieCodeRuntimeEnvironment(
+            creators = mapOf(
+                "capture" to JessieCodeCreator {
+                        _,
+                        attributes,
+                        _
+                    ->
+                    captured = attributes
+                    GMResult.Ok(attributes)
+                },
+            ),
+        )
+
+        val value = assertIs<JessieCodeRuntimeValue.ObjectValue>(
+            evaluate("capture(1) missing;", environment),
+        )
+        assertTrue(value.properties.isEmpty())
+        assertSame(value, captured)
+    }
+
+    @Test
     fun userFunctionsExposeParametersMapsAndStaticDependencies() {
         val board = Board(
             originX = 0.0,
@@ -635,6 +723,16 @@ class JessieCodeEvaluatorTest {
             ).valueType,
         )
 
+        val unexpectedAttributes = evaluateError(
+            "sin(1) << color: \"red\" >>;",
+        )
+        assertEquals(
+            "sin",
+            assertIs<
+                JessieCodeRuntimeError.UnexpectedCreatorAttributes
+                >(unexpectedAttributes).functionName,
+        )
+
         val missingProperty = evaluateError("[1].unknown;")
         assertEquals(
             "unknown",
@@ -759,6 +857,27 @@ class JessieCodeEvaluatorTest {
         assertIs<
             JessieCodeRuntimeError.EvaluationDepthLimitExceeded
             >(recursiveCallDepthLimit)
+
+        val attributeCollectionLimit = evaluatorError(
+            source = "capture(1) << a: 1, b: 2 >>;",
+            limits = JessieCodeEvaluatorLimits(
+                maxCollectionSize = 1,
+            ),
+            environment = JessieCodeRuntimeEnvironment(
+                creators = mapOf(
+                    "capture" to JessieCodeCreator {
+                            _,
+                            attributes,
+                            _
+                        ->
+                        GMResult.Ok(attributes)
+                    },
+                ),
+            ),
+        )
+        assertIs<
+            JessieCodeRuntimeError.CollectionSizeLimitExceeded
+            >(attributeCollectionLimit)
     }
 
     private fun evaluate(
@@ -785,12 +904,14 @@ class JessieCodeEvaluatorTest {
     private fun evaluatorError(
         source: String,
         limits: JessieCodeEvaluatorLimits,
+        environment: JessieCodeRuntimeEnvironment =
+            JessieCodeRuntimeEnvironment(),
     ): JessieCodeRuntimeError {
         val ast = assertIs<GMResult.Ok<JessieCodeAstNode>>(
             JessieCodeExpressionParser().parse(source),
         ).value
         return assertIs<GMResult.Err<JessieCodeRuntimeError>>(
-            JessieCodeEvaluator(limits).evaluate(ast),
+            JessieCodeEvaluator(limits).evaluate(ast, environment),
         ).error
     }
 
@@ -843,4 +964,9 @@ class JessieCodeEvaluatorTest {
             is JessieCodeRuntimeValue.ElementReference ->
                 "element:${value.element.id}"
         }
+
+    private data class CreatorCall(
+        val parents: List<JessieCodeRuntimeValue>,
+        val attributes: JessieCodeRuntimeValue.ObjectValue,
+    )
 }

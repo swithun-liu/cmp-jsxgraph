@@ -44,8 +44,8 @@ Implemented translation slices:
   slices, and their interpreter from `src/parser/jessiecode.js`, including
   statement lists, blocks, `if`/`else`, `while`/`do`/`for`, assignment,
   return/delete statements, literals, variables, mutable arrays and objects,
-  function/map expressions, nested closures, calls, properties, indexes,
-  conditionals,
+  function/map expressions, nested closures, calls, creator attribute lists
+  with recursive merge semantics, properties, indexes, conditionals,
   JavaScript-compatible coercion, core math functions, static dependency
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, the translated
@@ -62,10 +62,10 @@ Implemented translation slices:
   JSXGraph `1.13.3`, and native Compose previews.
 
 The playground is a renderer and interaction test surface. The remaining
-JessieCode `use` statement, creator attributes, persistent global state across
-separate evaluator invocations, element mutation, the complete built-in and
-element `methodMap` surface, and the JSXGraph construction parser are not yet
-translated, and the element renderer is incomplete.
+JessieCode `use` statement, built-in creator registration, persistent global
+state across separate evaluator invocations, element mutation, the complete
+built-in and element `methodMap` surface, and the JSXGraph construction parser
+are not yet translated, and the element renderer is incomplete.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

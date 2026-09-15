@@ -27,8 +27,8 @@ practical.
   properties, indexes, function/map expressions, and unary/binary precedence.
   Successful supported input preserves the upstream AST node/value/child
   shape, `isMath` flags, dangling-else behavior, loop evaluation order,
-  function parameter arrays, and generated-action locations. The deprecated
-  multi-Board `use` statement and creator attributes remain pending.
+  function parameter arrays, creator attribute lists, and generated-action
+  locations. The deprecated multi-Board `use` statement remains pending.
 - JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
   directly as JavaScript object keys. JavaScript coerces each of those nodes to
   `"[object Object]"`, so such keys collide while identifier keys behave
@@ -62,6 +62,14 @@ practical.
   values just as in JSXGraph `1.13.3`. Recursive calls share the evaluator's
   depth and step budgets. Invalid map bodies return `InvalidMapBody` instead
   of throwing the upstream runtime exception.
+- Creator attribute expressions are evaluated before parent expressions and
+  merged recursively from left to right with lower-case keys, matching
+  `Type.deepCopy(..., true)`. Kotlin exposes creators through the explicit
+  `JessieCodeCreator` adapter; attaching the complete upstream creator registry
+  to `Board.create` remains part of the construction-parser slice. Attributes
+  on an ordinary function return `UnexpectedCreatorAttributes` instead of
+  throwing, and attribute nesting/collection growth shares the evaluator
+  resource limits.
 - The deprecated `delete` statement removes a resolved geometry element
   through the translated `Board.removeObject` lifecycle and returns
   `UndefinedValue`. Kotlin does not emit the upstream deprecation warning
