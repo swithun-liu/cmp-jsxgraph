@@ -21,6 +21,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -70,7 +74,13 @@ enum class JsxGraphDebugPreview {
     }
 }
 
+enum class JsxGraphDebugDestination {
+    Roadmap,
+    Parity,
+}
+
 data class JsxGraphDebugOptions(
+    val initialDestination: JsxGraphDebugDestination = JsxGraphDebugDestination.Roadmap,
     val initialPreview: JsxGraphDebugPreview = JsxGraphDebugPreview.Native,
     val parityCaseId: String = JsxGraphParityCorpus.DEFAULT_CASE_ID,
     val sourceOverride: String? = null,
@@ -97,6 +107,42 @@ internal expect fun OfficialJsxGraphDiagram(
 @Composable
 fun JsxGraphDebugApp(
     options: JsxGraphDebugOptions = JsxGraphDebugOptions(),
+) {
+    var destination by rememberSaveable(options.initialDestination) {
+        mutableStateOf(options.initialDestination)
+    }
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = Color(0xFF246BCE),
+            secondary = Color(0xFF16877A),
+            background = Color(0xFFF3F5F7),
+            surface = Color(0xFFFCFDFE),
+        ),
+    ) {
+        when (destination) {
+            JsxGraphDebugDestination.Roadmap -> RoadmapDashboard(
+                onOpenParity = {
+                    destination = JsxGraphDebugDestination.Parity
+                },
+            )
+            JsxGraphDebugDestination.Parity -> ParityWorkspace(
+                options = options,
+                onBackToRoadmap = if (
+                    options.initialDestination == JsxGraphDebugDestination.Roadmap
+                ) {
+                    { destination = JsxGraphDebugDestination.Roadmap }
+                } else {
+                    null
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ParityWorkspace(
+    options: JsxGraphDebugOptions,
+    onBackToRoadmap: (() -> Unit)?,
 ) {
     var preview by rememberSaveable { mutableStateOf(options.initialPreview) }
     val parityCase = remember(options.parityCaseId, options.sourceOverride) {
@@ -131,33 +177,25 @@ fun JsxGraphDebugApp(
         is GMResult.Err -> options.parityCaseId
     }
 
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Color(0xFF246BCE),
-            secondary = Color(0xFF16877A),
-            background = Color(0xFFF3F5F7),
-            surface = Color(0xFFFCFDFE),
-        ),
-    ) {
-        Scaffold(
-            modifier = Modifier
-                .fillMaxSize()
-                .semantics {
-                    contentDescription =
-                        "$renderStatus jsxgraph-case:$caseMarker"
-                },
-            containerColor = MaterialTheme.colorScheme.background,
-            contentWindowInsets = WindowInsets.safeDrawing,
-        ) { contentPadding ->
-            DebugContent(
-                contentPadding = contentPadding,
-                parityCase = parityCase,
-                parsedScene = parsedScene,
-                preview = preview,
-                onPreviewChange = { preview = it },
-                onOfficialResult = { officialResult = it },
-            )
-        }
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .semantics {
+                contentDescription =
+                    "$renderStatus jsxgraph-case:$caseMarker"
+            },
+        containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets.safeDrawing,
+    ) { contentPadding ->
+        DebugContent(
+            contentPadding = contentPadding,
+            parityCase = parityCase,
+            parsedScene = parsedScene,
+            preview = preview,
+            onPreviewChange = { preview = it },
+            onOfficialResult = { officialResult = it },
+            onBackToRoadmap = onBackToRoadmap,
+        )
     }
 }
 
@@ -169,6 +207,7 @@ private fun DebugContent(
     preview: JsxGraphDebugPreview,
     onPreviewChange: (JsxGraphDebugPreview) -> Unit,
     onOfficialResult: (OfficialRenderResult) -> Unit,
+    onBackToRoadmap: (() -> Unit)?,
 ) {
     val selectedCase = (parityCase as? GMResult.Ok)?.value
     val caseIndex = selectedCase?.let { currentCase ->
@@ -219,17 +258,31 @@ private fun DebugContent(
                 }
             }
 
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                JsxGraphDebugPreview.entries.forEachIndexed { index, item ->
-                    SegmentedButton(
-                        selected = preview == item,
-                        onClick = { onPreviewChange(item) },
-                        shape = SegmentedButtonDefaults.itemShape(
-                            index = index,
-                            count = JsxGraphDebugPreview.entries.size,
-                        ),
-                        label = { Text(item.name, letterSpacing = 0.sp) },
-                    )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onBackToRoadmap != null) {
+                    IconButton(onClick = onBackToRoadmap) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "Back to roadmap",
+                        )
+                    }
+                }
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
+                    JsxGraphDebugPreview.entries.forEachIndexed { index, item ->
+                        SegmentedButton(
+                            selected = preview == item,
+                            onClick = { onPreviewChange(item) },
+                            shape = SegmentedButtonDefaults.itemShape(
+                                index = index,
+                                count = JsxGraphDebugPreview.entries.size,
+                            ),
+                            label = { Text(item.name, letterSpacing = 0.sp) },
+                        )
+                    }
                 }
             }
 

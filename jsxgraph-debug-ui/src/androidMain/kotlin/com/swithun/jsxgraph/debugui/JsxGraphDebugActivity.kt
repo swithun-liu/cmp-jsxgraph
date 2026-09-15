@@ -16,6 +16,11 @@ class JsxGraphDebugActivity : ComponentActivity() {
         setContent {
             JsxGraphDebugApp(
                 options = JsxGraphDebugOptions(
+                    initialDestination = if (intent.hasExtra(EXTRA_PREVIEW)) {
+                        JsxGraphDebugDestination.Parity
+                    } else {
+                        JsxGraphDebugDestination.Roadmap
+                    },
                     initialPreview = JsxGraphDebugPreview.from(
                         intent.getStringExtra(EXTRA_PREVIEW),
                     ),
