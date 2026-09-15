@@ -52,7 +52,8 @@ Implemented translation slices:
   restoration, reusable expression functions, persistent JessieCode sessions,
   assignment-LHS creator naming, native Point/Line/Circle creation, the
   translated Point/Line/Circle `methodMap` subset, Point `X`/`Y` assignment,
-  element name and regular-update assignment, and resource limits;
+  element names, bounds, child links, immediate movement, coordinate
+  constraints, regular-update assignment, and resource limits;
 - Circle radii defined by JessieCode strings, including functional update
   dependencies that remain separate from geometric parents;
 - Point coordinates defined by two or more JessieCode strings, including

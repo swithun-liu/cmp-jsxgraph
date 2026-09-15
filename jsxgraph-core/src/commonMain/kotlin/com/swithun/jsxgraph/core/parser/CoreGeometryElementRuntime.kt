@@ -15,7 +15,9 @@ import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
+import kotlin.math.abs
 
 /**
  * The methodMap subset backed by geometry classes translated so far.
@@ -99,6 +101,37 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             )
             "getName", "Name" -> stringFunction("getName") {
                 element.name
+            }
+            "Bounds" -> function("Bounds") { _, _ ->
+                GMResult.Ok(array(bounds(element)))
+            }
+            "addChild" -> function("addChild") {
+                    arguments,
+                    callLocation,
+                ->
+                val child = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element
+                if (child == null) {
+                    GMResult.Err(
+                        JessieCodeRuntimeError.InvalidArgumentType(
+                            functionName = "addChild",
+                            argumentIndex = 0,
+                            expected = "element",
+                            actual = typeName(
+                                arguments.firstOrNull()
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                            ),
+                            location = callLocation,
+                        ),
+                    )
+                } else {
+                    element.addChild(child)
+                    GMResult.Ok(
+                        JessieCodeRuntimeValue.ElementReference(element),
+                    )
+                }
             }
             "setName" -> function("setName") {
                     arguments,
@@ -232,6 +265,26 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 val withZ = arguments.firstOrNull()?.let(::isTruthy)
                     ?: false
                 GMResult.Ok(array(coordinates.Coords(withZ)))
+            }
+            "move", "moveTo" -> function("moveTo") {
+                    arguments,
+                    callLocation,
+                ->
+                moveTo(
+                    element = coordinates,
+                    arguments = arguments,
+                    location = callLocation,
+                )
+            }
+            "addConstraint" -> function("addConstraint") {
+                    arguments,
+                    callLocation,
+                ->
+                addConstraint(
+                    element = coordinates,
+                    arguments = arguments,
+                    location = callLocation,
+                )
             }
             "dist", "Dist" -> function("Dist") {
                     arguments,
@@ -442,6 +495,188 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 location = location,
             ),
         )
+
+    private fun moveTo(
+        element: CoordsElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val coordinates = when (
+            val result = coordinateArray(
+                functionName = "moveTo",
+                value = arguments.firstOrNull()
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val time = arguments.getOrNull(1)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val immediate = when (time) {
+            JessieCodeRuntimeValue.UndefinedValue -> true
+            is JessieCodeRuntimeValue.NumberValue ->
+                time.value == 0.0 ||
+                    (
+                        coordinates.size == 3 &&
+                            abs(coordinates[0] - element.Z()) > Mat.eps
+                        )
+            else -> return invalidArgumentType(
+                functionName = "moveTo",
+                argumentIndex = 1,
+                expected = "number or undefined",
+                actual = time,
+                location = location,
+            )
+        }
+        if (!immediate) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.ElementMethodUnavailable(
+                    elementId = element.id,
+                    method = "moveTo",
+                    reason = "animated movement is not translated",
+                    location = location,
+                ),
+            )
+        }
+
+        element.setPosition(Const.COORDS_BY_USER, coordinates)
+        element.board.update(element)
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.BoardReference(element.board),
+        )
+    }
+
+    private fun addConstraint(
+        element: CoordsElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val point = element as? Point
+            ?: return GMResult.Err(
+                JessieCodeRuntimeError.ElementMethodUnavailable(
+                    elementId = element.id,
+                    method = "addConstraint",
+                    reason = "only Point constraints are translated",
+                    location = location,
+                ),
+            )
+        val values = (
+            arguments.firstOrNull() as?
+                JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return invalidArgumentType(
+            functionName = "addConstraint",
+            argumentIndex = 0,
+            expected = "array",
+            actual = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue,
+            location = location,
+        )
+        if (values.size < 2) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidArgumentCount(
+                    functionName = "addConstraint coordinates",
+                    expected = "at least 2",
+                    actual = values.size,
+                    location = location,
+                ),
+            )
+        }
+        val sources = mutableListOf<String>()
+        for ((index, value) in values.withIndex()) {
+            when (value) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    sources += JsNumberFormat.compact(value.value)
+                is JessieCodeRuntimeValue.StringValue ->
+                    sources += value.value
+                else -> return invalidArgumentType(
+                    functionName = "addConstraint",
+                    argumentIndex = index,
+                    expected = "number or string constraint term",
+                    actual = value,
+                    location = location,
+                )
+            }
+        }
+        return when (val result = point.replaceCoordinateConstraints(sources)) {
+            is GMResult.Ok -> GMResult.Ok(
+                JessieCodeRuntimeValue.ElementReference(point),
+            )
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.ElementCoordinateConstraintFailure(
+                    elementId = point.id,
+                    property = "addConstraint",
+                    error = result.error,
+                    location = location,
+                ),
+            )
+        }
+    }
+
+    private fun coordinateArray(
+        functionName: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val values = (value as? JessieCodeRuntimeValue.ArrayValue)?.values
+            ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = 0,
+                expected = "coordinate array",
+                actual = value,
+                location = location,
+            )
+        if (values.size !in 2..3) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidArgumentCount(
+                    functionName = "$functionName coordinate array",
+                    expected = "2 or 3",
+                    actual = values.size,
+                    location = location,
+                ),
+            )
+        }
+        val coordinates = DoubleArray(values.size)
+        for ((index, coordinate) in values.withIndex()) {
+            val number = (
+                coordinate as? JessieCodeRuntimeValue.NumberValue
+                )?.value ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "number coordinate",
+                actual = coordinate,
+                location = location,
+            )
+            coordinates[index] = number
+        }
+        return GMResult.Ok(coordinates)
+    }
+
+    private fun invalidArgumentType(
+        functionName: String,
+        argumentIndex: Int,
+        expected: String,
+        actual: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult.Err<JessieCodeRuntimeError> =
+        GMResult.Err(
+            JessieCodeRuntimeError.InvalidArgumentType(
+                functionName = functionName,
+                argumentIndex = argumentIndex,
+                expected = expected,
+                actual = typeName(actual),
+                location = location,
+            ),
+        )
+
+    private fun bounds(element: GeometryElement): DoubleArray =
+        when (element) {
+            is Circle -> element.bounds()
+            is Line -> element.bounds()
+            is Point -> element.bounds()
+            else -> doubleArrayOf(0.0, 0.0, 0.0, 0.0)
+        }
 
     private fun normalizedAttributeName(property: String): String =
         property.filterNot(Char::isWhitespace).lowercase()

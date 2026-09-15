@@ -131,7 +131,12 @@ practical.
   forms.
 - The core element runtime exposes the translated `methodMap` subset for
   coordinate elements, lines, circles, and common element names, plus the
-  bounded writable subset described above. Remaining mutating methods,
+  bounded writable subset described above. `Bounds` and `addChild` preserve
+  the translated element return values. `move` and `moveTo` accept numeric
+  two- or three-coordinate arrays when the duration is omitted or zero, and
+  Point `addConstraint` accepts arrays of number/string terms. Nonzero
+  movement durations return `ElementMethodUnavailable` until the animation
+  scheduler exists; function-valued constraints, remaining mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element
   classes return structured unavailable-property/value errors.
 - Parser errors retain both the offending token location and the previous

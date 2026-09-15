@@ -150,6 +150,13 @@ internal sealed interface JessieCodeRuntimeError {
         val error: PointError,
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
+
+    data class ElementMethodUnavailable(
+        val elementId: String,
+        val method: String,
+        val reason: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
 }
 
 internal fun interface JessieCodeCallable {
