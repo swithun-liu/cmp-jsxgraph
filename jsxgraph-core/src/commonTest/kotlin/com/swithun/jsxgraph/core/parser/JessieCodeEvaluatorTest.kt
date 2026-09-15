@@ -232,6 +232,26 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun loopStatementsMatchOfficialRuntime() {
+        val fixtures = mapOf(
+            "a = 0; while (a < 3) a = a + 1; a;" to
+                "number:3.0",
+            "a = 0; do a = a + 1; while (a < 3); a;" to
+                "number:3.0",
+            "s = 0; for (i = 0; i < 4; i = i + 1) " +
+                "s = s + i; s;" to
+                "number:6.0",
+            "while (false) missing();" to "number:0.0",
+            "for (i = 0; false; missing()) missing();" to
+                "number:0.0",
+        )
+
+        for ((source, expected) in fixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+    }
+
+    @Test
     fun indexesPropertiesCallsAndMathBuiltInsMatchOfficialRuntime() {
         val add = JessieCodeRuntimeValue.FunctionValue(
             name = "add",
@@ -531,6 +551,16 @@ class JessieCodeEvaluatorTest {
         assertIs<JessieCodeRuntimeError.AssignmentTargetUnavailable>(
             evaluateError("a = []; a.length = 4294967296;"),
         )
+
+        val loopStepLimit = evaluatorError(
+            source = "while (true) ;",
+            limits = JessieCodeEvaluatorLimits(
+                maxEvaluationSteps = 10,
+            ),
+        )
+        assertIs<
+            JessieCodeRuntimeError.EvaluationStepLimitExceeded
+            >(loopStepLimit)
 
         val depthLimit = evaluatorError(
             source = "1 + 2 + 3;",

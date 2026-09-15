@@ -61,9 +61,9 @@ internal sealed interface JessieCodeParserError {
  * JessieCode parser for an empty program or expression statements.
  *
  * This slice implements `StatementList`, blocks, `if` statements, expression
- * statements, assignment, array and object literals. Loops, return/use/delete
- * statements, functions, maps, and creator attributes are intentionally left
- * for later slices.
+ * statements, `while`/`do`/`for` loops, assignment, array and object literals.
+ * Return/use/delete statements, functions, maps, and creator attributes are
+ * intentionally left for later slices.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -202,10 +202,18 @@ private class ParserState(
                 nested(location) { parseStatementBlock() }
             }
             JessieCodeTokenType.SEMICOLON -> parseEmptyStatement()
-            JessieCodeTokenType.WHILE,
-            JessieCodeTokenType.FOR,
-            JessieCodeTokenType.DO,
-            -> unsupported("loop statements")
+            JessieCodeTokenType.WHILE -> {
+                val location = current().location
+                nested(location) { parseWhileStatement() }
+            }
+            JessieCodeTokenType.FOR -> {
+                val location = current().location
+                nested(location) { parseForStatement() }
+            }
+            JessieCodeTokenType.DO -> {
+                val location = current().location
+                nested(location) { parseDoWhileStatement() }
+            }
             JessieCodeTokenType.USE,
             JessieCodeTokenType.DELETE,
             -> unsupported("unary statements")
@@ -278,6 +286,133 @@ private class ParserState(
             children = listOf(condition, whenTrue, whenFalse),
             nodeLocation = ifToken.location,
             span = span(ifToken.location, whenFalse.span),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: LoopStatement -> WHILE
+    private fun parseWhileStatement(): ParserResult<ParsedExpression> {
+        val whileToken = consume()
+        when (
+            val result = expect(JessieCodeTokenType.LEFT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val condition = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.RIGHT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val body = when (val result = parseStatement()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(
+            upstreamName = "op_while",
+            children = listOf(condition, body),
+            nodeLocation = whileToken.location,
+            span = span(whileToken.location, body.span),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: LoopStatement -> FOR
+    private fun parseForStatement(): ParserResult<ParsedExpression> {
+        val forToken = consume()
+        when (
+            val result = expect(JessieCodeTokenType.LEFT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val initializer = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (val result = expect(JessieCodeTokenType.SEMICOLON)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val condition = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (val result = expect(JessieCodeTokenType.SEMICOLON)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val update = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.RIGHT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val body = when (val result = parseStatement()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(
+            upstreamName = "op_for",
+            children = listOf(
+                initializer,
+                condition,
+                update,
+                body,
+            ),
+            nodeLocation = forToken.location,
+            span = span(forToken.location, body.span),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: LoopStatement -> DO
+    private fun parseDoWhileStatement(): ParserResult<ParsedExpression> {
+        val doToken = consume()
+        val body = when (val result = parseStatement()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (val result = expect(JessieCodeTokenType.WHILE)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.LEFT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val condition = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.RIGHT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val semicolon = when (
+            val result = expect(JessieCodeTokenType.SEMICOLON)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(
+            upstreamName = "op_do",
+            children = listOf(body, condition),
+            nodeLocation = doToken.location,
+            span = span(doToken.location, semicolon.location),
             isMath = null,
         )
     }

@@ -223,6 +223,9 @@ internal class JessieCodeExpressionFunction private constructor(
             "op_if",
             "op_if_else",
             "op_none",
+            "op_while",
+            "op_do",
+            "op_for",
         )
     }
 }

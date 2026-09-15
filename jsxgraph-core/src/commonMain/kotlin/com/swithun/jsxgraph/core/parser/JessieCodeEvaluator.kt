@@ -143,6 +143,9 @@ private class EvaluationState(
             "op_block" -> evaluateNodeChild(node, 0, depth)
             "op_if" -> evaluateIf(node, depth, hasElse = false)
             "op_if_else" -> evaluateIf(node, depth, hasElse = true)
+            "op_while" -> evaluateWhile(node, depth)
+            "op_do" -> evaluateDoWhile(node, depth)
+            "op_for" -> evaluateFor(node, depth)
             "op_assign" -> evaluateAssignment(node, depth)
             "op_array" -> evaluateArray(node, depth)
             "op_emptyobject" -> evaluateEmptyObject(node)
@@ -262,6 +265,83 @@ private class EvaluationState(
             evaluateNodeChild(node, 2, depth)
         } else {
             GMResult.Ok(JessieCodeRuntimeValue.NumberValue(0.0))
+        }
+    }
+
+    private fun evaluateWhile(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        while (true) {
+            val condition = when (
+                val result = evaluateNodeChild(node, 0, depth)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (!isTruthy(condition)) {
+                return GMResult.Ok(
+                    JessieCodeRuntimeValue.NumberValue(0.0),
+                )
+            }
+            when (val result = evaluateNodeChild(node, 1, depth)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+        }
+    }
+
+    private fun evaluateDoWhile(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        while (true) {
+            when (val result = evaluateNodeChild(node, 0, depth)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            val condition = when (
+                val result = evaluateNodeChild(node, 1, depth)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (!isTruthy(condition)) {
+                return GMResult.Ok(
+                    JessieCodeRuntimeValue.NumberValue(0.0),
+                )
+            }
+        }
+    }
+
+    private fun evaluateFor(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        when (val result = evaluateNodeChild(node, 0, depth)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        while (true) {
+            val condition = when (
+                val result = evaluateNodeChild(node, 1, depth)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (!isTruthy(condition)) {
+                return GMResult.Ok(
+                    JessieCodeRuntimeValue.NumberValue(0.0),
+                )
+            }
+            when (val result = evaluateNodeChild(node, 3, depth)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            when (val result = evaluateNodeChild(node, 2, depth)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
         }
     }
 

@@ -347,6 +347,59 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
+    fun loopStatementsMatchOfficialAst() {
+        val whileLoop = expression(
+            "while (a < 2) a = a + 1;",
+        )
+        assertEquals(
+            "op_while(" +
+                "op_lt(variable:a,number:2.0)," +
+                "op_assign(" +
+                "variable:a," +
+                "op_add(variable:a,number:1.0)))",
+            describe(whileLoop),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 5),
+            whileLoop.location,
+        )
+
+        val forLoop = expression(
+            "for (i = 0; i < 2; i = i + 1) i;",
+        )
+        assertEquals(
+            "op_for(" +
+                "op_assign(variable:i,number:0.0)," +
+                "op_lt(variable:i,number:2.0)," +
+                "op_assign(" +
+                "variable:i," +
+                "op_add(variable:i,number:1.0))," +
+                "variable:i)",
+            describe(forLoop),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 3),
+            forLoop.location,
+        )
+
+        val doWhileLoop = expression(
+            "do a = a + 1; while (a < 2);",
+        )
+        assertEquals(
+            "op_do(" +
+                "op_assign(" +
+                "variable:a," +
+                "op_add(variable:a,number:1.0))," +
+                "op_lt(variable:a,number:2.0))",
+            describe(doWhileLoop),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 2),
+            doWhileLoop.location,
+        )
+    }
+
+    @Test
     fun parserErrorsRetainOffendingAndJisonParserLocations() {
         val missingOperand = error("1 + ;")
         val unexpected = assertIs<
