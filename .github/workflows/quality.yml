@@ -1,0 +1,61 @@
+name: Quality Gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  multiplatform:
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Reject internal endpoints and credential material
+        shell: bash
+        run: |
+          set -euo pipefail
+          organization_pattern='byte''dance|byted''\.org|byted''\.net|byte''intl|tiktok''-row|fei''shu|lark''\.office'
+          if git grep -I -n -E "$organization_pattern"; then
+            echo "Internal organization reference detected" >&2
+            exit 1
+          fi
+          if git grep -I -n -E \
+            '(AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9]{20,})'
+          then
+            echo "Credential-like material detected" >&2
+            exit 1
+          fi
+
+      - name: Test translated modules
+        run: |
+          ./gradlew \
+            :jsxgraph-core:allTests \
+            :jsxgraph-compose:allTests \
+            :jsxgraph-debug-ui:allTests
+
+      - name: Build sample applications
+        run: |
+          ./gradlew \
+            :sample:androidApp:assembleDebug \
+            :sample:webApp:wasmJsBrowserDistribution

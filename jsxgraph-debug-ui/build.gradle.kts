@@ -55,6 +55,9 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.androidx.webkit)
         }
+        wasmJsMain.dependencies {
+            implementation(libs.kotlinx.browser)
+        }
         getByName("desktopMain").dependencies {
             implementation(compose.desktop.currentOs)
         }

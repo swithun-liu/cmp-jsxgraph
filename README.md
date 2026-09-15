@@ -1,7 +1,16 @@
 # CMP JSXGraph
 
+[![Quality Gate](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/quality.yml)
+[![Web Progress](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml)
+[![JSXGraph 1.13.3](https://img.shields.io/badge/JSXGraph-1.13.3-246BCE)](https://jsxgraph.org/)
+[![MIT License](https://img.shields.io/badge/license-MIT-16877A)](LICENSE)
+
 Pure Kotlin Multiplatform translation of JSXGraph with an early Compose
 Multiplatform Canvas renderer.
+
+**[Open the live Kotlin/Wasm progress site](https://swithun-liu.github.io/cmp-jsxgraph/)**
+to inspect the roadmap and switch the same parity source between Source,
+official JSXGraph `1.13.3`, and native Compose Canvas rendering.
 
 ## Status
 
@@ -83,6 +92,7 @@ JDK 17 or newer is required.
 ./gradlew :jsxgraph-core:allTests
 ./gradlew :jsxgraph-compose:allTests :jsxgraph-debug-ui:allTests
 ./gradlew :sample:androidApp:assembleDebug
+./gradlew :sample:webApp:wasmJsBrowserDistribution
 ANDROID_SERIAL=<device-serial> ./tools/capture-android-parity.sh
 ```
 

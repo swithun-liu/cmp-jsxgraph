@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f3f5f7">
+    <title>CMP JSXGraph</title>
+    <style>
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #f3f5f7;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .loading-shell {
+            display: grid;
+            width: 100%;
+            height: 100%;
+            place-items: center;
+            color: #26323b;
+        }
+
+        .loading-panel {
+            box-sizing: border-box;
+            width: min(520px, calc(100vw - 32px));
+            padding: 24px;
+            border: 1px solid #d6dce2;
+            border-radius: 8px;
+            background: #fcfdfe;
+        }
+
+        .loading-heading {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .loading-title {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 650;
+            letter-spacing: 0;
+        }
+
+        .loading-percent {
+            color: #246bce;
+            font-size: 14px;
+            font-variant-numeric: tabular-nums;
+            font-weight: 650;
+        }
+
+        .loading-status {
+            margin: 10px 0 16px;
+            color: #66717b;
+            font-size: 14px;
+            letter-spacing: 0;
+        }
+
+        .loading-track {
+            height: 4px;
+            overflow: hidden;
+            background: #dce2e8;
+        }
+
+        .loading-progress {
+            width: 18%;
+            height: 100%;
+            background: #246bce;
+            animation: loading-slide 1.2s ease-in-out infinite alternate;
+        }
+
+        .loading-progress.determinate {
+            animation: none;
+            transition: width 160ms ease-out;
+        }
+
+        .loading-note {
+            margin: 16px 0 0;
+            color: #7b858e;
+            font-size: 12px;
+            line-height: 1.5;
+            letter-spacing: 0;
+        }
+
+        .loading-error .loading-percent,
+        .loading-error .loading-status {
+            color: #b3261e;
+        }
+
+        .loading-error .loading-progress {
+            width: 100%;
+            animation: none;
+            background: #b3261e;
+        }
+
+        @keyframes loading-slide {
+            from { transform: translateX(0); }
+            to { transform: translateX(455%); }
+        }
+    </style>
+    <script>
+        (() => {
+            const forceChunkLoader = new URLSearchParams(
+                window.location.search,
+            ).get("chunkedWasm") === "true";
+            if (
+                !window.location.hostname.endsWith(".github.io") &&
+                !forceChunkLoader
+            ) {
+                return;
+            }
+
+            const nativeFetch = window.fetch.bind(window);
+            const nativeInstantiate = WebAssembly.instantiate.bind(WebAssembly);
+            let loadedBytes = 0;
+            let totalBytes = 0;
+
+            const setStatus = (message) => {
+                const element = document.querySelector("#loading-status");
+                if (element !== null) {
+                    element.textContent = message;
+                }
+            };
+
+            const setProgress = () => {
+                if (totalBytes === 0) {
+                    return;
+                }
+                const percent = Math.round(loadedBytes * 100 / totalBytes);
+                const bar = document.querySelector("#loading-progress");
+                const label = document.querySelector("#loading-percent");
+                if (bar !== null) {
+                    bar.classList.add("determinate");
+                    bar.style.transform = "none";
+                    bar.style.width = `${percent}%`;
+                }
+                if (label !== null) {
+                    label.textContent = `${percent}%`;
+                }
+            };
+
+            const fetchChunkedWasm = async (requestUrl) => {
+                const manifestUrl = new URL(requestUrl);
+                manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;
+                const manifestResponse = await nativeFetch(manifestUrl);
+                if (!manifestResponse.ok) {
+                    throw new Error(`Failed to load ${manifestUrl}`);
+                }
+                const manifest = await manifestResponse.json();
+                totalBytes += manifest.byteLength;
+                setProgress();
+
+                const bytes = new Uint8Array(manifest.byteLength);
+                let offset = 0;
+                for (const chunkName of manifest.chunks) {
+                    const chunkResponse = await nativeFetch(
+                        new URL(chunkName, manifestUrl),
+                    );
+                    if (!chunkResponse.ok) {
+                        throw new Error(`Failed to load ${chunkName}`);
+                    }
+                    const chunk = new Uint8Array(
+                        await chunkResponse.arrayBuffer(),
+                    );
+                    bytes.set(chunk, offset);
+                    offset += chunk.byteLength;
+                    loadedBytes += chunk.byteLength;
+                    setProgress();
+                }
+                return bytes;
+            };
+
+            window.fetch = async (input, options) => {
+                const requestUrl = new URL(
+                    input instanceof Request ? input.url : input,
+                    window.location.href,
+                );
+                if (!requestUrl.pathname.endsWith(".wasm")) {
+                    return nativeFetch(input, options);
+                }
+
+                setStatus("Downloading Kotlin/Wasm renderer");
+                const controller = new AbortController();
+                const timeout = window.setTimeout(
+                    () => controller.abort(),
+                    10000,
+                );
+                try {
+                    const response = await nativeFetch(input, {
+                        ...(options ?? {}),
+                        signal: controller.signal,
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Failed to load ${response.url}`);
+                    }
+                    return response;
+                } catch (directFailure) {
+                    setStatus("Continuing with chunked download");
+                    return new Response(
+                        await fetchChunkedWasm(requestUrl),
+                        { headers: { "Content-Type": "application/wasm" } },
+                    );
+                } finally {
+                    window.clearTimeout(timeout);
+                }
+            };
+
+            WebAssembly.instantiateStreaming = async (source, imports, options) => {
+                setStatus("Compiling renderer");
+                const response = await source;
+                return nativeInstantiate(
+                    await response.arrayBuffer(),
+                    imports,
+                    options,
+                );
+            };
+
+            window.addEventListener("error", () => {
+                document.querySelector("#loading-shell")
+                    ?.classList.add("loading-error");
+                setStatus("Loading failed. Refresh to retry.");
+            });
+        })();
+    </script>
+    <script defer type="application/javascript" src="cmp-jsxgraph.js"></script>
+</head>
+<body>
+    <main class="loading-shell" id="loading-shell" aria-busy="true">
+        <section class="loading-panel">
+            <div class="loading-heading">
+                <h1 class="loading-title">CMP JSXGraph</h1>
+                <span class="loading-percent" id="loading-percent">Starting</span>
+            </div>
+            <p class="loading-status" id="loading-status">Preparing progress workspace</p>
+            <div class="loading-track">
+                <div
+                    class="loading-progress"
+                    id="loading-progress"
+                    role="progressbar"
+                    aria-label="Loading CMP JSXGraph"
+                ></div>
+            </div>
+            <p class="loading-note">
+                Pure Kotlin geometry and Compose Canvas, with an isolated
+                JSXGraph 1.13.3 reference renderer for visual comparison.
+            </p>
+        </section>
+    </main>
+</body>
+</html>

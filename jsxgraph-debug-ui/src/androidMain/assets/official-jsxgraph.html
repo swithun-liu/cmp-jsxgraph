@@ -53,6 +53,22 @@
       let board = null;
       let requestId = 0;
 
+      const notifyParent = (message) => {
+        if (window.parent !== window) {
+          window.parent.postMessage(message, window.location.origin);
+        }
+      };
+
+      const notifyReady = (width, height) => {
+        window.CmpJsxGraphBridge?.onRenderReady(width, height);
+        notifyParent(`cmp-jsxgraph:ready:${width}:${height}`);
+      };
+
+      const notifyError = (message) => {
+        window.CmpJsxGraphBridge?.onRenderError(message);
+        notifyParent(`cmp-jsxgraph:error:${message}`);
+      };
+
       const waitForLayout = async () => {
         await new Promise(requestAnimationFrame);
         await new Promise(requestAnimationFrame);
@@ -73,7 +89,7 @@
         boardElement.style.display = "none";
         errorElement.style.display = "flex";
         errorElement.textContent = message;
-        window.CmpJsxGraphBridge?.onRenderError(message);
+        notifyError(message);
       };
 
       window.renderDiagram = async (source) => {
@@ -200,7 +216,7 @@
           if (currentRequest !== requestId) {
             return;
           }
-          window.CmpJsxGraphBridge?.onRenderReady(
+          notifyReady(
             String(boardElement.clientWidth),
             String(boardElement.clientHeight),
           );

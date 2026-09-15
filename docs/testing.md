@@ -7,7 +7,9 @@
 - `jsxgraph-compose` is a pure Compose Multiplatform renderer module.
 - `jsxgraph-debug-ui` is a separate comparison dependency.
 - The Android sample is a thin launcher for the debug UI.
-- Official JSXGraph `1.13.3` runs from local debug-only WebView assets.
+- The Web sample is a thin Kotlin/Wasm launcher for the debug UI.
+- Official JSXGraph `1.13.3` runs from local debug-only assets in an Android
+  WebView or same-origin Web iframe.
 - The native axis renderer uses bundled Arimo for the upstream Arial-compatible
   default instead of the device theme font.
 - Production artifacts do not use WebView or a JavaScript engine.
@@ -25,6 +27,7 @@ Use JDK 17 or newer.
 ./gradlew :jsxgraph-compose:allTests :jsxgraph-compose:assemble
 ./gradlew :jsxgraph-debug-ui:allTests :jsxgraph-debug-ui:assemble
 ./gradlew :sample:androidApp:assembleDebug
+./gradlew :sample:webApp:wasmJsBrowserDistribution
 ```
 
 Capture the same source as source text, official JSXGraph, and Compose Canvas:

@@ -8,6 +8,7 @@ androidxCompose = "1.9.4"
 androidxMaterial3 = "1.4.0"
 androidxWebkit = "1.17.0"
 kotlinxSerialization = "1.9.0"
+kotlinxBrowser = "0.3.1"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
@@ -18,6 +19,7 @@ androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling", versi
 androidx-material3 = { module = "androidx.compose.material3:material3", version.ref = "androidxMaterial3" }
 androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "androidxWebkit" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-browser = { module = "org.jetbrains.kotlinx:kotlinx-browser", version.ref = "kotlinxBrowser" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
