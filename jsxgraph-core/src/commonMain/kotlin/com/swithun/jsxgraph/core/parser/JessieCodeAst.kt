@@ -47,6 +47,13 @@ internal sealed interface JessieCodeAstChild {
     ) : JessieCodeAstChild
 
     /**
+     * Upstream stores function and map parameter names as a raw string array.
+     */
+    data class TextList(
+        val value: List<String>,
+    ) : JessieCodeAstChild
+
+    /**
      * Upstream passes a raw `{}` child to the `op_emptyobject` node.
      */
     data object EmptyObject : JessieCodeAstChild

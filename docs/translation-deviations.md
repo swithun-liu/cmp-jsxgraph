@@ -24,11 +24,11 @@ practical.
   statement list, including empty statements, blocks, `if`/`else`, and
   `while`/`do`/`for` loops. Its expressions include right-associative
   assignment, conditionals, literals, variables, arrays, objects, calls,
-  properties, indexes, and unary/binary precedence. Successful supported input
-  preserves the upstream AST node/value/child shape, `isMath` flags,
-  dangling-else behavior, loop evaluation order, and generated-action
-  locations. The deprecated multi-Board `use` statement, function/map syntax,
-  and creator attributes remain pending.
+  properties, indexes, function/map expressions, and unary/binary precedence.
+  Successful supported input preserves the upstream AST node/value/child
+  shape, `isMath` flags, dangling-else behavior, loop evaluation order,
+  function parameter arrays, and generated-action locations. The deprecated
+  multi-Board `use` statement and creator attributes remain pending.
 - JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
   directly as JavaScript object keys. JavaScript coerces each of those nodes to
   `"[object Object]"`, so such keys collide while identifier keys behave
@@ -46,14 +46,22 @@ practical.
   as `UndefinedValue`, preserving observable translated indexing and `length`
   behavior while using bounded storage. Element `setProp` mutation remains
   pending and returns `AssignmentTargetUnavailable`.
-- Assignment locals currently live for one evaluator invocation. Persistent
-  JessieCode global locals and saved nested function scopes remain pending.
+- Assignment locals currently live for one evaluator invocation. Function
+  scopes and nested closure chains persist for the lifetime of each returned
+  function value, while a reusable JessieCode global session across separate
+  evaluator invocations remains pending.
 - Loops use the evaluator's existing node-step limit as their execution budget.
   JSXGraph has no corresponding bound and can run an infinite loop.
 - `return` preserves the JSXGraph `1.13.3` interpreter behavior: it evaluates
   to its child (or numeric zero for bare `return;`) but does not terminate an
-  enclosing statement list. Function-local return control remains tied to the
-  pending function/map translation.
+  enclosing statement list, including inside a translated function body.
+- Function and map values preserve the interpreter's reusable mutable scope
+  per function definition. Parameters overwrite that same scope on each call,
+  missing parameters receive `UndefinedValue`, duplicate names are written in
+  order, and nested closures therefore observe the latest captured parameter
+  values just as in JSXGraph `1.13.3`. Recursive calls share the evaluator's
+  depth and step budgets. Invalid map bodies return `InvalidMapBody` instead
+  of throwing the upstream runtime exception.
 - The deprecated `delete` statement removes a resolved geometry element
   through the translated `Board.removeObject` lifecycle and returns
   `UndefinedValue`. Kotlin does not emit the upstream deprecation warning
@@ -84,9 +92,9 @@ practical.
   dependency metadata. It accepts at most one expression statement, including
   a single assignment expression; a multi-statement source returns
   `MultipleStatements`, while a block, branch, loop, return, or delete
-  statement returns `UnsupportedStatement`, until nested function scopes are
-  translated. Direct Kotlin number, array, and function adapters are deferred
-  until a translated caller needs those parent forms.
+  statement returns `UnsupportedStatement`. Direct Kotlin number, array, and
+  function adapters are deferred until a translated caller needs those parent
+  forms.
 - The core element runtime exposes the translated read-only `methodMap`
   subset for coordinate elements, lines, and circles. Mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element

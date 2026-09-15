@@ -242,6 +242,39 @@ class JessieCodeExpressionFunctionTest {
     }
 
     @Test
+    fun functionParametersRemainBoundDuringNameReplacement() {
+        val fixture = boardFixture()
+        val replaced = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeNameReplacer(fixture.board).replace(
+                node = parse(
+                    "function (A) { return A + B; };",
+                ),
+            ),
+        ).value
+        val function = expression(replaced)
+        assertEquals(
+            listOf("A"),
+            assertIs<JessieCodeAstChild.TextList>(
+                function.children[0],
+            ).value,
+        )
+        val body = nodeChild(function, 1)
+        val statementList = nodeChild(body, 0)
+        val returnNode = nodeChild(statementList, 1)
+        val addition = nodeChild(returnNode, 0)
+        val parameter = nodeChild(addition, 0)
+        val boardReference = nodeChild(addition, 1)
+
+        assertEquals(JessieCodeAstNodeType.VARIABLE, parameter.type)
+        assertEquals("A", textValue(parameter))
+        assertEquals("op_execfun", operationName(boardReference))
+        assertEquals(
+            "P2",
+            textValue(nodeList(boardReference, 1).single()),
+        )
+    }
+
+    @Test
     fun predefinedConstantsAreNotReplacedBySameNamedElements() {
         val fixture = boardFixture()
         registerElement(

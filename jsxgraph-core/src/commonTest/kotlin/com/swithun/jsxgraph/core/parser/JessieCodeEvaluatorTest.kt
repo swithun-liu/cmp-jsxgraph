@@ -311,6 +311,123 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun functionsBindArgumentsAndReuseTheirOfficialScope() {
+        val fixtures = mapOf(
+            "f = function (x, y) { return x + y; }; f(2, 3);" to
+                "number:5.0",
+            "f = function (x) { return x; }; [f(), f(2, 3)];" to
+                "array:[undefined,number:2.0]",
+            "f = function (x, x) { return x; }; f(1, 2);" to
+                "number:2.0",
+            "f = function (x) { return x; 9; }; f(2);" to
+                "number:9.0",
+            "a = 2; f = function (x) { return a + x; }; " +
+                "a = 5; f(3);" to "number:8.0",
+            "f = function (x) { local = x; return local; }; " +
+                "[f(2), f(3)];" to
+                "array:[number:2.0,number:3.0]",
+        )
+
+        for ((source, expected) in fixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+    }
+
+    @Test
+    fun nestedFunctionsPreserveOfficialSharedClosureScope() {
+        assertEquals(
+            "number:5.0",
+            describe(
+                evaluate(
+                    "outer = function (x) { " +
+                        "return function (y) { return x + y; }; " +
+                        "}; add = outer(2); add(3);",
+                ),
+            ),
+        )
+        assertEquals(
+            "array:[number:5.0,number:5.0]",
+            describe(
+                evaluate(
+                    "outer = function (x) { " +
+                        "return function (y) { return x + y; }; " +
+                        "}; a = outer(2); b = outer(4); " +
+                        "[a(1), b(1)];",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun mapsMatchOfficialValidationAndEvaluation() {
+        val fixtures = mapOf(
+            "m = map (x) -> x + 1; m(2);" to "number:3.0",
+            "m = map (x) -> x; m(2);" to "number:2.0",
+            "m = map (x) -> sin(x); m(0);" to "number:0.0",
+        )
+        for ((source, expected) in fixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+
+        assertIs<JessieCodeRuntimeError.InvalidMapBody>(
+            evaluateError("map (x) -> true;"),
+        )
+        assertIs<JessieCodeRuntimeError.InvalidMapBody>(
+            evaluateError("map (x) -> (x = 1);"),
+        )
+    }
+
+    @Test
+    fun userFunctionsExposeParametersMapsAndStaticDependencies() {
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+        )
+        val element = registerElement(
+            board = board,
+            id = "P1",
+            name = "A",
+            type = Const.OBJECT_TYPE_POINT,
+        )
+        val environment = JessieCodeRuntimeEnvironment(board = board)
+
+        val function = assertIs<JessieCodeRuntimeValue.FunctionValue>(
+            evaluate(
+                "f = function (x) { return A; }; f;",
+                environment,
+            ),
+        )
+        assertEquals(listOf("x"), function.parameterNames)
+        assertEquals(false, function.isMap)
+        assertSame(element, function.dependencies["P1"])
+
+        val shadowing = assertIs<JessieCodeRuntimeValue.FunctionValue>(
+            evaluate(
+                "f = function (A) { return A; }; f;",
+                environment,
+            ),
+        )
+        assertTrue(shadowing.dependencies.isEmpty())
+
+        val localShadowing =
+            assertIs<JessieCodeRuntimeValue.FunctionValue>(
+                evaluate(
+                    "A = 2; f = function () { return A; }; f;",
+                    environment,
+                ),
+            )
+        assertTrue(localShadowing.dependencies.isEmpty())
+
+        val map = assertIs<JessieCodeRuntimeValue.FunctionValue>(
+            evaluate("map (x) -> x;"),
+        )
+        assertEquals(listOf("x"), map.parameterNames)
+        assertTrue(map.isMap)
+    }
+
+    @Test
     fun indexesPropertiesCallsAndMathBuiltInsMatchOfficialRuntime() {
         val add = JessieCodeRuntimeValue.FunctionValue(
             name = "add",
@@ -630,6 +747,18 @@ class JessieCodeEvaluatorTest {
         assertIs<
             JessieCodeRuntimeError.EvaluationDepthLimitExceeded
             >(depthLimit)
+
+        val recursiveCallDepthLimit = evaluatorError(
+            source =
+                "f = function (n) { return f(n + 1); }; f(0);",
+            limits = JessieCodeEvaluatorLimits(
+                maxEvaluationDepth = 8,
+                maxEvaluationSteps = 10_000,
+            ),
+        )
+        assertIs<
+            JessieCodeRuntimeError.EvaluationDepthLimitExceeded
+            >(recursiveCallDepthLimit)
     }
 
     private fun evaluate(

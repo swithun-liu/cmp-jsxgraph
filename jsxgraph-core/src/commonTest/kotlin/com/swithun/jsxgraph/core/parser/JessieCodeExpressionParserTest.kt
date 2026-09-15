@@ -511,19 +511,85 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
-    fun unsupportedGrammarIsReportedExplicitly() {
-        val function = assertIs<
-            JessieCodeParserError.UnsupportedSyntax
-            >(error("function (x) { return x; };"))
+    fun functionsAndMapsMatchOfficialAst() {
+        val function = expression(
+            "function (x, y) { return x + y; };",
+        )
         assertEquals(
-            "function expressions",
-            function.feature,
+            "op_function(" +
+                "text-list[x,y]," +
+                "op_block(" +
+                "op_none(" +
+                "op_none()," +
+                "op_return(op_add(variable:x,variable:y)))))",
+            describe(function),
+        )
+        assertEquals(false, function.isMath)
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 8),
+            function.location,
         )
 
-        val map = assertIs<
+        val map = expression("map (x, y) -> x + y;")
+        assertEquals(
+            "op_map(" +
+                "text-list[x,y]," +
+                "op_add(variable:x,variable:y))",
+            describe(map),
+        )
+        assertEquals(null, map.isMath)
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 3),
+            map.location,
+        )
+
+        assertEquals(
+            "op_function(" +
+                "text-list[]," +
+                "op_block(op_none(op_none(),op_return(number:3.0))))",
+            describe(expression("function () { return 3; };")),
+        )
+        assertEquals(
+            "op_map(text-list[],number:3.0)",
+            describe(expression("map () -> 3;")),
+        )
+    }
+
+    @Test
+    fun unsupportedAndMalformedFunctionGrammarIsStructured() {
+        val use = assertIs<
             JessieCodeParserError.UnsupportedSyntax
-            >(error("map (x) -> x;"))
-        assertEquals("map expressions", map.feature)
+            >(error("use board"))
+        assertEquals("unary statements", use.feature)
+
+        val attributes = assertIs<
+            JessieCodeParserError.UnsupportedSyntax
+            >(error("foo() << a: 1 >>;"))
+        assertEquals("call attribute lists", attributes.feature)
+
+        val parameter = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("function (x,) { return x; };"))
+        assertEquals(
+            listOf(JessieCodeTokenType.IDENTIFIER),
+            parameter.expected,
+        )
+
+        val block = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("function (x) return x;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.LEFT_BRACE),
+            block.expected,
+        )
+
+        val arrow = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("map (x) x;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.ARROW),
+            arrow.expected,
+        )
     }
 
     @Test
@@ -760,6 +826,13 @@ class JessieCodeExpressionParserTest {
 
                 is JessieCodeAstChild.Text -> {
                     "text:${child.value}"
+                }
+                is JessieCodeAstChild.TextList -> {
+                    child.value.joinToString(
+                        separator = ",",
+                        prefix = "text-list[",
+                        postfix = "]",
+                    )
                 }
                 JessieCodeAstChild.EmptyObject -> "empty-object"
                 JessieCodeAstChild.Undefined -> "raw-undefined"

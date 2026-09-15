@@ -130,6 +130,7 @@ private class DependencyState(
                     is JessieCodeAstChild.NodeList ->
                         nextNodes += child.value
                     is JessieCodeAstChild.Text,
+                    is JessieCodeAstChild.TextList,
                     JessieCodeAstChild.EmptyObject,
                     JessieCodeAstChild.Undefined,
                     -> Unit

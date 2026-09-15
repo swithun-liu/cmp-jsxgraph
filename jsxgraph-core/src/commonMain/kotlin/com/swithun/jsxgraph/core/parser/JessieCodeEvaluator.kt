@@ -1,7 +1,7 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> execute, add, sub, neg, mul, div,
- * mod, pow, and object literal operations
+ * mod, pow, object literal operations, and defineFunction
  * Copyright 2008-2026 Matthias Ehmann, Carsten Miller, Andreas Walter,
  * and Alfred Wassermann.
  * Used under the MIT License option.
@@ -72,7 +72,12 @@ private class EvaluationState(
     private val environment: JessieCodeRuntimeEnvironment,
 ) {
     private var evaluationSteps = 0
-    private val localVariables = environment.variables.toMutableMap()
+    private var functionCallDepth = 0
+    private var currentScope = RuntimeScope(
+        parameters = emptyList(),
+        locals = environment.variables.toMutableMap(),
+        previous = null,
+    )
 
     fun evaluate(
         node: JessieCodeAstNode,
@@ -148,6 +153,8 @@ private class EvaluationState(
             "op_for" -> evaluateFor(node, depth)
             "op_return" -> evaluateReturn(node, depth)
             "op_delete" -> evaluateDelete(node)
+            "op_function" -> evaluateFunction(node, isMap = false)
+            "op_map" -> evaluateFunction(node, isMap = true)
             "op_assign" -> evaluateAssignment(node, depth)
             "op_array" -> evaluateArray(node, depth)
             "op_emptyobject" -> evaluateEmptyObject(node)
@@ -375,9 +382,10 @@ private class EvaluationState(
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val element = if (localVariables.containsKey(name)) {
+        val local = localScope(name)
+        val element = if (local != null) {
             (
-                localVariables.getValue(name) as?
+                local.locals.getValue(name) as?
                     JessieCodeRuntimeValue.ElementReference
                 )?.element
         } else {
@@ -387,6 +395,110 @@ private class EvaluationState(
             environment.board?.removeObject(element)
         }
         return GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+    }
+
+    // JSXGraph: src/parser/jessiecode.js -> defineFunction
+    private fun evaluateFunction(
+        node: JessieCodeAstNode,
+        isMap: Boolean,
+    ): EvaluationResult {
+        val parameters = when (val result = textListChild(node, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val body = when (val result = nodeChild(node, 1)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            isMap &&
+            body.isMath != true &&
+            body.type != JessieCodeAstNodeType.VARIABLE
+        ) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidMapBody(
+                    location = body.location,
+                ),
+            )
+        }
+
+        val functionScope = RuntimeScope(
+            parameters = parameters,
+            locals = mutableMapOf(),
+            previous = currentScope,
+        )
+        // The interpreter's defineFunction calls pushScope and intentionally
+        // leaves that function scope current when compile mode is disabled.
+        currentScope = functionScope
+
+        val dependencies = environment.board?.let { board ->
+            when (
+                val result = JessieCodeDependencyCollector(board).collect(
+                    node = body,
+                    parameterNames = parameters.toSet(),
+                    localNames = visibleLocalNames(),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return GMResult.Err(
+                        JessieCodeRuntimeError.FunctionDependency(
+                            error = result.error,
+                            location = node.location,
+                        ),
+                    )
+                }
+            }
+        } ?: emptyMap()
+
+        val callable = JessieCodeCallable { arguments, location ->
+            callFunction(
+                scope = functionScope,
+                parameters = parameters,
+                body = body,
+                arguments = arguments,
+                location = location,
+            )
+        }
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(
+                name = if (isMap) "map" else "function",
+                callable = callable,
+                parameterNames = parameters.toList(),
+                isMap = isMap,
+                dependencies = dependencies.toMap(),
+            ),
+        )
+    }
+
+    private fun callFunction(
+        scope: RuntimeScope,
+        parameters: List<String>,
+        body: JessieCodeAstNode,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        if (functionCallDepth >= limits.maxEvaluationDepth) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
+                    limit = limits.maxEvaluationDepth,
+                    location = location,
+                ),
+            )
+        }
+
+        val previousScope = currentScope
+        currentScope = scope
+        for ((index, parameter) in parameters.withIndex()) {
+            scope.locals[parameter] = arguments.getOrElse(index) {
+                JessieCodeRuntimeValue.UndefinedValue
+            }
+        }
+        functionCallDepth += 1
+        val result = evaluate(body)
+        functionCallDepth -= 1
+        currentScope = previousScope
+        return result
     }
 
     private fun evaluateArray(
@@ -465,7 +577,12 @@ private class EvaluationState(
                         node,
                         "Assignment variable value must be text.",
                     )
-                GMResult.Ok(AssignmentTarget.Variable(name))
+                GMResult.Ok(
+                    AssignmentTarget.Variable(
+                        scope = currentScope,
+                        name = name,
+                    ),
+                )
             }
             operationName(node) == "op_property" -> {
                 val receiver = when (
@@ -518,7 +635,7 @@ private class EvaluationState(
     ): GMResult<Unit, JessieCodeRuntimeError> =
         when (target) {
             is AssignmentTarget.Variable -> {
-                localVariables[target.name] = value
+                target.scope.locals[target.name] = value
                 GMResult.Ok(Unit)
             }
             is AssignmentTarget.Property -> assignProperty(
@@ -1006,9 +1123,10 @@ private class EvaluationState(
                 "Variable value must be text.",
             )
         }
-        if (localVariables.containsKey(name)) {
+        val local = localScope(name)
+        if (local != null) {
             return GMResult.Ok(
-                localVariables.getValue(name),
+                local.locals.getValue(name),
             )
         }
         when (name) {
@@ -1040,6 +1158,39 @@ private class EvaluationState(
                 JessieCodeRuntimeValue.ElementReference(it)
             } ?: JessieCodeRuntimeValue.UndefinedValue,
         )
+    }
+
+    private fun localScope(name: String): RuntimeScope? {
+        var scope: RuntimeScope? = currentScope
+        while (scope != null) {
+            val value = scope.locals[name]
+            if (
+                value != null &&
+                value !== JessieCodeRuntimeValue.NullValue &&
+                value !== JessieCodeRuntimeValue.UndefinedValue
+            ) {
+                return scope
+            }
+            scope = scope.previous
+        }
+        return null
+    }
+
+    private fun visibleLocalNames(): Set<String> {
+        val names = linkedSetOf<String>()
+        var scope: RuntimeScope? = currentScope
+        while (scope != null) {
+            for ((name, value) in scope.locals) {
+                if (
+                    value !== JessieCodeRuntimeValue.NullValue &&
+                    value !== JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    names += name
+                }
+            }
+            scope = scope.previous
+        }
+        return names
     }
 
     private fun evaluateConstant(
@@ -1663,6 +1814,24 @@ private class EvaluationState(
         }
     }
 
+    private fun textListChild(
+        node: JessieCodeAstNode,
+        index: Int,
+    ): TextListResult {
+        val child = node.children.getOrNull(index)
+            ?: return invalidAst(
+                node,
+                "Missing text-list child at index $index.",
+            )
+        return when (child) {
+            is JessieCodeAstChild.TextList -> GMResult.Ok(child.value)
+            else -> invalidAst(
+                node,
+                "Child at index $index must be a text list.",
+            )
+        }
+    }
+
     private fun invalidAst(
         node: JessieCodeAstNode,
         reason: String,
@@ -1983,6 +2152,7 @@ private class EvaluationState(
 
     private sealed interface AssignmentTarget {
         data class Variable(
+            val scope: RuntimeScope,
             val name: String,
         ) : AssignmentTarget
 
@@ -1991,6 +2161,12 @@ private class EvaluationState(
             val property: String,
         ) : AssignmentTarget
     }
+
+    private class RuntimeScope(
+        val parameters: List<String>,
+        val locals: MutableMap<String, JessieCodeRuntimeValue>,
+        val previous: RuntimeScope?,
+    )
 }
 
 private typealias EvaluationResult =
@@ -2001,6 +2177,8 @@ private typealias NodeListResult =
     GMResult<List<JessieCodeAstNode>, JessieCodeRuntimeError>
 private typealias TextResult =
     GMResult<String, JessieCodeRuntimeError>
+private typealias TextListResult =
+    GMResult<List<String>, JessieCodeRuntimeError>
 
 private const val MAX_SUPPORTED_EVALUATION_DEPTH = 64
 

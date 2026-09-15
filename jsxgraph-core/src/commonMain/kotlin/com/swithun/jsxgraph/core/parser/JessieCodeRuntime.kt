@@ -78,6 +78,15 @@ internal sealed interface JessieCodeRuntimeError {
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
 
+    data class InvalidMapBody(
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class FunctionDependency(
+        val error: JessieCodeDependencyError,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
     data class InvalidArgumentCount(
         val functionName: String,
         val expected: String,
@@ -154,6 +163,9 @@ internal sealed interface JessieCodeRuntimeValue {
     class FunctionValue(
         val name: String,
         val callable: JessieCodeCallable,
+        val parameterNames: List<String> = emptyList(),
+        val isMap: Boolean = false,
+        val dependencies: Map<String, GeometryElement> = emptyMap(),
     ) : JessieCodeRuntimeValue
 
     class BoardReference(
@@ -213,10 +225,10 @@ internal object UnsupportedJessieCodeElementRuntime :
 }
 
 /**
- * First runtime-scope slice.
+ * Values used to seed the translated JessieCode global scope.
  *
- * `variables` models the current local scope. Nested function scopes and
- * assignments are added together with their grammar productions.
+ * Function scopes are created by the evaluator when `op_function` or
+ * `op_map` is executed.
  */
 internal data class JessieCodeRuntimeEnvironment(
     val variables: Map<String, JessieCodeRuntimeValue> = emptyMap(),

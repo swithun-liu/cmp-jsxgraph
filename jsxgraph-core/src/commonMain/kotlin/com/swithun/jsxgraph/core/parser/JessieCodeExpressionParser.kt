@@ -62,9 +62,9 @@ internal sealed interface JessieCodeParserError {
  *
  * This slice implements `StatementList`, blocks, `if` statements, expression
  * statements, `while`/`do`/`for` loops, assignment, array and object literals.
- * Return and delete statements are also covered. The deprecated multi-board
- * `use` statement, functions, maps, and creator attributes are intentionally
- * left for later slices.
+ * Return/delete statements and function/map expressions are also covered. The
+ * deprecated multi-board `use` statement and creator attributes are
+ * intentionally left for later slices.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -419,7 +419,12 @@ private class ParserState(
 
     // JSXGraph: StatementBlock
     private fun parseStatementBlock(): ParserResult<ParsedExpression> {
-        val opening = consume()
+        val opening = when (
+            val result = expect(JessieCodeTokenType.LEFT_BRACE)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         val statements = when (
             val result = parseStatementList(
                 terminator = JessieCodeTokenType.RIGHT_BRACE,
@@ -889,15 +894,120 @@ private class ParserState(
                 parenthesizedExpression()
 
             JessieCodeTokenType.LEFT_BRACKET -> arrayLiteral()
-            JessieCodeTokenType.FUNCTION -> {
-                unsupported("function expressions")
-            }
-
-            JessieCodeTokenType.MAP -> unsupported("map expressions")
+            JessieCodeTokenType.FUNCTION -> functionExpression()
+            JessieCodeTokenType.MAP -> mapExpression()
             JessieCodeTokenType.SHIFT_LEFT -> objectLiteral()
 
             else -> unexpected(EXPRESSION_START_TOKENS)
         }
+
+    // JSXGraph: FunctionExpression and ParameterDefinitionList
+    private fun functionExpression(): ParserResult<ParsedExpression> {
+        val functionToken = consume()
+        when (
+            val result = expect(JessieCodeTokenType.LEFT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val parameters = when (val result = parseParameterDefinitions()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.RIGHT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val body = when (
+            val result = nested(current().location) {
+                parseStatementBlock()
+            }
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operationWithRawChildren(
+            upstreamName = "op_function",
+            children = listOf(
+                JessieCodeAstChild.TextList(parameters),
+                JessieCodeAstChild.Node(body.node),
+            ),
+            childDepths = listOf(body.depth),
+            nodeLocation = functionToken.location,
+            span = span(functionToken.location, body.span),
+            isMath = false,
+            isLeftHandSideExpression = true,
+        )
+    }
+
+    // JSXGraph: MapExpression and ParameterDefinitionList
+    private fun mapExpression(): ParserResult<ParsedExpression> {
+        val mapToken = consume()
+        when (
+            val result = expect(JessieCodeTokenType.LEFT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val parameters = when (val result = parseParameterDefinitions()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.RIGHT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        when (val result = expect(JessieCodeTokenType.ARROW)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val body = when (
+            val result = nested(current().location) {
+                parseAssignment()
+            }
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operationWithRawChildren(
+            upstreamName = "op_map",
+            children = listOf(
+                JessieCodeAstChild.TextList(parameters),
+                JessieCodeAstChild.Node(body.node),
+            ),
+            childDepths = listOf(body.depth),
+            nodeLocation = mapToken.location,
+            span = span(mapToken.location, body.span),
+            isMath = null,
+            isLeftHandSideExpression = true,
+        )
+    }
+
+    private fun parseParameterDefinitions():
+        ParserResult<List<String>> {
+        if (current().type == JessieCodeTokenType.RIGHT_PARENTHESIS) {
+            return GMResult.Ok(emptyList())
+        }
+
+        val parameters = mutableListOf<String>()
+        while (true) {
+            val parameter = when (
+                val result = expect(JessieCodeTokenType.IDENTIFIER)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            parameters += parameter.lexeme
+            if (current().type != JessieCodeTokenType.COMMA) {
+                return GMResult.Ok(parameters)
+            }
+            consume()
+        }
+    }
 
     private fun parenthesizedExpression(): ParserResult<ParsedExpression> {
         val opening = consume()

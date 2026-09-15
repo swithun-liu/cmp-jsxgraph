@@ -45,9 +45,9 @@ internal class JessieCodeNameReplacer(
     /**
      * Replaces named board elements with stable `$("<id>")` calls.
      *
-     * `forceValueCall` mirrors snippet's slider handling. The current parser
-     * has no return node yet, so a whole-expression variable is treated as the
-     * child of the return node used by upstream snippet().
+     * `forceValueCall` mirrors snippet's slider handling. A whole-expression
+     * variable is treated as the child of the return node inserted by
+     * upstream snippet().
      */
     internal fun replace(
         node: JessieCodeAstNode,
@@ -191,6 +191,7 @@ private class IdReplacementState(
                     children[index] = JessieCodeAstChild.NodeList(nodes)
                 }
                 is JessieCodeAstChild.Text,
+                is JessieCodeAstChild.TextList,
                 JessieCodeAstChild.EmptyObject,
                 JessieCodeAstChild.Undefined,
                 -> Unit
@@ -223,6 +224,7 @@ private class ReplacementState(
         depth: Int = 1,
         programRoot: Boolean = true,
         directAssignmentTarget: Boolean = false,
+        activeBoundNames: Set<String> = boundNames,
     ): GMResult<
         JessieCodeAstNode,
         JessieCodeNameReplacementError,
@@ -252,7 +254,7 @@ private class ReplacementState(
             node.type == JessieCodeAstNodeType.VARIABLE &&
             variableName != null &&
             !directAssignmentTarget &&
-            variableName !in boundNames &&
+            variableName !in activeBoundNames &&
             variableName !in CONSTANT_NAMES
         ) {
             val element = board.elementByName(variableName)
@@ -270,6 +272,7 @@ private class ReplacementState(
 
         val callValueForChildren =
             callValue || requiresNumericCallArguments(node)
+        val functionParameters = functionParameters(node)
         val children = node.children.toMutableList()
         for (index in node.children.indices.reversed()) {
             val child = node.children[index]
@@ -283,6 +286,12 @@ private class ReplacementState(
                     index == 0 &&
                     child is JessieCodeAstChild.Node &&
                     child.value.type == JessieCodeAstNodeType.VARIABLE
+            val childBoundNames =
+                if (index == 1 && functionParameters != null) {
+                    activeBoundNames + functionParameters
+                } else {
+                    activeBoundNames
+                }
             when (child) {
                 is JessieCodeAstChild.Node -> {
                     when (
@@ -293,6 +302,7 @@ private class ReplacementState(
                             programRoot = false,
                             directAssignmentTarget =
                                 childIsDirectAssignmentTarget,
+                            activeBoundNames = childBoundNames,
                         )
                     ) {
                         is GMResult.Ok -> {
@@ -312,6 +322,7 @@ private class ReplacementState(
                                 callValue = childCallValue,
                                 depth = depth + 1,
                                 programRoot = false,
+                                activeBoundNames = childBoundNames,
                             )
                         ) {
                             is GMResult.Ok -> nodes += result.value
@@ -321,6 +332,7 @@ private class ReplacementState(
                     children[index] = JessieCodeAstChild.NodeList(nodes)
                 }
                 is JessieCodeAstChild.Text,
+                is JessieCodeAstChild.TextList,
                 JessieCodeAstChild.EmptyObject,
                 JessieCodeAstChild.Undefined,
                 -> Unit
@@ -374,6 +386,19 @@ private class ReplacementState(
         } else {
             null
         }
+
+    private fun functionParameters(
+        node: JessieCodeAstNode,
+    ): List<String>? {
+        val operation = operationName(node)
+        if (operation != "op_function" && operation != "op_map") {
+            return null
+        }
+        return (
+            node.children.firstOrNull() as?
+                JessieCodeAstChild.TextList
+            )?.value
+    }
 
     private fun replacementNode(
         source: JessieCodeAstNode,
