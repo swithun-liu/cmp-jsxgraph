@@ -14,13 +14,25 @@ practical.
 
 ## Kotlin Runtime Adaptations
 
-- JessieCode tokenization returns `GMResult.Err` when configured source-length
-  or token-count limits are exceeded. The upstream generated lexer has no
-  resource limits. Its recognized token stream, one-based lines, zero-based
-  columns, `INVALID` fallback tokens, and rule-order quirks are otherwise
-  preserved, including JSXGraph `1.13.3` splitting `!=` into `!` and `=`.
-  Parsing, AST construction, evaluation, scopes, and dependency discovery
-  remain pending.
+- JessieCode tokenization and the translated expression parser return
+  `GMResult.Err` when configured source-length, token-count, AST-node, or
+  AST-depth limits are exceeded. The upstream generated lexer and Jison parser
+  have no resource limits. A separate parser-nesting limit is capped at 64 so
+  malformed recursive syntax is rejected before exhausting the browser Wasm
+  stack.
+- The translated parser currently accepts an empty program or one
+  `ConditionalExpression ';' EOF` statement from the upstream
+  `Expression ';' EOF` entry. Successful supported expressions preserve the
+  upstream AST node/value/child shape, `isMath` flags, and generated-action
+  locations. Remaining statements, assignment/function/map/object syntax,
+  evaluation, scopes, and dependency discovery remain pending.
+- Parser errors retain both the offending token location and the previous
+  shifted-token location used by Jison's error hash. Expected-token lists
+  describe the translated grammar subset rather than the complete generated
+  LALR state.
+- JessieCode's recognized token stream, one-based lines, zero-based columns,
+  `INVALID` fallback tokens, and rule-order quirks are preserved, including
+  JSXGraph `1.13.3` splitting `!=` into `!` and `=`.
 - Numeric vectors and matrices use `DoubleArray` and `Array<DoubleArray>`.
   Malformed dimensions are outside the internal contract and may fail
   differently from malformed JavaScript arrays.

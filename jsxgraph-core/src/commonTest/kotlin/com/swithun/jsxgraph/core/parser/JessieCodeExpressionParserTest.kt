@@ -1,0 +1,518 @@
+package com.swithun.jsxgraph.core.parser
+
+import com.swithun.jsxgraph.core.GMResult
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class JessieCodeExpressionParserTest {
+    @Test
+    fun literalsMatchOfficialAstValuesAndMathFlags() {
+        val nullNode = expression("null;")
+        assertEquals(JessieCodeAstNodeType.CONSTANT, nullNode.type)
+        assertEquals(JessieCodeAstValue.Null, nullNode.value)
+        assertEquals(false, nullNode.isMath)
+
+        val trueNode = expression("true;")
+        assertEquals(
+            JessieCodeAstValue.Boolean(true),
+            trueNode.value,
+        )
+        assertEquals(false, trueNode.isMath)
+
+        val stringNode = expression("\"a\\\"b\";")
+        assertEquals(
+            JessieCodeAstValue.Text("a\\\"b"),
+            stringNode.value,
+        )
+        assertEquals(false, stringNode.isMath)
+
+        val numberNode = expression("12.5e-2;")
+        assertEquals(
+            JessieCodeAstValue.Number(0.125),
+            numberNode.value,
+        )
+        assertEquals(true, numberNode.isMath)
+
+        val nanNode = expression("NaN;")
+        val nanValue = assertIs<JessieCodeAstValue.Number>(
+            nanNode.value,
+        )
+        assertTrue(nanValue.value.isNaN())
+        assertEquals(true, nanNode.isMath)
+
+        val infinityNode = expression("Infinity;")
+        assertEquals(
+            JessieCodeAstValue.Number(Double.POSITIVE_INFINITY),
+            infinityNode.value,
+        )
+        assertEquals(true, infinityNode.isMath)
+
+        val variable = expression("radius;")
+        assertEquals(JessieCodeAstNodeType.VARIABLE, variable.type)
+        assertEquals(
+            JessieCodeAstValue.Text("radius"),
+            variable.value,
+        )
+        assertEquals(null, variable.isMath)
+    }
+
+    @Test
+    fun arithmeticPrecedenceAndAssociativityMatchOfficialAst() {
+        assertEquals(
+            "op_sub(" +
+                "op_add(number:1.0," +
+                "op_mul(number:2.0,op_exp(number:3.0,number:4.0)))," +
+                "op_mod(op_div(number:5.0,number:6.0),number:7.0))",
+            describe(
+                expression(
+                    "1 + 2 * 3 ^ 4 - 5 / 6 % 7;",
+                ),
+            ),
+        )
+        assertEquals(
+            "op_neg(op_exp(number:2.0,number:4.0))",
+            describe(expression("-2^4;")),
+        )
+        assertEquals(
+            "op_exp(number:2.0,op_exp(number:3.0,number:2.0))",
+            describe(expression("2^3^2;")),
+        )
+        assertEquals(
+            "op_exp(number:2.0,op_neg(number:3.0))",
+            describe(expression("2^-3;")),
+        )
+        assertEquals(
+            "op_mul(variable:a,variable:b)",
+            describe(expression("+a*b;")),
+        )
+    }
+
+    @Test
+    fun conditionalLogicalAndRelationalNodesMatchOfficialAst() {
+        assertEquals(
+            "op_conditional(" +
+                "variable:a,variable:b," +
+                "op_conditional(variable:c,variable:d,variable:e))",
+            describe(expression("a ? b : c ? d : e;")),
+        )
+        assertEquals(
+            "op_or(" +
+                "op_not(variable:a)," +
+                "op_and(variable:b,op_eq(variable:c,variable:d)))",
+            describe(expression("!a || b && c == d;")),
+        )
+        assertEquals(
+            "op_geq(op_lt(variable:a,variable:b),variable:c)",
+            describe(expression("a < b >= c;")),
+        )
+        assertEquals(false, expression("a ? b : c;").isMath)
+        assertEquals(false, expression("a || b;").isMath)
+        assertEquals(false, expression("a < b;").isMath)
+    }
+
+    @Test
+    fun callsPropertiesIndexesAndArraysMatchOfficialChildShape() {
+        val node = expression(
+            "foo.bar[2](x, [1, \"s\", null]).baz;",
+        )
+
+        assertEquals(
+            "op_property(" +
+                "op_execfun(" +
+                "op_extvalue(" +
+                "op_property(variable:foo,text:bar)," +
+                "number:2.0)," +
+                "list[variable:x," +
+                "op_array(list[number:1.0,string:s,null])])," +
+                "text:baz)",
+            describe(node),
+        )
+        assertEquals(true, node.isMath)
+
+        val emptyArray = expression("[];")
+        assertEquals("op_array(list[])", describe(emptyArray))
+        assertEquals(false, emptyArray.isMath)
+    }
+
+    @Test
+    fun generatedActionLocationsMatchOfficialAst() {
+        val arithmetic = expression(
+            "1 + 2 * 3 ^ 4 - 5 / 6 % 7;",
+        )
+        assertEquals(
+            JessieCodeAstLocation(
+                line = 1,
+                column = 0,
+                endLine = 1,
+                endColumn = 13,
+            ),
+            arithmetic.location,
+        )
+
+        val parenthesized = expression("(a + b) * c;")
+        assertEquals(
+            JessieCodeAstLocation(
+                line = 1,
+                column = 0,
+                endLine = 1,
+                endColumn = 7,
+            ),
+            parenthesized.location,
+        )
+        val innerAdd = childNode(parenthesized, 0)
+        assertEquals(
+            JessieCodeAstLocation(
+                line = 1,
+                column = 1,
+                endLine = 1,
+                endColumn = 2,
+            ),
+            innerAdd.location,
+        )
+
+        val multiline = expression(
+            "1 +\n  2 *\n  foo.bar[0];",
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 1),
+            multiline.location,
+        )
+        val multiply = childNode(multiline, 1)
+        assertEquals(
+            JessieCodeAstLocation(2, 2, 2, 3),
+            multiply.location,
+        )
+        val indexed = childNode(multiply, 1)
+        assertEquals(
+            JessieCodeAstLocation(3, 2, 3, 9),
+            indexed.location,
+        )
+    }
+
+    @Test
+    fun programWrapperMatchesOfficialSingleExpressionShape() {
+        val program = parse("radius + 1;")
+
+        assertEquals(
+            JessieCodeAstValue.Text("op_none"),
+            program.value,
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 0),
+            program.location,
+        )
+        assertEquals(2, program.children.size)
+        assertEquals(
+            "op_none()",
+            describe(childNode(program, 0)),
+        )
+        assertEquals(
+            "op_add(variable:radius,number:1.0)",
+            describe(childNode(program, 1)),
+        )
+
+        val emptyProgram = parse("")
+        assertEquals("op_none()", describe(emptyProgram))
+    }
+
+    @Test
+    fun parserErrorsRetainOffendingAndJisonParserLocations() {
+        val missingOperand = error("1 + ;")
+        val unexpected = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(missingOperand)
+        assertEquals(
+            JessieCodeTokenType.SEMICOLON,
+            unexpected.token.type,
+        )
+        assertEquals(
+            JessieCodeSourceLocation(
+                start = JessieCodeSourcePosition(4, 1, 4),
+                end = JessieCodeSourcePosition(5, 1, 5),
+            ),
+            unexpected.token.location,
+        )
+        assertEquals(
+            JessieCodeSourceLocation(
+                start = JessieCodeSourcePosition(2, 1, 2),
+                end = JessieCodeSourcePosition(3, 1, 3),
+            ),
+            unexpected.parserLocation,
+        )
+        assertEquals(
+            officialExpressionStartTokens,
+            unexpected.expected,
+        )
+
+        val missingColon = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("a ? b;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.COLON),
+            missingColon.expected,
+        )
+        assertEquals(
+            JessieCodeSourcePosition(5, 1, 5),
+            missingColon.token.location.start,
+        )
+        assertEquals(
+            JessieCodeSourcePosition(4, 1, 4),
+            missingColon.parserLocation.start,
+        )
+
+        val missingSemicolon = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("1"))
+        assertEquals(
+            JessieCodeTokenType.EOF,
+            missingSemicolon.token.type,
+        )
+        assertEquals(
+            listOf(JessieCodeTokenType.SEMICOLON),
+            missingSemicolon.expected,
+        )
+        assertEquals(
+            JessieCodeSourcePosition(1, 1, 1),
+            missingSemicolon.token.location.start,
+        )
+    }
+
+    @Test
+    fun lexerRuleOrderQuirkRemainsVisibleToParser() {
+        val error = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("a != b;"))
+
+        assertEquals(JessieCodeTokenType.NOT, error.token.type)
+        assertEquals("!", error.token.lexeme)
+        assertEquals(
+            JessieCodeSourcePosition(2, 1, 2),
+            error.token.location.start,
+        )
+        assertEquals(
+            listOf(JessieCodeTokenType.SEMICOLON),
+            error.expected,
+        )
+    }
+
+    @Test
+    fun unsupportedGrammarIsReportedExplicitly() {
+        val function = assertIs<
+            JessieCodeParserError.UnsupportedSyntax
+            >(error("function (x) { return x; };"))
+        assertEquals(
+            "function expressions",
+            function.feature,
+        )
+
+        val map = assertIs<
+            JessieCodeParserError.UnsupportedSyntax
+            >(error("map (x) -> x;"))
+        assertEquals("map expressions", map.feature)
+
+        val objectLiteral = assertIs<
+            JessieCodeParserError.UnsupportedSyntax
+            >(error("<< a: 1 >>;"))
+        assertEquals("object literals", objectLiteral.feature)
+
+        val assignment = assertIs<
+            JessieCodeParserError.UnsupportedSyntax
+            >(error("a = 1;"))
+        assertEquals("assignment expressions", assignment.feature)
+    }
+
+    @Test
+    fun lexerAndAstLimitsReturnStructuredErrors() {
+        val lexerError = JessieCodeExpressionParser(
+            lexerLimits = JessieCodeLexerLimits(
+                maxSourceLength = 2,
+                maxTokens = 10,
+            ),
+        ).parse("123;")
+        assertEquals(
+            JessieCodeLexerError.SourceLengthExceeded(
+                limit = 2,
+                actual = 4,
+            ),
+            assertIs<
+                JessieCodeParserError.Lexer
+                >(
+                assertIs<
+                    GMResult.Err<JessieCodeParserError>
+                    >(lexerError).error,
+            ).error,
+        )
+
+        val invalidLimits = JessieCodeExpressionParser(
+            parserLimits = JessieCodeParserLimits(
+                maxAstNodes = 0,
+                maxAstDepth = 0,
+                maxParserNesting = 65,
+            ),
+        ).parse("")
+        assertEquals(
+            JessieCodeParserError.InvalidLimits(
+                maxAstNodes = 0,
+                maxAstDepth = 0,
+                maxParserNesting = 65,
+            ),
+            assertIs<
+                GMResult.Err<JessieCodeParserError.InvalidLimits>
+                >(invalidLimits).error,
+        )
+
+        val nodeLimit = JessieCodeExpressionParser(
+            parserLimits = JessieCodeParserLimits(
+                maxAstNodes = 3,
+                maxAstDepth = 256,
+                maxParserNesting = 64,
+            ),
+        ).parse("1 + 2;")
+        assertEquals(
+            JessieCodeParserError.AstNodeLimitExceeded(
+                limit = 3,
+                location = JessieCodeSourcePosition(0, 1, 0),
+            ),
+            assertIs<
+                GMResult.Err<
+                    JessieCodeParserError.AstNodeLimitExceeded
+                    >
+                >(nodeLimit).error,
+        )
+
+        val deepAstSource = buildString {
+            repeat(300) { index ->
+                if (index > 0) {
+                    append('+')
+                }
+                append('1')
+            }
+            append(';')
+        }
+        val astDepthLimit =
+            JessieCodeExpressionParser().parse(deepAstSource)
+        assertEquals(
+            JessieCodeParserError.AstDepthLimitExceeded(
+                limit = 256,
+                location = JessieCodeSourcePosition(0, 1, 0),
+            ),
+            assertIs<
+                GMResult.Err<
+                    JessieCodeParserError.AstDepthLimitExceeded
+                    >
+                >(astDepthLimit).error,
+        )
+
+        val deepSource = buildString {
+            repeat(300) {
+                append('(')
+            }
+            append('1')
+            repeat(300) {
+                append(')')
+            }
+            append(';')
+        }
+        val nestingLimit = JessieCodeExpressionParser().parse(deepSource)
+        val nestingError = assertIs<
+            GMResult.Err<
+                JessieCodeParserError.ParserNestingLimitExceeded
+                >
+            >(nestingLimit).error
+        assertEquals(64, nestingError.limit)
+        assertEquals(
+            JessieCodeSourcePosition(64, 1, 64),
+            nestingError.location,
+        )
+    }
+
+    private fun parse(source: String): JessieCodeAstNode =
+        assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeExpressionParser().parse(source),
+        ).value
+
+    private fun expression(source: String): JessieCodeAstNode =
+        childNode(parse(source), 1)
+
+    private fun error(source: String): JessieCodeParserError =
+        assertIs<GMResult.Err<JessieCodeParserError>>(
+            JessieCodeExpressionParser().parse(source),
+        ).error
+
+    private fun childNode(
+        node: JessieCodeAstNode,
+        index: Int,
+    ): JessieCodeAstNode =
+        assertIs<JessieCodeAstChild.Node>(
+            node.children[index],
+        ).value
+
+    private fun describe(node: JessieCodeAstNode): String {
+        val value = when (val value = node.value) {
+            is JessieCodeAstValue.Text -> value.value
+            is JessieCodeAstValue.Number -> "number:${value.value}"
+            is JessieCodeAstValue.Boolean -> {
+                "boolean:${value.value}"
+            }
+
+            JessieCodeAstValue.Null -> "null"
+        }
+        val prefix = when (node.type) {
+            JessieCodeAstNodeType.OPERATION -> value
+            JessieCodeAstNodeType.VARIABLE -> "variable:$value"
+            JessieCodeAstNodeType.CONSTANT -> value
+            JessieCodeAstNodeType.BOOLEAN_CONSTANT -> value
+            JessieCodeAstNodeType.STRING -> "string:$value"
+        }
+        if (node.children.isEmpty()) {
+            return if (node.type == JessieCodeAstNodeType.OPERATION) {
+                "$prefix()"
+            } else {
+                prefix
+            }
+        }
+        return prefix + node.children.joinToString(
+            separator = ",",
+            prefix = "(",
+            postfix = ")",
+        ) { child ->
+            when (child) {
+                is JessieCodeAstChild.Node -> describe(child.value)
+                is JessieCodeAstChild.NodeList -> {
+                    child.value.joinToString(
+                        separator = ",",
+                        prefix = "list[",
+                        postfix = "]",
+                    ) { describe(it) }
+                }
+
+                is JessieCodeAstChild.Text -> {
+                    "text:${child.value}"
+                }
+            }
+        }
+    }
+
+    private companion object {
+        val officialExpressionStartTokens = listOf(
+            JessieCodeTokenType.LEFT_PARENTHESIS,
+            JessieCodeTokenType.IDENTIFIER,
+            JessieCodeTokenType.PLUS,
+            JessieCodeTokenType.MINUS,
+            JessieCodeTokenType.NOT,
+            JessieCodeTokenType.LEFT_BRACKET,
+            JessieCodeTokenType.NULL,
+            JessieCodeTokenType.TRUE,
+            JessieCodeTokenType.FALSE,
+            JessieCodeTokenType.STRING,
+            JessieCodeTokenType.NUMBER,
+            JessieCodeTokenType.NAN,
+            JessieCodeTokenType.INFINITY,
+            JessieCodeTokenType.SHIFT_LEFT,
+            JessieCodeTokenType.FUNCTION,
+            JessieCodeTokenType.MAP,
+        )
+    }
+}
