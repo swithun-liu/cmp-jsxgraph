@@ -27,6 +27,17 @@ enum class PerpendicularPointRole {
     OTHER,
 }
 
+enum class ArcSelection {
+    AUTO,
+    MINOR,
+    MAJOR,
+}
+
+enum class ArcOrientation {
+    COUNTERCLOCKWISE,
+    CLOCKWISE,
+}
+
 data class PerpendicularResult(
     val point: DoubleArray,
     val change: Boolean,
@@ -1055,6 +1066,39 @@ object Geometry {
             previousIndex = index
         }
         return isInside
+    }
+
+    // JSXGraph: src/math/geometry.js -> coordsOnArc
+    fun coordsOnArc(
+        radiusPoint: DoubleArray,
+        center: DoubleArray,
+        anglePoint: DoubleArray,
+        coordinates: DoubleArray,
+        selection: ArcSelection = ArcSelection.AUTO,
+        orientation: ArcOrientation = ArcOrientation.COUNTERCLOCKWISE,
+    ): Boolean {
+        var angle = rad(radiusPoint, center, coordinates)
+        var minimumAngle = 0.0
+        var maximumAngle = rad(radiusPoint, center, anglePoint)
+
+        if (orientation == ArcOrientation.CLOCKWISE) {
+            angle = 2.0 * PI - angle
+            maximumAngle = 2.0 * PI - maximumAngle
+        }
+        if (
+            (
+                selection == ArcSelection.MINOR &&
+                    maximumAngle > PI
+            ) ||
+            (
+                selection == ArcSelection.MAJOR &&
+                    maximumAngle < PI
+            )
+        ) {
+            minimumAngle = maximumAngle
+            maximumAngle = 2.0 * PI
+        }
+        return angle >= minimumAngle && angle <= maximumAngle
     }
 
     // JSXGraph: src/math/geometry.js -> _bezierSplit
