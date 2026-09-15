@@ -155,16 +155,16 @@ private val roadmapPhases = listOf(
     RoadmapPhase(
         title = "Rendering & Interaction",
         subtitle = "Compose Canvas runtime",
-        status = RoadmapStatus.PLANNED,
-        progress = 0.24f,
+        status = RoadmapStatus.IN_PROGRESS,
+        progress = 0.32f,
         accent = RenderingCoral,
         completedItems = listOf(
-            "Canvas renderer spike",
-            "Path and shape mapping",
-            "Text baseline prototype",
+            "Portable render scene",
+            "Point, line & circle Canvas",
+            "Same-source visual parity",
         ),
-        nextTitle = "Hit testing & gestures",
-        nextDetail = "Pointer capture, drag, pan, zoom and keyboard input",
+        nextTitle = "Curves, text & interaction",
+        nextDetail = "Expand element rendering before hit testing and gestures",
         exitGate = "Visual geometry and interaction traces meet the stable parity gates.",
     ),
 )
@@ -172,16 +172,16 @@ private val roadmapPhases = listOf(
 private val upcomingMilestones = listOf(
     UpcomingMilestone(
         title = "Parser",
-        detail = "JSXGraph syntax & JessieCode",
-        progress = 0.35f,
-        status = "35%",
+        detail = "Construction documents & JessieCode",
+        progress = 0.42f,
+        status = "42%",
         accent = NumericsBlue,
     ),
     UpcomingMilestone(
         title = "Composition",
-        detail = "Layout, z-order & clipping",
-        progress = 0.10f,
-        status = "10%",
+        detail = "Board order, z-order & clipping",
+        progress = 0.15f,
+        status = "15%",
         accent = GeometryAmber,
     ),
     UpcomingMilestone(
@@ -454,7 +454,7 @@ private fun OverallProgress(
 ) {
     Column(
         modifier = modifier
-            .semantics { contentDescription = "overall-progress:68" },
+            .semantics { contentDescription = "overall-progress:70" },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -471,14 +471,14 @@ private fun OverallProgress(
                 letterSpacing = 0.sp,
             )
             Text(
-                text = "68%",
+                text = "70%",
                 color = DashboardInk,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 0.sp,
             )
         }
-        ProgressTrack(progress = 0.68f, accent = FoundationGreen)
+        ProgressTrack(progress = 0.70f, accent = FoundationGreen)
     }
 }
 

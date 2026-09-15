@@ -1,0 +1,1196 @@
+/*
+ * Kotlin translation support for JSXGraph.
+ * Upstream: src/base/board.js -> create,
+ * src/jxg.js -> registerElement,
+ * src/base/element.js -> visual properties
+ * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
+ * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
+ * Used under the MIT License option.
+ */
+package com.swithun.jsxgraph.core
+
+import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.parser.NativeJessieCodeCreators
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+
+data class JsxGraphEngineLimits(
+    val maxSourceLength: Int = 1_000_000,
+    val maxJsonDepth: Int = 64,
+    val maxJsonValues: Int = 100_000,
+    val maxObjects: Int = 10_000,
+)
+
+sealed interface JsxGraphDocumentError {
+    val message: String
+
+    data class InvalidLimits(
+        override val message: String,
+    ) : JsxGraphDocumentError
+
+    data class SourceLengthExceeded(
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Source length $actual exceeds limit $limit"
+    }
+
+    data class JsonDepthExceeded(
+        val limit: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "JSON nesting exceeds limit $limit"
+    }
+
+    data class JsonValueLimitExceeded(
+        val limit: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "JSON value count exceeds limit $limit"
+    }
+
+    data class InvalidJson(
+        override val message: String,
+    ) : JsxGraphDocumentError
+
+    data class InvalidField(
+        val path: String,
+        val expected: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "$path must be $expected"
+    }
+
+    data class UnsupportedSchemaVersion(
+        val version: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Unsupported schemaVersion: $version"
+    }
+
+    data class UnsupportedField(
+        val path: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Unsupported field: $path"
+    }
+
+    data class ObjectLimitExceeded(
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Object count $actual exceeds limit $limit"
+    }
+
+    data class DuplicateObjectId(
+        val id: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Duplicate object id: $id"
+    }
+
+    data class UnsupportedElementType(
+        val objectIndex: Int,
+        val id: String,
+        val type: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' uses unsupported type '$type'"
+    }
+
+    data class ElementCreation(
+        val objectIndex: Int,
+        val id: String,
+        val type: String,
+        val reason: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Could not create objects[$objectIndex] '$id' ($type): $reason"
+    }
+
+    data class InvalidAttribute(
+        val objectIndex: Int,
+        val id: String,
+        val attribute: String,
+        val expected: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' attribute '$attribute' must be $expected"
+    }
+
+    data class UnsupportedAttribute(
+        val objectIndex: Int,
+        val id: String,
+        val attribute: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' uses unsupported attribute '$attribute'"
+    }
+
+    data class UnsupportedAttributeValue(
+        val objectIndex: Int,
+        val id: String,
+        val attribute: String,
+        val value: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' uses unsupported $attribute value '$value'"
+    }
+
+    data class NonFiniteGeometry(
+        val objectIndex: Int,
+        val id: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' produced non-finite geometry"
+    }
+}
+
+/**
+ * Parses the construction document, creates translated Board elements through
+ * the native creator registry, and snapshots those elements into a portable
+ * render scene.
+ */
+object JsxGraphEngine {
+    fun parse(
+        source: String,
+        limits: JsxGraphEngineLimits = JsxGraphEngineLimits(),
+    ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
+        validateLimits(limits)?.let { error ->
+            return GMResult.Err(error)
+        }
+        if (source.length > limits.maxSourceLength) {
+            return GMResult.Err(
+                JsxGraphDocumentError.SourceLengthExceeded(
+                    limit = limits.maxSourceLength,
+                    actual = source.length,
+                ),
+            )
+        }
+        if (exceedsJsonDepth(source, limits.maxJsonDepth)) {
+            return GMResult.Err(
+                JsxGraphDocumentError.JsonDepthExceeded(
+                    limit = limits.maxJsonDepth,
+                ),
+            )
+        }
+
+        val root = try {
+            Json.parseToJsonElement(source)
+        } catch (failure: Exception) {
+            return GMResult.Err(
+                JsxGraphDocumentError.InvalidJson(
+                    failure.message ?: "Invalid JSON",
+                ),
+            )
+        }
+        if (exceedsJsonValueLimit(root, limits.maxJsonValues)) {
+            return GMResult.Err(
+                JsxGraphDocumentError.JsonValueLimitExceeded(
+                    limit = limits.maxJsonValues,
+                ),
+            )
+        }
+        val document = when (val result = parseDocument(root, limits)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return createScene(document)
+    }
+
+    private fun createScene(
+        document: ParsedDocument,
+    ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "jxgBoard",
+        )
+        val created = mutableListOf<CreatedSourceElement>()
+
+        for (sourceObject in document.objects) {
+            val creator = NativeJessieCodeCreators.creator(sourceObject.type)
+                ?: return GMResult.Err(
+                    JsxGraphDocumentError.UnsupportedElementType(
+                        objectIndex = sourceObject.index,
+                        id = sourceObject.id,
+                        type = sourceObject.type,
+                    ),
+                )
+            val parents = when (
+                val result = runtimeArray(sourceObject.parents)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val attributes = when (
+                val result = runtimeAttributes(sourceObject)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val value = when (
+                val result = creator.create(
+                    board = board,
+                    parents = parents,
+                    attributes = attributes,
+                    location = SOURCE_LOCATION,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    JsxGraphDocumentError.ElementCreation(
+                        objectIndex = sourceObject.index,
+                        id = sourceObject.id,
+                        type = sourceObject.type,
+                        reason = result.error.toString(),
+                    ),
+                )
+            }
+            val element = (
+                value as? JessieCodeRuntimeValue.ElementReference
+            )?.element ?: return GMResult.Err(
+                JsxGraphDocumentError.ElementCreation(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    type = sourceObject.type,
+                    reason = "creator did not return a geometry element",
+                ),
+            )
+            created += CreatedSourceElement(sourceObject, element)
+        }
+
+        board.fullUpdate()
+        val sceneElements = mutableListOf<JsxGraphSceneElement>()
+        for (sourceElement in created) {
+            when (val result = sceneElement(sourceElement)) {
+                is GMResult.Ok -> sceneElements += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(
+            JsxGraphScene(
+                boundingBox = document.boundingBox,
+                axis = document.axis,
+                grid = document.grid,
+                keepAspectRatio = document.keepAspectRatio,
+                elements = sceneElements,
+            ),
+        )
+    }
+
+    private fun sceneElement(
+        sourceElement: CreatedSourceElement,
+    ): GMResult<JsxGraphSceneElement, JsxGraphDocumentError> {
+        val source = sourceElement.source
+        val element = sourceElement.element
+        val attributes = AttributeReader(source)
+        when (val result = attributes.validateSupported(element)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val style = when (val result = attributes.style(element)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            when (
+                val result = attributes.boolean(
+                    name = "withlabel",
+                    default = element is Point,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            } &&
+            element.name.isNotEmpty()
+        ) {
+            return GMResult.Err(
+                attributes.unsupportedValue(
+                    attribute = "withLabel",
+                    value = "true with non-empty name",
+                ),
+            )
+        }
+
+        val sceneElement = when (element) {
+            is Point -> {
+                val coordinates = point(element)
+                    ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val size = when (
+                    val result = attributes.number(
+                        name = "size",
+                        default = 3.0,
+                        minimum = 0.0,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val face = when (
+                    val result = attributes.string(
+                        name = "face",
+                        default = "o",
+                    )
+                ) {
+                    is GMResult.Ok -> normalizePointFace(result.value)
+                    is GMResult.Err -> return result
+                }
+                if (face != "o") {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "face",
+                            value = face,
+                        ),
+                    )
+                }
+                JsxGraphSceneElement.Point(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    coordinates = coordinates,
+                    size = size,
+                    face = face,
+                )
+            }
+
+            is Line -> {
+                val point1 = point(element.point1)
+                    ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val point2 = point(element.point2)
+                    ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                if (point1 == point2) {
+                    return GMResult.Err(attributes.nonFiniteGeometry())
+                }
+                val straightFirst = when (
+                    val result = attributes.boolean(
+                        name = "straightfirst",
+                        default = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val straightLast = when (
+                    val result = attributes.boolean(
+                        name = "straightlast",
+                        default = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                JsxGraphSceneElement.Line(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    point1 = point1,
+                    point2 = point2,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                )
+            }
+
+            is Circle -> {
+                val center = point(element.center)
+                    ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val radius = element.Radius()
+                if (!radius.isFinite() || radius < 0.0) {
+                    return GMResult.Err(attributes.nonFiniteGeometry())
+                }
+                JsxGraphSceneElement.Circle(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    center = center,
+                    radius = radius,
+                )
+            }
+
+            else -> return GMResult.Err(
+                JsxGraphDocumentError.UnsupportedElementType(
+                    objectIndex = source.index,
+                    id = source.id,
+                    type = source.type,
+                ),
+            )
+        }
+        return GMResult.Ok(sceneElement)
+    }
+
+    private fun parseDocument(
+        root: JsonElement,
+        limits: JsxGraphEngineLimits,
+    ): GMResult<ParsedDocument, JsxGraphDocumentError> {
+        val rootObject = root as? JsonObject
+            ?: return invalidField("$", "a JSON object")
+        val allowedFields = setOf(
+            "schemaVersion",
+            "boundingBox",
+            "axis",
+            "grid",
+            "keepAspectRatio",
+            "objects",
+        )
+        rootObject.keys.firstOrNull { it !in allowedFields }?.let { field ->
+            return GMResult.Err(
+                JsxGraphDocumentError.UnsupportedField(field),
+            )
+        }
+        val versionElement = rootObject["schemaVersion"]
+        if (versionElement != null) {
+            val version = (versionElement as? JsonPrimitive)?.intOrNull
+                ?: return invalidField("schemaVersion", "the integer 1")
+            if (version != 1) {
+                return GMResult.Err(
+                    JsxGraphDocumentError.UnsupportedSchemaVersion(version),
+                )
+            }
+        }
+        val boundingBox = when (
+            val result = parseBoundingBox(rootObject["boundingBox"])
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val axis = when (
+            val result = booleanField(rootObject, "axis", default = false)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val grid = when (
+            val result = booleanField(rootObject, "grid", default = false)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val keepAspectRatio = when (
+            val result = booleanField(
+                rootObject,
+                "keepAspectRatio",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val objectArray = rootObject["objects"] as? JsonArray
+            ?: return invalidField("objects", "an array")
+        if (objectArray.size > limits.maxObjects) {
+            return GMResult.Err(
+                JsxGraphDocumentError.ObjectLimitExceeded(
+                    limit = limits.maxObjects,
+                    actual = objectArray.size,
+                ),
+            )
+        }
+
+        val objects = mutableListOf<ParsedObject>()
+        val ids = mutableSetOf<String>()
+        for ((index, element) in objectArray.withIndex()) {
+            val sourceObject = when (
+                val result = parseObject(index, element)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (!ids.add(sourceObject.id)) {
+                return GMResult.Err(
+                    JsxGraphDocumentError.DuplicateObjectId(
+                        sourceObject.id,
+                    ),
+                )
+            }
+            objects += sourceObject
+        }
+        return GMResult.Ok(
+            ParsedDocument(
+                boundingBox = boundingBox,
+                axis = axis,
+                grid = grid,
+                keepAspectRatio = keepAspectRatio,
+                objects = objects,
+            ),
+        )
+    }
+
+    private fun parseBoundingBox(
+        element: JsonElement?,
+    ): GMResult<JsxGraphBoundingBox, JsxGraphDocumentError> {
+        val values = element as? JsonArray
+            ?: return invalidField("boundingBox", "an array of four finite numbers")
+        if (values.size != 4) {
+            return invalidField("boundingBox", "an array of four finite numbers")
+        }
+        val numbers = mutableListOf<Double>()
+        for (value in values) {
+            val number = (value as? JsonPrimitive)?.doubleOrNull
+            if (number == null || !number.isFinite()) {
+                return invalidField(
+                    "boundingBox",
+                    "an array of four finite numbers",
+                )
+            }
+            numbers += number
+        }
+        if (numbers[0] >= numbers[2] || numbers[3] >= numbers[1]) {
+            return invalidField(
+                "boundingBox",
+                "[left, top, right, bottom] with positive width and height",
+            )
+        }
+        return GMResult.Ok(
+            JsxGraphBoundingBox(
+                left = numbers[0],
+                top = numbers[1],
+                right = numbers[2],
+                bottom = numbers[3],
+            ),
+        )
+    }
+
+    private fun parseObject(
+        index: Int,
+        element: JsonElement,
+    ): GMResult<ParsedObject, JsxGraphDocumentError> {
+        val objectValue = element as? JsonObject
+            ?: return invalidField("objects[$index]", "a JSON object")
+        val allowedFields = setOf("id", "type", "parents", "attributes")
+        objectValue.keys.firstOrNull { it !in allowedFields }?.let { field ->
+            return GMResult.Err(
+                JsxGraphDocumentError.UnsupportedField(
+                    "objects[$index].$field",
+                ),
+            )
+        }
+        val id = stringField(objectValue, "id")
+            ?: return invalidField("objects[$index].id", "a non-empty string")
+        if (id.isEmpty()) {
+            return invalidField("objects[$index].id", "a non-empty string")
+        }
+        val type = stringField(objectValue, "type")
+            ?.lowercase()
+            ?: return invalidField("objects[$index].type", "a non-empty string")
+        if (type.isEmpty()) {
+            return invalidField("objects[$index].type", "a non-empty string")
+        }
+        val parents = objectValue["parents"] as? JsonArray
+            ?: return invalidField("objects[$index].parents", "an array")
+        val attributes = when (val value = objectValue["attributes"]) {
+            null -> JsonObject(emptyMap())
+            is JsonObject -> value
+            else -> return invalidField(
+                "objects[$index].attributes",
+                "a JSON object",
+            )
+        }
+        return GMResult.Ok(
+            ParsedObject(
+                index = index,
+                id = id,
+                type = type,
+                parents = parents,
+                attributes = normalizeObjectKeys(attributes),
+            ),
+        )
+    }
+
+    private fun runtimeAttributes(
+        sourceObject: ParsedObject,
+    ): GMResult<JessieCodeRuntimeValue.ObjectValue, JsxGraphDocumentError> {
+        val converted = when (
+            val result = runtimeObject(sourceObject.attributes)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val explicitId = converted.properties["id"]
+        if (
+            explicitId != null &&
+            (
+                explicitId !is JessieCodeRuntimeValue.StringValue ||
+                    explicitId.value != sourceObject.id
+            )
+        ) {
+            return GMResult.Err(
+                JsxGraphDocumentError.InvalidAttribute(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    attribute = "id",
+                    expected = "the same string as objects[${sourceObject.index}].id",
+                ),
+            )
+        }
+        converted.properties["id"] =
+            JessieCodeRuntimeValue.StringValue(sourceObject.id)
+        return GMResult.Ok(converted)
+    }
+
+    private fun runtimeArray(
+        array: JsonArray,
+    ): GMResult<List<JessieCodeRuntimeValue>, JsxGraphDocumentError> {
+        val values = mutableListOf<JessieCodeRuntimeValue>()
+        for (value in array) {
+            when (val result = runtimeValue(value)) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(values)
+    }
+
+    private fun runtimeObject(
+        value: JsonObject,
+    ): GMResult<JessieCodeRuntimeValue.ObjectValue, JsxGraphDocumentError> {
+        val properties = linkedMapOf<String, JessieCodeRuntimeValue>()
+        for ((name, child) in value) {
+            when (val result = runtimeValue(child)) {
+                is GMResult.Ok -> properties[name.lowercase()] = result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(JessieCodeRuntimeValue.ObjectValue(properties))
+    }
+
+    private fun runtimeValue(
+        value: JsonElement,
+    ): GMResult<JessieCodeRuntimeValue, JsxGraphDocumentError> =
+        when (value) {
+            JsonNull -> GMResult.Ok(JessieCodeRuntimeValue.NullValue)
+            is JsonArray -> when (val result = runtimeArray(value)) {
+                is GMResult.Ok -> GMResult.Ok(
+                    JessieCodeRuntimeValue.ArrayValue(result.value),
+                )
+                is GMResult.Err -> result
+            }
+            is JsonObject -> runtimeObject(value)
+            is JsonPrimitive -> when {
+                value.isString -> GMResult.Ok(
+                    JessieCodeRuntimeValue.StringValue(value.content),
+                )
+                value.booleanOrNull != null -> GMResult.Ok(
+                    JessieCodeRuntimeValue.BooleanValue(
+                        value.booleanOrNull ?: false,
+                    ),
+                )
+                value.doubleOrNull?.isFinite() == true -> GMResult.Ok(
+                    JessieCodeRuntimeValue.NumberValue(
+                        value.doubleOrNull ?: Double.NaN,
+                    ),
+                )
+                else -> invalidField("JSON value", "a finite JSON primitive")
+            }
+        }
+
+    private fun validateLimits(
+        limits: JsxGraphEngineLimits,
+    ): JsxGraphDocumentError.InvalidLimits? {
+        val invalid = when {
+            limits.maxSourceLength <= 0 -> "maxSourceLength must be positive"
+            limits.maxJsonDepth !in 1..MAX_JSON_DEPTH ->
+                "maxJsonDepth must be in 1..$MAX_JSON_DEPTH"
+            limits.maxJsonValues <= 0 -> "maxJsonValues must be positive"
+            limits.maxObjects <= 0 -> "maxObjects must be positive"
+            else -> null
+        }
+        return invalid?.let(JsxGraphDocumentError::InvalidLimits)
+    }
+
+    private fun exceedsJsonDepth(
+        source: String,
+        limit: Int,
+    ): Boolean {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (character in source) {
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    character == '\\' -> escaped = true
+                    character == '"' -> inString = false
+                }
+                continue
+            }
+            when (character) {
+                '"' -> inString = true
+                '{', '[' -> {
+                    depth += 1
+                    if (depth > limit) {
+                        return true
+                    }
+                }
+                '}', ']' -> depth -= 1
+            }
+        }
+        return false
+    }
+
+    private fun exceedsJsonValueLimit(
+        root: JsonElement,
+        limit: Int,
+    ): Boolean {
+        val pending = mutableListOf(root)
+        var count = 0
+        while (pending.isNotEmpty()) {
+            val value = pending.removeAt(pending.lastIndex)
+            count += 1
+            if (count > limit) {
+                return true
+            }
+            when (value) {
+                is JsonArray -> pending.addAll(value)
+                is JsonObject -> pending.addAll(value.values)
+                else -> Unit
+            }
+        }
+        return false
+    }
+
+    private fun booleanField(
+        objectValue: JsonObject,
+        name: String,
+        default: Boolean,
+    ): GMResult<Boolean, JsxGraphDocumentError> {
+        val element = objectValue[name] ?: return GMResult.Ok(default)
+        val value = (element as? JsonPrimitive)?.booleanOrNull
+            ?: return invalidField(name, "a boolean")
+        return GMResult.Ok(value)
+    }
+
+    private fun stringField(
+        objectValue: JsonObject,
+        name: String,
+    ): String? {
+        val primitive = objectValue[name] as? JsonPrimitive ?: return null
+        return primitive.takeIf(JsonPrimitive::isString)?.content
+    }
+
+    private fun normalizeObjectKeys(
+        value: JsonObject,
+    ): JsonObject {
+        val normalized = linkedMapOf<String, JsonElement>()
+        for ((name, child) in value) {
+            normalized[name.lowercase()] = when (child) {
+                is JsonObject -> normalizeObjectKeys(child)
+                else -> child
+            }
+        }
+        return JsonObject(normalized)
+    }
+
+    private fun point(point: Point): JsxGraphPoint2D? {
+        val x = point.X()
+        val y = point.Y()
+        return if (x.isFinite() && y.isFinite()) {
+            JsxGraphPoint2D(x, y)
+        } else {
+            null
+        }
+    }
+
+    private fun normalizePointFace(face: String): String =
+        when (face.lowercase()) {
+            "circle" -> "o"
+            else -> face.lowercase()
+        }
+
+    private fun <T> invalidField(
+        path: String,
+        expected: String,
+    ): GMResult<T, JsxGraphDocumentError> =
+        GMResult.Err(
+            JsxGraphDocumentError.InvalidField(
+                path = path,
+                expected = expected,
+            ),
+        )
+
+    private data class ParsedDocument(
+        val boundingBox: JsxGraphBoundingBox,
+        val axis: Boolean,
+        val grid: Boolean,
+        val keepAspectRatio: Boolean,
+        val objects: List<ParsedObject>,
+    )
+
+    private data class ParsedObject(
+        val index: Int,
+        val id: String,
+        val type: String,
+        val parents: JsonArray,
+        val attributes: JsonObject,
+    )
+
+    private data class CreatedSourceElement(
+        val source: ParsedObject,
+        val element: GeometryElement,
+    )
+
+    private class AttributeReader(
+        private val source: ParsedObject,
+    ) {
+        private val attributes = source.attributes
+
+        fun validateSupported(
+            element: GeometryElement,
+        ): GMResult<Unit, JsxGraphDocumentError> {
+            val supported = COMMON_ATTRIBUTES + when (element) {
+                is Point -> POINT_ATTRIBUTES
+                is Line -> LINE_ATTRIBUTES
+                is Circle -> CIRCLE_ATTRIBUTES
+                else -> emptySet()
+            }
+            attributes.keys.firstOrNull { it !in supported }?.let { name ->
+                return GMResult.Err(
+                    JsxGraphDocumentError.UnsupportedAttribute(
+                        objectIndex = source.index,
+                        id = source.id,
+                        attribute = name,
+                    ),
+                )
+            }
+            val nestedNames = when (element) {
+                is Line -> listOf("point1", "point2")
+                is Circle -> listOf("center", "point2")
+                else -> emptyList()
+            }
+            for (name in nestedNames) {
+                when (val result = validateHiddenSubElement(name)) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
+            return GMResult.Ok(Unit)
+        }
+
+        fun style(
+            element: GeometryElement,
+        ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
+            val defaultStroke = when (element) {
+                is Point -> DEFAULT_POINT_COLOR
+                else -> DEFAULT_STROKE_COLOR
+            }
+            val defaultFill = when (element) {
+                is Point -> DEFAULT_POINT_COLOR
+                else -> JsxGraphColor.Transparent
+            }
+            val visible = when (
+                val result = boolean("visible", default = true)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val strokeColor = when (
+                val result = color("strokecolor", defaultStroke)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val fillColor = when (
+                val result = color("fillcolor", defaultFill)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val strokeWidth = when (
+                val result = number(
+                    "strokewidth",
+                    default = 2.0,
+                    minimum = 0.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val strokeOpacity = when (
+                val result = number(
+                    "strokeopacity",
+                    default = 1.0,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val fillOpacity = when (
+                val result = number(
+                    "fillopacity",
+                    default = 1.0,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val dash = when (
+                val result = number("dash", default = 0.0, minimum = 0.0)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (dash != 0.0) {
+                return GMResult.Err(
+                    unsupportedValue("dash", dash.toString()),
+                )
+            }
+            for (arrow in listOf("firstarrow", "lastarrow")) {
+                when (val value = attributes[arrow]) {
+                    null -> Unit
+                    is JsonPrimitive -> {
+                        val enabled = value.booleanOrNull
+                            ?: return invalid(arrow, "false")
+                        if (enabled) {
+                            return GMResult.Err(
+                                unsupportedValue(arrow, "true"),
+                            )
+                        }
+                    }
+                    else -> return GMResult.Err(
+                        unsupportedValue(arrow, value.toString()),
+                    )
+                }
+            }
+            return GMResult.Ok(
+                JsxGraphElementStyle(
+                    visible = visible,
+                    strokeColor = strokeColor,
+                    fillColor = fillColor,
+                    strokeWidth = strokeWidth,
+                    strokeOpacity = strokeOpacity,
+                    fillOpacity = fillOpacity,
+                ),
+            )
+        }
+
+        fun boolean(
+            name: String,
+            default: Boolean,
+        ): GMResult<Boolean, JsxGraphDocumentError> {
+            val value = attributes[name] ?: return GMResult.Ok(default)
+            val boolean = (value as? JsonPrimitive)?.booleanOrNull
+                ?: return invalid(name, "a boolean")
+            return GMResult.Ok(boolean)
+        }
+
+        fun string(
+            name: String,
+            default: String,
+        ): GMResult<String, JsxGraphDocumentError> {
+            val value = attributes[name] ?: return GMResult.Ok(default)
+            val primitive = value as? JsonPrimitive
+                ?: return invalid(name, "a string")
+            if (!primitive.isString) {
+                return invalid(name, "a string")
+            }
+            return GMResult.Ok(primitive.content)
+        }
+
+        fun number(
+            name: String,
+            default: Double,
+            minimum: Double? = null,
+            maximum: Double? = null,
+        ): GMResult<Double, JsxGraphDocumentError> {
+            val value = attributes[name] ?: return GMResult.Ok(default)
+            val number = (value as? JsonPrimitive)?.doubleOrNull
+            if (
+                number == null ||
+                !number.isFinite() ||
+                minimum?.let { number < it } == true ||
+                maximum?.let { number > it } == true
+            ) {
+                val range = when {
+                    minimum != null && maximum != null ->
+                        "a finite number in $minimum..$maximum"
+                    minimum != null -> "a finite number >= $minimum"
+                    maximum != null -> "a finite number <= $maximum"
+                    else -> "a finite number"
+                }
+                return invalid(name, range)
+            }
+            return GMResult.Ok(number)
+        }
+
+        fun unsupportedValue(
+            attribute: String,
+            value: String,
+        ): JsxGraphDocumentError.UnsupportedAttributeValue =
+            JsxGraphDocumentError.UnsupportedAttributeValue(
+                objectIndex = source.index,
+                id = source.id,
+                attribute = attribute,
+                value = value,
+            )
+
+        fun nonFiniteGeometry(): JsxGraphDocumentError.NonFiniteGeometry =
+            JsxGraphDocumentError.NonFiniteGeometry(
+                objectIndex = source.index,
+                id = source.id,
+            )
+
+        private fun color(
+            name: String,
+            default: JsxGraphColor,
+        ): GMResult<JsxGraphColor, JsxGraphDocumentError> {
+            val sourceColor = when (val result = string(name, default = "")) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (sourceColor.isEmpty()) {
+                return GMResult.Ok(default)
+            }
+            return parseColor(sourceColor)?.let { color ->
+                GMResult.Ok(color)
+            }
+                ?: GMResult.Err(
+                    unsupportedValue(name, sourceColor),
+                )
+        }
+
+        private fun validateHiddenSubElement(
+            name: String,
+        ): GMResult<Unit, JsxGraphDocumentError> {
+            val value = attributes[name] ?: return GMResult.Ok(Unit)
+            val nested = value as? JsonObject
+                ?: return invalid(name, "an object")
+            nested.keys.firstOrNull { it != "visible" }?.let { nestedName ->
+                return GMResult.Err(
+                    JsxGraphDocumentError.UnsupportedAttribute(
+                        objectIndex = source.index,
+                        id = source.id,
+                        attribute = "$name.$nestedName",
+                    ),
+                )
+            }
+            val visible = nested["visible"] ?: return GMResult.Ok(Unit)
+            val isVisible = (visible as? JsonPrimitive)?.booleanOrNull
+                ?: return invalid("$name.visible", "a boolean")
+            return if (isVisible) {
+                GMResult.Err(
+                    unsupportedValue("$name.visible", "true"),
+                )
+            } else {
+                GMResult.Ok(Unit)
+            }
+        }
+
+        private fun <T> invalid(
+            name: String,
+            expected: String,
+        ): GMResult<T, JsxGraphDocumentError> =
+            GMResult.Err(
+                JsxGraphDocumentError.InvalidAttribute(
+                    objectIndex = source.index,
+                    id = source.id,
+                    attribute = name,
+                    expected = expected,
+                ),
+            )
+    }
+
+    private fun parseColor(value: String): JsxGraphColor? {
+        val normalized = value.lowercase()
+        NAMED_COLORS[normalized]?.let { return it }
+        if (!normalized.startsWith("#")) {
+            return null
+        }
+        val digits = normalized.drop(1)
+        val expanded = when (digits.length) {
+            3, 4 -> buildString {
+                for (digit in digits) {
+                    append(digit)
+                    append(digit)
+                }
+            }
+            6, 8 -> digits
+            else -> return null
+        }
+        val channels = expanded.chunked(2).map { channel ->
+            val first = channel[0].digitToIntOrNull(16) ?: return null
+            val second = channel[1].digitToIntOrNull(16) ?: return null
+            first * 16 + second
+        }
+        return JsxGraphColor(
+            red = channels[0],
+            green = channels[1],
+            blue = channels[2],
+            alpha = channels.getOrElse(3) { 255 },
+        )
+    }
+
+    private const val MAX_JSON_DEPTH = 256
+    private val SOURCE_LOCATION = JessieCodeAstLocation(
+        line = 1,
+        column = 0,
+        endLine = 1,
+        endColumn = 0,
+    )
+    private val DEFAULT_STROKE_COLOR =
+        JsxGraphColor(red = 0, green = 114, blue = 178)
+    private val DEFAULT_POINT_COLOR =
+        JsxGraphColor(red = 213, green = 94, blue = 0)
+    private val NAMED_COLORS = mapOf(
+        "none" to JsxGraphColor.Transparent,
+        "transparent" to JsxGraphColor.Transparent,
+        "black" to JsxGraphColor(0, 0, 0),
+        "white" to JsxGraphColor(255, 255, 255),
+        "red" to JsxGraphColor(255, 0, 0),
+        "green" to JsxGraphColor(0, 128, 0),
+        "blue" to JsxGraphColor(0, 0, 255),
+        "yellow" to JsxGraphColor(255, 255, 0),
+        "gray" to JsxGraphColor(128, 128, 128),
+        "grey" to JsxGraphColor(128, 128, 128),
+    )
+    private val COMMON_ATTRIBUTES = setOf(
+        "id",
+        "name",
+        "needsregularupdate",
+        "visible",
+        "strokecolor",
+        "fillcolor",
+        "strokewidth",
+        "strokeopacity",
+        "fillopacity",
+        "fixed",
+        "highlight",
+        "withlabel",
+        "dash",
+    )
+    private val POINT_ATTRIBUTES = setOf(
+        "size",
+        "face",
+    )
+    private val LINE_ATTRIBUTES = setOf(
+        "straightfirst",
+        "straightlast",
+        "firstarrow",
+        "lastarrow",
+        "point1",
+        "point2",
+    )
+    private val CIRCLE_ATTRIBUTES = setOf(
+        "center",
+        "point2",
+    )
+}

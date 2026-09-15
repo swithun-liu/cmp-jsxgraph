@@ -27,36 +27,31 @@ object JsxGraphParityCorpus {
                 "point",
                 "line",
                 "circle",
-                "intersection",
-                "curve",
             ),
         ),
         JsxGraphParityCase(
-            id = "tangent_intersection",
-            title = "Tangent intersection",
-            source = TANGENT_INTERSECTION_SOURCE,
+            id = "finite_segment",
+            title = "Finite segment",
+            source = FINITE_SEGMENT_SOURCE,
             features = setOf(
                 "axis",
                 "grid",
                 "point",
                 "line",
                 "circle",
-                "tangent",
-                "curve",
+                "segment",
             ),
         ),
         JsxGraphParityCase(
-            id = "disjoint_intersection",
-            title = "Disjoint intersection",
-            source = DISJOINT_INTERSECTION_SOURCE,
+            id = "coordinate_parents",
+            title = "Coordinate parents",
+            source = COORDINATE_PARENTS_SOURCE,
             features = setOf(
                 "axis",
                 "grid",
-                "point",
                 "line",
                 "circle",
-                "no-intersection",
-                "curve",
+                "coordinate-parent",
             ),
         ),
         JsxGraphParityCase(
@@ -69,8 +64,7 @@ object JsxGraphParityCorpus {
                 "point",
                 "line",
                 "circle",
-                "intersection",
-                "curve",
+                "element-parent",
             ),
         ),
     )
@@ -85,82 +79,270 @@ const val DEFAULT_PARITY_SOURCE: String = """
 {
   "schemaVersion": 1,
   "boundingBox": [-6, 5, 6, -5],
-  "fixedPoint": [-4, -2],
-  "controlPoint": [3.2, 2.1],
-  "circle": {
-    "center": [0.5, 0.6],
-    "radius": 2.35
-  },
-  "sine": {
-    "amplitude": 2,
-    "frequency": 0.8
-  },
-  "parabola": {
-    "quadratic": 0.16,
-    "constant": -2.5
-  }
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "A",
+      "type": "point",
+      "parents": [-4, -2],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "face": "o",
+        "size": 3,
+        "strokeColor": "#6F7780",
+        "fillColor": "#6F7780",
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "B",
+      "type": "point",
+      "parents": [3.2, 2.1],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "face": "o",
+        "size": 6,
+        "strokeColor": "#E0A11A",
+        "fillColor": "#E0A11A",
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "lineAB",
+      "type": "line",
+      "parents": ["A", "B"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#49545D",
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "circle",
+      "type": "circle",
+      "parents": [[0.5, 0.6], 2.35],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#16877A",
+        "fillColor": "none",
+        "strokeWidth": 2.5,
+        "fixed": true,
+        "highlight": false,
+        "center": {
+          "visible": false
+        }
+      }
+    }
+  ]
 }
 """
 
-private const val TANGENT_INTERSECTION_SOURCE: String = """
+private const val FINITE_SEGMENT_SOURCE: String = """
 {
   "schemaVersion": 1,
   "boundingBox": [-6, 5, 6, -5],
-  "fixedPoint": [-4, 2],
-  "controlPoint": [4, 2],
-  "circle": {
-    "center": [0, 0],
-    "radius": 2
-  },
-  "sine": {
-    "amplitude": 1.25,
-    "frequency": 1.3
-  },
-  "parabola": {
-    "quadratic": -0.1,
-    "constant": 2.5
-  }
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "A",
+      "type": "point",
+      "parents": [-4, 2],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 4,
+        "strokeColor": "#246BCE",
+        "fillColor": "#FCFDFE",
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "B",
+      "type": "point",
+      "parents": [4, 2],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 4,
+        "strokeColor": "#246BCE",
+        "fillColor": "#FCFDFE",
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "segmentAB",
+      "type": "line",
+      "parents": ["A", "B"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "straightFirst": false,
+        "straightLast": false,
+        "strokeColor": "#246BCE",
+        "strokeWidth": 3,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "circle",
+      "type": "circle",
+      "parents": [[0, 0], 2],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#16877A",
+        "fillColor": "none",
+        "strokeWidth": 2.5,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
 }
 """
 
-private const val DISJOINT_INTERSECTION_SOURCE: String = """
+private const val COORDINATE_PARENTS_SOURCE: String = """
 {
   "schemaVersion": 1,
   "boundingBox": [-6, 5, 6, -5],
-  "fixedPoint": [-4, 4],
-  "controlPoint": [4, 4],
-  "circle": {
-    "center": [0, -1],
-    "radius": 1.5
-  },
-  "sine": {
-    "amplitude": 0.75,
-    "frequency": 1.6
-  },
-  "parabola": {
-    "quadratic": 0.08,
-    "constant": -3
-  }
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": false,
+  "objects": [
+    {
+      "id": "line",
+      "type": "line",
+      "parents": [[-4, 4], [4, 4]],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#D9553F",
+        "strokeWidth": 2.5,
+        "fixed": true,
+        "highlight": false,
+        "point1": {
+          "visible": false
+        },
+        "point2": {
+          "visible": false
+        }
+      }
+    },
+    {
+      "id": "circle",
+      "type": "circle",
+      "parents": [[0, -1], 1.5],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#16877A",
+        "fillColor": "#16877A22",
+        "strokeWidth": 2.5,
+        "fixed": true,
+        "highlight": false,
+        "center": {
+          "visible": false
+        }
+      }
+    }
+  ]
 }
 """
 
 private const val SHIFTED_GEOMETRY_SOURCE: String = """
 {
   "schemaVersion": 1,
-  "boundingBox": [-6, 5, 6, -5],
-  "fixedPoint": [-5, 1.5],
-  "controlPoint": [4.5, -2.5],
-  "circle": {
-    "center": [-1.5, -0.5],
-    "radius": 2.75
-  },
-  "sine": {
-    "amplitude": 2.8,
-    "frequency": 0.45
-  },
-  "parabola": {
-    "quadratic": 0.24,
-    "constant": -3.2
-  }
+  "boundingBox": [-8, 6, 4, -4],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "A",
+      "type": "point",
+      "parents": [-7, 3],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 4,
+        "strokeColor": "#6F7780",
+        "fillColor": "#6F7780",
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "B",
+      "type": "point",
+      "parents": [3, -2.5],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 6,
+        "strokeColor": "#E0A11A",
+        "fillColor": "#E0A11A",
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "C",
+      "type": "point",
+      "parents": [-2, 0],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "lineAB",
+      "type": "line",
+      "parents": ["A", "B"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#49545D",
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "circleC",
+      "type": "circle",
+      "parents": ["C", 2.5],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#16877A",
+        "fillColor": "none",
+        "strokeWidth": 2.5,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
 }
 """

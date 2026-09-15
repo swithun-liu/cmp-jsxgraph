@@ -15,8 +15,8 @@ official JSXGraph `1.13.3`, and native Compose Canvas rendering.
 
 Current parity cases:
 [baseline](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=baseline_geometry),
-[tangent](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=tangent_intersection),
-[disjoint](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=disjoint_intersection),
+[finite segment](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=finite_segment),
+[coordinate parents](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=coordinate_parents),
 and
 [shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry).
 
@@ -62,6 +62,10 @@ Implemented translation slices:
   Euclidean and homogeneous updates;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
+- a bounded production construction-document path for `boundingBox` and
+  ordered `objects[]`, currently creating Point, Line, and Circle elements
+  through the translated Board and native creator registry;
+- a platform-independent Point/Line/Circle render scene consumed by Compose;
 - an interactive Compose geometry playground backed by the translated
   line-circle intersection math.
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
@@ -70,8 +74,9 @@ Implemented translation slices:
 The playground is a renderer and interaction test surface. The remaining
 JessieCode creator registry, visual-property and function-valued element
 mutation, Polygon and Slider/Glider-backed built-ins, `import`/`$log`/`D`,
-the complete element `methodMap`, and the JSXGraph construction parser are not
-yet translated, and the element renderer is incomplete.
+the complete element `methodMap`, the remaining construction-document element
+types and attributes, and the complete element renderer are not yet
+translated.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -100,6 +105,40 @@ JSXGraph input
 ```
 
 The runtime does not use WebView or an embedded JavaScript engine.
+
+## Construction Source
+
+The first production source contract maps directly to ordered
+`Board.create(type, parents, attributes)` calls:
+
+```json
+{
+  "schemaVersion": 1,
+  "boundingBox": [-5, 5, 5, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "A",
+      "type": "point",
+      "parents": [1, 2],
+      "attributes": {"name": "", "withLabel": false}
+    },
+    {
+      "id": "lineA",
+      "type": "line",
+      "parents": ["A", [3, -1]],
+      "attributes": {"name": "", "withLabel": false}
+    }
+  ]
+}
+```
+
+`JsxGraphEngine.parse(source)` returns
+`GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
+types are `point`, `line`, and `circle`; unsupported types and visual
+attributes fail explicitly instead of being omitted from the native render.
 
 ## Build
 

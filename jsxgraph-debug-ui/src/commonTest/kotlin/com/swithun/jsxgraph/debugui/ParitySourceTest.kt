@@ -1,7 +1,8 @@
 package com.swithun.jsxgraph.debugui
 
 import com.swithun.jsxgraph.core.GMResult
-import com.swithun.jsxgraph.compose.GeometryPlaygroundScene
+import com.swithun.jsxgraph.core.JsxGraphScene
+import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -21,22 +22,30 @@ class ParitySourceTest {
 
     @Test
     fun defaultSourceProducesTheNativeScene() {
-        val scene = assertIs<GMResult.Ok<GeometryPlaygroundScene>>(
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
             parseParitySource(DEFAULT_PARITY_SOURCE),
         ).value
-        assertEquals(-4.0f, scene.fixedPoint.x)
-        assertEquals(-2.0f, scene.fixedPoint.y)
-        assertEquals(3.2f, scene.controlPoint.x)
-        assertEquals(2.1f, scene.controlPoint.y)
-        assertEquals(2.35f, scene.circleRadius)
-        assertEquals(2.0f, scene.sineAmplitude)
-        assertEquals(0.16f, scene.parabolaQuadratic)
+        assertEquals(4, scene.elements.size)
+        val fixedPoint = assertIs<JsxGraphSceneElement.Point>(
+            scene.elements[0],
+        )
+        assertEquals(-4.0, fixedPoint.coordinates.x)
+        assertEquals(-2.0, fixedPoint.coordinates.y)
+        val controlPoint = assertIs<JsxGraphSceneElement.Point>(
+            scene.elements[1],
+        )
+        assertEquals(3.2, controlPoint.coordinates.x)
+        assertEquals(2.1, controlPoint.coordinates.y)
+        val circle = assertIs<JsxGraphSceneElement.Circle>(
+            scene.elements[3],
+        )
+        assertEquals(2.35, circle.radius)
     }
 
     @Test
     fun everyCorpusSourceProducesANativeScene() {
         for (parityCase in JsxGraphParityCorpus.cases) {
-            assertIs<GMResult.Ok<GeometryPlaygroundScene>>(
+            assertIs<GMResult.Ok<JsxGraphScene>>(
                 parseParitySource(parityCase.source),
                 parityCase.id,
             )
@@ -51,7 +60,8 @@ class ParitySourceTest {
                 """
                 {
                   "schemaVersion": 2,
-                  "boundingBox": [-6, 5, 6, -5]
+                  "boundingBox": [-6, 5, 6, -5],
+                  "objects": []
                 }
                 """.trimIndent(),
             ),
@@ -59,16 +69,16 @@ class ParitySourceTest {
         assertIs<GMResult.Err<String>>(
             parseParitySource(
                 DEFAULT_PARITY_SOURCE.replace(
-                    "\"radius\": 2.35",
-                    "\"radius\": 0",
+                    "\"parents\": [[0.5, 0.6], 2.35]",
+                    "\"parents\": [[0.5, 0.6], \"missing\"]",
                 ),
             ),
         )
         assertIs<GMResult.Err<String>>(
             parseParitySource(
                 DEFAULT_PARITY_SOURCE.replace(
-                    "\"amplitude\": 2",
-                    "\"amplitude\": 1e300",
+                    "\"strokeWidth\": 2.5",
+                    "\"strokeWidth\": -1",
                 ),
             ),
         )

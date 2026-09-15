@@ -12,6 +12,10 @@
   WebView or same-origin Web iframe.
 - The native axis renderer uses bundled Arimo for the upstream Arial-compatible
   default instead of the device theme font.
+- The parity corpus uses the production
+  `JsxGraphEngine.parse -> Board -> JsxGraphScene` path. The official adapter
+  converts each object in the same ordered source to
+  `board.create(type, parents, attributes)`.
 - Production artifacts do not use WebView or a JavaScript engine.
 
 The repository does not use dependency injection, mocking, a database, or
@@ -78,14 +82,29 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the source of truth for current slice cases. A case
-is added only after the native implementation supports every feature declared
-by that case. This slice corpus is separate from the future full JSXGraph
-stable corpus.
+`JsxGraphParityCorpus` is the source of truth for current slice cases. Its
+documents contain `boundingBox` and ordered
+`objects[{id,type,parents,attributes}]`; the debug UI no longer converts a
+separate demo schema into handwritten native geometry. A case is added only
+after the native implementation supports every feature declared by that case.
+This slice corpus is separate from the future full JSXGraph stable corpus.
 
 The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
+
+Latest Point/Line/Circle construction-document evidence (2026-09-15):
+
+| Case | Desktop SSIM | `390 x 844` SSIM |
+|---|---:|---:|
+| `baseline_geometry` | 0.987120 | 0.974780 |
+| `finite_segment` | 0.987172 | 0.974567 |
+| `coordinate_parents` | 0.986543 | 0.978321 |
+| `shifted_geometry` | 0.986997 | 0.974236 |
+
+All captures passed the nonblank and browser-error checks. These numbers are
+evidence for this translated slice only; they do not satisfy the full Stable
+Gate.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:

@@ -14,6 +14,22 @@ practical.
 
 ## Kotlin Runtime Adaptations
 
+- `JsxGraphEngine` accepts a bounded JSON construction document containing
+  `boundingBox`, Board flags, and ordered
+  `objects[{id,type,parents,attributes}]`. This is a serialization of
+  `Board.create(type, parents, attributes)`, not an upstream JSXGraph file
+  reader format. The current production subset creates Point, Line, and Circle
+  through the translated native registry and then snapshots the resulting
+  Board elements into a platform-independent scene. Unsupported element types,
+  fields, attributes, point faces, labels, arrows, and dash styles return
+  `JsxGraphDocumentError` instead of being ignored.
+- Construction documents are limited by source length, JSON depth, JSON value
+  count, and object count. JSON and factory failures are converted to
+  `GMResult.Err`; object IDs are required and duplicate IDs are rejected.
+  Colors currently accept CSS hex forms plus a small named-color subset.
+  Top-level Point/Line/Circle defaults match JSXGraph `1.13.3`; helper Points
+  created from coordinate-array parents remain in the internal Board but are
+  omitted from the source-element scene, matching their role as sub-elements.
 - JessieCode tokenization and the translated expression parser return
   `GMResult.Err` when configured source-length, token-count, AST-node, or
   AST-depth limits are exceeded. The upstream generated lexer and Jison parser

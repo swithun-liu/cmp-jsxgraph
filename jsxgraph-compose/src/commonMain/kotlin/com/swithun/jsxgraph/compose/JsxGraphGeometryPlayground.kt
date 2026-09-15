@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -56,9 +57,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
+import com.swithun.jsxgraph.core.JsxGraphColor
+import com.swithun.jsxgraph.core.JsxGraphScene
+import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.log10
 import kotlin.math.min
 import kotlin.math.pow
@@ -234,6 +239,244 @@ fun JsxGraphGeometryPreview(
         )
     }
 }
+
+@Composable
+fun JsxGraphScenePreview(
+    scene: JsxGraphScene,
+    modifier: Modifier = Modifier,
+) {
+    val textMeasurer = rememberTextMeasurer()
+    val axisFontFamily = FontFamily(
+        Font(
+            resource = Res.font.arimo_regular,
+            weight = FontWeight.Normal,
+            style = FontStyle.Normal,
+        ),
+    )
+    Canvas(
+        modifier = modifier
+            .background(BoardBackground)
+            .border(1.dp, Color(0xFFD4DADF)),
+    ) {
+        val bounds = scene.boundingBox
+        val metrics = BoardMetrics(
+            width = size.width,
+            height = size.height,
+            requestedLeft = bounds.left.toFloat(),
+            requestedTop = bounds.top.toFloat(),
+            requestedRight = bounds.right.toFloat(),
+            requestedBottom = bounds.bottom.toFloat(),
+            keepAspectRatio = scene.keepAspectRatio,
+        )
+        val horizontalMajorStep = metrics.majorTickDistance(
+            visibleDistance = metrics.right - metrics.left,
+            density = density,
+            pixelsPerUnit = metrics.scaleX,
+        )
+        val verticalMajorStep = metrics.majorTickDistance(
+            visibleDistance = metrics.top - metrics.bottom,
+            density = density,
+            pixelsPerUnit = metrics.scaleY,
+        )
+
+        if (scene.grid) {
+            drawGrid(
+                metrics = metrics,
+                horizontalMajorStep = horizontalMajorStep,
+                verticalMajorStep = verticalMajorStep,
+            )
+        }
+        if (scene.axis) {
+            drawAxes(
+                metrics = metrics,
+                horizontalMajorStep = horizontalMajorStep,
+                verticalMajorStep = verticalMajorStep,
+                textMeasurer = textMeasurer,
+                fontFamily = axisFontFamily,
+            )
+        }
+        for (element in scene.elements) {
+            if (!element.style.visible) {
+                continue
+            }
+            when (element) {
+                is JsxGraphSceneElement.Point ->
+                    drawScenePoint(element, metrics)
+                is JsxGraphSceneElement.Line ->
+                    drawSceneLine(element, metrics)
+                is JsxGraphSceneElement.Circle ->
+                    drawSceneCircle(element, metrics)
+            }
+        }
+    }
+}
+
+private fun DrawScope.drawGrid(
+    metrics: BoardMetrics,
+    horizontalMajorStep: Float,
+    verticalMajorStep: Float,
+) {
+    gridValues(
+        lower = metrics.left,
+        upper = metrics.right,
+        step = horizontalMajorStep,
+    ).forEach { x ->
+        val screenX = metrics.toScreen(Offset(x, 0f)).x
+        drawLine(
+            color = GridColor,
+            start = Offset(screenX, 0f),
+            end = Offset(screenX, size.height),
+            strokeWidth = 1.dp.toPx(),
+        )
+    }
+    gridValues(
+        lower = metrics.bottom,
+        upper = metrics.top,
+        step = verticalMajorStep,
+    ).forEach { y ->
+        val screenY = metrics.toScreen(Offset(0f, y)).y
+        drawLine(
+            color = GridColor,
+            start = Offset(0f, screenY),
+            end = Offset(size.width, screenY),
+            strokeWidth = 1.dp.toPx(),
+        )
+    }
+}
+
+private fun DrawScope.drawAxes(
+    metrics: BoardMetrics,
+    horizontalMajorStep: Float,
+    verticalMajorStep: Float,
+    textMeasurer: TextMeasurer,
+    fontFamily: FontFamily,
+) {
+    val axisOrigin = metrics.toScreen(Offset.Zero)
+    drawLine(
+        color = AxisColor,
+        start = Offset(0f, axisOrigin.y),
+        end = Offset(size.width, axisOrigin.y),
+        strokeWidth = 1.dp.toPx(),
+    )
+    drawLine(
+        color = AxisColor,
+        start = Offset(axisOrigin.x, 0f),
+        end = Offset(axisOrigin.x, size.height),
+        strokeWidth = 1.dp.toPx(),
+    )
+    drawAxisDecorations(
+        metrics = metrics,
+        horizontalMajorStep = horizontalMajorStep,
+        verticalMajorStep = verticalMajorStep,
+        textMeasurer = textMeasurer,
+        fontFamily = fontFamily,
+    )
+}
+
+private fun DrawScope.drawScenePoint(
+    point: JsxGraphSceneElement.Point,
+    metrics: BoardMetrics,
+) {
+    val center = metrics.toScreen(point.coordinates.toOffset())
+    val radius = point.size.dp.toPx()
+    val fill = point.style.fillColor.toComposeColor(
+        opacity = point.style.fillOpacity,
+    )
+    if (fill.alpha > 0.0f) {
+        drawCircle(
+            color = fill,
+            radius = radius,
+            center = center,
+        )
+    }
+    val stroke = point.style.strokeColor.toComposeColor(
+        opacity = point.style.strokeOpacity,
+    )
+    if (stroke.alpha > 0.0f && point.style.strokeWidth > 0.0) {
+        drawCircle(
+            color = stroke,
+            radius = radius,
+            center = center,
+            style = Stroke(width = point.style.strokeWidth.dp.toPx()),
+        )
+    }
+}
+
+private fun DrawScope.drawSceneLine(
+    line: JsxGraphSceneElement.Line,
+    metrics: BoardMetrics,
+) {
+    val point1 = metrics.toScreen(line.point1.toOffset())
+    val point2 = metrics.toScreen(line.point2.toOffset())
+    val delta = point2 - point1
+    val length = hypot(delta.x, delta.y)
+    if (length == 0.0f || !length.isFinite()) {
+        return
+    }
+    val extension = Offset(
+        x = delta.x / length * hypot(size.width, size.height) * 2.0f,
+        y = delta.y / length * hypot(size.width, size.height) * 2.0f,
+    )
+    val start = if (line.straightFirst) point1 - extension else point1
+    val end = if (line.straightLast) point2 + extension else point2
+    val color = line.style.strokeColor.toComposeColor(
+        opacity = line.style.strokeOpacity,
+    )
+    if (color.alpha > 0.0f && line.style.strokeWidth > 0.0) {
+        drawLine(
+            color = color,
+            start = start,
+            end = end,
+            strokeWidth = line.style.strokeWidth.dp.toPx(),
+            cap = StrokeCap.Butt,
+        )
+    }
+}
+
+private fun DrawScope.drawSceneCircle(
+    circle: JsxGraphSceneElement.Circle,
+    metrics: BoardMetrics,
+) {
+    val center = metrics.toScreen(circle.center.toOffset())
+    val radiusX = circle.radius.toFloat() * metrics.scaleX
+    val radiusY = circle.radius.toFloat() * metrics.scaleY
+    val topLeft = Offset(center.x - radiusX, center.y - radiusY)
+    val ellipseSize = Size(radiusX * 2.0f, radiusY * 2.0f)
+    val fill = circle.style.fillColor.toComposeColor(
+        opacity = circle.style.fillOpacity,
+    )
+    if (fill.alpha > 0.0f) {
+        drawOval(
+            color = fill,
+            topLeft = topLeft,
+            size = ellipseSize,
+        )
+    }
+    val stroke = circle.style.strokeColor.toComposeColor(
+        opacity = circle.style.strokeOpacity,
+    )
+    if (stroke.alpha > 0.0f && circle.style.strokeWidth > 0.0) {
+        drawOval(
+            color = stroke,
+            topLeft = topLeft,
+            size = ellipseSize,
+            style = Stroke(width = circle.style.strokeWidth.dp.toPx()),
+        )
+    }
+}
+
+private fun com.swithun.jsxgraph.core.JsxGraphPoint2D.toOffset(): Offset =
+    Offset(x.toFloat(), y.toFloat())
+
+private fun JsxGraphColor.toComposeColor(
+    opacity: Double,
+): Color =
+    Color(
+        red = red / 255.0f,
+        green = green / 255.0f,
+        blue = blue / 255.0f,
+        alpha = alpha / 255.0f * opacity.toFloat(),
+    )
 
 @Composable
 private fun GeometryCanvas(
@@ -632,32 +875,48 @@ private fun DrawScope.drawFunction(
 private data class BoardMetrics(
     val width: Float,
     val height: Float,
+    val requestedLeft: Float = -6.0f,
+    val requestedTop: Float = 5.0f,
+    val requestedRight: Float = 6.0f,
+    val requestedBottom: Float = -5.0f,
+    val keepAspectRatio: Boolean = true,
 ) {
-    val scale: Float = min(width / 12.0f, height / 10.0f)
-    val left: Float = -width * 0.5f / scale
-    val right: Float = width * 0.5f / scale
-    val top: Float = height * 0.5f / scale
-    val bottom: Float = -height * 0.5f / scale
+    private val requestedWidth = requestedRight - requestedLeft
+    private val requestedHeight = requestedTop - requestedBottom
+    private val requestedCenterX = (requestedLeft + requestedRight) * 0.5f
+    private val requestedCenterY = (requestedTop + requestedBottom) * 0.5f
+    private val uniformScale =
+        min(width / requestedWidth, height / requestedHeight)
+    val scaleX: Float =
+        if (keepAspectRatio) uniformScale else width / requestedWidth
+    val scaleY: Float =
+        if (keepAspectRatio) uniformScale else height / requestedHeight
+    val scale: Float = min(scaleX, scaleY)
+    val left: Float = requestedCenterX - width * 0.5f / scaleX
+    val right: Float = requestedCenterX + width * 0.5f / scaleX
+    val top: Float = requestedCenterY + height * 0.5f / scaleY
+    val bottom: Float = requestedCenterY - height * 0.5f / scaleY
 
     fun toScreen(point: Offset): Offset = Offset(
-        x = width * 0.5f + point.x * scale,
-        y = height * 0.5f - point.y * scale,
+        x = (point.x - left) * scaleX,
+        y = (top - point.y) * scaleY,
     )
 
     fun toUser(point: Offset): Offset = Offset(
-        x = (point.x - width * 0.5f) / scale,
-        y = (height * 0.5f - point.y) / scale,
+        x = left + point.x / scaleX,
+        y = top - point.y / scaleY,
     )
 
     // JSXGraph: src/base/ticks.js -> getDistanceMajorTicks.
     fun majorTickDistance(
         visibleDistance: Float,
         density: Float,
+        pixelsPerUnit: Float = scale,
     ): Float =
         jsxGraphMajorTickDistance(
             visibleDistance = visibleDistance,
             // JSXGraph board units are CSS pixels, which correspond to Compose dp.
-            cssPixelsPerUnit = scale / density,
+            cssPixelsPerUnit = pixelsPerUnit / density,
         )
 }
 

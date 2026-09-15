@@ -42,23 +42,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.swithun.jsxgraph.compose.GeometryPlaygroundScene
-import com.swithun.jsxgraph.compose.JsxGraphGeometryPreview
+import com.swithun.jsxgraph.compose.JsxGraphScenePreview
 import com.swithun.jsxgraph.core.GMResult
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.intOrNull
+import com.swithun.jsxgraph.core.JsxGraphEngine
+import com.swithun.jsxgraph.core.JsxGraphScene
 
 enum class JsxGraphDebugPreview {
     Source,
@@ -225,7 +218,7 @@ private fun ParityWorkspace(
 private fun DebugContent(
     contentPadding: PaddingValues,
     parityCase: GMResult<JsxGraphParityCase, String>,
-    parsedScene: GMResult<GeometryPlaygroundScene, String>,
+    parsedScene: GMResult<JsxGraphScene, String>,
     preview: JsxGraphDebugPreview,
     onPreviewChange: (JsxGraphDebugPreview) -> Unit,
     onOfficialResult: (OfficialRenderResult) -> Unit,
@@ -353,7 +346,7 @@ private fun DebugContent(
 @Composable
 private fun ParityPreview(
     parityCase: GMResult<JsxGraphParityCase, String>,
-    parsedScene: GMResult<GeometryPlaygroundScene, String>,
+    parsedScene: GMResult<JsxGraphScene, String>,
     preview: JsxGraphDebugPreview,
     onOfficialResult: (OfficialRenderResult) -> Unit,
 ) {
@@ -369,7 +362,7 @@ private fun ParityPreview(
                 onRenderResult = onOfficialResult,
             )
             JsxGraphDebugPreview.Native -> when (parsedScene) {
-                is GMResult.Ok -> JsxGraphGeometryPreview(
+                is GMResult.Ok -> JsxGraphScenePreview(
                     scene = parsedScene.value,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -459,91 +452,8 @@ internal fun UnavailableOfficialPreview(
 
 internal fun parseParitySource(
     source: String,
-): GMResult<GeometryPlaygroundScene, String> {
-    val root = try {
-        Json.parseToJsonElement(source)
-    } catch (failure: Exception) {
-        return GMResult.Err(failure.message ?: "Invalid parity source")
+): GMResult<JsxGraphScene, String> =
+    when (val result = JsxGraphEngine.parse(source)) {
+        is GMResult.Ok -> result
+        is GMResult.Err -> GMResult.Err(result.error.message)
     }
-    val objectRoot = root as? JsonObject
-        ?: return GMResult.Err("Parity source must be a JSON object")
-    val version = objectRoot.int("schemaVersion")
-        ?: return GMResult.Err("Missing integer schemaVersion")
-    if (version != 1) {
-        return GMResult.Err("Unsupported parity schemaVersion: $version")
-    }
-    val bounds = objectRoot.numberArray("boundingBox", 4)
-        ?: return GMResult.Err("boundingBox must contain four numbers")
-    if (bounds != listOf(-6.0, 5.0, 6.0, -5.0)) {
-        return GMResult.Err("Only the baseline [-6, 5, 6, -5] viewport is supported")
-    }
-    val fixedPoint = objectRoot.offset("fixedPoint")
-        ?: return GMResult.Err("fixedPoint must contain two finite numbers")
-    val controlPoint = objectRoot.offset("controlPoint")
-        ?: return GMResult.Err("controlPoint must contain two finite numbers")
-    val circle = objectRoot["circle"] as? JsonObject
-        ?: return GMResult.Err("circle must be a JSON object")
-    val circleCenter = circle.offset("center")
-        ?: return GMResult.Err("circle.center must contain two finite numbers")
-    val circleRadius = circle.float("radius")
-        ?: return GMResult.Err("circle.radius must be finite")
-    if (circleRadius <= 0.0f) {
-        return GMResult.Err("circle.radius must be positive")
-    }
-    val sine = objectRoot["sine"] as? JsonObject
-        ?: return GMResult.Err("sine must be a JSON object")
-    val parabola = objectRoot["parabola"] as? JsonObject
-        ?: return GMResult.Err("parabola must be a JSON object")
-    return GMResult.Ok(
-        GeometryPlaygroundScene(
-            fixedPoint = fixedPoint,
-            controlPoint = controlPoint,
-            circleCenter = circleCenter,
-            circleRadius = circleRadius,
-            sineAmplitude = sine.float("amplitude")
-                ?: return GMResult.Err("sine.amplitude must be finite"),
-            sineFrequency = sine.float("frequency")
-                ?: return GMResult.Err("sine.frequency must be finite"),
-            parabolaQuadratic = parabola.float("quadratic")
-                ?: return GMResult.Err("parabola.quadratic must be finite"),
-            parabolaConstant = parabola.float("constant")
-                ?: return GMResult.Err("parabola.constant must be finite"),
-        ),
-    )
-}
-
-private fun JsonObject.number(name: String): Double? =
-    (this[name] as? JsonPrimitive)?.doubleOrNull?.takeIf(Double::isFinite)
-
-private fun JsonObject.float(name: String): Float? =
-    number(name)?.toFloat()?.takeIf(Float::isFinite)
-
-private fun JsonObject.int(name: String): Int? =
-    (this[name] as? JsonPrimitive)?.intOrNull
-
-private fun JsonObject.numberArray(
-    name: String,
-    expectedSize: Int,
-): List<Double>? {
-    val array = this[name] as? JsonArray ?: return null
-    if (array.size != expectedSize) {
-        return null
-    }
-    val numbers = array.map { element: JsonElement ->
-        (element as? JsonPrimitive)?.doubleOrNull
-    }
-    if (numbers.any { value -> value == null || !value.isFinite() }) {
-        return null
-    }
-    return numbers.map { value -> value ?: return null }
-}
-
-private fun JsonObject.offset(name: String): Offset? {
-    val values = numberArray(name, 2) ?: return null
-    val x = values[0].toFloat()
-    val y = values[1].toFloat()
-    if (!x.isFinite() || !y.isFinite()) {
-        return null
-    }
-    return Offset(x, y)
-}
