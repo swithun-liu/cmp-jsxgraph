@@ -190,7 +190,9 @@ private class IdReplacementState(
                     }
                     children[index] = JessieCodeAstChild.NodeList(nodes)
                 }
-                is JessieCodeAstChild.Text -> Unit
+                is JessieCodeAstChild.Text,
+                JessieCodeAstChild.EmptyObject,
+                -> Unit
             }
         }
         return GMResult.Ok(current.copy(children = children))
@@ -308,7 +310,9 @@ private class ReplacementState(
                     }
                     children[index] = JessieCodeAstChild.NodeList(nodes)
                 }
-                is JessieCodeAstChild.Text -> Unit
+                is JessieCodeAstChild.Text,
+                JessieCodeAstChild.EmptyObject,
+                -> Unit
             }
         }
         return GMResult.Ok(node.copy(children = children))

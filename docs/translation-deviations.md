@@ -25,11 +25,16 @@ practical.
   `Expression ';' EOF` entry. Successful supported expressions preserve the
   upstream AST node/value/child shape, `isMath` flags, and generated-action
   locations. The evaluator covers every AST node produced by this subset,
-  including JavaScript truthiness and primitive/array coercion, short-circuit
-  logic, calls, properties, indexes, board element references, and the first
-  core math built-ins. Remaining statements, assignment/function/map/object
-  syntax, nested mutable scopes, the complete built-in set, and the complete
-  element `methodMap` remain pending.
+  including JavaScript truthiness and primitive/array coercion, object
+  literals, short-circuit logic, calls, properties, indexes, board element
+  references, and the first core math built-ins. Remaining statements,
+  assignment/function/map syntax, nested mutable scopes, the complete built-in
+  set, and the complete element `methodMap` remain pending.
+- JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
+  directly as JavaScript object keys. JavaScript coerces each of those nodes to
+  `"[object Object]"`, so such keys collide while identifier keys behave
+  normally. The Kotlin runtime preserves that observable behavior instead of
+  normalizing literal property names.
 - JessieCode evaluation returns structured `GMResult.Err` values for malformed
   ASTs, unsupported operand combinations, unavailable element properties or
   values, and non-callable values instead of propagating JavaScript

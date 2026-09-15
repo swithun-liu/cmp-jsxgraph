@@ -1,7 +1,7 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> execute, add, sub, neg, mul, div,
- * mod, and pow
+ * mod, pow, and object literal operations
  * Copyright 2008-2026 Matthias Ehmann, Carsten Miller, Andreas Walter,
  * and Alfred Wassermann.
  * Used under the MIT License option.
@@ -76,22 +76,9 @@ private class EvaluationState(
         depth: Int = 1,
         functionPosition: Boolean = false,
     ): EvaluationResult {
-        if (depth > limits.maxEvaluationDepth) {
-            return GMResult.Err(
-                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
-                    limit = limits.maxEvaluationDepth,
-                    location = node.location,
-                ),
-            )
-        }
-        evaluationSteps += 1
-        if (evaluationSteps > limits.maxEvaluationSteps) {
-            return GMResult.Err(
-                JessieCodeRuntimeError.EvaluationStepLimitExceeded(
-                    limit = limits.maxEvaluationSteps,
-                    location = node.location,
-                ),
-            )
+        when (val result = enterNode(node, depth)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
         }
 
         return when (node.type) {
@@ -112,6 +99,30 @@ private class EvaluationState(
         }
     }
 
+    private fun enterNode(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        if (depth > limits.maxEvaluationDepth) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
+                    limit = limits.maxEvaluationDepth,
+                    location = node.location,
+                ),
+            )
+        }
+        evaluationSteps += 1
+        if (evaluationSteps > limits.maxEvaluationSteps) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationStepLimitExceeded(
+                    limit = limits.maxEvaluationSteps,
+                    location = node.location,
+                ),
+            )
+        }
+        return GMResult.Ok(Unit)
+    }
+
     private fun evaluateOperation(
         node: JessieCodeAstNode,
         depth: Int,
@@ -127,6 +138,14 @@ private class EvaluationState(
         return when (operator) {
             "op_none" -> evaluateSequence(node, depth)
             "op_array" -> evaluateArray(node, depth)
+            "op_emptyobject" -> evaluateEmptyObject(node)
+            "op_proplst_val" -> evaluateObject(node, depth)
+            "op_proplst",
+            "op_prop",
+            -> invalidAst(
+                node,
+                "$operator must be evaluated inside op_proplst_val.",
+            )
             "op_extvalue" -> evaluateIndex(node, depth)
             "op_execfun" -> evaluateCall(node, depth)
             "op_property" -> evaluateProperty(node, depth)
@@ -236,6 +255,141 @@ private class EvaluationState(
             }
         }
         return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(values))
+    }
+
+    private fun evaluateEmptyObject(
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        if (
+            node.children.size != 1 ||
+            node.children[0] !== JessieCodeAstChild.EmptyObject
+        ) {
+            return invalidAst(
+                node,
+                "op_emptyobject must contain the upstream empty-object child.",
+            )
+        }
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.ObjectValue(emptyMap()),
+        )
+    }
+
+    private fun evaluateObject(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val propertyList = when (val result = nodeChild(node, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val properties =
+            linkedMapOf<String, JessieCodeRuntimeValue>()
+        when (
+            val result = collectObjectProperties(
+                node = propertyList,
+                depth = depth + 1,
+                properties = properties,
+            )
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.ObjectValue(properties.toMap()),
+        )
+    }
+
+    private fun collectObjectProperties(
+        node: JessieCodeAstNode,
+        depth: Int,
+        properties: MutableMap<String, JessieCodeRuntimeValue>,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        when (val result = enterNode(node, depth)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val operator = (node.value as? JessieCodeAstValue.Text)?.value
+            ?: return invalidAst(
+                node,
+                "Object property operation value must be text.",
+            )
+        return when (operator) {
+            "op_proplst" -> {
+                val left = when (val result = nodeChild(node, 0)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val right = when (val result = nodeChild(node, 1)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = collectObjectProperties(
+                        node = left,
+                        depth = depth + 1,
+                        properties = properties,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                collectObjectProperties(
+                    node = right,
+                    depth = depth + 1,
+                    properties = properties,
+                )
+            }
+            "op_prop" -> {
+                if (node.children.size != 2) {
+                    return invalidAst(
+                        node,
+                        "op_prop must contain a name and value.",
+                    )
+                }
+                val propertyName = when (
+                    val child = node.children[0]
+                ) {
+                    is JessieCodeAstChild.Text -> child.value
+                    is JessieCodeAstChild.Node -> {
+                        if (
+                            child.value.type !=
+                            JessieCodeAstNodeType.STRING &&
+                            child.value.type !=
+                            JessieCodeAstNodeType.CONSTANT
+                        ) {
+                            return invalidAst(
+                                node,
+                                "Object property node must be a " +
+                                    "string or number literal.",
+                            )
+                        }
+                        // JSXGraph stores the AST node itself as the key.
+                        // JavaScript converts that object to this string.
+                        "[object Object]"
+                    }
+                    else -> return invalidAst(
+                        node,
+                        "Object property name has an invalid shape.",
+                    )
+                }
+                val valueNode = when (val result = nodeChild(node, 1)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val value = when (
+                    val result = evaluate(valueNode, depth + 1)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                properties[propertyName] = value
+                GMResult.Ok(Unit)
+            }
+            else -> invalidAst(
+                node,
+                "Object property list contains $operator.",
+            )
+        }
     }
 
     private fun evaluateIndex(

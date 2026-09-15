@@ -137,6 +137,52 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
+    fun objectLiteralsMatchOfficialChildShapeAndFlags() {
+        val emptyObject = expression("<< >>;")
+        assertEquals(
+            "op_emptyobject(empty-object)",
+            describe(emptyObject),
+        )
+        assertEquals(false, emptyObject.isMath)
+
+        val objectLiteral = expression(
+            "<< a: 1, \"b\": 2 + 3, 7: \"seven\" >>;",
+        )
+        assertEquals(
+            "op_proplst_val(" +
+                "op_proplst(" +
+                "op_proplst(" +
+                "op_prop(text:a,number:1.0)," +
+                "op_prop(string:b," +
+                "op_add(number:2.0,number:3.0)))," +
+                "op_prop(number:7.0,string:seven)))",
+            describe(objectLiteral),
+        )
+        assertEquals(false, objectLiteral.isMath)
+
+        val propertyList = childNode(objectLiteral, 0)
+        val finalProperty = childNode(propertyList, 1)
+        assertEquals(null, propertyList.isMath)
+        assertEquals(null, finalProperty.isMath)
+        assertEquals(
+            JessieCodeAstLocation(1, 3, 1, 19),
+            propertyList.location,
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 3, 1, 7),
+            childNode(propertyList, 0).location,
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 21, 1, 22),
+            finalProperty.location,
+        )
+        assertEquals(
+            null,
+            childNode(finalProperty, 0).isMath,
+        )
+    }
+
+    @Test
     fun generatedActionLocationsMatchOfficialAst() {
         val arithmetic = expression(
             "1 + 2 * 3 ^ 4 - 5 / 6 % 7;",
@@ -312,15 +358,35 @@ class JessieCodeExpressionParserTest {
             >(error("map (x) -> x;"))
         assertEquals("map expressions", map.feature)
 
-        val objectLiteral = assertIs<
-            JessieCodeParserError.UnsupportedSyntax
-            >(error("<< a: 1 >>;"))
-        assertEquals("object literals", objectLiteral.feature)
-
         val assignment = assertIs<
             JessieCodeParserError.UnsupportedSyntax
             >(error("a = 1;"))
         assertEquals("assignment expressions", assignment.feature)
+    }
+
+    @Test
+    fun malformedObjectLiteralsReturnStructuredErrors() {
+        val missingColon = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("<< a 1 >>;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.COLON),
+            missingColon.expected,
+        )
+
+        val trailingComma = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("<< a: 1, >>;"))
+        assertEquals(
+            listOf(
+                JessieCodeTokenType.IDENTIFIER,
+                JessieCodeTokenType.STRING,
+                JessieCodeTokenType.NUMBER,
+                JessieCodeTokenType.NAN,
+                JessieCodeTokenType.INFINITY,
+            ),
+            trailingComma.expected,
+        )
     }
 
     @Test
@@ -491,6 +557,7 @@ class JessieCodeExpressionParserTest {
                 is JessieCodeAstChild.Text -> {
                     "text:${child.value}"
                 }
+                JessieCodeAstChild.EmptyObject -> "empty-object"
             }
         }
     }

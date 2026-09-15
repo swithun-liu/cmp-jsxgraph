@@ -112,6 +112,57 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun objectLiteralsMatchOfficialPropertySemantics() {
+        val empty = assertIs<JessieCodeRuntimeValue.ObjectValue>(
+            evaluate("<< >>;"),
+        )
+        assertTrue(empty.properties.isEmpty())
+
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(2.0),
+            evaluate("<< a: 1, a: 2 >>.a;"),
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            evaluate("<< nested: << ok: true >> >>.nested.ok;"),
+        )
+
+        val literalKeys =
+            assertIs<JessieCodeRuntimeValue.ObjectValue>(
+                evaluate("<< \"b\": 2, 7: \"seven\" >>;"),
+            )
+        assertEquals(
+            setOf("[object Object]"),
+            literalKeys.properties.keys,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.StringValue("seven"),
+            literalKeys.properties["[object Object]"],
+        )
+
+        val evaluationOrder = mutableListOf<Double>()
+        val environment = JessieCodeRuntimeEnvironment(
+            functions = mapOf(
+                "record" to JessieCodeCallable { arguments, _ ->
+                    val value = assertIs<
+                        JessieCodeRuntimeValue.NumberValue
+                        >(arguments.first())
+                    evaluationOrder += value.value
+                    GMResult.Ok(value)
+                },
+            ),
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(2.0),
+            evaluate(
+                "<< a: record(1), a: record(2) >>.a;",
+                environment,
+            ),
+        )
+        assertEquals(listOf(1.0, 2.0), evaluationOrder)
+    }
+
+    @Test
     fun indexesPropertiesCallsAndMathBuiltInsMatchOfficialRuntime() {
         val add = JessieCodeRuntimeValue.FunctionValue(
             name = "add",
@@ -354,6 +405,16 @@ class JessieCodeEvaluatorTest {
         assertIs<
             JessieCodeRuntimeError.EvaluationStepLimitExceeded
             >(stepLimit)
+
+        val objectStepLimit = evaluatorError(
+            source = "<< a: 1, b: 2 >>;",
+            limits = JessieCodeEvaluatorLimits(
+                maxEvaluationSteps = 4,
+            ),
+        )
+        assertIs<
+            JessieCodeRuntimeError.EvaluationStepLimitExceeded
+            >(objectStepLimit)
 
         val depthLimit = evaluatorError(
             source = "1 + 2 + 3;",

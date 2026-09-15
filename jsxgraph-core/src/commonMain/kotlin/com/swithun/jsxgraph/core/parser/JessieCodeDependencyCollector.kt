@@ -129,7 +129,9 @@ private class DependencyState(
                         nextNodes += child.value
                     is JessieCodeAstChild.NodeList ->
                         nextNodes += child.value
-                    is JessieCodeAstChild.Text -> Unit
+                    is JessieCodeAstChild.Text,
+                    JessieCodeAstChild.EmptyObject,
+                    -> Unit
                 }
             }
             for (childNode in nextNodes.asReversed()) {

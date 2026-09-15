@@ -45,6 +45,11 @@ internal sealed interface JessieCodeAstChild {
     data class Text(
         val value: String,
     ) : JessieCodeAstChild
+
+    /**
+     * Upstream passes a raw `{}` child to the `op_emptyobject` node.
+     */
+    data object EmptyObject : JessieCodeAstChild
 }
 
 internal data class JessieCodeAstLocation(

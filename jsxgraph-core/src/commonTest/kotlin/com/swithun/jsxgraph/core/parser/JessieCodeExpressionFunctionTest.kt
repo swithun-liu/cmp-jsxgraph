@@ -40,6 +40,29 @@ class JessieCodeExpressionFunctionTest {
     }
 
     @Test
+    fun nameReplacementTraversesObjectValuesButNotKeys() {
+        val fixture = boardFixture()
+        val replaced = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeNameReplacer(fixture.board).replace(
+                parse("<< A: A >>;"),
+            ),
+        ).value
+        val property = nodeChild(expression(replaced), 0)
+        val key = assertIs<JessieCodeAstChild.Text>(
+            property.children[0],
+        )
+        val valueCall = nodeChild(property, 1)
+
+        assertEquals("A", key.value)
+        assertEquals("op_execfun", operationName(valueCall))
+        assertEquals("\$", textValue(nodeChild(valueCall, 0)))
+        assertEquals(
+            "P1",
+            textValue(nodeList(valueCall, 1).single()),
+        )
+    }
+
+    @Test
     fun idReplacementMatchesOfficialCurrentNameRoundTrip() {
         val fixture = boardFixture()
         val replacer = JessieCodeNameReplacer(fixture.board)

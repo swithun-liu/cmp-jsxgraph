@@ -58,11 +58,13 @@ internal sealed interface JessieCodeParserError {
 }
 
 /**
- * First JessieCode parser slice: an empty program or one expression statement.
+ * JessieCode expression parser for an empty program or one expression
+ * statement.
  *
  * The upstream entry is `Expression ';' EOF`; this slice implements its
- * `ConditionalExpression` branch. Statement execution, assignment, object
- * literals, functions, and maps are intentionally left for later slices.
+ * `ConditionalExpression` branch, including array and object literals.
+ * Statement execution, assignment, functions, and maps are intentionally
+ * left for later slices.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -528,9 +530,7 @@ private class ParserState(
             }
 
             JessieCodeTokenType.MAP -> unsupported("map expressions")
-            JessieCodeTokenType.SHIFT_LEFT -> {
-                unsupported("object literals")
-            }
+            JessieCodeTokenType.SHIFT_LEFT -> objectLiteral()
 
             else -> unexpected(EXPRESSION_START_TOKENS)
         }
@@ -600,6 +600,190 @@ private class ParserState(
                 depth = created.depth,
             ),
         )
+    }
+
+    // JSXGraph: ObjectLiteral, PropertyList, Property, and PropertyName
+    private fun objectLiteral(): ParserResult<ParsedExpression> {
+        val opening = consume()
+        if (current().type == JessieCodeTokenType.SHIFT_RIGHT) {
+            val closing = consume()
+            return operationWithRawChildren(
+                upstreamName = "op_emptyobject",
+                children = listOf(JessieCodeAstChild.EmptyObject),
+                childDepths = emptyList(),
+                nodeLocation = opening.location,
+                span = span(opening.location, closing.location),
+                isMath = false,
+            )
+        }
+
+        val properties = when (val result = parseObjectPropertyList()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val closing = when (
+            val result = expect(JessieCodeTokenType.SHIFT_RIGHT)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operationWithRawChildren(
+            upstreamName = "op_proplst_val",
+            children = listOf(
+                JessieCodeAstChild.Node(properties.node),
+            ),
+            childDepths = listOf(properties.depth),
+            nodeLocation = opening.location,
+            span = span(opening.location, closing.location),
+            isMath = false,
+        )
+    }
+
+    private fun parseObjectPropertyList(): ParserResult<ParsedExpression> {
+        var properties = when (val result = parseObjectProperty()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        while (current().type == JessieCodeTokenType.COMMA) {
+            consume()
+            val property = when (val result = parseObjectProperty()) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val combined = when (
+                val result = operation(
+                    upstreamName = "op_proplst",
+                    children = listOf(
+                        properties,
+                        property,
+                    ),
+                    nodeLocation = properties.span,
+                    span = span(
+                        properties.span,
+                        property.span,
+                    ),
+                    isMath = null,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            properties = combined
+        }
+        return GMResult.Ok(properties)
+    }
+
+    private fun parseObjectProperty(): ParserResult<ParsedExpression> {
+        val propertyName = when (val result = parseObjectPropertyName()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (val result = expect(JessieCodeTokenType.COLON)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val value = when (
+            val result = nested(current().location) {
+                parseConditional()
+            }
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (current().type == JessieCodeTokenType.ASSIGN) {
+            return unsupported("assignment expressions")
+        }
+        val property = when (
+            val result = operationWithRawChildren(
+                upstreamName = "op_prop",
+                children = listOf(
+                    propertyName.child,
+                    JessieCodeAstChild.Node(value.node),
+                ),
+                childDepths =
+                    listOf(propertyName.depth, value.depth),
+                nodeLocation = propertyName.location,
+                span = span(propertyName.location, value.span),
+                isMath = null,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(property)
+    }
+
+    private fun parseObjectPropertyName(): ParserResult<ParsedPropertyName> {
+        val token = current()
+        if (token.type == JessieCodeTokenType.IDENTIFIER) {
+            consume()
+            return GMResult.Ok(
+                ParsedPropertyName(
+                    child = JessieCodeAstChild.Text(token.lexeme),
+                    location = token.location,
+                    depth = 0,
+                ),
+            )
+        }
+
+        val literal = when (token.type) {
+            JessieCodeTokenType.STRING -> {
+                consume()
+                leaf(
+                    type = JessieCodeAstNodeType.STRING,
+                    value = JessieCodeAstValue.Text(
+                        token.lexeme.substring(
+                            1,
+                            token.lexeme.length - 1,
+                        ),
+                    ),
+                    token = token,
+                    isMath = null,
+                )
+            }
+            JessieCodeTokenType.NUMBER -> {
+                consume()
+                val value = token.lexeme.toDoubleOrNull()
+                    ?: return GMResult.Err(
+                        JessieCodeParserError.InvalidNumberLiteral(token),
+                    )
+                constant(
+                    token = token,
+                    value = JessieCodeAstValue.Number(value),
+                    isMath = null,
+                )
+            }
+            JessieCodeTokenType.NAN -> {
+                consume()
+                constant(
+                    token = token,
+                    value = JessieCodeAstValue.Number(Double.NaN),
+                    isMath = null,
+                )
+            }
+            JessieCodeTokenType.INFINITY -> {
+                consume()
+                constant(
+                    token = token,
+                    value = JessieCodeAstValue.Number(
+                        Double.POSITIVE_INFINITY,
+                    ),
+                    isMath = null,
+                )
+            }
+            else -> return unexpected(OBJECT_PROPERTY_NAME_TOKENS)
+        }
+        return when (literal) {
+            is GMResult.Ok -> GMResult.Ok(
+                ParsedPropertyName(
+                    child = JessieCodeAstChild.Node(literal.value.node),
+                    location = token.location,
+                    depth = literal.value.depth,
+                ),
+            )
+            is GMResult.Err -> literal
+        }
     }
 
     private fun parseExpressionList(
@@ -678,7 +862,7 @@ private class ParserState(
     private fun constant(
         token: JessieCodeToken,
         value: JessieCodeAstValue,
-        isMath: Boolean,
+        isMath: Boolean?,
     ): ParserResult<ParsedExpression> =
         leaf(
             type = JessieCodeAstNodeType.CONSTANT,
@@ -720,7 +904,7 @@ private class ParserState(
         children: List<ParsedExpression>,
         nodeLocation: JessieCodeSourceLocation,
         span: JessieCodeSourceLocation,
-        isMath: Boolean,
+        isMath: Boolean?,
     ): ParserResult<ParsedExpression> =
         operationWithRawChildren(
             upstreamName = upstreamName,
@@ -739,7 +923,7 @@ private class ParserState(
         childDepths: List<Int>,
         nodeLocation: JessieCodeSourceLocation,
         span: JessieCodeSourceLocation,
-        isMath: Boolean,
+        isMath: Boolean?,
     ): ParserResult<ParsedExpression> {
         val created = when (
             val result = createNode(
@@ -888,6 +1072,12 @@ private class ParserState(
         val depth: Int,
     )
 
+    private data class ParsedPropertyName(
+        val child: JessieCodeAstChild,
+        val location: JessieCodeSourceLocation,
+        val depth: Int,
+    )
+
     private data class CreatedNode(
         val node: JessieCodeAstNode,
         val depth: Int,
@@ -924,6 +1114,14 @@ private class ParserState(
             JessieCodeTokenType.SHIFT_LEFT,
             JessieCodeTokenType.FUNCTION,
             JessieCodeTokenType.MAP,
+        )
+
+        val OBJECT_PROPERTY_NAME_TOKENS = listOf(
+            JessieCodeTokenType.IDENTIFIER,
+            JessieCodeTokenType.STRING,
+            JessieCodeTokenType.NUMBER,
+            JessieCodeTokenType.NAN,
+            JessieCodeTokenType.INFINITY,
         )
 
         val LOGICAL_OR_OPERATORS = mapOf(

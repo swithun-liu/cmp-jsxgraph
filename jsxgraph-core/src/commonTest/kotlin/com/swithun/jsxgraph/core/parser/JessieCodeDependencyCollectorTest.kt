@@ -61,6 +61,17 @@ class JessieCodeDependencyCollectorTest {
     }
 
     @Test
+    fun objectKeysAreIgnoredWhileValuesKeepReverseTraversal() {
+        val fixture = boardFixture()
+        val dependencies = collect(
+            source = "<< A: A, B: B >>;",
+            board = fixture.board,
+        )
+
+        assertEquals(listOf("P2", "P1"), dependencies.keys.toList())
+    }
+
+    @Test
     fun unknownVariablesAreNotDependencies() {
         val fixture = boardFixture()
         val dependencies = collect(
