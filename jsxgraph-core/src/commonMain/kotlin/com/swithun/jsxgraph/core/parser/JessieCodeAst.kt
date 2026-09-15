@@ -50,6 +50,11 @@ internal sealed interface JessieCodeAstChild {
      * Upstream passes a raw `{}` child to the `op_emptyobject` node.
      */
     data object EmptyObject : JessieCodeAstChild
+
+    /**
+     * Upstream passes raw JavaScript `undefined` to a bare `return`.
+     */
+    data object Undefined : JessieCodeAstChild
 }
 
 internal data class JessieCodeAstLocation(

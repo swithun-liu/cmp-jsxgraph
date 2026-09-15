@@ -400,6 +400,37 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
+    fun returnAndDeleteStatementsMatchOfficialAst() {
+        assertEquals(
+            "op_return(raw-undefined)",
+            describe(expression("return;")),
+        )
+
+        val returnValue = expression("return 3;")
+        assertEquals(
+            "op_return(number:3.0)",
+            describe(returnValue),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 6),
+            returnValue.location,
+        )
+
+        val delete = expression("delete a")
+        assertEquals("op_delete(text:a)", describe(delete))
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 6),
+            delete.location,
+        )
+        assertEquals(
+            "op_none(" +
+                "op_none(op_none(),op_delete(text:a))," +
+                "op_none())",
+            describe(parse("delete a;")),
+        )
+    }
+
+    @Test
     fun parserErrorsRetainOffendingAndJisonParserLocations() {
         val missingOperand = error("1 + ;")
         val unexpected = assertIs<
@@ -731,6 +762,7 @@ class JessieCodeExpressionParserTest {
                     "text:${child.value}"
                 }
                 JessieCodeAstChild.EmptyObject -> "empty-object"
+                JessieCodeAstChild.Undefined -> "raw-undefined"
             }
         }
     }

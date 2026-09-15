@@ -146,6 +146,8 @@ private class EvaluationState(
             "op_while" -> evaluateWhile(node, depth)
             "op_do" -> evaluateDoWhile(node, depth)
             "op_for" -> evaluateFor(node, depth)
+            "op_return" -> evaluateReturn(node, depth)
+            "op_delete" -> evaluateDelete(node)
             "op_assign" -> evaluateAssignment(node, depth)
             "op_array" -> evaluateArray(node, depth)
             "op_emptyobject" -> evaluateEmptyObject(node)
@@ -343,6 +345,48 @@ private class EvaluationState(
                 is GMResult.Err -> return result
             }
         }
+    }
+
+    private fun evaluateReturn(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val child = node.children.firstOrNull()
+            ?: return invalidAst(
+                node,
+                "op_return must contain one child.",
+            )
+        return when (child) {
+            is JessieCodeAstChild.Node ->
+                evaluate(child.value, depth + 1)
+            JessieCodeAstChild.Undefined ->
+                GMResult.Ok(JessieCodeRuntimeValue.NumberValue(0.0))
+            else -> invalidAst(
+                node,
+                "op_return child must be a node or undefined.",
+            )
+        }
+    }
+
+    private fun evaluateDelete(
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val name = when (val result = textChild(node, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val element = if (localVariables.containsKey(name)) {
+            (
+                localVariables.getValue(name) as?
+                    JessieCodeRuntimeValue.ElementReference
+                )?.element
+        } else {
+            environment.board?.select(name)
+        }
+        if (element != null) {
+            environment.board?.removeObject(element)
+        }
+        return GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
     }
 
     private fun evaluateArray(

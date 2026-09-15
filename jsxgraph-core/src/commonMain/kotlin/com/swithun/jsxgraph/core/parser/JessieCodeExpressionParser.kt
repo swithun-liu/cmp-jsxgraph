@@ -62,8 +62,9 @@ internal sealed interface JessieCodeParserError {
  *
  * This slice implements `StatementList`, blocks, `if` statements, expression
  * statements, `while`/`do`/`for` loops, assignment, array and object literals.
- * Return/use/delete statements, functions, maps, and creator attributes are
- * intentionally left for later slices.
+ * Return and delete statements are also covered. The deprecated multi-board
+ * `use` statement, functions, maps, and creator attributes are intentionally
+ * left for later slices.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -215,10 +216,9 @@ private class ParserState(
                 nested(location) { parseDoWhileStatement() }
             }
             JessieCodeTokenType.USE,
-            JessieCodeTokenType.DELETE,
             -> unsupported("unary statements")
-            JessieCodeTokenType.RETURN ->
-                unsupported("return statements")
+            JessieCodeTokenType.DELETE -> parseDeleteStatement()
+            JessieCodeTokenType.RETURN -> parseReturnStatement()
             else -> parseExpressionStatement()
         }
 
@@ -452,6 +452,62 @@ private class ParserState(
             children = emptyList(),
             nodeLocation = semicolon.location,
             span = semicolon.location,
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: ReturnStatement
+    private fun parseReturnStatement(): ParserResult<ParsedExpression> {
+        val returnToken = consume()
+        if (current().type == JessieCodeTokenType.SEMICOLON) {
+            val semicolon = consume()
+            return operationWithRawChildren(
+                upstreamName = "op_return",
+                children = listOf(JessieCodeAstChild.Undefined),
+                childDepths = emptyList(),
+                nodeLocation = returnToken.location,
+                span = span(returnToken.location, semicolon.location),
+                isMath = null,
+            )
+        }
+
+        val value = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val semicolon = when (
+            val result = expect(JessieCodeTokenType.SEMICOLON)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operationWithRawChildren(
+            upstreamName = "op_return",
+            children = listOf(JessieCodeAstChild.Node(value.node)),
+            childDepths = listOf(value.depth),
+            nodeLocation = returnToken.location,
+            span = span(returnToken.location, semicolon.location),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: UnaryStatement -> DELETE
+    private fun parseDeleteStatement(): ParserResult<ParsedExpression> {
+        val deleteToken = consume()
+        val identifier = when (
+            val result = expect(JessieCodeTokenType.IDENTIFIER)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operationWithRawChildren(
+            upstreamName = "op_delete",
+            children = listOf(
+                JessieCodeAstChild.Text(identifier.lexeme),
+            ),
+            childDepths = emptyList(),
+            nodeLocation = deleteToken.location,
+            span = span(deleteToken.location, identifier.location),
             isMath = null,
         )
     }

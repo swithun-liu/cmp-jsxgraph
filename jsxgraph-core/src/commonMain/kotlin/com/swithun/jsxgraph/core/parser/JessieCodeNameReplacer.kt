@@ -192,6 +192,7 @@ private class IdReplacementState(
                 }
                 is JessieCodeAstChild.Text,
                 JessieCodeAstChild.EmptyObject,
+                JessieCodeAstChild.Undefined,
                 -> Unit
             }
         }
@@ -321,6 +322,7 @@ private class ReplacementState(
                 }
                 is JessieCodeAstChild.Text,
                 JessieCodeAstChild.EmptyObject,
+                JessieCodeAstChild.Undefined,
                 -> Unit
             }
         }

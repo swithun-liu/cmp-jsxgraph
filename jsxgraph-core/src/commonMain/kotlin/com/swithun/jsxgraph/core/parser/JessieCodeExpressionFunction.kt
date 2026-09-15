@@ -226,6 +226,8 @@ internal class JessieCodeExpressionFunction private constructor(
             "op_while",
             "op_do",
             "op_for",
+            "op_return",
+            "op_delete",
         )
     }
 }

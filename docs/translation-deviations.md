@@ -27,8 +27,8 @@ practical.
   properties, indexes, and unary/binary precedence. Successful supported input
   preserves the upstream AST node/value/child shape, `isMath` flags,
   dangling-else behavior, loop evaluation order, and generated-action
-  locations. Return/use/delete statements, function/map syntax, and creator
-  attributes remain pending.
+  locations. The deprecated multi-Board `use` statement, function/map syntax,
+  and creator attributes remain pending.
 - JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
   directly as JavaScript object keys. JavaScript coerces each of those nodes to
   `"[object Object]"`, so such keys collide while identifier keys behave
@@ -50,6 +50,14 @@ practical.
   JessieCode global locals and saved nested function scopes remain pending.
 - Loops use the evaluator's existing node-step limit as their execution budget.
   JSXGraph has no corresponding bound and can run an infinite loop.
+- `return` preserves the JSXGraph `1.13.3` interpreter behavior: it evaluates
+  to its child (or numeric zero for bare `return;`) but does not terminate an
+  enclosing statement list. Function-local return control remains tied to the
+  pending function/map translation.
+- The deprecated `delete` statement removes a resolved geometry element
+  through the translated `Board.removeObject` lifecycle and returns
+  `UndefinedValue`. Kotlin does not emit the upstream deprecation warning
+  because the core runtime has no logging side channel.
 - JessieCode geometry values cross the interpreter through
   `JessieCodeElementRuntime`. This preserves board object identity while the
   full upstream `methodMap`, visual-property, and generic `Value()` contracts
@@ -75,10 +83,10 @@ practical.
   `Type.createFunction`, including argument binding, stable references, and
   dependency metadata. It accepts at most one expression statement, including
   a single assignment expression; a multi-statement source returns
-  `MultipleStatements`, while a block, branch, or loop returns
-  `UnsupportedStatement`, until return statements and nested function scopes
-  are translated. Direct Kotlin number, array, and function adapters are
-  deferred until a translated caller needs those parent forms.
+  `MultipleStatements`, while a block, branch, loop, return, or delete
+  statement returns `UnsupportedStatement`, until nested function scopes are
+  translated. Direct Kotlin number, array, and function adapters are deferred
+  until a translated caller needs those parent forms.
 - The core element runtime exposes the translated read-only `methodMap`
   subset for coordinate elements, lines, and circles. Mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element

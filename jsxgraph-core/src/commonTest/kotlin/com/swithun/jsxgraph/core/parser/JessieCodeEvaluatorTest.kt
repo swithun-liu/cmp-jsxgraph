@@ -252,6 +252,65 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun returnAndDeleteStatementsMatchOfficialRuntime() {
+        val returnFixtures = mapOf(
+            "return;" to "number:0.0",
+            "return 3;" to "number:3.0",
+            "return 3; 4;" to "number:4.0",
+            "if (true) return 3; 4;" to "number:4.0",
+        )
+        for ((source, expected) in returnFixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+        )
+        val element = registerElement(
+            board = board,
+            id = "P1",
+            name = "A",
+            type = Const.OBJECT_TYPE_POINT,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.UndefinedValue,
+            evaluate(
+                source = "delete A",
+                environment = JessieCodeRuntimeEnvironment(
+                    board = board,
+                ),
+            ),
+        )
+        assertEquals(null, board.elementById(element.id))
+
+        val shadowedBoard = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+        )
+        val shadowed = registerElement(
+            board = shadowedBoard,
+            id = "P2",
+            name = "A",
+            type = Const.OBJECT_TYPE_POINT,
+        )
+        evaluate(
+            source = "delete A",
+            environment = JessieCodeRuntimeEnvironment(
+                variables = mapOf(
+                    "A" to JessieCodeRuntimeValue.NumberValue(1.0),
+                ),
+                board = shadowedBoard,
+            ),
+        )
+        assertSame(shadowed, shadowedBoard.elementById(shadowed.id))
+    }
+
+    @Test
     fun indexesPropertiesCallsAndMathBuiltInsMatchOfficialRuntime() {
         val add = JessieCodeRuntimeValue.FunctionValue(
             name = "add",
