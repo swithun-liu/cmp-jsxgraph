@@ -10,6 +10,7 @@ import com.swithun.jsxgraph.core.base.Point
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -36,6 +37,115 @@ class JessieCodeExpressionFunctionTest {
         assertEquals("\$value", textValue(nodeChild(sliderCall, 0)))
         assertEquals("P2", textValue(nodeList(sliderCall, 1).single()))
         assertTrue(sliderCall.replaced)
+    }
+
+    @Test
+    fun idReplacementMatchesOfficialCurrentNameRoundTrip() {
+        val fixture = boardFixture()
+        val replacer = JessieCodeNameReplacer(fixture.board)
+        val stable = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            replacer.replace(parse("A + sin(B);")),
+        ).value
+
+        fixture.first.setName("RenamedA")
+        fixture.second.setName("RenamedB")
+        val restored = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            replacer.replaceIds(stable),
+        ).value
+        val restoredExpression = expression(restored)
+        val point = nodeChild(restoredExpression, 0)
+        val slider = nodeList(
+            nodeChild(restoredExpression, 1),
+            1,
+        ).single()
+
+        assertEquals(JessieCodeAstNodeType.VARIABLE, point.type)
+        assertEquals("RenamedA", textValue(point))
+        assertTrue(point.children.isEmpty())
+        assertFalse(point.replaced)
+        assertEquals(JessieCodeAstNodeType.VARIABLE, slider.type)
+        assertEquals("RenamedB", textValue(slider))
+        assertTrue(slider.children.isEmpty())
+        assertFalse(slider.replaced)
+    }
+
+    @Test
+    fun idReplacementKeepsStableCallsForEmptyOrMissingNames() {
+        val unnamedFixture = boardFixture()
+        val unnamedReplacer = JessieCodeNameReplacer(
+            unnamedFixture.board,
+        )
+        val unnamedStable = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            unnamedReplacer.replace(parse("A;")),
+        ).value
+        unnamedFixture.first.setName("")
+
+        assertEquals(
+            unnamedStable,
+            assertIs<GMResult.Ok<JessieCodeAstNode>>(
+                unnamedReplacer.replaceIds(unnamedStable),
+            ).value,
+        )
+
+        val missingFixture = boardFixture()
+        val missingReplacer = JessieCodeNameReplacer(
+            missingFixture.board,
+        )
+        val missingStable = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            missingReplacer.replace(parse("A;")),
+        ).value
+        missingFixture.board.removeObject(missingFixture.first)
+
+        assertEquals(
+            missingStable,
+            assertIs<GMResult.Ok<JessieCodeAstNode>>(
+                missingReplacer.replaceIds(missingStable),
+            ).value,
+        )
+    }
+
+    @Test
+    fun idReplacementPreservesOfficialReverseChildTraversal() {
+        val fixture = boardFixture()
+        val stable = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeNameReplacer(fixture.board).replace(
+                parse("A + B;"),
+            ),
+        ).value
+        val rightCall = nodeChild(expression(stable), 1)
+        val error = assertIs<
+            GMResult.Err<JessieCodeNameReplacementError>
+            >(
+            JessieCodeNameReplacer(
+                board = fixture.board,
+                limits = JessieCodeNameReplacementLimits(
+                    maxVisitedNodes = 2,
+                ),
+            ).replaceIds(stable),
+        ).error
+        val nodeLimit = assertIs<
+            JessieCodeNameReplacementError.NodeLimitExceeded
+            >(error)
+
+        assertEquals(rightCall.location, nodeLimit.location)
+    }
+
+    @Test
+    fun idReplacementRejectsMalformedReplacementNodes() {
+        val fixture = boardFixture()
+        val stable = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeNameReplacer(fixture.board).replace(parse("A;")),
+        ).value
+        val malformed = expression(stable).copy(children = emptyList())
+        val error = assertIs<
+            GMResult.Err<JessieCodeNameReplacementError>
+            >(
+            JessieCodeNameReplacer(fixture.board).replaceIds(malformed),
+        ).error
+
+        assertIs<
+            JessieCodeNameReplacementError.InvalidReplacedNode
+            >(error)
     }
 
     @Test

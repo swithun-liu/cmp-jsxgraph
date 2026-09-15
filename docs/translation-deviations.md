@@ -46,10 +46,14 @@ practical.
   for an unknown literal `$()` or `$value()` ID; upstream stores an
   `undefined` dependency and fails later when that dependency is attached.
 - JessieCode name replacement preserves stable element-ID calls, slider value
-  calls, predefined constants, and reverse child traversal. It returns
-  structured node/depth-limit errors instead of traversing without resource
-  limits. Assignment-local discovery remains pending with the statement and
-  mutable-scope grammar.
+  calls, predefined constants, and reverse child traversal. `replaceIDs`
+  restores the current non-empty board name, including names changed after
+  compilation, while preserving the stable call for unnamed or removed
+  elements. Both directions return structured node/depth-limit errors instead
+  of traversing without resource limits. A malformed node carrying the
+  internal `replaced` marker returns `InvalidReplacedNode`; upstream throws
+  while indexing the assumed replacement-call shape. Assignment-local
+  discovery remains pending with the statement and mutable-scope grammar.
 - `JessieCodeExpressionFunction` covers the string branch of
   `Type.createFunction`, including argument binding, stable references, and
   dependency metadata. Direct Kotlin number, array, and function adapters are

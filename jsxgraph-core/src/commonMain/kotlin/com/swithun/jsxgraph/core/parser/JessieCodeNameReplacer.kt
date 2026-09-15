@@ -1,6 +1,6 @@
 /*
  * Kotlin translation of JSXGraph.
- * Upstream: src/parser/jessiecode.js -> replaceNames and
+ * Upstream: src/parser/jessiecode.js -> replaceIDs, replaceNames, and
  * createReplacementNode
  * Copyright 2008-2026 Matthias Ehmann, Carsten Miller, Andreas Walter,
  * and Alfred Wassermann.
@@ -29,6 +29,10 @@ internal sealed interface JessieCodeNameReplacementError {
 
     data class DepthLimitExceeded(
         val limit: Int,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeNameReplacementError
+
+    data class InvalidReplacedNode(
         val location: JessieCodeAstLocation,
     ) : JessieCodeNameReplacementError
 }
@@ -72,8 +76,133 @@ internal class JessieCodeNameReplacer(
         ).replace(node)
     }
 
+    // JSXGraph: src/parser/jessiecode.js -> replaceIDs
+    internal fun replaceIds(
+        node: JessieCodeAstNode,
+    ): GMResult<
+        JessieCodeAstNode,
+        JessieCodeNameReplacementError,
+        > {
+        if (
+            limits.maxVisitedNodes < 1 ||
+            limits.maxTraversalDepth !in 1..MAX_REPLACEMENT_DEPTH
+        ) {
+            return GMResult.Err(
+                JessieCodeNameReplacementError.InvalidLimits(
+                    maxVisitedNodes = limits.maxVisitedNodes,
+                    maxTraversalDepth = limits.maxTraversalDepth,
+                ),
+            )
+        }
+        return IdReplacementState(
+            board = board,
+            limits = limits,
+        ).replace(node)
+    }
+
     private companion object {
         const val MAX_REPLACEMENT_DEPTH = 64
+    }
+}
+
+private class IdReplacementState(
+    private val board: Board,
+    private val limits: JessieCodeNameReplacementLimits,
+) {
+    private var visitedNodes = 0
+
+    fun replace(
+        node: JessieCodeAstNode,
+        depth: Int = 1,
+    ): GMResult<
+        JessieCodeAstNode,
+        JessieCodeNameReplacementError,
+        > {
+        if (depth > limits.maxTraversalDepth) {
+            return GMResult.Err(
+                JessieCodeNameReplacementError.DepthLimitExceeded(
+                    limit = limits.maxTraversalDepth,
+                    location = node.location,
+                ),
+            )
+        }
+        visitedNodes += 1
+        if (visitedNodes > limits.maxVisitedNodes) {
+            return GMResult.Err(
+                JessieCodeNameReplacementError.NodeLimitExceeded(
+                    limit = limits.maxVisitedNodes,
+                    location = node.location,
+                ),
+            )
+        }
+
+        var current = node
+        if (node.replaced) {
+            val elementId = replacedElementId(node)
+                ?: return GMResult.Err(
+                    JessieCodeNameReplacementError.InvalidReplacedNode(
+                        location = node.location,
+                    ),
+                )
+            val element = board.elementById(elementId)
+            if (element != null && element.name.isNotEmpty()) {
+                current = node.copy(
+                    type = JessieCodeAstNodeType.VARIABLE,
+                    value = JessieCodeAstValue.Text(element.name),
+                    children = emptyList(),
+                    replaced = false,
+                )
+            }
+        }
+
+        val children = current.children.toMutableList()
+        for (index in current.children.indices.reversed()) {
+            when (val child = current.children[index]) {
+                is JessieCodeAstChild.Node -> {
+                    when (
+                        val result = replace(
+                            node = child.value,
+                            depth = depth + 1,
+                        )
+                    ) {
+                        is GMResult.Ok -> {
+                            children[index] = JessieCodeAstChild.Node(
+                                result.value,
+                            )
+                        }
+                        is GMResult.Err -> return result
+                    }
+                }
+                is JessieCodeAstChild.NodeList -> {
+                    val nodes = child.value.toMutableList()
+                    for (childIndex in child.value.indices) {
+                        when (
+                            val result = replace(
+                                node = child.value[childIndex],
+                                depth = depth + 1,
+                            )
+                        ) {
+                            is GMResult.Ok -> {
+                                nodes[childIndex] = result.value
+                            }
+                            is GMResult.Err -> return result
+                        }
+                    }
+                    children[index] = JessieCodeAstChild.NodeList(nodes)
+                }
+                is JessieCodeAstChild.Text -> Unit
+            }
+        }
+        return GMResult.Ok(current.copy(children = children))
+    }
+
+    private fun replacedElementId(node: JessieCodeAstNode): String? {
+        val arguments = (
+            node.children.getOrNull(1) as?
+                JessieCodeAstChild.NodeList
+            )?.value ?: return null
+        val value = arguments.firstOrNull()?.value
+        return (value as? JessieCodeAstValue.Text)?.value
     }
 }
 

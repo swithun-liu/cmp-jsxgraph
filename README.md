@@ -36,9 +36,9 @@ Implemented translation slices:
   interpreter from `src/parser/jessiecode.js`, including literals, variables,
   arrays, calls, properties, indexes, conditionals, JavaScript-compatible
   coercion, core math functions, static dependency discovery, source
-  locations, stable name-to-ID replacement, reusable expression functions,
-  the translated Point/Line/Circle read-only `methodMap` subset, and resource
-  limits;
+  locations, stable name-to-ID replacement and current-name restoration,
+  reusable expression functions, the translated Point/Line/Circle read-only
+  `methodMap` subset, and resource limits;
 - Circle radii defined by JessieCode strings, including functional update
   dependencies that remain separate from geometric parents;
 - Point coordinates defined by two or more JessieCode strings, including
