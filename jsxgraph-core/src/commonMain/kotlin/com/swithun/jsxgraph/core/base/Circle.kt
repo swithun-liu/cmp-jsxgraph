@@ -27,15 +27,20 @@ internal sealed interface CircleError {
 /**
  * Initial translated slice of JXG.Circle.
  *
- * This slice covers circles defined by two registered points, their dependency
+ * This slice covers circles defined by two registered points, a fixed numeric
+ * radius, a registered line, or a registered circle. It includes dependency
  * links, standard and quadratic forms, cubic Bezier approximation, and numeric
- * queries. Numeric/function radii, line/circle radii, transformations,
- * rendering, and hit testing remain untranslated.
+ * queries. Function/string radii, transformations, rendering, and hit testing
+ * remain untranslated.
  */
 internal open class Circle internal constructor(
     board: Board,
+    internal val method: String,
     internal val center: Point,
-    internal val point2: Point,
+    internal val point2: Point? = null,
+    internal val line: Line? = null,
+    internal val circle: Circle? = null,
+    private val radiusValue: Double? = null,
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
@@ -47,8 +52,7 @@ internal open class Circle internal constructor(
     elementClass = Const.OBJECT_CLASS_CIRCLE,
     needsRegularUpdate = needsRegularUpdate,
 ) {
-    // JSXGraph: src/base/circle.js -> method / midpoint / radius / points
-    internal val method: String = TWO_POINTS_METHOD
+    // JSXGraph: src/base/circle.js -> midpoint / radius / points
     internal val midpoint: Point = center
     internal var radius: Double = 0.0
     internal val points = mutableListOf<Coords>()
@@ -59,7 +63,7 @@ internal open class Circle internal constructor(
     internal var bezierDegree: Int = 0
 
     init {
-        radius = Radius()
+        radius = radiusFromSource()
         elType = CIRCLE_ELEMENT_TYPE
     }
 
@@ -69,6 +73,17 @@ internal open class Circle internal constructor(
             return this
         }
 
+        radius = when (method) {
+            POINT_RADIUS_METHOD -> radiusValue ?: Double.NaN
+            POINT_LINE_METHOD -> line?.let {
+                it.point1.coords.distance(
+                    Const.COORDS_BY_USER,
+                    it.point2.coords,
+                )
+            } ?: Double.NaN
+            POINT_CIRCLE_METHOD -> circle?.Radius() ?: Double.NaN
+            else -> radius
+        }
         radius = abs(radius)
         updateStdform()
         updateQuadraticform()
@@ -100,25 +115,54 @@ internal open class Circle internal constructor(
         stdform[1] = -center.coords.usrCoords[1]
         stdform[2] = -center.coords.usrCoords[2]
         if (!stdform[4].isFinite()) {
-            stdform[0] = -(
-                stdform[1] * point2.coords.usrCoords[1] +
-                    stdform[2] * point2.coords.usrCoords[2]
-            )
+            stdform[0] = point2?.let {
+                -(
+                    stdform[1] * it.coords.usrCoords[1] +
+                        stdform[2] * it.coords.usrCoords[2]
+                )
+            } ?: 0.0
         }
         normalize()
         return this
     }
 
     // JSXGraph: src/base/circle.js -> Radius
-    internal fun Radius(): Double {
-        if (
-            point2.coords.usrCoords.all { it == 0.0 } ||
-            center.coords.usrCoords.all { it == 0.0 }
-        ) {
-            return Double.NaN
+    internal fun Radius(): Double =
+        when (method) {
+            TWO_POINTS_METHOD -> {
+                val circumferencePoint = point2
+                    ?: return Double.NaN
+                if (
+                    circumferencePoint.coords.usrCoords.all { it == 0.0 } ||
+                    center.coords.usrCoords.all { it == 0.0 }
+                ) {
+                    Double.NaN
+                } else {
+                    center.Dist(circumferencePoint)
+                }
+            }
+
+            POINT_RADIUS_METHOD -> abs(radiusValue ?: Double.NaN)
+            POINT_LINE_METHOD,
+            POINT_CIRCLE_METHOD,
+            -> radius
+
+            else -> Double.NaN
         }
-        return center.Dist(point2)
-    }
+
+    private fun radiusFromSource(): Double =
+        when (method) {
+            TWO_POINTS_METHOD -> Radius()
+            POINT_RADIUS_METHOD -> radiusValue ?: Double.NaN
+            POINT_LINE_METHOD -> line?.let {
+                it.point1.coords.distance(
+                    Const.COORDS_BY_USER,
+                    it.point2.coords,
+                )
+            } ?: Double.NaN
+            POINT_CIRCLE_METHOD -> circle?.Radius() ?: Double.NaN
+            else -> Double.NaN
+        }
 
     // JSXGraph: src/base/circle.js -> Diameter
     internal fun Diameter(): Double = 2.0 * Radius()
@@ -214,6 +258,9 @@ internal open class Circle internal constructor(
         private const val CIRCLE_ID_PREFIX = "C"
         private const val CIRCLE_ELEMENT_TYPE = "circle"
         private const val TWO_POINTS_METHOD = "twoPoints"
+        private const val POINT_RADIUS_METHOD = "pointRadius"
+        private const val POINT_LINE_METHOD = "pointLine"
+        private const val POINT_CIRCLE_METHOD = "pointCircle"
         private const val BEZIER_CONTROL = 0.551915024494
 
         // JSXGraph: src/base/circle.js -> createCircle / Circle constructor
@@ -234,17 +281,116 @@ internal open class Circle internal constructor(
 
             val circle = Circle(
                 board = board,
+                method = TWO_POINTS_METHOD,
                 center = center,
                 point2 = point2,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
             )
-            return when (val registration = board.setId(circle, CIRCLE_ID_PREFIX)) {
+            return register(
+                circle = circle,
+                dependencies = listOf(center, point2),
+            )
+        }
+
+        // JSXGraph: src/base/circle.js -> createCircle pointRadius branch
+        fun create(
+            board: Board,
+            center: Point,
+            radius: Double,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Circle, CircleError> {
+            validateParent(board, center, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+
+            return register(
+                circle = Circle(
+                    board = board,
+                    method = POINT_RADIUS_METHOD,
+                    center = center,
+                    radiusValue = radius,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                ),
+                dependencies = listOf(center),
+            )
+        }
+
+        // JSXGraph: src/base/circle.js -> createCircle pointLine branch
+        fun create(
+            board: Board,
+            center: Point,
+            radiusLine: Line,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Circle, CircleError> {
+            validateParent(board, center, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+            validateParent(board, radiusLine, parentIndex = 1)?.let {
+                return GMResult.Err(it)
+            }
+
+            return register(
+                circle = Circle(
+                    board = board,
+                    method = POINT_LINE_METHOD,
+                    center = center,
+                    line = radiusLine,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                ),
+                dependencies = listOf(center, radiusLine),
+            )
+        }
+
+        // JSXGraph: src/base/circle.js -> createCircle pointCircle branch
+        fun create(
+            board: Board,
+            center: Point,
+            radiusCircle: Circle,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Circle, CircleError> {
+            validateParent(board, center, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+            validateParent(board, radiusCircle, parentIndex = 1)?.let {
+                return GMResult.Err(it)
+            }
+
+            return register(
+                circle = Circle(
+                    board = board,
+                    method = POINT_CIRCLE_METHOD,
+                    center = center,
+                    circle = radiusCircle,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                ),
+                dependencies = listOf(center, radiusCircle),
+            )
+        }
+
+        private fun register(
+            circle: Circle,
+            dependencies: List<GeometryElement>,
+        ): GMResult<Circle, CircleError> =
+            when (val registration = circle.board.setId(circle, CIRCLE_ID_PREFIX)) {
                 is GMResult.Ok -> {
-                    center.addChild(circle)
-                    point2.addChild(circle)
-                    circle.setParents(listOf(center, point2))
+                    for (dependency in dependencies) {
+                        dependency.addChild(circle)
+                    }
+                    circle.setParents(dependencies)
                     circle.isDraggable = true
                     circle.update()
                     GMResult.Ok(circle)
@@ -254,18 +400,17 @@ internal open class Circle internal constructor(
                     CircleError.Registration(registration.error),
                 )
             }
-        }
 
         private fun validateParent(
             board: Board,
-            point: Point,
+            element: GeometryElement,
             parentIndex: Int,
         ): CircleError? {
-            if (point.board !== board) {
+            if (element.board !== board) {
                 return CircleError.ParentBoardMismatch(parentIndex)
             }
-            if (board.elementById(point.id) !== point) {
-                return CircleError.ParentNotRegistered(parentIndex, point.id)
+            if (board.elementById(element.id) !== element) {
+                return CircleError.ParentNotRegistered(parentIndex, element.id)
             }
             return null
         }

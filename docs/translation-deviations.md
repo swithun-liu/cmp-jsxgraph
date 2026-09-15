@@ -44,12 +44,14 @@ practical.
   parent and for board registration failure. JSXGraph's dynamic `createLine`
   also accepts point IDs, coordinate arrays, functions, transformations, and
   three standard-form coordinates, and throws for unsupported parent values.
-- `Circle.create` currently accepts an already registered center and
-  circumference `Point` from the same `Board`. It returns `GMResult.Err` for a
-  cross-board or unregistered parent and for board registration failure.
-  JSXGraph's dynamic `createCircle` also accepts point IDs, coordinate arrays,
-  numeric/function radii, lines, circles, three-point circumcircles, and
-  transformations, and throws for unsupported parent values.
+- `Circle.create` currently accepts an already registered center plus an
+  already registered circumference `Point`, a fixed numeric radius, an already
+  registered `Line`, or an already registered source `Circle` from the same
+  `Board`. It returns `GMResult.Err` for a cross-board or unregistered element
+  and for board registration failure. JSXGraph's dynamic `createCircle` also
+  accepts reversed parent order, point IDs, coordinate arrays, function/string
+  radii, three-point circumcircles, and transformations, and throws for
+  unsupported parent values.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again

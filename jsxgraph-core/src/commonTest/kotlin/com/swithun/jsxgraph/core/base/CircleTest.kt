@@ -230,6 +230,174 @@ class CircleTest {
     }
 
     @Test
+    fun numericRadiusUsesAbsoluteValueAndDependsOnlyOnCenter() {
+        val board = board()
+        val center = point(board, doubleArrayOf(1.0, -2.0))
+
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radius = -3.0,
+            ),
+        )
+
+        assertEquals("pointRadius", circle.method)
+        assertNull(circle.point2)
+        assertNull(circle.line)
+        assertNull(circle.circle)
+        assertEquals(listOf(center.id), circle.parents)
+        assertSame(circle, center.childElements[circle.id])
+        assertEquals(3.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertEquals(3.0, circle.radius, absoluteTolerance = TOLERANCE)
+        assertArrayMatches(
+            doubleArrayOf(
+                -2.0 / 3.0,
+                -1.0 / 3.0,
+                2.0 / 3.0,
+                1.0 / 6.0,
+                1.0,
+                3.0,
+                1.0,
+                -2.0,
+            ),
+            circle.stdform,
+        )
+        assertMatrixMatches(
+            arrayOf(
+                doubleArrayOf(-4.0, -1.0, 2.0),
+                doubleArrayOf(-1.0, 1.0, 0.0),
+                doubleArrayOf(2.0, 0.0, 1.0),
+            ),
+            circle.quadraticform,
+        )
+        assertArrayMatches(doubleArrayOf(-2.0, 1.0, 4.0, -5.0), circle.bounds())
+    }
+
+    @Test
+    fun lineRadiusTracksTheDefiningLineLength() {
+        val board = board()
+        val linePoint1 = point(board, doubleArrayOf(0.0, 0.0))
+        val linePoint2 = point(board, doubleArrayOf(0.0, 4.0))
+        val radiusLine = line(Line.create(board, linePoint1, linePoint2))
+        val center = point(board, doubleArrayOf(1.0, -2.0))
+
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusLine = radiusLine,
+            ),
+        )
+
+        assertEquals("pointLine", circle.method)
+        assertSame(radiusLine, circle.line)
+        assertEquals(listOf(center.id, radiusLine.id), circle.parents)
+        assertSame(circle, center.childElements[circle.id])
+        assertSame(circle, radiusLine.childElements[circle.id])
+        assertEquals(4.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertArrayMatches(
+            doubleArrayOf(-1.375, -0.25, 0.5, 0.125, 1.0, 4.0, 1.0, -2.0),
+            circle.stdform,
+        )
+
+        linePoint2.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(0.0, 6.0),
+        )
+        circle.needsUpdate = true
+        circle.update()
+
+        assertEquals(6.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertArrayMatches(doubleArrayOf(-5.0, 4.0, 7.0, -8.0), circle.bounds())
+    }
+
+    @Test
+    fun circleRadiusTracksTheSourceCircle() {
+        val board = board()
+        val sourceCenter = point(board, doubleArrayOf(0.0, 0.0))
+        val sourcePoint = point(board, doubleArrayOf(2.5, 0.0))
+        val sourceCircle = circle(Circle.create(board, sourceCenter, sourcePoint))
+        val center = point(board, doubleArrayOf(1.0, -2.0))
+
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusCircle = sourceCircle,
+            ),
+        )
+
+        assertEquals("pointCircle", circle.method)
+        assertSame(sourceCircle, circle.circle)
+        assertEquals(listOf(center.id, sourceCircle.id), circle.parents)
+        assertSame(circle, sourceCircle.childElements[circle.id])
+        assertEquals(2.5, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertArrayMatches(
+            doubleArrayOf(-0.25, -0.4, 0.8, 0.2, 1.0, 2.5, 1.0, -2.0),
+            circle.stdform,
+        )
+
+        sourcePoint.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(4.0, 0.0),
+        )
+        sourceCircle.needsUpdate = true
+        sourceCircle.update()
+        circle.needsUpdate = true
+        circle.update()
+
+        assertEquals(4.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertArrayMatches(doubleArrayOf(-3.0, 2.0, 5.0, -6.0), circle.bounds())
+    }
+
+    @Test
+    fun sourceElementFactoriesRejectUnregisteredAndForeignElements() {
+        val board = board()
+        val center = point(board, doubleArrayOf(0.0, 0.0))
+        val point2 = point(board, doubleArrayOf(2.0, 0.0))
+        val unregisteredLine = Line(
+            board = board,
+            point1 = center,
+            point2 = point2,
+            id = "unregistered-line",
+        )
+        val foreignBoard = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "foreign",
+        )
+        val foreignCircle = circle(
+            Circle.create(
+                board = foreignBoard,
+                center = point(foreignBoard, doubleArrayOf(0.0, 0.0)),
+                radius = 2.0,
+            ),
+        )
+
+        assertEquals(
+            CircleError.ParentNotRegistered(
+                parentIndex = 1,
+                id = "unregistered-line",
+            ),
+            assertIs<GMResult.Err<CircleError.ParentNotRegistered>>(
+                Circle.create(board, center, unregisteredLine),
+            ).error,
+        )
+        assertEquals(
+            CircleError.ParentBoardMismatch(parentIndex = 1),
+            assertIs<GMResult.Err<CircleError.ParentBoardMismatch>>(
+                Circle.create(board, center, foreignCircle),
+            ).error,
+        )
+        assertEquals(2, board.numObjects)
+        assertTrue(center.childElements.isEmpty())
+        assertTrue(point2.childElements.isEmpty())
+    }
+
+    @Test
     fun factoryFailuresDoNotPolluteRegistriesOrDependencies() {
         val board = board()
         val center = point(board, doubleArrayOf(0.0, 0.0))
@@ -312,6 +480,9 @@ class CircleTest {
 
     private fun circle(result: GMResult<Circle, CircleError>): Circle =
         assertIs<GMResult.Ok<Circle>>(result).value
+
+    private fun line(result: GMResult<Line, LineError>): Line =
+        assertIs<GMResult.Ok<Line>>(result).value
 
     private fun assertMatrixMatches(
         expected: Array<DoubleArray>,

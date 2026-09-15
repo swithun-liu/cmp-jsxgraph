@@ -25,7 +25,7 @@
 | `src/base/coordselement.js` | GeometryElement integration; coordinate storage; glider/constraint base state; `X`, `Y`, `Z`, `Coords`, evaluator, and distance accessors; and the free untransformed `updateCoords` / `setPositionDirectly` lifecycle | `base/CoordsElement.kt` | Translated dependency subset |
 | `src/base/point.js` | numeric free-point construction, board registration, coordinate update, and point bounds | `base/Point.kt` | Translated dependency subset |
 | `src/base/line.js` | two-registered-point construction and dependencies; `update`, `updateStdform`, `getRise`, `Slope`, `Direction`, `isVertical`, `L`, and `bounds` | `base/Line.kt` | Translated dependency subset |
-| `src/base/circle.js` | two-registered-point construction and dependencies; `update`, standard/quadratic forms, cubic Bezier approximation, `Radius`, `Diameter`, parametric coordinates, `Area`, `Perimeter`, and `bounds` | `base/Circle.kt` | Translated dependency subset |
+| `src/base/circle.js` | construction and dependencies for two registered points, a fixed numeric radius, a line-derived radius, or a circle-derived radius; `update`, standard/quadratic forms, cubic Bezier approximation, `Radius`, `Diameter`, parametric coordinates, `Area`, `Perimeter`, and `bounds` | `base/Circle.kt` | Translated dependency subset |
 | `src/unused/symbolic.js` | `Symbolic` | None | Intentionally unsupported |
 
 ## License-Constrained Upstream Symbols
