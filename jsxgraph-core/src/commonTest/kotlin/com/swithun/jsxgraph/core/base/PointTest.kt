@@ -1,9 +1,11 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Mat
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -127,6 +129,76 @@ class PointTest {
         )
     }
 
+    @Test
+    fun pointIncidenceMatchesOfficialToleranceAndIdealPointBehavior() {
+        val board = board()
+        val origin = point(Point.create(board, doubleArrayOf(0.0, 0.0)))
+        val same = point(Point.create(board, doubleArrayOf(0.0, 0.0)))
+        val halfEpsilon = point(
+            Point.create(board, doubleArrayOf(Mat.eps * 0.5, 0.0)),
+        )
+        val atEpsilon = point(
+            Point.create(board, doubleArrayOf(Mat.eps, 0.0)),
+        )
+        val ideal = point(
+            Point.create(board, doubleArrayOf(0.0, 1.0, 0.0)),
+        )
+
+        assertTrue(origin.isOn(same))
+        assertTrue(origin.isOn(halfEpsilon))
+        assertFalse(origin.isOn(atEpsilon))
+        assertTrue(origin.isOn(halfEpsilon, tolerance = 0.0))
+        assertTrue(origin.isOn(halfEpsilon, tolerance = Double.NaN))
+        assertFalse(origin.isOn(same, tolerance = -1.0))
+        assertFalse(origin.isOn(ideal))
+        assertFalse(origin.isOn(GeometryElement(board)))
+    }
+
+    @Test
+    fun lineIncidenceMatchesOfficialStrictDistanceComparison() {
+        val board = board()
+        val line = line(
+            Line.create(
+                board,
+                point(Point.create(board, doubleArrayOf(-2.0, 0.0))),
+                point(Point.create(board, doubleArrayOf(3.0, 0.0))),
+            ),
+        )
+        val onLine = point(Point.create(board, doubleArrayOf(1.0, 0.0)))
+        val halfEpsilon = point(
+            Point.create(board, doubleArrayOf(1.0, Mat.eps * 0.5)),
+        )
+        val atEpsilon = point(
+            Point.create(board, doubleArrayOf(1.0, Mat.eps)),
+        )
+
+        assertTrue(onLine.isOn(line))
+        assertTrue(halfEpsilon.isOn(line))
+        assertFalse(atEpsilon.isOn(line))
+        assertTrue(halfEpsilon.isOn(line, tolerance = 0.0))
+        assertTrue(halfEpsilon.isOn(line, tolerance = Double.NaN))
+        assertFalse(onLine.isOn(line, tolerance = -1.0))
+    }
+
+    @Test
+    fun circleIncidenceMatchesOfficialBoundaryBehavior() {
+        val board = board()
+        val center = point(Point.create(board, doubleArrayOf(0.0, 0.0)))
+        val circle = circle(Circle.create(board, center, radius = 2.0))
+        val boundary = point(Point.create(board, doubleArrayOf(2.0, 0.0)))
+        val outerHalfEpsilon = point(
+            Point.create(board, doubleArrayOf(2.0 + Mat.eps * 0.5, 0.0)),
+        )
+        val outerAtEpsilon = point(
+            Point.create(board, doubleArrayOf(2.0 + Mat.eps, 0.0)),
+        )
+
+        assertTrue(boundary.isOn(circle))
+        assertTrue(outerHalfEpsilon.isOn(circle))
+        assertFalse(outerAtEpsilon.isOn(circle))
+        assertFalse(center.isOn(circle))
+    }
+
     private fun board(): Board = Board(
         originX = 250.0,
         originY = 200.0,
@@ -138,6 +210,14 @@ class PointTest {
     private fun point(
         result: GMResult<Point, PointError>,
     ): Point = assertIs<GMResult.Ok<Point>>(result).value
+
+    private fun line(
+        result: GMResult<Line, LineError>,
+    ): Line = assertIs<GMResult.Ok<Line>>(result).value
+
+    private fun circle(
+        result: GMResult<Circle, CircleError>,
+    ): Circle = assertIs<GMResult.Ok<Circle>>(result).value
 
     private class RecordingPoint(
         board: Board,

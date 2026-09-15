@@ -39,6 +39,10 @@ practical.
   returns `GMResult.Err` for fewer than two coordinates or a board registration
   failure. JSXGraph throws from `createPoint` when its dynamic parent array
   cannot be interpreted as a free, constrained, or transformed point.
+- `Point.isOn` currently supports translated `Point`, ordinary `Line`, and
+  circle-boundary targets. Segment clipping, circle interior hits, curves,
+  polygons, and turtles remain pending on their element and visual-property
+  models.
 - `Line.create` currently accepts two already registered `Point` instances from
   the same `Board`. It returns `GMResult.Err` for a cross-board or unregistered
   parent and for board registration failure. JSXGraph's dynamic `createLine`

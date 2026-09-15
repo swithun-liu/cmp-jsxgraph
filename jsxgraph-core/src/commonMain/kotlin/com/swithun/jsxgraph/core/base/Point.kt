@@ -8,6 +8,9 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
+import com.swithun.jsxgraph.core.math.Mat
+import kotlin.math.abs
 
 internal sealed interface PointError {
     data class InvalidCoordinateCount(val count: Int) : PointError
@@ -19,8 +22,10 @@ internal sealed interface PointError {
  * Initial translated slice of JXG.Point.
  *
  * This slice covers numeric free points, board registration, coordinate
- * updates, and bounds. Visual attributes, hit testing, traces, constraints,
- * transformations, gliders, and intersections remain untranslated.
+ * updates, bounds, and incidence checks against the currently translated
+ * point, line, and circle elements. Visual attributes, screen hit testing,
+ * traces, constraints, transformations, gliders, and intersections remain
+ * untranslated.
  */
 internal open class Point internal constructor(
     board: Board,
@@ -53,6 +58,30 @@ internal open class Point internal constructor(
     // JSXGraph: src/base/point.js -> bounds
     internal fun bounds(): DoubleArray =
         doubleArrayOf(X(), Y(), X(), Y())
+
+    // JSXGraph: src/base/point.js -> isOn
+    internal fun isOn(
+        element: GeometryElement,
+        tolerance: Double = Mat.eps,
+    ): Boolean {
+        val resolvedTolerance =
+            if (tolerance == 0.0 || tolerance.isNaN()) {
+                Mat.eps
+            } else {
+                tolerance
+            }
+
+        return when (element) {
+            is Point -> Dist(element) < resolvedTolerance
+            is Line ->
+                Geometry.distPointLine(coords.usrCoords, element.stdform) <
+                    resolvedTolerance
+            is Circle ->
+                abs(Dist(element.center) - element.Radius()) <
+                    resolvedTolerance
+            else -> false
+        }
+    }
 
     internal companion object {
         private const val POINT_ID_PREFIX = "P"
