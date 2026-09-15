@@ -48,10 +48,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.swithun.jsxgraph.compose.JsxGraphScenePreview
+import com.swithun.jsxgraph.compose.JsxGraphBoard
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.JsxGraphEngine
 import com.swithun.jsxgraph.core.JsxGraphScene
+import com.swithun.jsxgraph.core.JsxGraphSession
 
 enum class JsxGraphDebugPreview {
     Source,
@@ -142,9 +143,9 @@ private fun ParityWorkspace(
     val parityCase = remember(options.parityCaseId, options.sourceOverride) {
         resolveParityCase(options)
     }
-    val parsedScene = remember(parityCase) {
+    val session = remember(parityCase) {
         when (parityCase) {
-            is GMResult.Ok -> parseParitySource(parityCase.value.source)
+            is GMResult.Ok -> createParitySession(parityCase.value.source)
             is GMResult.Err -> GMResult.Err(parityCase.error)
         }
     }
@@ -156,9 +157,9 @@ private fun ParityWorkspace(
             is GMResult.Ok -> "jsxgraph-audit:ready"
             is GMResult.Err -> "jsxgraph-audit:error:${parityCase.error}"
         }
-        JsxGraphDebugPreview.Native -> when (parsedScene) {
+        JsxGraphDebugPreview.Native -> when (session) {
             is GMResult.Ok -> "jsxgraph-audit:ready"
-            is GMResult.Err -> "jsxgraph-audit:error:${parsedScene.error}"
+            is GMResult.Err -> "jsxgraph-audit:error:${session.error}"
         }
         JsxGraphDebugPreview.Official -> when (val result = officialResult) {
             OfficialRenderResult.Loading -> "jsxgraph-audit:loading"
@@ -184,7 +185,7 @@ private fun ParityWorkspace(
         ) {
             ParityPreview(
                 parityCase = parityCase,
-                parsedScene = parsedScene,
+                session = session,
                 preview = preview,
                 onOfficialResult = { officialResult = it },
             )
@@ -205,7 +206,7 @@ private fun ParityWorkspace(
         DebugContent(
             contentPadding = contentPadding,
             parityCase = parityCase,
-            parsedScene = parsedScene,
+            session = session,
             preview = preview,
             onPreviewChange = { preview = it },
             onOfficialResult = { officialResult = it },
@@ -218,7 +219,7 @@ private fun ParityWorkspace(
 private fun DebugContent(
     contentPadding: PaddingValues,
     parityCase: GMResult<JsxGraphParityCase, String>,
-    parsedScene: GMResult<JsxGraphScene, String>,
+    session: GMResult<JsxGraphSession, String>,
     preview: JsxGraphDebugPreview,
     onPreviewChange: (JsxGraphDebugPreview) -> Unit,
     onOfficialResult: (OfficialRenderResult) -> Unit,
@@ -321,7 +322,7 @@ private fun DebugContent(
             ) {
                 ParityPreview(
                     parityCase = parityCase,
-                    parsedScene = parsedScene,
+                    session = session,
                     preview = preview,
                     onOfficialResult = onOfficialResult,
                 )
@@ -346,7 +347,7 @@ private fun DebugContent(
 @Composable
 private fun ParityPreview(
     parityCase: GMResult<JsxGraphParityCase, String>,
-    parsedScene: GMResult<JsxGraphScene, String>,
+    session: GMResult<JsxGraphSession, String>,
     preview: JsxGraphDebugPreview,
     onOfficialResult: (OfficialRenderResult) -> Unit,
 ) {
@@ -361,12 +362,12 @@ private fun ParityPreview(
                 modifier = Modifier.fillMaxSize(),
                 onRenderResult = onOfficialResult,
             )
-            JsxGraphDebugPreview.Native -> when (parsedScene) {
-                is GMResult.Ok -> JsxGraphScenePreview(
-                    scene = parsedScene.value,
+            JsxGraphDebugPreview.Native -> when (session) {
+                is GMResult.Ok -> JsxGraphBoard(
+                    session = session.value,
                     modifier = Modifier.fillMaxSize(),
                 )
-                is GMResult.Err -> ErrorPreview(parsedScene.error)
+                is GMResult.Err -> ErrorPreview(session.error)
             }
         }
     }
@@ -454,6 +455,14 @@ internal fun parseParitySource(
     source: String,
 ): GMResult<JsxGraphScene, String> =
     when (val result = JsxGraphEngine.parse(source)) {
+        is GMResult.Ok -> result
+        is GMResult.Err -> GMResult.Err(result.error.message)
+    }
+
+internal fun createParitySession(
+    source: String,
+): GMResult<JsxGraphSession, String> =
+    when (val result = JsxGraphEngine.createSession(source)) {
         is GMResult.Ok -> result
         is GMResult.Err -> GMResult.Err(result.error.message)
     }

@@ -166,7 +166,7 @@ const val DEFAULT_PARITY_SOURCE: String = """
         "strokeColor": "#E0A11A",
         "fillColor": "#E0A11A",
         "strokeWidth": 2,
-        "fixed": true,
+        "fixed": false,
         "highlight": false
       }
     },

@@ -68,6 +68,7 @@ sealed interface JsxGraphSceneElement {
         val coordinates: JsxGraphPoint2D,
         val size: Double,
         val face: String,
+        val draggable: Boolean = false,
     ) : JsxGraphSceneElement
 
     data class Line(

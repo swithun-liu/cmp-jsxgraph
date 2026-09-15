@@ -105,6 +105,25 @@ jobs:
           MIN_BOARD_SSIM=0.90 \
           npm --prefix tools/visual-parity run audit
 
+      - name: Capture Point drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=${{ matrix.minimum_bytes }} \
+          PARITY_CASE_IDS=baseline_geometry \
+          INTERACTION_TRACE=baseline_point_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Point drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/interaction \
+          MIN_CAPTURE_BYTES=${{ matrix.minimum_bytes }} \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=baseline_geometry \
+          npm --prefix tools/visual-parity run audit
+
       - name: Upload visual parity evidence
         if: always()
         uses: actions/upload-artifact@v4

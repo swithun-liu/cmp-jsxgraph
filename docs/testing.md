@@ -49,10 +49,23 @@ INPUT_DIR=captures/local/web-parity/current \
   npm --prefix tools/visual-parity run audit
 ```
 
+Replay the production Point drag against both renderers:
+
+```bash
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/web-interaction/current \
+  PARITY_CASE_IDS=baseline_geometry \
+  INTERACTION_TRACE=baseline_point_drag \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/web-interaction/current \
+  PARITY_CASE_IDS=baseline_geometry \
+  npm --prefix tools/visual-parity run audit
+```
+
 The scheduled `Visual Parity` workflow runs the same audit at `1200 x 900` and
 `390 x 844`, requires nontrivial captures, enforces a provisional board SSIM
-floor of `0.90`, and uploads the PNG pairs, contact sheets, TSV summary, and
-JSON report as workflow artifacts.
+floor of `0.90`, repeats `baseline_point_drag`, and uploads the PNG pairs,
+contact sheets, TSV summaries, and JSON reports as workflow artifacts.
 
 Capture the same source as source text, official JSXGraph, and Compose Canvas:
 
@@ -120,6 +133,18 @@ translated horizontal/vertical anchor directions.
 The circular-region capture verifies degree-three Bezier paths, Arc
 selection/orientation, filled Sector geometry, and fixed-radius Angle
 geometry.
+The baseline Native preview additionally exposes its amber Point through the
+production `JsxGraphSession` interaction path. Core behavior tests verify the
+same Point movement, dependent constrained-Point/Line/Circle updates,
+interaction-state capture/reset/restore, fixed/constrained rejection, and
+atomic rollback when a drag would produce invalid geometry. Compose tests
+verify upstream Point hit tolerance, visibility/fixed filtering, and reverse
+creation-order priority.
+
+The source-controlled `baseline_point_drag` trace moves the amber Point from
+`(3.2, 2.1)` to `(1.1, 0.55)` in both renderers. The latest post-drag
+Native/Official full-board SSIM was `0.984672` on Desktop and `0.973887` on
+Compact; both profiles completed without browser errors.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:
@@ -155,7 +180,8 @@ sample:
 3. Geometry is compared for viewport, axes, object bounds, intersections, and
    relative placement.
 4. Text, color, stroke, point, and interaction differences are reviewed.
-5. Behavior tests cover source changes, tab changes, and state restoration.
+5. Behavior tests cover source/session replacement, preview-tab retention,
+   Point drag dependency updates, and interaction-state restoration.
 6. Screen captures cover compact, medium, and expanded widths and representative
    heights, plus 1.5 font scale.
 7. Android, iOS Simulator, JVM, and Wasm builds remain green.

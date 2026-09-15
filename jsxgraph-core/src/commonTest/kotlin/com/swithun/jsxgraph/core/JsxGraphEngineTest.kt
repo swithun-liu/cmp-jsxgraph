@@ -592,6 +592,137 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun sessionMovesFreePointsAndUpdatesDependentElements() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(REFERENCE_SOURCE),
+        ).value
+        val initialPoints = session.scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+        assertEquals(true, initialPoints[0].draggable)
+        assertEquals(false, initialPoints[1].draggable)
+        assertEquals(
+            mapOf("A" to JsxGraphPoint2D(1.0, 2.0)),
+            session.captureInteractionState().pointCoordinates,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "A",
+                coordinates = JsxGraphPoint2D(2.0, 3.0),
+            ),
+        ).value
+        val movedPoints = moved.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+        assertEquals(JsxGraphPoint2D(2.0, 3.0), movedPoints[0].coordinates)
+        assertEquals(JsxGraphPoint2D(4.0, 2.0), movedPoints[1].coordinates)
+        val movedLine = assertIs<JsxGraphSceneElement.Line>(
+            moved.elements[2],
+        )
+        assertEquals(movedPoints[0].coordinates, movedLine.point1)
+        assertEquals(movedPoints[1].coordinates, movedLine.point2)
+        assertEquals(
+            JsxGraphPoint2D(2.0, 3.0),
+            assertIs<JsxGraphSceneElement.Circle>(
+                moved.elements[3],
+            ).center,
+        )
+
+        val reset = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.resetInteractionState(),
+        ).value
+        assertEquals(
+            JsxGraphPoint2D(1.0, 2.0),
+            assertIs<JsxGraphSceneElement.Point>(
+                reset.elements[0],
+            ).coordinates,
+        )
+    }
+
+    @Test
+    fun sessionRestoresStateAndRejectsInvalidMovesAtomically() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"A",
+                      "type":"point",
+                      "parents":[0,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"B",
+                      "type":"point",
+                      "parents":[2,0],
+                      "attributes":{"name":"","withLabel":false,"fixed":true}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"line",
+                      "type":"line",
+                      "parents":["A","B"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "straightFirst":false,
+                        "straightLast":false
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        assertIs<GMResult.Err<JsxGraphInteractionError.PointNotDraggable>>(
+            session.movePoint("B", JsxGraphPoint2D(3.0, 1.0)),
+        )
+        assertIs<GMResult.Err<JsxGraphInteractionError.NonFiniteCoordinates>>(
+            session.movePoint("A", JsxGraphPoint2D(Double.NaN, 1.0)),
+        )
+        assertIs<GMResult.Err<JsxGraphInteractionError.SceneUpdate>>(
+            session.movePoint("A", JsxGraphPoint2D(2.0, 0.0)),
+        )
+        assertEquals(
+            JsxGraphPoint2D(0.0, 0.0),
+            assertIs<JsxGraphSceneElement.Point>(
+                session.scene.elements[0],
+            ).coordinates,
+        )
+
+        val restored = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.restoreInteractionState(
+                JsxGraphInteractionState(
+                    pointCoordinates =
+                        mapOf("A" to JsxGraphPoint2D(-1.5, 2.5)),
+                ),
+            ),
+        ).value
+        assertEquals(
+            JsxGraphPoint2D(-1.5, 2.5),
+            assertIs<JsxGraphSceneElement.Point>(
+                restored.elements[0],
+            ).coordinates,
+        )
+        assertIs<GMResult.Err<JsxGraphInteractionError.UnknownPoint>>(
+            session.restoreInteractionState(
+                JsxGraphInteractionState(
+                    pointCoordinates =
+                        mapOf("missing" to JsxGraphPoint2D(0.0, 0.0)),
+                ),
+            ),
+        )
+        assertEquals(
+            JsxGraphPoint2D(-1.5, 2.5),
+            assertIs<JsxGraphSceneElement.Point>(
+                session.scene.elements[0],
+            ).coordinates,
+        )
+    }
+
+    @Test
     fun rejectsUnsupportedRightAngleDisplayInsteadOfChangingItsShape() {
         val error = assertError(
             documentWithObjects(

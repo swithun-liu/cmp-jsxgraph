@@ -17,6 +17,7 @@ const minimumCaptureBytes = readPositiveNumber(
     "MIN_CAPTURE_BYTES",
     5_000
 );
+const interactionTrace = readInteractionTrace();
 const previews = ["native", "official"];
 const pageErrors = [];
 
@@ -57,15 +58,37 @@ try {
                 requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
             }));
             await new Promise((resolveWait) => setTimeout(resolveWait, 500));
+            let beforeInteraction = null;
+            if (interactionTrace?.caseId === caseId) {
+                beforeInteraction = await page.screenshot({
+                    omitBackground: false
+                });
+                await dragPoint(page, interactionTrace);
+                await page.evaluate(() => new Promise((resolveFrame) => {
+                    requestAnimationFrame(() => requestAnimationFrame(resolveFrame));
+                }));
+                await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+            }
 
             const target = resolve(
                 outputDirectory,
                 `${caseId}_${preview}.png`
             );
-            await page.screenshot({
+            const capture = await page.screenshot({
                 path: target,
                 omitBackground: false
             });
+            if (
+                beforeInteraction !== null &&
+                Buffer.compare(
+                    Buffer.from(beforeInteraction),
+                    Buffer.from(capture)
+                ) === 0
+            ) {
+                throw new Error(
+                    `${caseId}/${preview} interaction produced no visual change`
+                );
+            }
             const captureBytes = statSync(target).size;
             if (captureBytes < minimumCaptureBytes) {
                 throw new Error(
@@ -85,6 +108,66 @@ try {
     }
 } finally {
     await browser.close();
+}
+
+async function dragPoint(page, trace) {
+    const start = userToScreen(
+        trace.from,
+        trace.boundingBox,
+        viewportWidth,
+        viewportHeight
+    );
+    const end = userToScreen(
+        trace.to,
+        trace.boundingBox,
+        viewportWidth,
+        viewportHeight
+    );
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, {steps: 100});
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    await page.mouse.move(end.x, end.y);
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    await page.mouse.up();
+}
+
+function userToScreen(point, bounds, width, height) {
+    const requestedWidth = bounds.right - bounds.left;
+    const requestedHeight = bounds.top - bounds.bottom;
+    const scale = Math.min(
+        width / requestedWidth,
+        height / requestedHeight
+    );
+    const centerX = (bounds.left + bounds.right) * 0.5;
+    const centerY = (bounds.top + bounds.bottom) * 0.5;
+    const left = centerX - width * 0.5 / scale;
+    const top = centerY + height * 0.5 / scale;
+    return {
+        x: (point.x - left) * scale,
+        y: (top - point.y) * scale
+    };
+}
+
+function readInteractionTrace() {
+    const name = process.env.INTERACTION_TRACE;
+    if (name === undefined || name.length === 0) {
+        return null;
+    }
+    if (name !== "baseline_point_drag") {
+        throw new Error(`Unknown interaction trace: ${name}`);
+    }
+    return {
+        caseId: "baseline_geometry",
+        from: {x: 3.2, y: 2.1},
+        to: {x: 1.1, y: 0.55},
+        boundingBox: {
+            left: -6,
+            top: 5,
+            right: 6,
+            bottom: -5
+        }
+    };
 }
 
 function browserLaunchOptions() {

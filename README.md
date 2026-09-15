@@ -11,7 +11,9 @@ Multiplatform Canvas renderer.
 
 **[Open the live Kotlin/Wasm progress site](https://swithun-liu.github.io/cmp-jsxgraph/)**
 to inspect the roadmap and switch the same parity source between Source,
-official JSXGraph `1.13.3`, and native Compose Canvas rendering.
+official JSXGraph `1.13.3`, and native Compose Canvas rendering. In the
+baseline Native preview, drag the amber point to exercise the production Board
+session and dependent-line update path.
 
 Current parity cases:
 [baseline](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=baseline_geometry),
@@ -78,6 +80,12 @@ Implemented translation slices:
   for explicit-domain function and parametric curves, cubic Bezier arcs,
   filled sectors, fixed-radius angles, filled/bordered polygons, and anchored
   Canvas text using a bundled Arial-compatible font;
+- a production `JsxGraphSession` that retains translated Board state, moves
+  free non-fixed Points, updates dependent geometry, captures/restores
+  interaction state, and rolls back moves that would make the scene invalid;
+- `JsxGraphBoard`, a Compose Canvas surface with upstream-compatible Point hit
+  tolerance, pointer capture, drag-offset preservation, and explicit
+  interaction errors;
 - an interactive Compose geometry playground backed by the translated
   line-circle intersection math;
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
@@ -160,6 +168,12 @@ cubic Bezier rendering. Angle supports the three-point form with numeric or
 `auto` radius and sector display. Unsupported types, parent forms, rich-text
 features, plotting modes, nested styles, and visual attributes fail explicitly
 instead of being omitted from the native render.
+
+For interactive rendering, `JsxGraphEngine.createSession(source)` returns a
+`JsxGraphSession`. Pass that session to `JsxGraphBoard`; use
+`captureInteractionState()` and `restoreInteractionState(...)` to preserve
+free Point positions across screen or process recreation. Fixed, constrained,
+hidden, and non-Point elements are not draggable.
 
 ## Build
 

@@ -200,6 +200,172 @@ sealed interface JsxGraphDocumentError {
     }
 }
 
+data class JsxGraphInteractionState(
+    val pointCoordinates: Map<String, JsxGraphPoint2D>,
+)
+
+sealed interface JsxGraphInteractionError {
+    data class UnknownPoint(
+        val id: String,
+    ) : JsxGraphInteractionError
+
+    data class PointNotDraggable(
+        val id: String,
+    ) : JsxGraphInteractionError
+
+    data class NonFiniteCoordinates(
+        val id: String,
+        val coordinates: JsxGraphPoint2D,
+    ) : JsxGraphInteractionError
+
+    data class StateSizeExceeded(
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphInteractionError
+
+    data class SceneUpdate(
+        val error: JsxGraphDocumentError,
+    ) : JsxGraphInteractionError
+}
+
+/**
+ * Mutable production Board session for Point interaction.
+ *
+ * The session owns the translated Board. Compose and other clients only
+ * exchange portable scene snapshots and explicit interaction state.
+ */
+class JsxGraphSession internal constructor(
+    private val board: Board,
+    private val points: Map<String, SessionPoint>,
+    initialScene: JsxGraphScene,
+    private val snapshotScene: () -> GMResult<
+        JsxGraphScene,
+        JsxGraphDocumentError,
+        >,
+) {
+    private val initialInteractionState = captureInteractionState()
+
+    var scene: JsxGraphScene = initialScene
+        private set
+
+    fun movePoint(
+        id: String,
+        coordinates: JsxGraphPoint2D,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        val point = when (val result = draggablePoint(id, coordinates)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val previous = point.Coords()
+        point.setPositionDirectly(
+            method = com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(coordinates.x, coordinates.y),
+        )
+        board.update(draggedElement = point)
+        return commitOrRollback(mapOf(point to previous))
+    }
+
+    fun captureInteractionState(): JsxGraphInteractionState {
+        val coordinates = linkedMapOf<String, JsxGraphPoint2D>()
+        for ((id, handle) in points) {
+            if (handle.draggable) {
+                coordinates[id] = JsxGraphPoint2D(
+                    x = handle.point.X(),
+                    y = handle.point.Y(),
+                )
+            }
+        }
+        return JsxGraphInteractionState(coordinates)
+    }
+
+    fun restoreInteractionState(
+        state: JsxGraphInteractionState,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        if (state.pointCoordinates.size > points.size) {
+            return GMResult.Err(
+                JsxGraphInteractionError.StateSizeExceeded(
+                    limit = points.size,
+                    actual = state.pointCoordinates.size,
+                ),
+            )
+        }
+        val resolved = mutableListOf<Pair<Point, JsxGraphPoint2D>>()
+        for ((id, coordinates) in state.pointCoordinates) {
+            when (val result = draggablePoint(id, coordinates)) {
+                is GMResult.Ok -> resolved += result.value to coordinates
+                is GMResult.Err -> return result
+            }
+        }
+        val previous = resolved.associate { (point, _) ->
+            point to point.Coords()
+        }
+        for ((point, coordinates) in resolved) {
+            point.setPositionDirectly(
+                method = com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(coordinates.x, coordinates.y),
+            )
+        }
+        board.fullUpdate()
+        return commitOrRollback(previous)
+    }
+
+    fun resetInteractionState():
+        GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        restoreInteractionState(initialInteractionState)
+
+    private fun draggablePoint(
+        id: String,
+        coordinates: JsxGraphPoint2D,
+    ): GMResult<Point, JsxGraphInteractionError> {
+        val handle = points[id]
+            ?: return GMResult.Err(
+                JsxGraphInteractionError.UnknownPoint(id),
+            )
+        if (!handle.draggable) {
+            return GMResult.Err(
+                JsxGraphInteractionError.PointNotDraggable(id),
+            )
+        }
+        if (!coordinates.x.isFinite() || !coordinates.y.isFinite()) {
+            return GMResult.Err(
+                JsxGraphInteractionError.NonFiniteCoordinates(
+                    id = id,
+                    coordinates = coordinates,
+                ),
+            )
+        }
+        return GMResult.Ok(handle.point)
+    }
+
+    private fun commitOrRollback(
+        previous: Map<Point, DoubleArray>,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        when (val result = snapshotScene()) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> {
+                for ((point, coordinates) in previous) {
+                    point.setPositionDirectly(
+                        method =
+                            com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
+                        coordinates = coordinates,
+                    )
+                }
+                board.fullUpdate()
+                GMResult.Err(
+                    JsxGraphInteractionError.SceneUpdate(result.error),
+                )
+            }
+        }
+}
+
+internal data class SessionPoint(
+    val point: Point,
+    val draggable: Boolean,
+)
+
 /**
  * Parses the construction document, creates translated Board elements through
  * the native creator registry, and snapshots those elements into a portable
@@ -209,7 +375,16 @@ object JsxGraphEngine {
     fun parse(
         source: String,
         limits: JsxGraphEngineLimits = JsxGraphEngineLimits(),
-    ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
+    ): GMResult<JsxGraphScene, JsxGraphDocumentError> =
+        when (val result = createSession(source, limits)) {
+            is GMResult.Ok -> GMResult.Ok(result.value.scene)
+            is GMResult.Err -> result
+        }
+
+    fun createSession(
+        source: String,
+        limits: JsxGraphEngineLimits = JsxGraphEngineLimits(),
+    ): GMResult<JsxGraphSession, JsxGraphDocumentError> {
         validateLimits(limits)?.let { error ->
             return GMResult.Err(error)
         }
@@ -249,12 +424,12 @@ object JsxGraphEngine {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        return createScene(document)
+        return createSession(document)
     }
 
-    private fun createScene(
+    private fun createSession(
         document: ParsedDocument,
-    ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
+    ): GMResult<JsxGraphSession, JsxGraphDocumentError> {
         val board = Board(
             originX = 0.0,
             originY = 0.0,
@@ -317,6 +492,40 @@ object JsxGraphEngine {
         }
 
         board.fullUpdate()
+        val scene = when (
+            val result = snapshotScene(document, created)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val scenePoints = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+            .associateBy(JsxGraphSceneElement.Point::id)
+        val sessionPoints = linkedMapOf<String, SessionPoint>()
+        for (sourceElement in created) {
+            val point = sourceElement.element as? Point ?: continue
+            val scenePoint = scenePoints[sourceElement.source.id] ?: continue
+            sessionPoints[sourceElement.source.id] = SessionPoint(
+                point = point,
+                draggable = scenePoint.draggable,
+            )
+        }
+        return GMResult.Ok(
+            JsxGraphSession(
+                board = board,
+                points = sessionPoints,
+                initialScene = scene,
+                snapshotScene = {
+                    snapshotScene(document, created)
+                },
+            ),
+        )
+    }
+
+    private fun snapshotScene(
+        document: ParsedDocument,
+        created: List<CreatedSourceElement>,
+    ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
         val sceneElements = mutableListOf<JsxGraphSceneElement>()
         for (sourceElement in created) {
             when (val result = sceneElement(sourceElement)) {
@@ -400,6 +609,15 @@ object JsxGraphEngine {
                         ),
                     )
                 }
+                val fixed = when (
+                    val result = attributes.boolean(
+                        name = "fixed",
+                        default = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
                 JsxGraphSceneElement.Point(
                     id = element.id,
                     name = element.name,
@@ -407,6 +625,10 @@ object JsxGraphEngine {
                     coordinates = coordinates,
                     size = size,
                     face = face,
+                    draggable =
+                        element.isDraggable &&
+                            !fixed &&
+                            style.visible,
                 )
             }
 

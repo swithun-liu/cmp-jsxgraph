@@ -7,7 +7,10 @@ package com.swithun.jsxgraph.compose
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,13 +64,19 @@ import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.JsxGraphColor
+import com.swithun.jsxgraph.core.JsxGraphInteractionError
+import com.swithun.jsxgraph.core.JsxGraphInteractionState
+import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
+import com.swithun.jsxgraph.core.JsxGraphSession
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.hypot
 import kotlin.math.log10
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -246,8 +256,11 @@ fun JsxGraphGeometryPreview(
 fun JsxGraphScenePreview(
     scene: JsxGraphScene,
     modifier: Modifier = Modifier,
+    onPointDrag: ((String, JsxGraphPoint2D) -> Unit)? = null,
 ) {
     val textMeasurer = rememberTextMeasurer()
+    val currentScene by rememberUpdatedState(scene)
+    val currentOnPointDrag by rememberUpdatedState(onPointDrag)
     val axisFontFamily = FontFamily(
         Font(
             resource = Res.font.arimo_regular,
@@ -258,18 +271,46 @@ fun JsxGraphScenePreview(
     Canvas(
         modifier = modifier
             .background(BoardBackground)
-            .border(1.dp, Color(0xFFD4DADF)),
+            .border(1.dp, Color(0xFFD4DADF))
+            .pointerInput(onPointDrag != null) {
+                if (currentOnPointDrag == null) {
+                    return@pointerInput
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val metrics = currentScene.boardMetrics(
+                        width = size.width.toFloat(),
+                        height = size.height.toFloat(),
+                    )
+                    val point = draggablePointAt(
+                        scene = currentScene,
+                        position = down.position,
+                        width = size.width.toFloat(),
+                        height = size.height.toFloat(),
+                        density = density,
+                    ) ?: return@awaitEachGesture
+                    val dragOffset =
+                        metrics.toScreen(point.coordinates.toOffset()) -
+                            down.position
+                    drag(down.id) { change ->
+                        val metrics = currentScene.boardMetrics(
+                            width = size.width.toFloat(),
+                            height = size.height.toFloat(),
+                        )
+                        val user = metrics.toUser(change.position + dragOffset)
+                        change.consume()
+                        currentOnPointDrag?.invoke(
+                            point.id,
+                            JsxGraphPoint2D(
+                                x = user.x.toDouble(),
+                                y = user.y.toDouble(),
+                            ),
+                        )
+                    }
+                }
+            },
     ) {
-        val bounds = scene.boundingBox
-        val metrics = BoardMetrics(
-            width = size.width,
-            height = size.height,
-            requestedLeft = bounds.left.toFloat(),
-            requestedTop = bounds.top.toFloat(),
-            requestedRight = bounds.right.toFloat(),
-            requestedBottom = bounds.bottom.toFloat(),
-            keepAspectRatio = scene.keepAspectRatio,
-        )
+        val metrics = scene.boardMetrics(size.width, size.height)
         val horizontalMajorStep = metrics.majorTickDistance(
             visibleDistance = metrics.right - metrics.left,
             density = density,
@@ -322,6 +363,77 @@ fun JsxGraphScenePreview(
             }
         }
     }
+}
+
+@Composable
+fun JsxGraphBoard(
+    session: JsxGraphSession,
+    modifier: Modifier = Modifier,
+    onInteractionStateChange: (JsxGraphInteractionState) -> Unit = {},
+    onInteractionError: (JsxGraphInteractionError) -> Unit = {},
+) {
+    var scene by remember(session) {
+        mutableStateOf(session.scene)
+    }
+    val currentOnStateChange by rememberUpdatedState(onInteractionStateChange)
+    val currentOnError by rememberUpdatedState(onInteractionError)
+    JsxGraphScenePreview(
+        scene = scene,
+        modifier = modifier,
+        onPointDrag = { id, coordinates ->
+            when (val result = session.movePoint(id, coordinates)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value
+                    currentOnStateChange(session.captureInteractionState())
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+    )
+}
+
+internal fun draggablePointAt(
+    scene: JsxGraphScene,
+    position: Offset,
+    width: Float,
+    height: Float,
+    density: Float,
+): JsxGraphSceneElement.Point? {
+    val metrics = scene.boardMetrics(width, height)
+    return scene.elements
+        .asReversed()
+        .filterIsInstance<JsxGraphSceneElement.Point>()
+        .firstOrNull { point ->
+            if (!point.style.visible || !point.draggable) {
+                return@firstOrNull false
+            }
+            val center = metrics.toScreen(point.coordinates.toOffset())
+            // JSXGraph: src/base/point.js -> hasPoint.
+            val radius = max(
+                point.size.toFloat() * density +
+                    point.style.strokeWidth.toFloat() * density * 0.5f,
+                POINT_HIT_PRECISION_DP * density,
+            ) + POINT_HIT_PADDING_DP * density
+            abs(center.x - position.x) < radius &&
+                abs(center.y - position.y) < radius
+        }
+}
+
+private fun JsxGraphScene.boardMetrics(
+    width: Float,
+    height: Float,
+): BoardMetrics {
+    val bounds = boundingBox
+    return BoardMetrics(
+        width = width,
+        height = height,
+        requestedLeft = bounds.left.toFloat(),
+        requestedTop = bounds.top.toFloat(),
+        requestedRight = bounds.right.toFloat(),
+        requestedBottom = bounds.bottom.toFloat(),
+        keepAspectRatio = keepAspectRatio,
+    )
 }
 
 private fun DrawScope.drawGrid(
@@ -1118,7 +1230,7 @@ private fun DrawScope.drawFunction(
     )
 }
 
-private data class BoardMetrics(
+internal data class BoardMetrics(
     val width: Float,
     val height: Float,
     val requestedLeft: Float = -6.0f,
@@ -1165,6 +1277,9 @@ private data class BoardMetrics(
             cssPixelsPerUnit = pixelsPerUnit / density,
         )
 }
+
+private const val POINT_HIT_PRECISION_DP = 4.0f
+private const val POINT_HIT_PADDING_DP = 2.0f
 
 // JSXGraph: src/base/ticks.js -> getDistanceMajorTicks.
 internal fun jsxGraphMajorTickDistance(

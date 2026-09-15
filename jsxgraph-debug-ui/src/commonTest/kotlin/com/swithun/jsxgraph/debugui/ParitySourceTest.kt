@@ -1,8 +1,11 @@
 package com.swithun.jsxgraph.debugui
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphInteractionState
+import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
+import com.swithun.jsxgraph.core.JsxGraphSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -64,6 +67,44 @@ class ParitySourceTest {
 
         assertEquals(5, texts.size)
         assertEquals("A.x = 2.0", texts.last().content)
+    }
+
+    @Test
+    fun baselineSessionRestoresTheDraggableControlPoint() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            createParitySession(DEFAULT_PARITY_SOURCE),
+        ).value
+        assertEquals(
+            setOf("B"),
+            session.captureInteractionState().pointCoordinates.keys,
+        )
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint("B", JsxGraphPoint2D(1.5, 3.0)),
+        ).value
+        assertEquals(
+            JsxGraphPoint2D(1.5, 3.0),
+            assertIs<JsxGraphSceneElement.Line>(
+                moved.elements[2],
+            ).point2,
+        )
+
+        val restoredSession = assertIs<GMResult.Ok<JsxGraphSession>>(
+            createParitySession(DEFAULT_PARITY_SOURCE),
+        ).value
+        val restored = assertIs<GMResult.Ok<JsxGraphScene>>(
+            restoredSession.restoreInteractionState(
+                JsxGraphInteractionState(
+                    pointCoordinates =
+                        session.captureInteractionState().pointCoordinates,
+                ),
+            ),
+        ).value
+        assertEquals(
+            JsxGraphPoint2D(1.5, 3.0),
+            assertIs<JsxGraphSceneElement.Point>(
+                restored.elements[1],
+            ).coordinates,
+        )
     }
 
     @Test

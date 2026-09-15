@@ -34,6 +34,15 @@ practical.
   coordinate-array parents remain in the internal Board. Polygon-owned helper
   Points are represented as Polygon scene sub-elements; other helpers are not
   emitted as top-level source elements.
+- `JsxGraphEngine.createSession` retains the translated Board for production
+  interaction while `parse` remains the immutable one-shot API. The current
+  interaction subset moves visible, free, non-fixed top-level Points with
+  upstream Point hit tolerance and reverse creation-order priority. Each move
+  runs the Board update lifecycle and snapshots all dependent source elements.
+  State capture/reset/restore is explicit and a move or restore that produces
+  invalid scene geometry is rolled back atomically. Point events, hover
+  styling, multi-pointer gestures, keyboard movement, object dragging, pan,
+  zoom, snapping, gliders, groups, and transformations remain pending.
 - The translated Curve subset accepts two numeric arrays for a discrete data
   plot, four number/string terms for an explicit-domain parametric curve, or
   three number/string terms for FunctionGraph/Plot. Continuous curves require
