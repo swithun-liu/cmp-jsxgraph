@@ -89,6 +89,130 @@ class GeometryBezierTest {
     }
 
     @Test
+    fun bezierSubdivisionFindsAndDeduplicatesCrossing() {
+        val intersections = Geometry.meetBeziersegmentBeziersegment(
+            red = listOf(
+                doubleArrayOf(0.0, 0.0),
+                doubleArrayOf(1.0, 1.0),
+                doubleArrayOf(2.0, 2.0),
+                doubleArrayOf(3.0, 3.0),
+            ),
+            blue = listOf(
+                doubleArrayOf(0.0, 3.0),
+                doubleArrayOf(1.0, 2.0),
+                doubleArrayOf(2.0, 1.0),
+                doubleArrayOf(3.0, 0.0),
+            ),
+            testSegment = true,
+        )
+
+        assertEquals(1, intersections.size)
+        assertIntersection(
+            intersection = intersections[0],
+            expectedX = 1.5,
+            expectedY = 1.5,
+            expectedFirstParameter = 0.5,
+            expectedSecondParameter = 0.5,
+        )
+        assertTrue(
+            Geometry.meetBeziersegmentBeziersegment(
+                red = listOf(
+                    doubleArrayOf(0.0, 0.0),
+                    doubleArrayOf(1.0, 0.0),
+                    doubleArrayOf(2.0, 0.0),
+                    doubleArrayOf(3.0, 0.0),
+                ),
+                blue = listOf(
+                    doubleArrayOf(0.0, 2.0),
+                    doubleArrayOf(1.0, 2.0),
+                    doubleArrayOf(2.0, 2.0),
+                    doubleArrayOf(3.0, 2.0),
+                ),
+                testSegment = true,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun bezierLineSubdivisionMatchesOfficialThreeRootReference() {
+        val intersections = Geometry.meetBeziersegmentBeziersegment(
+            red = curve,
+            blue = listOf(
+                doubleArrayOf(0.0, 1.0),
+                doubleArrayOf(4.0, 1.0),
+            ),
+            testSegment = true,
+        )
+
+        assertEquals(3, intersections.size)
+        assertIntersection(
+            intersection = intersections[0],
+            expectedX = 0.5267170856197547,
+            expectedY = 1.0,
+            expectedFirstParameter = 0.17378147191736604,
+            expectedSecondParameter = 0.13167927140493868,
+        )
+        assertIntersection(
+            intersection = intersections[1],
+            expectedX = 1.625,
+            expectedY = 1.0,
+            expectedFirstParameter = 0.5,
+            expectedSecondParameter = 0.40625,
+        )
+        assertIntersection(
+            intersection = intersections[2],
+            expectedX = 3.043260016542931,
+            expectedY = 1.0,
+            expectedFirstParameter = 0.826218528082634,
+            expectedSecondParameter = 0.7608150041357328,
+        )
+    }
+
+    @Test
+    fun lineSubdivisionPreservesOfficialRecursiveSegmentFlagBehavior() {
+        val shortSegment = listOf(
+            doubleArrayOf(0.0, 1.0),
+            doubleArrayOf(0.2, 1.0),
+        )
+        val segmentIntersections = Geometry.meetBeziersegmentBeziersegment(
+            red = curve,
+            blue = shortSegment,
+            testSegment = true,
+        )
+        val lineIntersections = Geometry.meetBeziersegmentBeziersegment(
+            red = curve,
+            blue = shortSegment,
+            testSegment = false,
+        )
+
+        assertEquals(3, segmentIntersections.size)
+        assertEquals(3, lineIntersections.size)
+        for (index in segmentIntersections.indices) {
+            assertIntersection(
+                intersection = segmentIntersections[index],
+                expectedX = lineIntersections[index].point[1],
+                expectedY = lineIntersections[index].point[2],
+                expectedFirstParameter =
+                    lineIntersections[index].firstParameter,
+                expectedSecondParameter =
+                    lineIntersections[index].secondParameter,
+            )
+            assertTrue(segmentIntersections[index].secondParameter > 1.0)
+        }
+
+        assertTrue(
+            Geometry.meetBeziersegmentBeziersegment(
+                red = curve,
+                blue = listOf(
+                    doubleArrayOf(10.0, 1.0),
+                    doubleArrayOf(11.0, 1.0),
+                ),
+                testSegment = true,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
     fun bezierSegmentEvaluationMatchesOfficialReferencesAndExtrapolation() {
         assertContentEquals(
             doubleArrayOf(1.0, -4.0, -44.0),
@@ -226,6 +350,36 @@ class GeometryBezierTest {
         x: Double,
         y: Double,
     ): DoubleArray = doubleArrayOf(1.0, x, y)
+
+    private fun assertIntersection(
+        intersection: SegmentIntersection,
+        expectedX: Double,
+        expectedY: Double,
+        expectedFirstParameter: Double,
+        expectedSecondParameter: Double,
+    ) {
+        assertEquals(1.0, intersection.point[0])
+        assertEquals(
+            expectedX,
+            intersection.point[1],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            expectedY,
+            intersection.point[2],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            expectedFirstParameter,
+            intersection.firstParameter,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            expectedSecondParameter,
+            intersection.secondParameter,
+            absoluteTolerance = 1.0e-12,
+        )
+    }
 
     private fun assertNestedContentEquals(
         expected: List<DoubleArray>,

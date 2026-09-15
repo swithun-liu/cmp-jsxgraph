@@ -43,6 +43,7 @@ data class ProjectionResult(
 
 object Geometry {
     private const val AKL_TOUSSAINT_THRESHOLD = 1024
+    private const val BEZIER_SUBDIVISION_MAX_LEVEL = 5
 
     // JSXGraph: src/math/geometry.js -> angle
     fun angle(
@@ -964,6 +965,213 @@ object Geometry {
             firstBoundingBox[0] <= secondBoundingBox[2] &&
             firstBoundingBox[1] >= secondBoundingBox[3] &&
             firstBoundingBox[3] <= secondBoundingBox[1]
+
+    // JSXGraph: src/math/geometry.js -> _bezierListConcat
+    private fun bezierListConcat(
+        destination: MutableList<SegmentIntersection>,
+        additions: List<SegmentIntersection>,
+        firstOffset: Double,
+        secondOffset: Double? = null,
+    ) {
+        val start = if (
+            destination.isNotEmpty() &&
+            additions.isNotEmpty() &&
+            (
+                (
+                    destination.last().firstParameter == 1.0 &&
+                        additions.first().firstParameter == 0.0
+                ) ||
+                    (
+                        secondOffset != null &&
+                            destination.last().secondParameter == 1.0 &&
+                            additions.first().secondParameter == 0.0
+                    )
+            )
+        ) {
+            1
+        } else {
+            0
+        }
+
+        for (index in start until additions.size) {
+            val addition = additions[index]
+            destination += SegmentIntersection(
+                point = addition.point,
+                firstParameter = addition.firstParameter * 0.5 + firstOffset,
+                secondParameter = if (secondOffset != null) {
+                    addition.secondParameter * 0.5 + secondOffset
+                } else {
+                    addition.secondParameter
+                },
+            )
+        }
+    }
+
+    // JSXGraph: src/math/geometry.js -> _bezierMeetSubdivision
+    private fun bezierMeetSubdivision(
+        red: List<DoubleArray>,
+        blue: List<DoubleArray>,
+        level: Int,
+    ): List<SegmentIntersection> {
+        if (
+            !bezierOverlap(
+                bezierBoundingBox(blue),
+                bezierBoundingBox(red),
+            )
+        ) {
+            return emptyList()
+        }
+
+        if (level < BEZIER_SUBDIVISION_MAX_LEVEL) {
+            val redSplit = bezierSplit(red)
+            val blueSplit = bezierSplit(blue)
+            val intersections = mutableListOf<SegmentIntersection>()
+            bezierListConcat(
+                intersections,
+                bezierMeetSubdivision(redSplit[0], blueSplit[0], level + 1),
+                firstOffset = 0.0,
+                secondOffset = 0.0,
+            )
+            bezierListConcat(
+                intersections,
+                bezierMeetSubdivision(redSplit[0], blueSplit[1], level + 1),
+                firstOffset = 0.0,
+                secondOffset = 0.5,
+            )
+            bezierListConcat(
+                intersections,
+                bezierMeetSubdivision(redSplit[1], blueSplit[0], level + 1),
+                firstOffset = 0.5,
+                secondOffset = 0.0,
+            )
+            bezierListConcat(
+                intersections,
+                bezierMeetSubdivision(redSplit[1], blueSplit[1], level + 1),
+                firstOffset = 0.5,
+                secondOffset = 0.5,
+            )
+            return intersections
+        }
+
+        val intersection = meetSegmentSegment(
+            doubleArrayOf(1.0, red[0][0], red[0][1]),
+            doubleArrayOf(1.0, red[3][0], red[3][1]),
+            doubleArrayOf(1.0, blue[0][0], blue[0][1]),
+            doubleArrayOf(1.0, blue[3][0], blue[3][1]),
+        )
+        return if (
+            intersection.firstParameter >= 0.0 &&
+            intersection.secondParameter >= 0.0 &&
+            intersection.firstParameter <= 1.0 &&
+            intersection.secondParameter <= 1.0
+        ) {
+            listOf(intersection)
+        } else {
+            emptyList()
+        }
+    }
+
+    // JSXGraph: src/math/geometry.js -> _bezierLineMeetSubdivision
+    private fun bezierLineMeetSubdivision(
+        red: List<DoubleArray>,
+        blue: List<DoubleArray>,
+        level: Int,
+        testSegment: Boolean,
+    ): List<SegmentIntersection> {
+        if (
+            testSegment &&
+            !bezierOverlap(
+                bezierBoundingBox(red),
+                bezierBoundingBox(blue),
+            )
+        ) {
+            return emptyList()
+        }
+
+        if (level < BEZIER_SUBDIVISION_MAX_LEVEL) {
+            val redSplit = bezierSplit(red)
+            val intersections = mutableListOf<SegmentIntersection>()
+            // JSXGraph omits testSegment in recursive calls, making them line tests.
+            bezierListConcat(
+                intersections,
+                bezierLineMeetSubdivision(
+                    redSplit[0],
+                    blue,
+                    level + 1,
+                    testSegment = false,
+                ),
+                firstOffset = 0.0,
+            )
+            bezierListConcat(
+                intersections,
+                bezierLineMeetSubdivision(
+                    redSplit[1],
+                    blue,
+                    level + 1,
+                    testSegment = false,
+                ),
+                firstOffset = 0.5,
+            )
+            return intersections
+        }
+
+        val intersection = meetSegmentSegment(
+            doubleArrayOf(1.0, red[0][0], red[0][1]),
+            doubleArrayOf(1.0, red[3][0], red[3][1]),
+            doubleArrayOf(1.0, blue[0][0], blue[0][1]),
+            doubleArrayOf(1.0, blue[1][0], blue[1][1]),
+        )
+        return if (
+            intersection.firstParameter >= 0.0 &&
+            intersection.firstParameter <= 1.0 &&
+            (
+                !testSegment ||
+                    (
+                        intersection.secondParameter >= 0.0 &&
+                            intersection.secondParameter <= 1.0
+                    )
+            )
+        ) {
+            listOf(intersection)
+        } else {
+            emptyList()
+        }
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetBeziersegmentBeziersegment
+    internal fun meetBeziersegmentBeziersegment(
+        red: List<DoubleArray>,
+        blue: List<DoubleArray>,
+        testSegment: Boolean = false,
+    ): List<SegmentIntersection> {
+        val intersections = if (red.size == 4 && blue.size == 4) {
+            bezierMeetSubdivision(red, blue, level = 0)
+        } else {
+            bezierLineMeetSubdivision(
+                red,
+                blue,
+                level = 0,
+                testSegment = testSegment,
+            )
+        }.sortedWith { first, second ->
+            val difference =
+                (first.firstParameter - second.firstParameter) * 10_000_000.0 +
+                    (first.secondParameter - second.secondParameter)
+            when {
+                difference < 0.0 -> -1
+                difference > 0.0 -> 1
+                else -> 0
+            }
+        }
+
+        return intersections.filterIndexed { index, intersection ->
+            index == 0 ||
+                intersection.firstParameter !=
+                intersections[index - 1].firstParameter ||
+                intersection.secondParameter !=
+                intersections[index - 1].secondParameter
+        }
+    }
 
     // JSXGraph: src/math/geometry.js -> bezierSegmentEval
     internal fun bezierSegmentEval(
