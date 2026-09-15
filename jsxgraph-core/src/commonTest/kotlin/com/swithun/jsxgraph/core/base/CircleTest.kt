@@ -1,10 +1,13 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -275,6 +278,148 @@ class CircleTest {
     }
 
     @Test
+    fun stringRadiusMatchesOfficialStableIdAndUpdateBehavior() {
+        val board = board()
+        val center = point(
+            board,
+            coordinates = doubleArrayOf(0.0, 0.0),
+            name = "Center",
+        )
+        val driver = point(
+            board,
+            coordinates = doubleArrayOf(3.0, 0.0),
+            name = "A",
+        )
+
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusExpression = "A.X() + 1",
+            ),
+        )
+        val updateRadius = assertNotNull(circle.updateRadius)
+
+        assertEquals("A.X() + 1", updateRadius.origin)
+        assertEquals(listOf(driver.id), updateRadius.dependencies.keys.toList())
+        assertEquals(listOf(center.id), circle.parents)
+        assertSame(circle, center.childElements[circle.id])
+        assertSame(circle, driver.childElements[circle.id])
+        assertSame(driver, circle.ancestors[driver.id])
+        assertEquals(4.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertEquals(4.0, circle.radius, absoluteTolerance = TOLERANCE)
+        assertNull(circle.radiusEvaluationError)
+
+        driver.setName("Renamed")
+        driver.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(5.0, 0.0),
+        )
+        board.update()
+
+        assertEquals(6.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertEquals(6.0, circle.radius, absoluteTolerance = TOLERANCE)
+        assertArrayMatches(doubleArrayOf(-6.0, 6.0, 6.0, -6.0), circle.bounds())
+        assertNull(circle.radiusEvaluationError)
+    }
+
+    @Test
+    fun stringRadiusCreationFailuresDoNotPolluteBoardOrDependencies() {
+        val board = board()
+        val center = point(
+            board,
+            coordinates = doubleArrayOf(0.0, 0.0),
+            name = "Center",
+        )
+        val driver = point(
+            board,
+            coordinates = doubleArrayOf(3.0, 0.0),
+            name = "A",
+        )
+
+        val parserError = assertIs<
+            GMResult.Err<CircleError.RadiusExpressionCompile>
+            >(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusExpression = "1 +",
+            ),
+        ).error.error
+        assertIs<JessieCodeExpressionCompileError.Parser>(parserError)
+
+        val runtimeError = assertIs<
+            GMResult.Err<CircleError.RadiusExpressionEvaluation>
+            >(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusExpression = "A.Unknown()",
+            ),
+        ).error.error
+        assertIs<JessieCodeRuntimeError.ElementPropertyUnavailable>(
+            runtimeError,
+        )
+
+        assertEquals(
+            CircleError.NonNumericRadiusExpression("string"),
+            assertIs<
+                GMResult.Err<CircleError.NonNumericRadiusExpression>
+                >(
+                Circle.create(
+                    board = board,
+                    center = center,
+                    radiusExpression = "\"radius\"",
+                ),
+            ).error,
+        )
+
+        assertEquals(2, board.numObjects)
+        assertTrue(center.childElements.isEmpty())
+        assertTrue(driver.childElements.isEmpty())
+    }
+
+    @Test
+    fun missingStringRadiusDependencyReturnsErrorAndLegacyApiUsesNaN() {
+        val board = board()
+        val center = point(
+            board,
+            coordinates = doubleArrayOf(0.0, 0.0),
+            name = "Center",
+        )
+        val driver = point(
+            board,
+            coordinates = doubleArrayOf(3.0, 0.0),
+            name = "A",
+        )
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusExpression = "A.X() + 1",
+            ),
+        )
+
+        board.removeObject(driver)
+
+        val explicitError = assertIs<
+            GMResult.Err<CircleError.RadiusExpressionEvaluation>
+            >(circle.radiusResult()).error
+        assertIs<JessieCodeRuntimeError.UnknownProperty>(
+            explicitError.error,
+        )
+
+        circle.needsUpdate = true
+        circle.update()
+
+        assertTrue(circle.radius.isNaN())
+        assertTrue(circle.Radius().isNaN())
+        assertIs<CircleError.RadiusExpressionEvaluation>(
+            circle.radiusEvaluationError,
+        )
+    }
+
+    @Test
     fun lineRadiusTracksTheDefiningLineLength() {
         val board = board()
         val linePoint1 = point(board, doubleArrayOf(0.0, 0.0))
@@ -474,8 +619,13 @@ class CircleTest {
     private fun point(
         board: Board,
         coordinates: DoubleArray,
+        name: String? = null,
     ): Point = assertIs<GMResult.Ok<Point>>(
-        Point.create(board, coordinates),
+        Point.create(
+            board = board,
+            coordinates = coordinates,
+            name = name,
+        ),
     ).value
 
     private fun circle(result: GMResult<Circle, CircleError>): Circle =

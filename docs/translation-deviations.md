@@ -45,6 +45,19 @@ practical.
   explicit traversal stack and returns `GMResult.Err(MissingExplicitElement)`
   for an unknown literal `$()` or `$value()` ID; upstream stores an
   `undefined` dependency and fails later when that dependency is attached.
+- JessieCode name replacement preserves stable element-ID calls, slider value
+  calls, predefined constants, and reverse child traversal. It returns
+  structured node/depth-limit errors instead of traversing without resource
+  limits. Assignment-local discovery remains pending with the statement and
+  mutable-scope grammar.
+- `JessieCodeExpressionFunction` covers the string branch of
+  `Type.createFunction`, including argument binding, stable references, and
+  dependency metadata. Direct Kotlin number, array, and function adapters are
+  deferred until a translated caller needs those parent forms.
+- The core element runtime exposes the translated read-only `methodMap`
+  subset for coordinate elements, lines, and circles. Mutating methods,
+  visual-property fallback, generic `Value()`, and untranslated element
+  classes return structured unavailable-property/value errors.
 - Parser errors retain both the offending token location and the previous
   shifted-token location used by Jison's error hash. Expected-token lists
   describe the translated grammar subset rather than the complete generated
@@ -90,13 +103,16 @@ practical.
   unknown unit. JSXGraph returns JavaScript `undefined`; valid unit prefixes
   and the no-unit radians result retain upstream behavior.
 - `Circle.create` currently accepts an already registered center plus an
-  already registered circumference `Point`, a fixed numeric radius, an already
-  registered `Line`, or an already registered source `Circle` from the same
-  `Board`. It returns `GMResult.Err` for a cross-board or unregistered element
-  and for board registration failure. JSXGraph's dynamic `createCircle` also
-  accepts reversed parent order, point IDs, coordinate arrays, function/string
-  radii, three-point circumcircles, and transformations, and throws for
-  unsupported parent values.
+  already registered circumference `Point`, a fixed numeric or JessieCode
+  string radius, an already registered `Line`, or an already registered source
+  `Circle` from the same `Board`. String-radius compilation, first evaluation,
+  and numeric validation return `GMResult.Err` before registration; later
+  evaluation failures are available through `radiusResult()` and
+  `radiusEvaluationError`, while the legacy numeric `Radius()` path returns
+  `NaN`. JSXGraph can instead throw during expression execution or propagate
+  JavaScript coercion. Its dynamic `createCircle` also accepts reversed parent
+  order, point IDs, coordinate arrays, function radii, three-point
+  circumcircles, and transformations.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again

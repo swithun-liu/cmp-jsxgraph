@@ -66,4 +66,5 @@ internal data class JessieCodeAstNode(
     val children: List<JessieCodeAstChild>,
     val location: JessieCodeAstLocation,
     val isMath: Boolean? = null,
+    val replaced: Boolean = false,
 )

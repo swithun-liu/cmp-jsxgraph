@@ -27,7 +27,11 @@ Implemented translation slices:
   interpreter from `src/parser/jessiecode.js`, including literals, variables,
   arrays, calls, properties, indexes, conditionals, JavaScript-compatible
   coercion, core math functions, static dependency discovery, source
-  locations, and resource limits;
+  locations, stable name-to-ID replacement, reusable expression functions,
+  the translated Point/Line/Circle read-only `methodMap` subset, and resource
+  limits;
+- Circle radii defined by JessieCode strings, including functional update
+  dependencies that remain separate from geometric parents;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - an interactive Compose geometry playground backed by the translated

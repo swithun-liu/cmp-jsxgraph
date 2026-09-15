@@ -8,6 +8,10 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -21,6 +25,18 @@ internal sealed interface CircleError {
         val id: String,
     ) : CircleError
 
+    data class RadiusExpressionCompile(
+        val error: JessieCodeExpressionCompileError,
+    ) : CircleError
+
+    data class RadiusExpressionEvaluation(
+        val error: JessieCodeRuntimeError,
+    ) : CircleError
+
+    data class NonNumericRadiusExpression(
+        val actualType: String,
+    ) : CircleError
+
     data class Registration(val error: BoardError) : CircleError
 }
 
@@ -29,9 +45,9 @@ internal sealed interface CircleError {
  *
  * This slice covers circles defined by two registered points, a fixed numeric
  * radius, a registered line, or a registered circle. It includes dependency
- * links, standard and quadratic forms, cubic Bezier approximation, and numeric
- * queries. Function/string radii, transformations, rendering, and hit testing
- * remain untranslated.
+ * links, standard and quadratic forms, cubic Bezier approximation, numeric
+ * queries, and JessieCode string radii. Function radii, transformations,
+ * rendering, and hit testing remain untranslated.
  */
 internal open class Circle internal constructor(
     board: Board,
@@ -41,6 +57,7 @@ internal open class Circle internal constructor(
     internal val line: Line? = null,
     internal val circle: Circle? = null,
     private val radiusValue: Double? = null,
+    internal val updateRadius: JessieCodeExpressionFunction? = null,
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
@@ -55,6 +72,8 @@ internal open class Circle internal constructor(
     // JSXGraph: src/base/circle.js -> midpoint / radius / points
     internal val midpoint: Point = center
     internal var radius: Double = 0.0
+    internal var radiusEvaluationError: CircleError? = null
+        private set
     internal val points = mutableListOf<Coords>()
 
     internal var numberPoints: Int = 0
@@ -74,7 +93,7 @@ internal open class Circle internal constructor(
         }
 
         radius = when (method) {
-            POINT_RADIUS_METHOD -> radiusValue ?: Double.NaN
+            POINT_RADIUS_METHOD -> Radius()
             POINT_LINE_METHOD -> line?.let {
                 it.point1.coords.distance(
                     Const.COORDS_BY_USER,
@@ -127,27 +146,47 @@ internal open class Circle internal constructor(
     }
 
     // JSXGraph: src/base/circle.js -> Radius
-    internal fun Radius(): Double =
+    internal fun radiusResult(): GMResult<Double, CircleError> =
         when (method) {
             TWO_POINTS_METHOD -> {
                 val circumferencePoint = point2
-                    ?: return Double.NaN
+                    ?: return GMResult.Ok(Double.NaN)
                 if (
                     circumferencePoint.coords.usrCoords.all { it == 0.0 } ||
                     center.coords.usrCoords.all { it == 0.0 }
                 ) {
-                    Double.NaN
+                    GMResult.Ok(Double.NaN)
                 } else {
-                    center.Dist(circumferencePoint)
+                    GMResult.Ok(center.Dist(circumferencePoint))
                 }
             }
 
-            POINT_RADIUS_METHOD -> abs(radiusValue ?: Double.NaN)
+            POINT_RADIUS_METHOD -> {
+                val expression = updateRadius
+                if (expression == null) {
+                    GMResult.Ok(abs(radiusValue ?: Double.NaN))
+                } else {
+                    evaluateRadiusExpression(expression)
+                }
+            }
             POINT_LINE_METHOD,
             POINT_CIRCLE_METHOD,
-            -> radius
+            -> GMResult.Ok(radius)
 
-            else -> Double.NaN
+            else -> GMResult.Ok(Double.NaN)
+        }
+
+    // JSXGraph: src/base/circle.js -> Radius
+    internal fun Radius(): Double =
+        when (val result = radiusResult()) {
+            is GMResult.Ok -> {
+                radiusEvaluationError = null
+                result.value
+            }
+            is GMResult.Err -> {
+                radiusEvaluationError = result.error
+                Double.NaN
+            }
         }
 
     private fun radiusFromSource(): Double =
@@ -321,6 +360,59 @@ internal open class Circle internal constructor(
             )
         }
 
+        // JSXGraph: src/base/circle.js -> pointRadius / Type.createFunction
+        fun create(
+            board: Board,
+            center: Point,
+            radiusExpression: String,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Circle, CircleError> {
+            validateParent(board, center, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+            val expression = when (
+                val result = JessieCodeExpressionFunction.compile(
+                    source = radiusExpression,
+                    board = board,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    CircleError.RadiusExpressionCompile(result.error),
+                )
+            }
+            val initialRadius = when (
+                val result = evaluateRadiusExpression(expression)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val circle = Circle(
+                board = board,
+                method = POINT_RADIUS_METHOD,
+                center = center,
+                radiusValue = initialRadius,
+                updateRadius = expression,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+            return when (
+                val result = register(
+                    circle = circle,
+                    dependencies = listOf(center),
+                )
+            ) {
+                is GMResult.Ok -> {
+                    circle.addParentsFromJCFunctions(listOf(expression))
+                    result
+                }
+                is GMResult.Err -> result
+            }
+        }
+
         // JSXGraph: src/base/circle.js -> createCircle pointLine branch
         fun create(
             board: Board,
@@ -414,5 +506,44 @@ internal open class Circle internal constructor(
             }
             return null
         }
+
+        private fun evaluateRadiusExpression(
+            expression: JessieCodeExpressionFunction,
+        ): GMResult<Double, CircleError> =
+            when (val result = expression.evaluate()) {
+                is GMResult.Err -> GMResult.Err(
+                    CircleError.RadiusExpressionEvaluation(
+                        result.error,
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val value = result.value
+                    if (value is JessieCodeRuntimeValue.NumberValue) {
+                        GMResult.Ok(abs(value.value))
+                    } else {
+                        GMResult.Err(
+                            CircleError.NonNumericRadiusExpression(
+                                actualType = runtimeType(value),
+                            ),
+                        )
+                    }
+                }
+            }
+
+        private fun runtimeType(
+            value: JessieCodeRuntimeValue,
+        ): String =
+            when (value) {
+                JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+                JessieCodeRuntimeValue.NullValue -> "null"
+                is JessieCodeRuntimeValue.NumberValue -> "number"
+                is JessieCodeRuntimeValue.BooleanValue -> "boolean"
+                is JessieCodeRuntimeValue.StringValue -> "string"
+                is JessieCodeRuntimeValue.ArrayValue -> "array"
+                is JessieCodeRuntimeValue.ObjectValue -> "object"
+                is JessieCodeRuntimeValue.FunctionValue -> "function"
+                is JessieCodeRuntimeValue.BoardReference -> "board"
+                is JessieCodeRuntimeValue.ElementReference -> "element"
+            }
     }
 }

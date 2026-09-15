@@ -8,6 +8,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 
 /**
  * Initial lifecycle and dependency slice of JXG.GeometryElement.
@@ -117,6 +118,18 @@ internal open class GeometryElement(
         for (elementId in elementIds) {
             if (elementId in board.objects && elementId !in parents) {
                 parents += elementId
+            }
+        }
+        return this
+    }
+
+    // JSXGraph: src/base/element.js -> addParentsFromJCFunctions
+    internal fun addParentsFromJCFunctions(
+        functions: Iterable<JessieCodeExpressionFunction>,
+    ): GeometryElement {
+        for (function in functions) {
+            for (dependency in function.dependencies.values) {
+                dependency.addChild(this)
             }
         }
         return this
