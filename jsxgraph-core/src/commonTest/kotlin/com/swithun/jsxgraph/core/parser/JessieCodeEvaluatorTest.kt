@@ -311,6 +311,114 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun useSwitchesEveryBoardBackedRuntimeOperation() {
+        val firstBoard = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "first",
+        )
+        val secondBoard = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "second",
+        )
+        val firstTarget = registerElement(
+            board = firstBoard,
+            id = "first-target",
+            name = "target",
+            type = Const.OBJECT_TYPE_POINT,
+        )
+        val secondTarget = registerElement(
+            board = secondBoard,
+            id = "second-target",
+            name = "target",
+            type = Const.OBJECT_TYPE_POINT,
+        )
+        var creatorBoard: Board? = null
+        var creatorParents: List<JessieCodeRuntimeValue> = emptyList()
+        val environment = JessieCodeRuntimeEnvironment(
+            creators = mapOf(
+                "capture" to JessieCodeCreator {
+                        board,
+                        parents,
+                        attributes,
+                        _
+                    ->
+                    creatorBoard = board
+                    creatorParents = parents.toList()
+                    GMResult.Ok(attributes)
+                },
+            ),
+            board = firstBoard,
+            boardsByContainer = mapOf(
+                "secondcontainer" to secondBoard,
+            ),
+        )
+
+        val selected = assertIs<JessieCodeRuntimeValue.ElementReference>(
+            evaluate("use secondcontainer; target;", environment),
+        )
+        assertSame(secondTarget, selected.element)
+
+        val boardReference =
+            assertIs<JessieCodeRuntimeValue.BoardReference>(
+                evaluate("use secondcontainer; \$board;", environment),
+            )
+        assertSame(secondBoard, boardReference.board)
+
+        val function = assertIs<JessieCodeRuntimeValue.FunctionValue>(
+            evaluate(
+                "use secondcontainer; " +
+                    "function () { return target; };",
+                environment,
+            ),
+        )
+        assertSame(
+            secondTarget,
+            function.dependencies[secondTarget.id],
+        )
+
+        evaluate(
+            "a = 7; use secondcontainer; capture(target, a);",
+            environment,
+        )
+        assertSame(secondBoard, creatorBoard)
+        assertSame(
+            secondTarget,
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                creatorParents[0],
+            ).element,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(7.0),
+            creatorParents[1],
+        )
+
+        evaluate("use secondcontainer; delete target", environment)
+        assertSame(
+            firstTarget,
+            firstBoard.elementById(firstTarget.id),
+        )
+        assertEquals(null, secondBoard.elementById(secondTarget.id))
+
+        val missing = evaluatorError(
+            source = "use missingcontainer",
+            limits = JessieCodeEvaluatorLimits(),
+            environment = environment,
+        )
+        assertEquals(
+            "missingcontainer",
+            assertIs<JessieCodeRuntimeError.BoardNotFound>(
+                missing,
+            ).container,
+        )
+    }
+
+    @Test
     fun functionsBindArgumentsAndReuseTheirOfficialScope() {
         val fixtures = mapOf(
             "f = function (x, y) { return x + y; }; f(2, 3);" to
@@ -382,6 +490,7 @@ class JessieCodeEvaluatorTest {
         val calls = mutableListOf<CreatorCall>()
         val order = mutableListOf<Double>()
         val creator = JessieCodeCreator {
+                _,
                 parents,
                 attributes,
                 _
@@ -448,6 +557,7 @@ class JessieCodeEvaluatorTest {
         val environment = JessieCodeRuntimeEnvironment(
             creators = mapOf(
                 "capture" to JessieCodeCreator {
+                        _,
                         _,
                         attributes,
                         _
@@ -866,6 +976,7 @@ class JessieCodeEvaluatorTest {
             environment = JessieCodeRuntimeEnvironment(
                 creators = mapOf(
                     "capture" to JessieCodeCreator {
+                            _,
                             _,
                             attributes,
                             _

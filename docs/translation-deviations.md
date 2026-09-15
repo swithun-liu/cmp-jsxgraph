@@ -28,7 +28,7 @@ practical.
   Successful supported input preserves the upstream AST node/value/child
   shape, `isMath` flags, dangling-else behavior, loop evaluation order,
   function parameter arrays, creator attribute lists, and generated-action
-  locations. The deprecated multi-Board `use` statement remains pending.
+  locations, including the deprecated multi-Board `use` statement.
 - JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
   directly as JavaScript object keys. JavaScript coerces each of those nodes to
   `"[object Object]"`, so such keys collide while identifier keys behave
@@ -50,6 +50,12 @@ practical.
   scopes and nested closure chains persist for the lifetime of each returned
   function value, while a reusable JessieCode global session across separate
   evaluator invocations remains pending.
+- The deprecated `use IDENTIFIER` statement switches all subsequent Board
+  lookup, `$board`, deletion, function-dependency, and creator operations
+  within the evaluator invocation. Since KMP has no global DOM container
+  registry, callers expose the same lookup explicitly through
+  `boardsByContainer`. An unknown entry returns `BoardNotFound`; the selected
+  Board does not yet persist across separate evaluator invocations.
 - Loops use the evaluator's existing node-step limit as their execution budget.
   JSXGraph has no corresponding bound and can run an infinite loop.
 - `return` preserves the JSXGraph `1.13.3` interpreter behavior: it evaluates

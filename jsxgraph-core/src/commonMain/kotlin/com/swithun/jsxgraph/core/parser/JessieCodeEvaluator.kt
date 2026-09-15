@@ -73,6 +73,7 @@ private class EvaluationState(
 ) {
     private var evaluationSteps = 0
     private var functionCallDepth = 0
+    private var currentBoard = environment.board
     private var currentScope = RuntimeScope(
         parameters = emptyList(),
         locals = environment.variables.toMutableMap(),
@@ -152,6 +153,7 @@ private class EvaluationState(
             "op_do" -> evaluateDoWhile(node, depth)
             "op_for" -> evaluateFor(node, depth)
             "op_return" -> evaluateReturn(node, depth)
+            "op_use" -> evaluateUse(node)
             "op_delete" -> evaluateDelete(node)
             "op_function" -> evaluateFunction(node, isMap = false)
             "op_map" -> evaluateFunction(node, isMap = true)
@@ -375,6 +377,25 @@ private class EvaluationState(
         }
     }
 
+    // JSXGraph: src/parser/jessiecode.js -> execute(op_use), use
+    private fun evaluateUse(
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val container = when (val result = textChild(node, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val board = environment.boardsByContainer[container]
+            ?: return GMResult.Err(
+                JessieCodeRuntimeError.BoardNotFound(
+                    container = container,
+                    location = node.location,
+                ),
+            )
+        currentBoard = board
+        return GMResult.Ok(JessieCodeRuntimeValue.NumberValue(0.0))
+    }
+
     private fun evaluateDelete(
         node: JessieCodeAstNode,
     ): EvaluationResult {
@@ -389,10 +410,10 @@ private class EvaluationState(
                     JessieCodeRuntimeValue.ElementReference
                 )?.element
         } else {
-            environment.board?.select(name)
+            currentBoard?.select(name)
         }
         if (element != null) {
-            environment.board?.removeObject(element)
+            currentBoard?.removeObject(element)
         }
         return GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
     }
@@ -431,7 +452,7 @@ private class EvaluationState(
         // leaves that function scope current when compile mode is disabled.
         currentScope = functionScope
 
-        val dependencies = environment.board?.let { board ->
+        val dependencies = currentBoard?.let { board ->
             when (
                 val result = JessieCodeDependencyCollector(board).collect(
                     node = body,
@@ -1044,6 +1065,7 @@ private class EvaluationState(
         }
 
         return callable.creator?.create(
+            board = currentBoard,
             parents = arguments,
             attributes = attributes
                 ?: JessieCodeRuntimeValue.ObjectValue(emptyMap()),
@@ -1357,7 +1379,7 @@ private class EvaluationState(
             "PI" -> return number(PI)
             "EULER" -> return number(E)
             "\$board" -> return GMResult.Ok(
-                environment.board?.let {
+                currentBoard?.let {
                     JessieCodeRuntimeValue.BoardReference(it)
                 } ?: JessieCodeRuntimeValue.UndefinedValue,
             )
@@ -1384,6 +1406,7 @@ private class EvaluationState(
                                 location,
                             ->
                             creator.create(
+                                board = currentBoard,
                                 parents = arguments,
                                 attributes =
                                     JessieCodeRuntimeValue.ObjectValue(
@@ -1398,7 +1421,7 @@ private class EvaluationState(
             }
         }
 
-        val element = environment.board?.select(name)
+        val element = currentBoard?.select(name)
         return GMResult.Ok(
             element?.let {
                 JessieCodeRuntimeValue.ElementReference(it)
@@ -1856,7 +1879,7 @@ private class EvaluationState(
         when (name) {
             "\$" -> JessieCodeCallable { arguments, _ ->
                 val id = arguments.firstOrNull()?.let(::propertyKey)
-                val element = id?.let { environment.board?.elementById(it) }
+                val element = id?.let { currentBoard?.elementById(it) }
                 GMResult.Ok(
                     element?.let {
                         JessieCodeRuntimeValue.ElementReference(it)
@@ -1865,7 +1888,7 @@ private class EvaluationState(
             }
             "\$value" -> JessieCodeCallable { arguments, location ->
                 val id = arguments.firstOrNull()?.let(::propertyKey)
-                val element = id?.let { environment.board?.elementById(it) }
+                val element = id?.let { currentBoard?.elementById(it) }
                 if (element == null) {
                     GMResult.Err(
                         JessieCodeRuntimeError.ElementValueUnavailable(

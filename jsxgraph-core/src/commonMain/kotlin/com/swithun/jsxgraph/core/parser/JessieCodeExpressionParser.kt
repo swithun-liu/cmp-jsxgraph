@@ -63,8 +63,8 @@ internal sealed interface JessieCodeParserError {
  * This slice implements `StatementList`, blocks, `if` statements, expression
  * statements, `while`/`do`/`for` loops, assignment, array and object literals.
  * Return/delete statements, function/map expressions, and creator attribute
- * lists are also covered. The deprecated multi-board `use` statement is
- * intentionally left for a later slice.
+ * lists are also covered, including the deprecated multi-board `use`
+ * statement.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -215,8 +215,7 @@ private class ParserState(
                 val location = current().location
                 nested(location) { parseDoWhileStatement() }
             }
-            JessieCodeTokenType.USE,
-            -> unsupported("unary statements")
+            JessieCodeTokenType.USE -> parseUseStatement()
             JessieCodeTokenType.DELETE -> parseDeleteStatement()
             JessieCodeTokenType.RETURN -> parseReturnStatement()
             else -> parseExpressionStatement()
@@ -492,6 +491,27 @@ private class ParserState(
             childDepths = listOf(value.depth),
             nodeLocation = returnToken.location,
             span = span(returnToken.location, semicolon.location),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: UnaryStatement -> USE IDENTIFIER
+    private fun parseUseStatement(): ParserResult<ParsedExpression> {
+        val useToken = consume()
+        val identifier = when (
+            val result = expect(JessieCodeTokenType.IDENTIFIER)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operationWithRawChildren(
+            upstreamName = "op_use",
+            children = listOf(
+                JessieCodeAstChild.Text(identifier.lexeme),
+            ),
+            childDepths = emptyList(),
+            nodeLocation = useToken.location,
+            span = span(useToken.location, identifier.location),
             isMath = null,
         )
     }

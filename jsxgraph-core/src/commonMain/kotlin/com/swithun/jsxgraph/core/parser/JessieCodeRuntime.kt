@@ -72,6 +72,11 @@ internal sealed interface JessieCodeRuntimeError {
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
 
+    data class BoardNotFound(
+        val container: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
     data class UnknownProperty(
         val receiverType: String,
         val property: String,
@@ -128,6 +133,7 @@ internal fun interface JessieCodeCallable {
 
 internal fun interface JessieCodeCreator {
     fun create(
+        board: Board?,
         parents: List<JessieCodeRuntimeValue>,
         attributes: JessieCodeRuntimeValue.ObjectValue,
         location: JessieCodeAstLocation,
@@ -249,6 +255,7 @@ internal data class JessieCodeRuntimeEnvironment(
     val functions: Map<String, JessieCodeCallable> = emptyMap(),
     val creators: Map<String, JessieCodeCreator> = emptyMap(),
     val board: Board? = null,
+    val boardsByContainer: Map<String, Board> = emptyMap(),
     val elementRuntime: JessieCodeElementRuntime =
         UnsupportedJessieCodeElementRuntime,
 )

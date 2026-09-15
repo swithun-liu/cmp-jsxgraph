@@ -400,7 +400,20 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
-    fun returnAndDeleteStatementsMatchOfficialAst() {
+    fun useReturnAndDeleteStatementsMatchOfficialAst() {
+        val use = expression("use board")
+        assertEquals("op_use(text:board)", describe(use))
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 3),
+            use.location,
+        )
+        assertEquals(
+            "op_none(" +
+                "op_none(op_none(),op_use(text:board))," +
+                "op_none())",
+            describe(parse("use board;")),
+        )
+
         assertEquals(
             "op_return(raw-undefined)",
             describe(expression("return;")),
@@ -594,11 +607,6 @@ class JessieCodeExpressionParserTest {
 
     @Test
     fun unsupportedAndMalformedFunctionGrammarIsStructured() {
-        val use = assertIs<
-            JessieCodeParserError.UnsupportedSyntax
-            >(error("use board"))
-        assertEquals("unary statements", use.feature)
-
         val attributes = assertIs<
             JessieCodeParserError.UnsupportedSyntax
             >(error("1 << a: 1 >>;"))
@@ -637,6 +645,14 @@ class JessieCodeExpressionParserTest {
                 JessieCodeTokenType.SHIFT_LEFT,
             ),
             attribute.expected.toSet(),
+        )
+
+        val use = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("use;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.IDENTIFIER),
+            use.expected,
         )
     }
 
