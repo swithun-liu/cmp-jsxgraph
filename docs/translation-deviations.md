@@ -62,6 +62,9 @@ practical.
 - Bezier evaluation returns `NaN` for an empty point list or an unavailable
   control point. JSXGraph `1.13.3` throws `TypeError` while indexing the
   missing point.
+- B-spline order is an `Int`, matching the documented degree-plus-one
+  contract. JavaScript non-integer orders only produce incidental
+  `undefined`/`NaN` array-property behavior and are not represented.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is

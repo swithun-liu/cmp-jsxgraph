@@ -517,6 +517,123 @@ internal class BezierInterpolation internal constructor(
     }
 }
 
+internal class BSplineInterpolation internal constructor(
+    private val points: List<CoordsElement>,
+    private val order: Int,
+) {
+    internal fun x(
+        parameter: Double,
+        @Suppress("UNUSED_PARAMETER") suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, CoordsElement::X)
+
+    internal fun y(
+        parameter: Double,
+        @Suppress("UNUSED_PARAMETER") suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, CoordsElement::Y)
+
+    internal val start: Double = 0.0
+
+    internal fun end(): Double = (points.size - 1).toDouble()
+
+    private fun evaluate(
+        parameter: Double,
+        coordinate: (CoordsElement) -> Double,
+    ): Double {
+        val lastPointIndex = points.size - 1
+        if (lastPointIndex <= 0) {
+            return Double.NaN
+        }
+
+        val effectiveOrder = if (lastPointIndex + 2 <= order) {
+            lastPointIndex + 1
+        } else {
+            order
+        }
+        if (parameter <= 0.0) {
+            return coordinate(points[0])
+        }
+        if (parameter >= lastPointIndex - effectiveOrder + 2.0) {
+            return coordinate(points[lastPointIndex])
+        }
+        if (parameter.isNaN() || effectiveOrder <= 0) {
+            return 0.0
+        }
+
+        val span = kotlin.math.floor(parameter).toInt() + effectiveOrder - 1
+        val knots = knotVector(lastPointIndex, effectiveOrder)
+        val basis = evaluateBasisFunctions(
+            parameter = parameter,
+            knots = knots,
+            order = effectiveOrder,
+            span = span,
+        )
+
+        var result = 0.0
+        for (index in span - effectiveOrder + 1..span) {
+            if (index in points.indices) {
+                result += coordinate(points[index]) * basis[index]
+            }
+        }
+        return result
+    }
+
+    private fun knotVector(
+        lastPointIndex: Int,
+        order: Int,
+    ): DoubleArray = DoubleArray(lastPointIndex + order + 1) { index ->
+        when {
+            index < order -> 0.0
+            index <= lastPointIndex -> (index - order + 1).toDouble()
+            else -> (lastPointIndex - order + 2).toDouble()
+        }
+    }
+
+    private fun evaluateBasisFunctions(
+        parameter: Double,
+        knots: DoubleArray,
+        order: Int,
+        span: Int,
+    ): DoubleArray {
+        val basis = DoubleArray(knots.size)
+        basis[span] = if (knots[span] <= parameter && parameter < knots[span + 1]) {
+            1.0
+        } else {
+            0.0
+        }
+
+        for (currentOrder in 2..order) {
+            for (index in span - currentOrder + 1..span) {
+                val leftValue = if (index <= span - currentOrder + 1 || index < 0) {
+                    0.0
+                } else {
+                    basis[index]
+                }
+                val rightValue = if (index >= span) {
+                    0.0
+                } else {
+                    basis[index + 1]
+                }
+
+                var denominator = knots[index + currentOrder - 1] - knots[index]
+                basis[index] = if (denominator == 0.0) {
+                    0.0
+                } else {
+                    (parameter - knots[index]) / denominator * leftValue
+                }
+
+                denominator = knots[index + currentOrder] - knots[index + 1]
+                if (denominator != 0.0) {
+                    basis[index] +=
+                        (knots[index + currentOrder] - parameter) /
+                        denominator *
+                        rightValue
+                }
+            }
+        }
+        return basis
+    }
+}
+
 object Numerics {
     private data class PolylineSplit(
         val distance: Double,
@@ -1586,6 +1703,12 @@ object Numerics {
     // JSXGraph: src/math/numerics.js -> bezier
     internal fun bezier(points: List<CoordsElement>): BezierInterpolation =
         BezierInterpolation(points)
+
+    // JSXGraph: src/math/numerics.js -> bspline
+    internal fun bspline(
+        points: List<CoordsElement>,
+        order: Int,
+    ): BSplineInterpolation = BSplineInterpolation(points, order)
 
     // JSXGraph: src/math/numerics.js -> splineDef
     fun splineDef(
