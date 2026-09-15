@@ -273,6 +273,188 @@ internal class LagrangePolynomial internal constructor(
         Numerics.lagrangePolynomialCoefficients(points)()
 }
 
+private enum class SplineCoordinate {
+    X,
+    Y,
+}
+
+internal class CardinalSplineInterpolation internal constructor(
+    private val points: List<CoordsElement>,
+    private val tension: () -> Double,
+    private val type: String,
+) {
+    private var xCoefficients: Array<DoubleArray>? = null
+    private var yCoefficients: Array<DoubleArray>? = null
+
+    internal fun x(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, suspendedUpdate, SplineCoordinate.X)
+
+    internal fun y(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, suspendedUpdate, SplineCoordinate.Y)
+
+    internal val start: Double = 0.0
+
+    internal fun end(): Double = (points.size - 1).toDouble()
+
+    private fun evaluate(
+        parameter: Double,
+        suspendedUpdate: Boolean,
+        coordinate: SplineCoordinate,
+    ): Double {
+        if (points.size < 2) {
+            return Double.NaN
+        }
+
+        if (!suspendedUpdate) {
+            val coefficients = calculateCoefficients(coordinate)
+            when (coordinate) {
+                SplineCoordinate.X -> xCoefficients = coefficients
+                SplineCoordinate.Y -> yCoefficients = coefficients
+            }
+        }
+
+        if (parameter.isNaN()) {
+            return Double.NaN
+        }
+
+        val size = points.size
+        if (parameter <= 0.0) {
+            return coordinate(points[0], coordinate)
+        }
+        if (parameter >= size.toDouble()) {
+            return coordinate(points[size - 1], coordinate)
+        }
+
+        val segment = kotlin.math.floor(parameter).toInt()
+        if (segment.toDouble() == parameter) {
+            return coordinate(points[segment], coordinate)
+        }
+
+        val coefficients = when (coordinate) {
+            SplineCoordinate.X -> xCoefficients
+            SplineCoordinate.Y -> yCoefficients
+        }?.getOrNull(segment) ?: return Double.NaN
+        val localParameter = parameter - segment
+        return (
+            (
+                coefficients[3] * localParameter +
+                    coefficients[2]
+            ) * localParameter +
+                coefficients[1]
+        ) * localParameter + coefficients[0]
+    }
+
+    private fun calculateCoefficients(
+        coordinate: SplineCoordinate,
+    ): Array<DoubleArray> {
+        val tau = tension()
+        return Array(points.size - 1) { segment ->
+            if (type == CENTRIPETAL_TYPE) {
+                var delta0 = sqrt(distance(segment, segment + 1))
+                var delta1 = sqrt(distance(segment + 2, segment + 1))
+                var delta2 = sqrt(distance(segment + 3, segment + 2))
+
+                if (delta1 < Mat.eps) {
+                    delta1 = 1.0
+                }
+                if (delta0 < Mat.eps) {
+                    delta0 = delta1
+                }
+                if (delta2 < Mat.eps) {
+                    delta2 = delta1
+                }
+
+                var tangent1 =
+                    (coordinate(segment + 1, coordinate) -
+                        coordinate(segment, coordinate)) / delta0 -
+                        (coordinate(segment + 2, coordinate) -
+                            coordinate(segment, coordinate)) / (delta1 + delta0) +
+                        (coordinate(segment + 2, coordinate) -
+                            coordinate(segment + 1, coordinate)) / delta1
+                var tangent2 =
+                    (coordinate(segment + 2, coordinate) -
+                        coordinate(segment + 1, coordinate)) / delta1 -
+                        (coordinate(segment + 3, coordinate) -
+                            coordinate(segment + 1, coordinate)) / (delta2 + delta1) +
+                        (coordinate(segment + 3, coordinate) -
+                            coordinate(segment + 2, coordinate)) / delta2
+
+                tangent1 *= delta1
+                tangent2 *= delta1
+                Numerics.initCubicPoly(
+                    first = coordinate(segment + 1, coordinate),
+                    second = coordinate(segment + 2, coordinate),
+                    firstTangent = tau * tangent1,
+                    secondTangent = tau * tangent2,
+                )
+            } else {
+                Numerics.initCubicPoly(
+                    first = coordinate(segment + 1, coordinate),
+                    second = coordinate(segment + 2, coordinate),
+                    firstTangent = tau * (
+                        coordinate(segment + 2, coordinate) -
+                            coordinate(segment, coordinate)
+                    ),
+                    secondTangent = tau * (
+                        coordinate(segment + 3, coordinate) -
+                            coordinate(segment + 1, coordinate)
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun coordinate(
+        extendedIndex: Int,
+        coordinate: SplineCoordinate,
+    ): Double {
+        val point = when (extendedIndex) {
+            0 -> return 2.0 * coordinate(points[0], coordinate) -
+                coordinate(points[1], coordinate)
+
+            points.size + 1 -> return 2.0 * coordinate(points[points.size - 1], coordinate) -
+                coordinate(points[points.size - 2], coordinate)
+
+            else -> points[extendedIndex - 1]
+        }
+        return coordinate(point, coordinate)
+    }
+
+    private fun coordinate(
+        point: CoordsElement,
+        coordinate: SplineCoordinate,
+    ): Double = when (coordinate) {
+        SplineCoordinate.X -> point.X()
+        SplineCoordinate.Y -> point.Y()
+    }
+
+    private fun distance(
+        firstExtendedIndex: Int,
+        secondExtendedIndex: Int,
+    ): Double {
+        if (
+            firstExtendedIndex in 1..points.size &&
+            secondExtendedIndex in 1..points.size
+        ) {
+            return points[firstExtendedIndex - 1].Dist(points[secondExtendedIndex - 1])
+        }
+        return Mat.hypot(
+            coordinate(firstExtendedIndex, SplineCoordinate.X) -
+                coordinate(secondExtendedIndex, SplineCoordinate.X),
+            coordinate(firstExtendedIndex, SplineCoordinate.Y) -
+                coordinate(secondExtendedIndex, SplineCoordinate.Y),
+        )
+    }
+
+    private companion object {
+        const val CENTRIPETAL_TYPE = "centripetal"
+    }
+}
+
 object Numerics {
     private data class PolylineSplit(
         val distance: Double,
@@ -1289,6 +1471,55 @@ object Numerics {
         }
         coefficientSum
     }
+
+    // JSXGraph: src/math/numerics.js -> _initCubicPoly
+    internal fun initCubicPoly(
+        first: Double,
+        second: Double,
+        firstTangent: Double,
+        secondTangent: Double,
+    ): DoubleArray = doubleArrayOf(
+        first,
+        firstTangent,
+        -3.0 * first + 3.0 * second - 2.0 * firstTangent - secondTangent,
+        2.0 * first - 2.0 * second + firstTangent + secondTangent,
+    )
+
+    // JSXGraph: src/math/numerics.js -> CardinalSpline
+    @Suppress("FunctionName")
+    internal fun CardinalSpline(
+        points: List<CoordsElement>,
+        tension: Double,
+        type: String? = null,
+    ): CardinalSplineInterpolation =
+        CardinalSpline(
+            points = points,
+            tension = { tension },
+            type = type,
+        )
+
+    // JSXGraph: src/math/numerics.js -> CardinalSpline
+    @Suppress("FunctionName")
+    internal fun CardinalSpline(
+        points: List<CoordsElement>,
+        tension: () -> Double,
+        type: String? = null,
+    ): CardinalSplineInterpolation = CardinalSplineInterpolation(
+        points = points,
+        tension = tension,
+        type = type ?: "uniform",
+    )
+
+    // JSXGraph: src/math/numerics.js -> CatmullRomSpline
+    @Suppress("FunctionName")
+    internal fun CatmullRomSpline(
+        points: List<CoordsElement>,
+        type: String? = null,
+    ): CardinalSplineInterpolation = CardinalSpline(
+        points = points,
+        tension = 0.5,
+        type = type,
+    )
 
     // JSXGraph: src/math/numerics.js -> splineDef
     fun splineDef(
