@@ -1,8 +1,8 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> resolveProperty and the methodMap
- * declarations in src/base/coordselement.js, line.js, circle.js, and
- * polygon.js
+ * declarations in src/base/coordselement.js, line.js, circle.js, polygon.js,
+ * and text.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -17,6 +17,7 @@ import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
@@ -51,6 +52,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             return it
         }
         resolveLineProperty(element, property, location)?.let {
+            return it
+        }
+        resolveTextProperty(element, property, location)?.let {
             return it
         }
         resolveCoordsProperty(element, property, location)?.let {
@@ -277,6 +281,56 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 line.L()
             }
             else -> unavailable(line, property, location)
+        }
+    }
+
+    private fun resolveTextProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val text = element as? Text ?: return null
+        return when (property) {
+            "setText" -> function("setText") {
+                    arguments,
+                    callLocation,
+                ->
+                val content = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.StringValue
+                    )?.value
+                if (content == null) {
+                    GMResult.Err(
+                        JessieCodeRuntimeError.InvalidArgumentType(
+                            functionName = "setText",
+                            argumentIndex = 0,
+                            expected = "string",
+                            actual = typeName(
+                                arguments.firstOrNull()
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                            ),
+                            location = callLocation,
+                        ),
+                    )
+                } else {
+                    when (val result = text.setText(content)) {
+                        is GMResult.Ok -> GMResult.Ok(
+                            JessieCodeRuntimeValue.ElementReference(
+                                result.value,
+                            ),
+                        )
+                        is GMResult.Err -> GMResult.Err(
+                            JessieCodeRuntimeError.ElementMethodUnavailable(
+                                elementId = text.id,
+                                method = "setText",
+                                reason = result.error.toString(),
+                                location = callLocation,
+                            ),
+                        )
+                    }
+                }
+            }
+            else -> null
         }
     }
 

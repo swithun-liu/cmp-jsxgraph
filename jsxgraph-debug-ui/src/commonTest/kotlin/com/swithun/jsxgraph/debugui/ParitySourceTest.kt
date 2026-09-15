@@ -53,6 +53,20 @@ class ParitySourceTest {
     }
 
     @Test
+    fun textParitySourceEvaluatesDynamicContent() {
+        val textCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("text"),
+        ).value
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(textCase.source),
+        ).value
+        val texts = scene.elements.filterIsInstance<JsxGraphSceneElement.Text>()
+
+        assertEquals(5, texts.size)
+        assertEquals("A.x = 2.0", texts.last().content)
+    }
+
+    @Test
     fun malformedAndUnsupportedSourcesReturnExplicitErrors() {
         assertIs<GMResult.Err<String>>(parseParitySource("not-json"))
         assertIs<GMResult.Err<String>>(

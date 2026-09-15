@@ -4,15 +4,18 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.BoardError
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Text
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -314,6 +317,68 @@ class NativeJessieCodeCreatorsTest {
         assertIs<JessieCodeCreatorError.PointFactory>(error.error)
         assertTrue(board.objects.isEmpty())
         assertTrue(board.objectsList.isEmpty())
+    }
+
+    @Test
+    fun textCreatorSupportsConstrainedCoordinatesAndStaticContent() {
+        val board = board("text")
+        val values = assertIs<JessieCodeRuntimeValue.ArrayValue>(
+            evaluate(
+                source =
+                    "A = point(2, 3); " +
+                        "T = text(\"A.X() + 1\", 2, \"Hello\"); " +
+                        "N = text(0, -1, PI) << " +
+                        "formatNumber: true, digits: 2 >>; " +
+                        "[T.X(), T.Y(), T.setText(\"After\"), N];",
+                board = board,
+            ),
+        ).values
+        val text = assertIs<Text>(board.select("T"))
+        val numberText = assertIs<Text>(board.select("N"))
+
+        assertEquals(
+            3.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(values[0]).value,
+        )
+        assertEquals(
+            2.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(values[1]).value,
+        )
+        assertSame(
+            text,
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                values[2],
+            ).element,
+        )
+        assertEquals("After", text.plaintext)
+        assertEquals("3.14", numberText.plaintext)
+        assertFalse(text.isDraggable)
+        assertTrue(text.isConstrained)
+    }
+
+    @Test
+    fun textCreatorCompilesDynamicValueTags() {
+        val board = board("dynamicText")
+        evaluate(
+            source =
+                "A = point(2, 3); " +
+                    "T = text(0, 0, " +
+                    "\"x=<value>X(A)</value>\") << digits: 1 >>;",
+            board = board,
+        )
+        val point = assertIs<Point>(board.select("A"))
+        val text = assertIs<Text>(board.select("T"))
+
+        assertEquals("x=2.0", text.plaintext)
+        assertSame(text, point.childElements[text.id])
+
+        point.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(-1.25, 4.0),
+        )
+        board.update()
+
+        assertEquals("x=-1.3", text.plaintext)
     }
 
     @Test

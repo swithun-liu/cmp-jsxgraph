@@ -103,6 +103,7 @@ Latest construction-document evidence (2026-09-15):
 | `shifted_geometry` | 0.986997 | 0.974236 |
 | `curves` | 0.986698 | 0.975236 |
 | `polygons` | 0.986562 | 0.973171 |
+| `text` | 0.981600 | 0.954662 |
 
 All captures passed the nonblank and browser-error checks. These numbers are
 evidence for this translated slice only; they do not satisfy the full Stable
@@ -112,6 +113,9 @@ harness rejects JSXGraph's `error compiling function` console warning so a
 JessieCode CSP failure cannot pass as an empty official curve. The Polygon
 capture verifies independent fill and default border styles, `withLines:
 false`, and coordinate-array helper vertices.
+The Text capture verifies static and numeric content, dynamic
+`<value>` JessieCode evaluation, font size, stroke color/opacity, and all
+translated horizontal/vertical anchor directions.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:

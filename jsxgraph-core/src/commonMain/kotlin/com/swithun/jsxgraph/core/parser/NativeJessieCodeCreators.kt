@@ -5,7 +5,8 @@
  * src/base/line.js -> createLine,
  * src/base/circle.js -> createCircle,
  * src/base/curve.js -> createCurve / createFunctiongraph,
- * src/base/polygon.js -> createPolygon
+ * src/base/polygon.js -> createPolygon,
+ * src/base/text.js -> createText
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -25,6 +26,8 @@ import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.PolygonError
+import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.base.TextError
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 
 internal sealed interface JessieCodeCreatorError {
@@ -63,6 +66,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class PolygonFactory(
         val error: PolygonError,
+    ) : JessieCodeCreatorError
+
+    data class TextFactory(
+        val error: TextError,
     ) : JessieCodeCreatorError
 }
 
@@ -109,6 +116,9 @@ internal object NativeJessieCodeCreators {
         },
         "polygon" to JessieCodeCreator { board, parents, attributes, location ->
             createPolygon(board, parents, attributes, location)
+        },
+        "text" to JessieCodeCreator { board, parents, attributes, location ->
+            createText(board, parents, attributes, location)
         },
     )
 
@@ -578,6 +588,129 @@ internal object NativeJessieCodeCreators {
                     location = location,
                 )
             }
+        }
+    }
+
+    private fun createText(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                "text",
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes("text", attributes, location)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (parents.size !in 3..4) {
+            return unsupported("text", parents, location)
+        }
+        val coordinates = parents.dropLast(1)
+        if (
+            coordinates.any {
+                it !is JessieCodeRuntimeValue.NumberValue &&
+                    it !is JessieCodeRuntimeValue.StringValue
+            }
+        ) {
+            return unsupported("text", parents, location)
+        }
+        val parse = when (
+            val result = booleanAttribute(
+                creatorName = "text",
+                attributes = attributes,
+                name = "parse",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val formatNumber = when (
+            val result = booleanAttribute(
+                creatorName = "text",
+                attributes = attributes,
+                name = "formatnumber",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val digits = when (
+            val result = integerAttribute(
+                creatorName = "text",
+                attributes = attributes,
+                name = "digits",
+                default = 2,
+                minimum = 0,
+                maximum = 100,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val content = when (val value = parents.last()) {
+            is JessieCodeRuntimeValue.StringValue -> value.value
+            is JessieCodeRuntimeValue.NumberValue ->
+                if (formatNumber) {
+                    JsNumberFormat.fixed(value.value, digits)
+                } else {
+                    JsNumberFormat.compact(value.value)
+                }
+            else -> return unsupported("text", parents, location)
+        }
+        val numericCoordinates = coordinates.mapNotNull {
+            (it as? JessieCodeRuntimeValue.NumberValue)?.value
+        }
+        val coordinateExpressions = coordinates.map { coordinate ->
+            when (coordinate) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    JsNumberFormat.compact(coordinate.value)
+                is JessieCodeRuntimeValue.StringValue -> coordinate.value
+                else -> return unsupported("text", parents, location)
+            }
+        }
+        val result =
+            if (numericCoordinates.size == coordinates.size) {
+                Text.create(
+                    board = resolvedBoard,
+                    coordinates = numericCoordinates.toDoubleArray(),
+                    content = content,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    parse = parse,
+                    digits = digits,
+                )
+            } else {
+                Text.create(
+                    board = resolvedBoard,
+                    coordinateExpressions = coordinateExpressions,
+                    content = content,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    parse = parse,
+                    digits = digits,
+                )
+            }
+        return when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "text",
+                error = JessieCodeCreatorError.TextFactory(result.error),
+                location = location,
+            )
         }
     }
 

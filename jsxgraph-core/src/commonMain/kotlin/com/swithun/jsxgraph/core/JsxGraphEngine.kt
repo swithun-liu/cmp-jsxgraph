@@ -16,6 +16,7 @@ import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import com.swithun.jsxgraph.core.parser.NativeJessieCodeCreators
@@ -36,6 +37,7 @@ data class JsxGraphEngineLimits(
     val maxObjects: Int = 10_000,
     val maxCurvePoints: Int = 10_000,
     val maxPolygonVertices: Int = 10_000,
+    val maxTextLength: Int = 100_000,
 )
 
 sealed interface JsxGraphDocumentError {
@@ -119,6 +121,16 @@ sealed interface JsxGraphDocumentError {
     ) : JsxGraphDocumentError {
         override val message: String =
             "objects[$objectIndex] '$id' polygon vertex count $actual exceeds limit $limit"
+    }
+
+    data class TextLengthLimitExceeded(
+        val objectIndex: Int,
+        val id: String,
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' text length $actual exceeds limit $limit"
     }
 
     data class DuplicateObjectId(
@@ -561,6 +573,148 @@ object JsxGraphEngine {
                 )
             }
 
+            is Text -> {
+                element.contentEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = source.index,
+                            id = source.id,
+                            type = source.type,
+                            reason = error.toString(),
+                        ),
+                    )
+                }
+                val x = element.X()
+                .takeIf(Double::isFinite)
+                ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val y = element.Y()
+                    .takeIf(Double::isFinite)
+                    ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val fontSize = when (
+                    val result = attributes.number(
+                        name = "fontsize",
+                        default = 12.0,
+                        minimum = 0.0,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val fontUnit = when (
+                    val result = attributes.string(
+                        name = "fontunit",
+                        default = "px",
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Err -> return result
+                }
+                if (fontUnit != "px") {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "fontUnit",
+                            value = fontUnit,
+                        ),
+                    )
+                }
+                val anchorX = when (
+                    val result = attributes.string(
+                        name = "anchorx",
+                        default = "left",
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Err -> return result
+                }
+                if (anchorX !in TEXT_ANCHOR_X_VALUES) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "anchorX",
+                            value = anchorX,
+                        ),
+                    )
+                }
+                val anchorY = when (
+                    val result = attributes.string(
+                        name = "anchory",
+                        default = "middle",
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Err -> return result
+                }
+                if (anchorY !in TEXT_ANCHOR_Y_VALUES) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "anchorY",
+                            value = anchorY,
+                        ),
+                    )
+                }
+                val display = when (
+                    val result = attributes.string(
+                        name = "display",
+                        default = "html",
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Err -> return result
+                }
+                if (display !in TEXT_DISPLAY_VALUES) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "display",
+                            value = display,
+                        ),
+                    )
+                }
+                for (name in TEXT_DISABLED_BOOLEAN_ATTRIBUTES) {
+                    when (
+                        val result = attributes.boolean(
+                            name = name,
+                            default = false,
+                        )
+                    ) {
+                        is GMResult.Ok -> if (result.value) {
+                            return GMResult.Err(
+                                attributes.unsupportedValue(
+                                    attribute = name,
+                                    value = "true",
+                                ),
+                            )
+                        }
+                        is GMResult.Err -> return result
+                    }
+                }
+                val rotate = when (
+                    val result = attributes.number(
+                        name = "rotate",
+                        default = 0.0,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (rotate != 0.0) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "rotate",
+                            value = rotate.toString(),
+                        ),
+                    )
+                }
+                JsxGraphSceneElement.Text(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    coordinates = JsxGraphPoint2D(x, y),
+                    content = element.plaintext,
+                    fontSize = fontSize,
+                    anchorX = anchorX,
+                    anchorY = anchorY,
+                )
+            }
+
             else -> return GMResult.Err(
                 JsxGraphDocumentError.UnsupportedElementType(
                     objectIndex = source.index,
@@ -669,6 +823,15 @@ object JsxGraphEngine {
                 val result = validatePolygonVertexLimit(
                     sourceObject,
                     limits.maxPolygonVertices,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            when (
+                val result = validateTextLengthLimit(
+                    sourceObject,
+                    limits.maxTextLength,
                 )
             ) {
                 is GMResult.Ok -> Unit
@@ -826,6 +989,31 @@ object JsxGraphEngine {
         }
     }
 
+    private fun validateTextLengthLimit(
+        sourceObject: ParsedObject,
+        limit: Int,
+    ): GMResult<Unit, JsxGraphDocumentError> {
+        if (sourceObject.type != "text") {
+            return GMResult.Ok(Unit)
+        }
+        val content = sourceObject.parents.lastOrNull()
+        val actual = (
+            content as? JsonPrimitive
+        )?.takeIf(JsonPrimitive::isString)?.content?.length ?: 0
+        return if (actual > limit) {
+            GMResult.Err(
+                JsxGraphDocumentError.TextLengthLimitExceeded(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    limit = limit,
+                    actual = actual,
+                ),
+            )
+        } else {
+            GMResult.Ok(Unit)
+        }
+    }
+
     private fun runtimeAttributes(
         sourceObject: ParsedObject,
     ): GMResult<JessieCodeRuntimeValue.ObjectValue, JsxGraphDocumentError> {
@@ -925,6 +1113,8 @@ object JsxGraphEngine {
             limits.maxCurvePoints <= 0 -> "maxCurvePoints must be positive"
             limits.maxPolygonVertices <= 0 ->
                 "maxPolygonVertices must be positive"
+            limits.maxTextLength <= 0 ->
+                "maxTextLength must be positive"
             else -> null
         }
         return invalid?.let(JsxGraphDocumentError::InvalidLimits)
@@ -1075,6 +1265,7 @@ object JsxGraphEngine {
                 is Circle -> CIRCLE_ATTRIBUTES
                 is Curve -> CURVE_ATTRIBUTES
                 is Polygon -> POLYGON_ATTRIBUTES
+                is Text -> TEXT_ATTRIBUTES
                 else -> emptySet()
             }
             attributes.keys.firstOrNull { it !in supported }?.let { name ->
@@ -1105,6 +1296,7 @@ object JsxGraphEngine {
         ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
             val defaultStroke = when (element) {
                 is Point -> DEFAULT_POINT_COLOR
+                is Text -> DEFAULT_TEXT_COLOR
                 else -> DEFAULT_STROKE_COLOR
             }
             val defaultFill = when (element) {
@@ -1376,6 +1568,8 @@ object JsxGraphEngine {
         JsxGraphColor(red = 213, green = 94, blue = 0)
     private val DEFAULT_POLYGON_FILL_COLOR =
         JsxGraphColor(red = 240, green = 228, blue = 66)
+    private val DEFAULT_TEXT_COLOR =
+        JsxGraphColor(red = 0, green = 0, blue = 0)
     private val NAMED_COLORS = mapOf(
         "none" to JsxGraphColor.Transparent,
         "transparent" to JsxGraphColor.Transparent,
@@ -1429,4 +1623,32 @@ object JsxGraphEngine {
     private val POLYGON_ATTRIBUTES = setOf(
         "withlines",
     )
+    private val TEXT_ATTRIBUTES = setOf(
+        "fontsize",
+        "fontunit",
+        "formatnumber",
+        "digits",
+        "parse",
+        "display",
+        "anchorx",
+        "anchory",
+        "rotate",
+        "usemathjax",
+        "usekatex",
+        "useasciimathml",
+        "tofraction",
+    )
+    private val TEXT_ANCHOR_X_VALUES =
+        setOf("left", "middle", "right")
+    private val TEXT_ANCHOR_Y_VALUES =
+        setOf("top", "middle", "bottom")
+    private val TEXT_DISPLAY_VALUES =
+        setOf("html", "internal")
+    private val TEXT_DISABLED_BOOLEAN_ATTRIBUTES = listOf(
+        "usemathjax",
+        "usekatex",
+        "useasciimathml",
+        "tofraction",
+    )
+
 }

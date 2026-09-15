@@ -19,19 +19,20 @@ practical.
   `objects[{id,type,parents,attributes}]`. This is a serialization of
   `Board.create(type, parents, attributes)`, not an upstream JSXGraph file
   reader format. The current production subset creates Point, Line, Circle,
-  Curve, FunctionGraph, Plot, and Polygon through the translated native
+  Curve, FunctionGraph, Plot, Polygon, and Text through the translated native
   registry and then snapshots the resulting Board elements into a
   platform-independent scene. Unsupported element types, fields, attributes,
   point faces, labels, arrows, dash styles, and plotting modes return
   `JsxGraphDocumentError` instead of being ignored.
 - Construction documents are limited by source length, JSON depth, JSON value
-  count, object count, points per Curve, and vertices per Polygon. JSON and
-  factory failures are converted to `GMResult.Err`; object IDs are required
-  and duplicate IDs are rejected. Colors currently accept CSS hex forms plus
-  a small named-color subset. Top-level Point/Line/Circle/Curve/Polygon
-  defaults match the translated JSXGraph `1.13.3` subset; helper Points created
-  from coordinate-array parents remain in the internal Board and are rendered
-  as Polygon sub-elements rather than top-level source elements.
+  count, object count, points per Curve, vertices per Polygon, and characters
+  per Text. JSON and factory failures are converted to `GMResult.Err`; object
+  IDs are required and duplicate IDs are rejected. Colors currently accept CSS
+  hex forms plus a small named-color subset. Top-level
+  Point/Line/Circle/Curve/Polygon/Text defaults match the translated JSXGraph
+  `1.13.3` subset; helper Points created from coordinate-array parents remain in
+  the internal Board and are rendered as Polygon sub-elements rather than
+  top-level source elements.
 - The translated Curve subset accepts two numeric arrays for a discrete data
   plot, four number/string terms for an explicit-domain parametric curve, or
   three number/string terms for FunctionGraph/Plot. Continuous curves require
@@ -54,6 +55,17 @@ practical.
   `polygonalchain`, labels, and hit testing remain pending. Construction
   failures roll back materialized helper Points and borders instead of
   leaving partially registered elements.
+- The translated Text subset accepts numeric or string coordinates, static
+  string/number content, and numeric JessieCode expressions inside upstream
+  `<value>...</value>` tags. It preserves the upstream short-math expansion,
+  dependency updates, `digits` formatting, `setText`, font size, stroke
+  color/opacity, and left/middle/right plus top/middle/bottom anchors. Only
+  `px` font units are accepted. Function-valued content, nonnumeric value-tag
+  results, rich-text subscript/superscript and GEONExT conversion,
+  MathJax/KaTeX/ASCIIMath, fractions, element anchors, nonzero rotation,
+  measured bounds, and hit testing return structured errors or remain
+  unavailable. Compose always draws text on Canvas; accepted `html` and
+  `internal` display modes are equivalent for this plain-text subset.
 - JessieCode tokenization and the translated expression parser return
   `GMResult.Err` when configured source-length, token-count, AST-node, or
   AST-depth limits are exceeded. The upstream generated lexer and Jison parser
@@ -127,17 +139,18 @@ practical.
   the creator's implicit `name` when neither `name` nor `id` is supplied.
   Kotlin exposes custom creators through the explicit `JessieCodeCreator`
   adapter and gives them precedence over the native `point`, `line`, `circle`,
-  `curve`, `functiongraph`, `plot`, and `polygon` registry. Attributes on an
-  ordinary function return `UnexpectedCreatorAttributes` instead of throwing,
-  and attribute nesting/collection growth shares the evaluator resource
-  limits.
+  `curve`, `functiongraph`, `plot`, `polygon`, and `text` registry. Attributes
+  on an ordinary function return `UnexpectedCreatorAttributes` instead of
+  throwing, and attribute nesting/collection growth shares the evaluator
+  resource limits.
 - Native JessieCode creators currently apply `id`, `name`, and
   `needsRegularUpdate`; Curve creators additionally consume their translated
-  plotting attributes, and Polygon consumes `withLines`. Other visual and
-  nested element attributes are evaluated and merged but not applied because
-  the visual-property model is not translated yet. Invalid supported
-  attribute types, unavailable Boards, unsupported parent combinations, and
-  native factory failures return `CreatorFailure` instead of throwing.
+  plotting attributes, Polygon consumes `withLines`, and Text consumes
+  `parse`, `formatNumber`, and `digits`. Other visual and nested element
+  attributes are evaluated and merged but not applied because the
+  visual-property model is not translated yet. Invalid supported attribute
+  types, unavailable Boards, unsupported parent combinations, and native
+  factory failures return `CreatorFailure` instead of throwing.
 - The debug-only official JSXGraph iframe allows CSP `unsafe-eval` because
   upstream JessieCode compiles string curve expressions through JavaScript
   evaluation. That permission is confined to the comparison renderer;
@@ -178,11 +191,12 @@ practical.
   function adapters are deferred until a translated caller needs those parent
   forms.
 - The core element runtime exposes the translated `methodMap` subset for
-  coordinate elements, lines, circles, polygons, and common element names,
-  plus the bounded writable subset described above. `Bounds` and `addChild`
-  preserve the translated element return values. `move` and `moveTo` accept
-  numeric two- or three-coordinate arrays when the duration is omitted or
-  zero, and Point `addConstraint` accepts arrays of number/string terms.
+  coordinate elements, lines, circles, polygons, Text, and common element
+  names, plus the bounded writable subset described above. `Bounds` and
+  `addChild` preserve the translated element return values. `move` and
+  `moveTo` accept numeric two- or three-coordinate arrays when the duration is
+  omitted or zero, Point `addConstraint` accepts arrays of number/string
+  terms, and Text `setText` atomically compiles supported replacement content.
   Nonzero movement durations return `ElementMethodUnavailable` until the
   animation scheduler exists; function-valued constraints, remaining mutating
   methods, visual-property fallback, generic `Value()`, and untranslated

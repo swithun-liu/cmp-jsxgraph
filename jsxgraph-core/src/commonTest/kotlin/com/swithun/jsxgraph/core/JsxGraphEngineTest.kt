@@ -275,6 +275,65 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun textDocumentsPreserveContentStyleAndAnchors() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-5, 5, 5, -5],
+                  "objects": [
+                    {
+                      "id": "title",
+                      "type": "text",
+                      "parents": [-2, 3, "Plain text"],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "strokeColor": "#16877A",
+                        "strokeOpacity": 0.75,
+                        "fontSize": 18,
+                        "fontUnit": "px",
+                        "anchorX": "middle",
+                        "anchorY": "top",
+                        "display": "internal",
+                        "parse": false
+                      }
+                    },
+                    {
+                      "id": "value",
+                      "type": "text",
+                      "parents": [1, -2, 3.14159],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "formatNumber": true,
+                        "digits": 2
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val title = assertIs<JsxGraphSceneElement.Text>(scene.elements[0])
+        assertEquals(JsxGraphPoint2D(-2.0, 3.0), title.coordinates)
+        assertEquals("Plain text", title.content)
+        assertEquals(18.0, title.fontSize)
+        assertEquals("middle", title.anchorX)
+        assertEquals("top", title.anchorY)
+        assertEquals(JsxGraphColor(22, 135, 122), title.style.strokeColor)
+        assertEquals(0.75, title.style.strokeOpacity)
+
+        val value = assertIs<JsxGraphSceneElement.Text>(scene.elements[1])
+        assertEquals("3.14", value.content)
+        assertEquals(12.0, value.fontSize)
+        assertEquals("left", value.anchorX)
+        assertEquals("middle", value.anchorY)
+        assertEquals(JsxGraphColor(0, 0, 0), value.style.strokeColor)
+    }
+
+    @Test
     fun malformedDocumentsReturnStructuredErrors() {
         assertIs<JsxGraphDocumentError.InvalidJson>(
             assertError("{"),
@@ -319,7 +378,7 @@ class JsxGraphEngineTest {
         assertIs<JsxGraphDocumentError.UnsupportedElementType>(
             assertError(
                 documentWithObjects(
-                    """{"id":"t","type":"text","parents":[0,0,"pending"]}""",
+                    """{"id":"a","type":"angle","parents":[0,0,1]}""",
                 ),
             ),
         )
@@ -366,6 +425,42 @@ class JsxGraphEngineTest {
                         "name":"",
                         "withLabel":false,
                         "face":"square"
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        )
+        assertIs<JsxGraphDocumentError.ElementCreation>(
+            assertError(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"t",
+                      "type":"text",
+                      "parents":[0,0,"x_{1}"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        )
+        assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(
+            assertError(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"t",
+                      "type":"text",
+                      "parents":[0,0,"rotated"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "parse":false,
+                        "rotate":30
                       }
                     }
                     """.trimIndent(),
@@ -429,6 +524,12 @@ class JsxGraphEngineTest {
                 limits = JsxGraphEngineLimits(maxPolygonVertices = 0),
             ),
         )
+        assertIs<JsxGraphDocumentError.InvalidLimits>(
+            assertError(
+                source = """{"boundingBox":[-1,1,1,-1],"objects":[]}""",
+                limits = JsxGraphEngineLimits(maxTextLength = 0),
+            ),
+        )
         assertIs<JsxGraphDocumentError.SourceLengthExceeded>(
             assertError(
                 source = """{"boundingBox":[-1,1,1,-1],"objects":[]}""",
@@ -486,6 +587,20 @@ class JsxGraphEngineTest {
                     """.trimIndent(),
                 ),
                 limits = JsxGraphEngineLimits(maxPolygonVertices = 3),
+            ),
+        )
+        assertIs<JsxGraphDocumentError.TextLengthLimitExceeded>(
+            assertError(
+                source = documentWithObjects(
+                    """
+                    {
+                      "id":"text",
+                      "type":"text",
+                      "parents":[0,0,"four"]
+                    }
+                    """.trimIndent(),
+                ),
+                limits = JsxGraphEngineLimits(maxTextLength = 3),
             ),
         )
     }

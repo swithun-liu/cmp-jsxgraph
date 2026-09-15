@@ -19,8 +19,9 @@ Current parity cases:
 [coordinate parents](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=coordinate_parents),
 [shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry),
 [curves](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=curves),
+[polygons](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=polygons),
 and
-[polygons](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=polygons).
+[text](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=text).
 
 ## Status
 
@@ -55,10 +56,11 @@ Implemented translation slices:
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, persistent JessieCode sessions,
   assignment-LHS creator naming, native Point/Line/Circle/Curve/FunctionGraph/
-  Plot/Polygon creation, the translated Point/Line/Circle/Polygon `methodMap`
-  subset, Point `X`/`Y` assignment, element names, bounds, child links,
-  immediate movement, coordinate constraints, regular-update assignment, and
-  resource limits;
+  Plot/Polygon/Text creation, the translated
+  Point/Line/Circle/Polygon/Text `methodMap` subset, Point `X`/`Y` assignment,
+  element names, bounds, child links, immediate movement, coordinate
+  constraints, static and `<value>` Text content, regular-update assignment,
+  and resource limits;
 - Circle radii defined by JessieCode strings, including functional update
   dependencies that remain separate from geometric parents;
 - Point coordinates defined by two or more JessieCode strings, including
@@ -67,11 +69,12 @@ Implemented translation slices:
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - a bounded production construction-document path for `boundingBox` and
   ordered `objects[]`, currently creating Point, Line, Circle, Curve,
-  FunctionGraph, Plot, and Polygon elements through the translated Board and
-  native creator registry;
-- a platform-independent Point/Line/Circle/Curve/Polygon render scene consumed
-  by Compose, including discrete data plots, right-open naive sampling for
-  explicit-domain function and parametric curves, and filled/bordered polygons;
+  FunctionGraph, Plot, Polygon, and Text elements through the translated Board
+  and native creator registry;
+- a platform-independent Point/Line/Circle/Curve/Polygon/Text render scene
+  consumed by Compose, including discrete data plots, right-open naive sampling
+  for explicit-domain function and parametric curves, filled/bordered polygons,
+  and anchored Canvas text using a bundled Arial-compatible font;
 - an interactive Compose geometry playground backed by the translated
   line-circle intersection math;
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
@@ -142,12 +145,15 @@ The first production source contract maps directly to ordered
 
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
-types are `point`, `line`, `circle`, `curve`, `functiongraph`, `plot`, and
-`polygon`. Continuous curves currently require `doAdvancedPlot: false`;
-Polygon currently supports Point or coordinate-array vertices, `withLines`,
-top-level fill styling, and default border/vertex styles. Unsupported types,
-parent forms, plotting modes, nested Polygon styles, and visual attributes
-fail explicitly instead of being omitted from the native render.
+types are `point`, `line`, `circle`, `curve`, `functiongraph`, `plot`,
+`polygon`, and `text`. Continuous curves currently require
+`doAdvancedPlot: false`; Polygon currently supports Point or coordinate-array
+vertices, `withLines`, top-level fill styling, and default border/vertex
+styles. Text supports static strings/numbers, dynamic `<value>` JessieCode
+terms, constrained coordinates, number formatting, font size, color/opacity,
+and horizontal/vertical anchors. Unsupported types, parent forms, rich-text
+features, plotting modes, nested Polygon styles, and visual attributes fail
+explicitly instead of being omitted from the native render.
 
 ## Build
 

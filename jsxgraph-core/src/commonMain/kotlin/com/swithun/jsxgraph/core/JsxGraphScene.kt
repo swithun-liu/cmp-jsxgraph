@@ -3,7 +3,7 @@
  * Upstream: src/base/board.js -> create,
  * src/base/element.js -> visual properties,
  * src/base/point.js, src/base/line.js, src/base/circle.js,
- * src/base/curve.js, src/base/polygon.js
+ * src/base/curve.js, src/base/polygon.js, src/base/text.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -105,5 +105,16 @@ sealed interface JsxGraphSceneElement {
         val implicitVertices: List<Point>,
         val borderStyle: JsxGraphElementStyle,
         val withLines: Boolean,
+    ) : JsxGraphSceneElement
+
+    data class Text(
+        override val id: String,
+        override val name: String,
+        override val style: JsxGraphElementStyle,
+        val coordinates: JsxGraphPoint2D,
+        val content: String,
+        val fontSize: Double,
+        val anchorX: String,
+        val anchorY: String,
     ) : JsxGraphSceneElement
 }

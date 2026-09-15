@@ -93,6 +93,20 @@ object JsxGraphParityCorpus {
                 "implicit-vertices",
             ),
         ),
+        JsxGraphParityCase(
+            id = "text",
+            title = "Text",
+            source = TEXT_SOURCE,
+            features = setOf(
+                "axis",
+                "grid",
+                "text",
+                "font-size",
+                "color",
+                "anchors",
+                "dynamic-content",
+            ),
+        ),
     )
 
     fun find(caseId: String): GMResult<JsxGraphParityCase, String> =
@@ -474,6 +488,126 @@ private const val POLYGONS_SOURCE: String = """
         "fillColor": "#16877A",
         "fillOpacity": 0.25,
         "withLines": false,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val TEXT_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "leftMiddle",
+      "type": "text",
+      "parents": [-5, 3, "Left / middle"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "fontSize": 18,
+        "fontUnit": "px",
+        "strokeColor": "#1D252C",
+        "strokeOpacity": 1,
+        "anchorX": "left",
+        "anchorY": "middle",
+        "display": "internal",
+        "parse": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "centerTop",
+      "type": "text",
+      "parents": [0, 2, "Centered above"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "fontSize": 24,
+        "fontUnit": "px",
+        "strokeColor": "#0072B2",
+        "strokeOpacity": 0.8,
+        "anchorX": "middle",
+        "anchorY": "bottom",
+        "display": "internal",
+        "parse": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "rightBottom",
+      "type": "text",
+      "parents": [5, -2.5, "Right / bottom"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "fontSize": 20,
+        "fontUnit": "px",
+        "strokeColor": "#D9553F",
+        "strokeOpacity": 1,
+        "anchorX": "right",
+        "anchorY": "top",
+        "display": "internal",
+        "parse": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "number",
+      "type": "text",
+      "parents": [0, -3.5, 3.141592653589793],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "fontSize": 16,
+        "fontUnit": "px",
+        "strokeColor": "#16877A",
+        "anchorX": "middle",
+        "anchorY": "middle",
+        "display": "internal",
+        "parse": false,
+        "formatNumber": true,
+        "digits": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "driver",
+      "type": "point",
+      "parents": [2, -1],
+      "attributes": {
+        "name": "A",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "dynamic",
+      "type": "text",
+      "parents": [0, -1.5, "A.x = <value>X(A)</value>"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "fontSize": 16,
+        "fontUnit": "px",
+        "strokeColor": "#6F7780",
+        "anchorX": "middle",
+        "anchorY": "middle",
+        "display": "internal",
+        "parse": true,
+        "digits": 1,
         "fixed": true,
         "highlight": false
       }

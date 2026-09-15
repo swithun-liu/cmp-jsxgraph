@@ -312,6 +312,13 @@ fun JsxGraphScenePreview(
                     drawSceneCurve(element, metrics)
                 is JsxGraphSceneElement.Polygon ->
                     drawScenePolygon(element, metrics)
+                is JsxGraphSceneElement.Text ->
+                    drawSceneText(
+                        text = element,
+                        metrics = metrics,
+                        textMeasurer = textMeasurer,
+                        fontFamily = axisFontFamily,
+                    )
             }
         }
     }
@@ -572,6 +579,60 @@ private fun DrawScope.drawScenePolygon(
         }
     }
 }
+
+// JSXGraph: src/renderer/canvas.js -> drawInternalText.
+private fun DrawScope.drawSceneText(
+    text: JsxGraphSceneElement.Text,
+    metrics: BoardMetrics,
+    textMeasurer: TextMeasurer,
+    fontFamily: FontFamily,
+) {
+    if (text.content.isEmpty() || text.fontSize <= 0.0) {
+        return
+    }
+    val layout = textMeasurer.measure(
+        text = text.content,
+        style = TextStyle(
+            color = text.style.strokeColor.toComposeColor(
+                opacity = text.style.strokeOpacity,
+            ),
+            fontSize = text.fontSize.toFloat().sp,
+            fontFamily = fontFamily,
+            letterSpacing = 0.sp,
+        ),
+    )
+    val anchor = metrics.toScreen(text.coordinates.toOffset())
+    drawText(
+        textLayoutResult = layout,
+        topLeft = textTopLeft(
+            anchor = anchor,
+            width = layout.size.width.toFloat(),
+            height = layout.size.height.toFloat(),
+            anchorX = text.anchorX,
+            anchorY = text.anchorY,
+        ),
+    )
+}
+
+internal fun textTopLeft(
+    anchor: Offset,
+    width: Float,
+    height: Float,
+    anchorX: String,
+    anchorY: String,
+): Offset =
+    Offset(
+        x = when (anchorX) {
+            "middle" -> anchor.x - width * 0.5f
+            "right" -> anchor.x - width
+            else -> anchor.x
+        },
+        y = when (anchorY) {
+            "middle" -> anchor.y - height * 0.5f
+            "bottom" -> anchor.y - height
+            else -> anchor.y
+        },
+    )
 
 private fun com.swithun.jsxgraph.core.JsxGraphPoint2D.toOffset(): Offset =
     Offset(x.toFloat(), y.toFloat())
