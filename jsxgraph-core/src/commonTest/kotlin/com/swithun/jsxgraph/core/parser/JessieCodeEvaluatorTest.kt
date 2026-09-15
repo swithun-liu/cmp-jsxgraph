@@ -214,6 +214,24 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun ifStatementsAndBlocksMatchOfficialRuntime() {
+        val fixtures = mapOf(
+            "if (true) 7;" to "number:7.0",
+            "if (false) 7;" to "number:0.0",
+            "if (false) 7; else 9;" to "number:9.0",
+            "if (true) { 1; 2; }" to "number:2.0",
+            "if (true) if (false) 1; else 2;" to "number:2.0",
+            "a = 1; if (true) { a = 2; } a;" to "number:2.0",
+            "if (false) { missing(); } 4;" to "number:4.0",
+            ";" to "number:0.0",
+        )
+
+        for ((source, expected) in fixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+    }
+
+    @Test
     fun indexesPropertiesCallsAndMathBuiltInsMatchOfficialRuntime() {
         val add = JessieCodeRuntimeValue.FunctionValue(
             name = "add",

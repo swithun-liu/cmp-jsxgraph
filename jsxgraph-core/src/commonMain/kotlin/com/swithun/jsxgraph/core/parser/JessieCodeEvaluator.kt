@@ -140,6 +140,9 @@ private class EvaluationState(
 
         return when (operator) {
             "op_none" -> evaluateSequence(node, depth)
+            "op_block" -> evaluateNodeChild(node, 0, depth)
+            "op_if" -> evaluateIf(node, depth, hasElse = false)
+            "op_if_else" -> evaluateIf(node, depth, hasElse = true)
             "op_assign" -> evaluateAssignment(node, depth)
             "op_array" -> evaluateArray(node, depth)
             "op_emptyobject" -> evaluateEmptyObject(node)
@@ -239,6 +242,27 @@ private class EvaluationState(
             }
         }
         return GMResult.Ok(result)
+    }
+
+    private fun evaluateIf(
+        node: JessieCodeAstNode,
+        depth: Int,
+        hasElse: Boolean,
+    ): EvaluationResult {
+        val condition = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (isTruthy(condition)) {
+            return evaluateNodeChild(node, 1, depth)
+        }
+        return if (hasElse) {
+            evaluateNodeChild(node, 2, depth)
+        } else {
+            GMResult.Ok(JessieCodeRuntimeValue.NumberValue(0.0))
+        }
     }
 
     private fun evaluateArray(

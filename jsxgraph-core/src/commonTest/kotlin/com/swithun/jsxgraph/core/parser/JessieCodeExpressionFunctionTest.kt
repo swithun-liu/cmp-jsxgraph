@@ -519,6 +519,21 @@ class JessieCodeExpressionFunctionTest {
                 >(multipleStatements).statementCount,
         )
 
+        val controlStatement = assertIs<
+            GMResult.Err<JessieCodeExpressionCompileError>
+            >(
+            JessieCodeExpressionFunction.compile(
+                source = "if (true) 1",
+                board = fixture.board,
+            ),
+        ).error
+        assertEquals(
+            "op_if",
+            assertIs<
+                JessieCodeExpressionCompileError.UnsupportedStatement
+                >(controlStatement).operator,
+        )
+
         val dependencyFailure = assertIs<
             GMResult.Err<JessieCodeExpressionCompileError>
             >(

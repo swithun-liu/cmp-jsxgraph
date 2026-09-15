@@ -304,6 +304,49 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
+    fun ifBlocksAndEmptyStatementsMatchOfficialAst() {
+        val conditional = expression(
+            "if (false) 1; else { 2; 3; }",
+        )
+
+        assertEquals(
+            "op_if_else(" +
+                "boolean:false," +
+                "number:1.0," +
+                "op_block(" +
+                "op_none(" +
+                "op_none(op_none(),number:2.0)," +
+                "number:3.0)))",
+            describe(conditional),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 2),
+            conditional.location,
+        )
+        val block = childNode(conditional, 2)
+        assertEquals(
+            JessieCodeAstLocation(1, 19, 1, 20),
+            block.location,
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 19, 1, 23),
+            childNode(block, 0).location,
+        )
+
+        assertEquals(
+            "op_if(" +
+                "boolean:true," +
+                "op_if_else(boolean:false,number:1.0,number:2.0))",
+            describe(
+                expression(
+                    "if (true) if (false) 1; else 2;",
+                ),
+            ),
+        )
+        assertEquals("op_none()", describe(expression(";")))
+    }
+
+    @Test
     fun parserErrorsRetainOffendingAndJisonParserLocations() {
         val missingOperand = error("1 + ;")
         val unexpected = assertIs<
@@ -419,6 +462,25 @@ class JessieCodeExpressionParserTest {
                 "op_execfun(variable:foo,list[])," +
                 "number:2.0)",
             describe(expression("foo() = 2;")),
+        )
+    }
+
+    @Test
+    fun malformedIfAndBlockStatementsReturnStructuredErrors() {
+        val missingClosingParenthesis = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("if (true 1;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.RIGHT_PARENTHESIS),
+            missingClosingParenthesis.expected,
+        )
+
+        val missingClosingBrace = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("{ 1;"))
+        assertEquals(
+            listOf(JessieCodeTokenType.RIGHT_BRACE),
+            missingClosingBrace.expected,
         )
     }
 

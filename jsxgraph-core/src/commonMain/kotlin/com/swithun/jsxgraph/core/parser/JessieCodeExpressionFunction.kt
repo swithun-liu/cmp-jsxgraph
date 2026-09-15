@@ -28,6 +28,10 @@ internal sealed interface JessieCodeExpressionCompileError {
     data class MultipleStatements(
         val statementCount: Int,
     ) : JessieCodeExpressionCompileError
+
+    data class UnsupportedStatement(
+        val operator: String,
+    ) : JessieCodeExpressionCompileError
 }
 
 /**
@@ -101,6 +105,18 @@ internal class JessieCodeExpressionFunction private constructor(
                 return GMResult.Err(
                     JessieCodeExpressionCompileError.MultipleStatements(
                         statementCount = statementCount,
+                    ),
+                )
+            }
+            val statementOperator = singleStatement(parsed)
+                ?.let(::operationName)
+            if (
+                statementOperator != null &&
+                statementOperator in STATEMENT_ONLY_OPERATIONS
+            ) {
+                return GMResult.Err(
+                    JessieCodeExpressionCompileError.UnsupportedStatement(
+                        operator = statementOperator,
                     ),
                 )
             }
@@ -186,5 +202,27 @@ internal class JessieCodeExpressionFunction private constructor(
             }
             return count + 1
         }
+
+        private fun singleStatement(
+            program: JessieCodeAstNode,
+        ): JessieCodeAstNode? =
+            (
+                program.children.getOrNull(1) as?
+                    JessieCodeAstChild.Node
+                )?.value
+
+        private fun operationName(node: JessieCodeAstNode): String? =
+            if (node.type == JessieCodeAstNodeType.OPERATION) {
+                (node.value as? JessieCodeAstValue.Text)?.value
+            } else {
+                null
+            }
+
+        private val STATEMENT_ONLY_OPERATIONS = setOf(
+            "op_block",
+            "op_if",
+            "op_if_else",
+            "op_none",
+        )
     }
 }

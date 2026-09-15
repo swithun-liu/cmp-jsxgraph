@@ -21,12 +21,13 @@ practical.
   malformed recursive syntax is rejected before exhausting the browser Wasm
   stack.
 - The translated parser currently accepts an empty program or an expression
-  statement list. Its expressions include right-associative assignment,
-  conditionals, literals, variables, arrays, objects, calls, properties,
-  indexes, and unary/binary precedence. Successful supported input preserves
-  the upstream AST node/value/child shape, `isMath` flags, and generated-action
-  locations. Control statements, function/map syntax, and creator attributes
-  remain pending.
+  statement list, including empty statements, blocks, and `if`/`else`. Its
+  expressions include right-associative assignment, conditionals, literals,
+  variables, arrays, objects, calls, properties, indexes, and unary/binary
+  precedence. Successful supported input preserves the upstream AST
+  node/value/child shape, `isMath` flags, dangling-else behavior, and
+  generated-action locations. Loops, return/use/delete statements,
+  function/map syntax, and creator attributes remain pending.
 - JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
   directly as JavaScript object keys. JavaScript coerces each of those nodes to
   `"[object Object]"`, so such keys collide while identifier keys behave
@@ -71,9 +72,10 @@ practical.
   `Type.createFunction`, including argument binding, stable references, and
   dependency metadata. It accepts at most one expression statement, including
   a single assignment expression; a multi-statement source returns
-  `MultipleStatements` until return statements and nested function scopes are
-  translated. Direct Kotlin number, array, and function adapters are deferred
-  until a translated caller needs those parent forms.
+  `MultipleStatements`, while a block or `if` statement returns
+  `UnsupportedStatement`, until return statements and nested function scopes
+  are translated. Direct Kotlin number, array, and function adapters are
+  deferred until a translated caller needs those parent forms.
 - The core element runtime exposes the translated read-only `methodMap`
   subset for coordinate elements, lines, and circles. Mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element

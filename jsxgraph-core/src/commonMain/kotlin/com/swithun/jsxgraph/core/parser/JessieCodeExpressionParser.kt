@@ -60,9 +60,10 @@ internal sealed interface JessieCodeParserError {
 /**
  * JessieCode parser for an empty program or expression statements.
  *
- * This slice implements `StatementList` through `ExpressionStatement`, plus
- * assignment, array and object literals. Control statements, functions, maps,
- * and creator attributes are intentionally left for later slices.
+ * This slice implements `StatementList`, blocks, `if` statements, expression
+ * statements, assignment, array and object literals. Loops, return/use/delete
+ * statements, functions, maps, and creator attributes are intentionally left
+ * for later slices.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -121,13 +122,28 @@ private class ParserState(
     private var syntacticNesting = 0
     private var parserLocation = INITIAL_SOURCE_LOCATION
 
-    fun parseProgram(): ParserResult<JessieCodeAstNode> {
+    fun parseProgram(): ParserResult<JessieCodeAstNode> =
+        when (
+            val result = parseStatementList(
+                terminator = JessieCodeTokenType.EOF,
+                initialLocation = INITIAL_SOURCE_LOCATION,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(result.value.node)
+            is GMResult.Err -> result
+        }
+
+    // JSXGraph: StatementList
+    private fun parseStatementList(
+        terminator: JessieCodeTokenType,
+        initialLocation: JessieCodeSourceLocation,
+    ): ParserResult<ParsedExpression> {
         val initial = when (
             val result = createNode(
                 type = JessieCodeAstNodeType.OPERATION,
                 value = JessieCodeAstValue.Text("op_none"),
                 children = emptyList(),
-                nodeLocation = INITIAL_SOURCE_LOCATION,
+                nodeLocation = initialLocation,
                 childDepths = emptyList(),
             )
         ) {
@@ -135,22 +151,12 @@ private class ParserState(
             is GMResult.Err -> return result
         }
 
-        if (current().type == JessieCodeTokenType.EOF) {
-            return GMResult.Ok(initial.node)
-        }
-
         var program = initial
-        while (current().type != JessieCodeTokenType.EOF) {
-            val expression = when (val result = parseAssignment()) {
-                is GMResult.Ok -> result.value
-                is GMResult.Err -> return result
+        while (current().type != terminator) {
+            if (current().type == JessieCodeTokenType.EOF) {
+                return unexpected(listOf(terminator))
             }
-            if (current().type == JessieCodeTokenType.SHIFT_LEFT) {
-                return unsupported("call attribute lists")
-            }
-            val semicolon = when (
-                val result = expect(JessieCodeTokenType.SEMICOLON)
-            ) {
+            val statement = when (val result = parseStatement()) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
@@ -160,22 +166,159 @@ private class ParserState(
                     value = JessieCodeAstValue.Text("op_none"),
                     children = listOf(
                         JessieCodeAstChild.Node(program.node),
-                        JessieCodeAstChild.Node(expression.node),
+                        JessieCodeAstChild.Node(statement.node),
                     ),
                     nodeLocation = program.span,
                     childDepths = listOf(
                         program.depth,
-                        expression.depth,
+                        statement.depth,
                     ),
                 )
             ) {
                 is GMResult.Ok -> result.value.copy(
-                    span = span(program.span, semicolon.location),
+                    span = span(program.span, statement.span),
                 )
                 is GMResult.Err -> return result
             }
         }
-        return GMResult.Ok(program.node)
+        return GMResult.Ok(
+            ParsedExpression(
+                node = program.node,
+                span = program.span,
+                depth = program.depth,
+            ),
+        )
+    }
+
+    // JSXGraph: Statement and ExpressionStatement
+    private fun parseStatement(): ParserResult<ParsedExpression> =
+        when (current().type) {
+            JessieCodeTokenType.IF -> {
+                val location = current().location
+                nested(location) { parseIfStatement() }
+            }
+            JessieCodeTokenType.LEFT_BRACE -> {
+                val location = current().location
+                nested(location) { parseStatementBlock() }
+            }
+            JessieCodeTokenType.SEMICOLON -> parseEmptyStatement()
+            JessieCodeTokenType.WHILE,
+            JessieCodeTokenType.FOR,
+            JessieCodeTokenType.DO,
+            -> unsupported("loop statements")
+            JessieCodeTokenType.USE,
+            JessieCodeTokenType.DELETE,
+            -> unsupported("unary statements")
+            JessieCodeTokenType.RETURN ->
+                unsupported("return statements")
+            else -> parseExpressionStatement()
+        }
+
+    private fun parseExpressionStatement(): ParserResult<ParsedExpression> {
+        val expression = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (current().type == JessieCodeTokenType.SHIFT_LEFT) {
+            return unsupported("call attribute lists")
+        }
+        val semicolon = when (
+            val result = expect(JessieCodeTokenType.SEMICOLON)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            expression.copy(
+                span = span(expression.span, semicolon.location),
+            ),
+        )
+    }
+
+    // JSXGraph: IfStatement
+    private fun parseIfStatement(): ParserResult<ParsedExpression> {
+        val ifToken = consume()
+        when (
+            val result = expect(JessieCodeTokenType.LEFT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val condition = when (val result = parseAssignment()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        when (
+            val result = expect(JessieCodeTokenType.RIGHT_PARENTHESIS)
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val whenTrue = when (val result = parseStatement()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (current().type != JessieCodeTokenType.ELSE) {
+            return operation(
+                upstreamName = "op_if",
+                children = listOf(condition, whenTrue),
+                nodeLocation = ifToken.location,
+                span = span(ifToken.location, whenTrue.span),
+                isMath = null,
+            )
+        }
+
+        consume()
+        val whenFalse = when (val result = parseStatement()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(
+            upstreamName = "op_if_else",
+            children = listOf(condition, whenTrue, whenFalse),
+            nodeLocation = ifToken.location,
+            span = span(ifToken.location, whenFalse.span),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: StatementBlock
+    private fun parseStatementBlock(): ParserResult<ParsedExpression> {
+        val opening = consume()
+        val statements = when (
+            val result = parseStatementList(
+                terminator = JessieCodeTokenType.RIGHT_BRACE,
+                initialLocation = opening.location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val closing = when (
+            val result = expect(JessieCodeTokenType.RIGHT_BRACE)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(
+            upstreamName = "op_block",
+            children = listOf(statements),
+            nodeLocation = opening.location,
+            span = span(opening.location, closing.location),
+            isMath = null,
+        )
+    }
+
+    // JSXGraph: EmptyStatement
+    private fun parseEmptyStatement(): ParserResult<ParsedExpression> {
+        val semicolon = consume()
+        return operation(
+            upstreamName = "op_none",
+            children = emptyList(),
+            nodeLocation = semicolon.location,
+            span = semicolon.location,
+            isMath = null,
+        )
     }
 
     // JSXGraph: AssignmentExpression
