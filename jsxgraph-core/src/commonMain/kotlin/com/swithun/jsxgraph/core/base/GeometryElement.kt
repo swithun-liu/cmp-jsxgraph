@@ -109,6 +109,9 @@ internal open class GeometryElement(
     // JSXGraph: src/base/element.js -> updateRenderer
     internal open fun updateRenderer(): GeometryElement = this
 
+    // JSXGraph: src/base/element.js -> remove
+    internal open fun remove(): GeometryElement = this
+
     // JSXGraph: src/base/element.js -> fullUpdate
     internal fun fullUpdate(): GeometryElement =
         prepareUpdate()

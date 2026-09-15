@@ -88,6 +88,78 @@ internal class Board(
 
     internal fun elementById(id: String): GeometryElement? = objects[id]
 
+    // JSXGraph: src/base/board.js -> _removeObj
+    private fun removeElement(
+        element: GeometryElement?,
+        saveMethod: Boolean,
+    ) {
+        if (element == null || objects[element.id] !== element) {
+            return
+        }
+
+        // The upstream recursive call intentionally does not forward
+        // saveMethod, so descendants always use the ancestor-based path.
+        for (child in element.childElements.values.toList()) {
+            child.board.removeElement(child, saveMethod = false)
+        }
+
+        if (saveMethod) {
+            for (candidate in objects.values) {
+                candidate.childElements.remove(element.id)
+                candidate.descendants.remove(element.id)
+            }
+        } else {
+            for (ancestor in element.ancestors.values) {
+                ancestor.childElements.remove(element.id)
+                ancestor.descendants.remove(element.id)
+            }
+        }
+
+        val position = element.positionInBoard
+        if (
+            position >= 0 &&
+            position < objectsList.size &&
+            objectsList[position] === element
+        ) {
+            objectsList.removeAt(position)
+            for (index in position until objectsList.size) {
+                objectsList[index].positionInBoard = index
+            }
+        }
+
+        objects.remove(element.id)
+        element.positionInBoard = -1
+        element.remove()
+    }
+
+    // JSXGraph: src/base/board.js -> removeObject
+    internal fun removeObject(
+        element: GeometryElement?,
+        saveMethod: Boolean = false,
+    ): Board {
+        removeElement(element, saveMethod)
+        update()
+        return this
+    }
+
+    // JSXGraph: src/base/board.js -> removeObject
+    internal fun removeObject(
+        elementId: String,
+        saveMethod: Boolean = false,
+    ): Board = removeObject(objects[elementId], saveMethod)
+
+    // JSXGraph: src/base/board.js -> removeObject
+    internal fun removeObjects(
+        elements: Iterable<GeometryElement>,
+        saveMethod: Boolean = false,
+    ): Board {
+        for (element in elements.toList()) {
+            removeElement(element, saveMethod)
+        }
+        update()
+        return this
+    }
+
     // JSXGraph: src/base/board.js -> prepareUpdate
     internal fun prepareUpdate(): Board {
         for (element in objectsList) {

@@ -23,6 +23,10 @@ practical.
   duplicated id instead of silently replacing the previous `objects` entry.
   Generated-id collisions use deterministic increasing suffixes instead of
   JSXGraph's random suffix, while preserving uniqueness and creation order.
+- `Board.removeObject` resets a removed element's board position to `-1` and
+  ignores later attempts to remove the same reference. JSXGraph leaves the
+  stale `_pos` value on the removed object, so removing that reference again
+  can splice an unrelated element that has moved into the old position.
 - Random-distribution functions accept an injectable `RandomSource`. Their
   default behavior still uses the platform random source; injection makes
   algorithm parity tests deterministic.
