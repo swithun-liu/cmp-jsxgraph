@@ -67,6 +67,11 @@ jobs:
       - name: Install visual audit dependencies
         run: npm ci --prefix tools/visual-parity
 
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+
       - name: Download Web audit application
         uses: actions/download-artifact@v4
         with:
