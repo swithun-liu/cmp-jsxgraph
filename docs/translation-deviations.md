@@ -44,6 +44,9 @@ practical.
   parent and for board registration failure. JSXGraph's dynamic `createLine`
   also accepts point IDs, coordinate arrays, functions, transformations, and
   three standard-form coordinates, and throws for unsupported parent values.
+- `Line.getAngle(String)` returns `GMResult.Err(UnsupportedAngleUnit)` for an
+  unknown unit. JSXGraph returns JavaScript `undefined`; valid unit prefixes
+  and the no-unit radians result retain upstream behavior.
 - `Circle.create` currently accepts an already registered center plus an
   already registered circumference `Point`, a fixed numeric radius, an already
   registered `Line`, or an already registered source `Circle` from the same

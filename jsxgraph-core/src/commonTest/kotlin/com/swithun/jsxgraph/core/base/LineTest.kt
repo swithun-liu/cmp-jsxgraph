@@ -126,6 +126,155 @@ class LineTest {
     }
 
     @Test
+    fun angleUnitsAndHorizontalCheckMatchOfficialLineBehavior() {
+        val board = board()
+        val ordinary = line(
+            Line.create(
+                board,
+                point(board, doubleArrayOf(0.0, 0.0)),
+                point(board, doubleArrayOf(4.0, 2.0)),
+            ),
+        )
+
+        assertEquals(
+            0.4636476090008061,
+            ordinary.getAngle(),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            0.4636476090008061,
+            angle(ordinary.getAngle("")),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            0.4636476090008061,
+            angle(ordinary.getAngle("Radians")),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            26.56505117707799,
+            angle(ordinary.getAngle("DEGREES")),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            0.14758361765043326,
+            angle(ordinary.getAngle("semicircle")),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            0.07379180882521663,
+            angle(ordinary.getAngle("circle")),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            LineError.UnsupportedAngleUnit("turns"),
+            assertIs<GMResult.Err<LineError.UnsupportedAngleUnit>>(
+                ordinary.getAngle("turns"),
+            ).error,
+        )
+        assertEquals(false, ordinary.isHorizontal())
+
+        val horizontal = line(
+            Line.create(
+                board,
+                point(board, doubleArrayOf(-2.0, 3.0)),
+                point(board, doubleArrayOf(5.0, 3.0)),
+            ),
+        )
+        assertTrue(horizontal.isHorizontal())
+        assertEquals(false, horizontal.isVertical())
+        assertEquals((-0.0).toBits(), horizontal.getAngle().toBits())
+
+        val coincidentPoint = point(board, doubleArrayOf(2.0, 3.0))
+        val coincident = line(Line.create(board, coincidentPoint, coincidentPoint))
+        assertEquals(false, coincident.isHorizontal())
+        assertTrue(coincident.getAngle().isNaN())
+    }
+
+    @Test
+    fun finiteParametricCoordinatesMatchOfficialLineBehavior() {
+        val board = board()
+        val line = line(
+            Line.create(
+                board,
+                point(board, doubleArrayOf(0.0, 0.0)),
+                point(board, doubleArrayOf(4.0, 2.0)),
+            ),
+        )
+
+        assertEquals(1.0, line.X(0.25), absoluteTolerance = TOLERANCE)
+        assertEquals(0.5, line.Y(0.25), absoluteTolerance = TOLERANCE)
+        assertEquals(1.0, line.Z(0.25), absoluteTolerance = TOLERANCE)
+        assertArrayMatches(
+            doubleArrayOf(1.0, 1.0, 0.5),
+            line.Ft(0.25),
+        )
+        assertArrayMatches(
+            doubleArrayOf(1.0, 4.0, 2.0),
+            line.Ft(1.0),
+        )
+        assertEquals(0.0, line.minX())
+        assertEquals(1.0, line.maxX())
+    }
+
+    @Test
+    fun idealPointParametricBranchesMatchOfficialLineBehavior() {
+        val board = board()
+        val finite = point(board, doubleArrayOf(2.0, 3.0))
+        val ideal = point(board, doubleArrayOf(0.0, 4.0, -5.0))
+        val secondIdeal = point(board, doubleArrayOf(0.0, -2.0, 7.0))
+        val finiteToIdeal = line(Line.create(board, finite, ideal))
+        val idealToFinite = line(Line.create(board, ideal, finite))
+        val idealToIdeal = line(Line.create(board, ideal, secondIdeal))
+
+        assertArrayMatches(
+            doubleArrayOf(
+                1.0,
+                15619.376188860608,
+                -19518.72023607576,
+            ),
+            finiteToIdeal.Ft(0.25),
+            absoluteTolerance = PARAMETRIC_TOLERANCE,
+        )
+        assertEquals(0.0, finiteToIdeal.Z(1.0))
+        assertArrayMatches(
+            doubleArrayOf(
+                Double.NaN,
+                Double.POSITIVE_INFINITY,
+                Double.NEGATIVE_INFINITY,
+            ),
+            finiteToIdeal.Ft(1.0),
+        )
+
+        assertArrayMatches(
+            doubleArrayOf(
+                1.0,
+                -15615.376188860608,
+                19524.72023607576,
+            ),
+            idealToFinite.Ft(0.25),
+            absoluteTolerance = PARAMETRIC_TOLERANCE,
+        )
+        assertArrayMatches(
+            doubleArrayOf(
+                Double.NaN,
+                Double.NEGATIVE_INFINITY,
+                Double.POSITIVE_INFINITY,
+            ),
+            idealToFinite.Ft(1.0),
+        )
+
+        assertArrayMatches(
+            doubleArrayOf(1.0, Double.NaN, Double.NaN),
+            idealToIdeal.Ft(0.25),
+        )
+        assertArrayMatches(
+            doubleArrayOf(Double.NaN, Double.NaN, Double.NaN),
+            idealToIdeal.Ft(1.0),
+        )
+    }
+
+    @Test
     fun updateRecomputesStandardFormOnlyWhenRequested() {
         val board = board()
         val point1 = point(board, doubleArrayOf(0.0, 0.0))
@@ -250,9 +399,13 @@ class LineTest {
     private fun line(result: GMResult<Line, LineError>): Line =
         assertIs<GMResult.Ok<Line>>(result).value
 
+    private fun angle(result: GMResult<Double, LineError>): Double =
+        assertIs<GMResult.Ok<Double>>(result).value
+
     private fun assertArrayMatches(
         expected: DoubleArray,
         actual: DoubleArray,
+        absoluteTolerance: Double = TOLERANCE,
     ) {
         assertEquals(expected.size, actual.size)
         for (index in expected.indices) {
@@ -266,7 +419,7 @@ class LineTest {
                 else -> assertEquals(
                     expected = expected[index],
                     actual = actual[index],
-                    absoluteTolerance = TOLERANCE,
+                    absoluteTolerance = absoluteTolerance,
                     message = "Mismatch at index $index",
                 )
             }
@@ -274,6 +427,7 @@ class LineTest {
     }
 
     private companion object {
+        const val PARAMETRIC_TOLERANCE = 1.0e-9
         const val TOLERANCE = 1.0e-14
     }
 }

@@ -9,9 +9,13 @@ package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Mat
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 
 internal sealed interface LineError {
+    data class UnsupportedAngleUnit(val unit: String) : LineError
+
     data class ParentBoardMismatch(val parentIndex: Int) : LineError
 
     data class ParentNotRegistered(
@@ -26,9 +30,9 @@ internal sealed interface LineError {
  * Initial translated slice of JXG.Line.
  *
  * This slice covers lines defined by two registered points, their dependency
- * links, standard form, and coordinate-derived numeric queries. Coordinate
- * parents, constrained lines, rendering, ticks, arrows, and hit testing remain
- * untranslated.
+ * links, standard form, coordinate-derived numeric queries, and parametric
+ * coordinates. Coordinate parents, constrained lines, rendering, ticks,
+ * arrows, and hit testing remain untranslated.
  */
 internal open class Line internal constructor(
     board: Board,
@@ -88,6 +92,26 @@ internal open class Line internal constructor(
             Double.POSITIVE_INFINITY
         }
 
+    // JSXGraph: src/base/line.js -> getAngle
+    internal fun getAngle(): Double = atan2(-stdform[1], stdform[2])
+
+    // JSXGraph: src/base/line.js -> getAngle
+    internal fun getAngle(unit: String): GMResult<Double, LineError> {
+        val radians = getAngle()
+        if (unit.isEmpty()) {
+            return GMResult.Ok(radians)
+        }
+        val normalizedUnit = unit.lowercase()
+
+        return when {
+            normalizedUnit.startsWith("rad") -> GMResult.Ok(radians)
+            normalizedUnit.startsWith("deg") -> GMResult.Ok(radians * 180.0 / PI)
+            normalizedUnit.startsWith("sem") -> GMResult.Ok(radians / PI)
+            normalizedUnit.startsWith("cir") -> GMResult.Ok(radians * 0.5 / PI)
+            else -> GMResult.Err(LineError.UnsupportedAngleUnit(unit))
+        }
+    }
+
     // JSXGraph: src/base/line.js -> Direction
     internal fun Direction(): DoubleArray {
         val coordinates1 = point1.coords.usrCoords
@@ -111,8 +135,84 @@ internal open class Line internal constructor(
         return direction[0] == 0.0 && direction[1] != 0.0
     }
 
+    // JSXGraph: src/base/line.js -> isHorizontal
+    internal fun isHorizontal(): Boolean {
+        val direction = Direction()
+        return direction[1] == 0.0 && direction[0] != 0.0
+    }
+
+    // JSXGraph: src/base/line.js -> X
+    internal fun X(t: Double): Double {
+        val coordinates1 = point1.coords.usrCoords
+        val coordinates2 = point2.coords.usrCoords
+        val b = stdform[2]
+
+        return if (coordinates1[0] != 0.0) {
+            if (coordinates2[0] != 0.0) {
+                coordinates1[1] + (coordinates2[1] - coordinates1[1]) * t
+            } else {
+                coordinates1[1] + b * IDEAL_POINT_SCALE * t
+            }
+        } else {
+            // Preserve JSXGraph's nested condition verbatim for update parity.
+            if (coordinates1[0] != 0.0) {
+                coordinates2[1] - (coordinates1[1] - coordinates2[1]) * t
+            } else {
+                coordinates2[1] + b * IDEAL_POINT_SCALE * t
+            }
+        }
+    }
+
+    // JSXGraph: src/base/line.js -> Y
+    internal fun Y(t: Double): Double {
+        val coordinates1 = point1.coords.usrCoords
+        val coordinates2 = point2.coords.usrCoords
+        val a = stdform[1]
+
+        return if (coordinates1[0] != 0.0) {
+            if (coordinates2[0] != 0.0) {
+                coordinates1[2] + (coordinates2[2] - coordinates1[2]) * t
+            } else {
+                coordinates1[2] - a * IDEAL_POINT_SCALE * t
+            }
+        } else {
+            // Preserve JSXGraph's nested condition verbatim for update parity.
+            if (coordinates1[0] != 0.0) {
+                coordinates2[2] - (coordinates1[2] - coordinates2[2]) * t
+            } else {
+                coordinates2[2] - a * IDEAL_POINT_SCALE * t
+            }
+        }
+    }
+
+    // JSXGraph: src/base/line.js -> Z
+    internal fun Z(t: Double): Double {
+        val coordinates1 = point1.coords.usrCoords
+        val coordinates2 = point2.coords.usrCoords
+        return if (t == 1.0 && coordinates1[0] * coordinates2[0] == 0.0) {
+            0.0
+        } else {
+            1.0
+        }
+    }
+
+    // JSXGraph: src/base/line.js -> Ft
+    internal fun Ft(t: Double): DoubleArray {
+        val coordinates = doubleArrayOf(Z(t), X(t), Y(t))
+        coordinates[1] /= coordinates[0]
+        coordinates[2] /= coordinates[0]
+        coordinates[0] /= coordinates[0]
+        return coordinates
+    }
+
     // JSXGraph: src/base/line.js -> L
     internal fun L(): Double = point1.Dist(point2)
+
+    // JSXGraph: src/base/line.js -> minX
+    internal fun minX(): Double = 0.0
+
+    // JSXGraph: src/base/line.js -> maxX
+    internal fun maxX(): Double = 1.0
 
     // JSXGraph: src/base/line.js -> bounds
     internal fun bounds(): DoubleArray {
@@ -127,6 +227,7 @@ internal open class Line internal constructor(
     }
 
     internal companion object {
+        private const val IDEAL_POINT_SCALE = 1.0e5
         private const val LINE_ID_PREFIX = "L"
         private const val LINE_ELEMENT_TYPE = "line"
 
