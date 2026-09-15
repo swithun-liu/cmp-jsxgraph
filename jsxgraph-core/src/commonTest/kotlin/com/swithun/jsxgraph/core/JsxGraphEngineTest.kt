@@ -215,6 +215,66 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun polygonDocumentsPreserveFillBordersAndImplicitVertices() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-1, 4, 5, -1],
+                  "objects": [
+                    {
+                      "id": "triangle",
+                      "type": "polygon",
+                      "parents": [[0, 0], [4, 0], [0, 3]],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "strokeWidth": 7,
+                        "strokeOpacity": 0.4
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val polygon = assertIs<JsxGraphSceneElement.Polygon>(
+            scene.elements.single(),
+        )
+        assertEquals(
+            listOf(
+                JsxGraphPoint2D(0.0, 0.0),
+                JsxGraphPoint2D(4.0, 0.0),
+                JsxGraphPoint2D(0.0, 3.0),
+            ),
+            polygon.vertices,
+        )
+        assertEquals(3, polygon.implicitVertices.size)
+        assertTrue(polygon.withLines)
+        assertEquals(
+            JsxGraphColor(240, 228, 66),
+            polygon.style.fillColor,
+        )
+        assertEquals(0.3, polygon.style.fillOpacity)
+        assertEquals(JsxGraphColor(0, 114, 178), polygon.style.strokeColor)
+        assertEquals(0.4, polygon.style.strokeOpacity)
+        assertEquals(7.0, polygon.style.strokeWidth)
+        assertEquals(
+            JsxGraphColor(0, 114, 178),
+            polygon.borderStyle.strokeColor,
+        )
+        assertEquals(1.0, polygon.borderStyle.strokeOpacity)
+        assertEquals(1.0, polygon.borderStyle.strokeWidth)
+        assertTrue(
+            polygon.implicitVertices.all {
+                it.style.fillColor == JsxGraphColor(213, 94, 0) &&
+                    it.size == 3.0
+            },
+        )
+    }
+
+    @Test
     fun malformedDocumentsReturnStructuredErrors() {
         assertIs<JsxGraphDocumentError.InvalidJson>(
             assertError("{"),
@@ -259,7 +319,7 @@ class JsxGraphEngineTest {
         assertIs<JsxGraphDocumentError.UnsupportedElementType>(
             assertError(
                 documentWithObjects(
-                    """{"id":"p","type":"polygon","parents":[]}""",
+                    """{"id":"t","type":"text","parents":[0,0,"pending"]}""",
                 ),
             ),
         )
@@ -363,6 +423,12 @@ class JsxGraphEngineTest {
                 limits = JsxGraphEngineLimits(maxCurvePoints = 0),
             ),
         )
+        assertIs<JsxGraphDocumentError.InvalidLimits>(
+            assertError(
+                source = """{"boundingBox":[-1,1,1,-1],"objects":[]}""",
+                limits = JsxGraphEngineLimits(maxPolygonVertices = 0),
+            ),
+        )
         assertIs<JsxGraphDocumentError.SourceLengthExceeded>(
             assertError(
                 source = """{"boundingBox":[-1,1,1,-1],"objects":[]}""",
@@ -406,6 +472,20 @@ class JsxGraphEngineTest {
                     """.trimIndent(),
                 ),
                 limits = JsxGraphEngineLimits(maxCurvePoints = 3),
+            ),
+        )
+        assertIs<JsxGraphDocumentError.PolygonVertexLimitExceeded>(
+            assertError(
+                source = documentWithObjects(
+                    """
+                    {
+                      "id":"polygon",
+                      "type":"polygon",
+                      "parents":[[0,0],[1,0],[1,1],[0,1]]
+                    }
+                    """.trimIndent(),
+                ),
+                limits = JsxGraphEngineLimits(maxPolygonVertices = 3),
             ),
         )
     }

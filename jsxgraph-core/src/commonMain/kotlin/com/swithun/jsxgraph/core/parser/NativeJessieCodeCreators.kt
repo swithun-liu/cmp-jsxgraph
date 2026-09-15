@@ -4,7 +4,8 @@
  * src/base/point.js -> createPoint,
  * src/base/line.js -> createLine,
  * src/base/circle.js -> createCircle,
- * src/base/curve.js -> createCurve / createFunctiongraph
+ * src/base/curve.js -> createCurve / createFunctiongraph,
+ * src/base/polygon.js -> createPolygon
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -22,6 +23,8 @@ import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.LineError
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
+import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.PolygonError
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 
 internal sealed interface JessieCodeCreatorError {
@@ -56,6 +59,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class CurveFactory(
         val error: CurveError,
+    ) : JessieCodeCreatorError
+
+    data class PolygonFactory(
+        val error: PolygonError,
     ) : JessieCodeCreatorError
 }
 
@@ -99,6 +106,9 @@ internal object NativeJessieCodeCreators {
                 location,
                 creatorName = "plot",
             )
+        },
+        "polygon" to JessieCodeCreator { board, parents, attributes, location ->
+            createPolygon(board, parents, attributes, location)
         },
     )
 
@@ -480,6 +490,95 @@ internal object NativeJessieCodeCreators {
                 needsRegularUpdate = identity.needsRegularUpdate,
             ),
         )
+    }
+
+    private fun createPolygon(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                "polygon",
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                "polygon",
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withLines = when (
+            val result = booleanAttribute(
+                creatorName = "polygon",
+                attributes = attributes,
+                name = "withlines",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        val pointParents = mutableListOf<PointParent>()
+        for (parent in parents) {
+            pointParents += pointParent(resolvedBoard, parent)
+                ?: return unsupported("polygon", parents, location)
+        }
+
+        val vertices = mutableListOf<Point>()
+        val ownedVertices = linkedSetOf<Point>()
+        for (parent in pointParents) {
+            when (val result = materializePoint(resolvedBoard, parent)) {
+                is GMResult.Ok -> {
+                    vertices += result.value
+                    if (parent is PointParent.Coordinates) {
+                        ownedVertices += result.value
+                    }
+                }
+                is GMResult.Err -> {
+                    resolvedBoard.removeObjects(ownedVertices)
+                    return failure(
+                        creatorName = "polygon",
+                        error = JessieCodeCreatorError.PointFactory(
+                            result.error,
+                        ),
+                        location = location,
+                    )
+                }
+            }
+        }
+
+        return when (
+            val result = Polygon.create(
+                board = resolvedBoard,
+                vertices = vertices,
+                ownedVertices = ownedVertices,
+                withLines = withLines,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                resolvedBoard.removeObjects(ownedVertices)
+                failure(
+                    creatorName = "polygon",
+                    error = JessieCodeCreatorError.PolygonFactory(
+                        result.error,
+                    ),
+                    location = location,
+                )
+            }
+        }
     }
 
     private fun curveSampleCount(

@@ -42,7 +42,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -308,6 +310,8 @@ fun JsxGraphScenePreview(
                     drawSceneCircle(element, metrics)
                 is JsxGraphSceneElement.Curve ->
                     drawSceneCurve(element, metrics)
+                is JsxGraphSceneElement.Polygon ->
+                    drawScenePolygon(element, metrics)
             }
         }
     }
@@ -512,6 +516,60 @@ private fun DrawScope.drawSceneCurve(
                 cap = StrokeCap.Round,
             ),
         )
+    }
+}
+
+// JSXGraph: src/renderer/abstract.js -> drawPolygon / updatePolygon.
+private fun DrawScope.drawScenePolygon(
+    polygon: JsxGraphSceneElement.Polygon,
+    metrics: BoardMetrics,
+) {
+    val screenVertices = polygon.vertices.map { vertex ->
+        metrics.toScreen(vertex.toOffset())
+    }
+    if (screenVertices.isNotEmpty()) {
+        val path = Path().apply {
+            fillType = PathFillType.EvenOdd
+            moveTo(screenVertices[0].x, screenVertices[0].y)
+            for (index in 1 until screenVertices.size) {
+                lineTo(
+                    screenVertices[index].x,
+                    screenVertices[index].y,
+                )
+            }
+            close()
+        }
+        val fill = polygon.style.fillColor.toComposeColor(
+            opacity = polygon.style.fillOpacity,
+        )
+        if (screenVertices.size >= 3 && fill.alpha > 0.0f) {
+            drawPath(path = path, color = fill)
+        }
+
+        val stroke = polygon.borderStyle.strokeColor.toComposeColor(
+            opacity = polygon.borderStyle.strokeOpacity,
+        )
+        if (
+            polygon.withLines &&
+            screenVertices.size >= 2 &&
+            stroke.alpha > 0.0f &&
+            polygon.borderStyle.strokeWidth > 0.0
+        ) {
+            drawPath(
+                path = path,
+                color = stroke,
+                style = Stroke(
+                    width = polygon.borderStyle.strokeWidth.dp.toPx(),
+                    cap = StrokeCap.Butt,
+                    join = StrokeJoin.Miter,
+                ),
+            )
+        }
+    }
+    for (vertex in polygon.implicitVertices) {
+        if (vertex.style.visible) {
+            drawScenePoint(vertex, metrics)
+        }
     }
 }
 

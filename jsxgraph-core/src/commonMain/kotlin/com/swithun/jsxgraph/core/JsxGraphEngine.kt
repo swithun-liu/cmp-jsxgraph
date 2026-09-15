@@ -15,6 +15,7 @@ import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import com.swithun.jsxgraph.core.parser.NativeJessieCodeCreators
@@ -34,6 +35,7 @@ data class JsxGraphEngineLimits(
     val maxJsonValues: Int = 100_000,
     val maxObjects: Int = 10_000,
     val maxCurvePoints: Int = 10_000,
+    val maxPolygonVertices: Int = 10_000,
 )
 
 sealed interface JsxGraphDocumentError {
@@ -107,6 +109,16 @@ sealed interface JsxGraphDocumentError {
     ) : JsxGraphDocumentError {
         override val message: String =
             "objects[$objectIndex] '$id' curve point count $actual exceeds limit $limit"
+    }
+
+    data class PolygonVertexLimitExceeded(
+        val objectIndex: Int,
+        val id: String,
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' polygon vertex count $actual exceeds limit $limit"
     }
 
     data class DuplicateObjectId(
@@ -493,6 +505,62 @@ object JsxGraphEngine {
                 )
             }
 
+            is Polygon -> {
+                val withLines = when (
+                    val result = attributes.boolean(
+                        name = "withlines",
+                        default = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val vertexCount = (element.vertices.size - 1).coerceAtLeast(0)
+                val vertices = element.vertices
+                    .take(vertexCount)
+                    .mapNotNull(::point)
+                if (vertices.size != vertexCount) {
+                    return GMResult.Err(attributes.nonFiniteGeometry())
+                }
+                val implicitVertices = element.ownedVertices.map { vertex ->
+                    val coordinates = point(vertex)
+                        ?: return GMResult.Err(
+                            attributes.nonFiniteGeometry(),
+                        )
+                    JsxGraphSceneElement.Point(
+                        id = vertex.id,
+                        name = vertex.name,
+                        style = JsxGraphElementStyle(
+                            visible = true,
+                            strokeColor = DEFAULT_POINT_COLOR,
+                            fillColor = DEFAULT_POINT_COLOR,
+                            strokeWidth = 2.0,
+                            strokeOpacity = 1.0,
+                            fillOpacity = 1.0,
+                        ),
+                        coordinates = coordinates,
+                        size = 3.0,
+                        face = "o",
+                    )
+                }
+                JsxGraphSceneElement.Polygon(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    vertices = vertices,
+                    implicitVertices = implicitVertices,
+                    borderStyle = JsxGraphElementStyle(
+                        visible = true,
+                        strokeColor = DEFAULT_STROKE_COLOR,
+                        fillColor = JsxGraphColor.Transparent,
+                        strokeWidth = 1.0,
+                        strokeOpacity = 1.0,
+                        fillOpacity = 1.0,
+                    ),
+                    withLines = withLines,
+                )
+            }
+
             else -> return GMResult.Err(
                 JsxGraphDocumentError.UnsupportedElementType(
                     objectIndex = source.index,
@@ -592,6 +660,15 @@ object JsxGraphEngine {
                 val result = validateCurvePointLimit(
                     sourceObject,
                     limits.maxCurvePoints,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            when (
+                val result = validatePolygonVertexLimit(
+                    sourceObject,
+                    limits.maxPolygonVertices,
                 )
             ) {
                 is GMResult.Ok -> Unit
@@ -727,6 +804,28 @@ object JsxGraphEngine {
         }
     }
 
+    private fun validatePolygonVertexLimit(
+        sourceObject: ParsedObject,
+        limit: Int,
+    ): GMResult<Unit, JsxGraphDocumentError> {
+        if (sourceObject.type != "polygon") {
+            return GMResult.Ok(Unit)
+        }
+        val actual = sourceObject.parents.size
+        return if (actual > limit) {
+            GMResult.Err(
+                JsxGraphDocumentError.PolygonVertexLimitExceeded(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    limit = limit,
+                    actual = actual,
+                ),
+            )
+        } else {
+            GMResult.Ok(Unit)
+        }
+    }
+
     private fun runtimeAttributes(
         sourceObject: ParsedObject,
     ): GMResult<JessieCodeRuntimeValue.ObjectValue, JsxGraphDocumentError> {
@@ -824,6 +923,8 @@ object JsxGraphEngine {
             limits.maxJsonValues <= 0 -> "maxJsonValues must be positive"
             limits.maxObjects <= 0 -> "maxObjects must be positive"
             limits.maxCurvePoints <= 0 -> "maxCurvePoints must be positive"
+            limits.maxPolygonVertices <= 0 ->
+                "maxPolygonVertices must be positive"
             else -> null
         }
         return invalid?.let(JsxGraphDocumentError::InvalidLimits)
@@ -973,6 +1074,7 @@ object JsxGraphEngine {
                 is Line -> LINE_ATTRIBUTES
                 is Circle -> CIRCLE_ATTRIBUTES
                 is Curve -> CURVE_ATTRIBUTES
+                is Polygon -> POLYGON_ATTRIBUTES
                 else -> emptySet()
             }
             attributes.keys.firstOrNull { it !in supported }?.let { name ->
@@ -1007,6 +1109,7 @@ object JsxGraphEngine {
             }
             val defaultFill = when (element) {
                 is Point -> DEFAULT_POINT_COLOR
+                is Polygon -> DEFAULT_POLYGON_FILL_COLOR
                 else -> JsxGraphColor.Transparent
             }
             val visible = when (
@@ -1030,7 +1133,12 @@ object JsxGraphEngine {
             val strokeWidth = when (
                 val result = number(
                     "strokewidth",
-                    default = if (element is Curve) 1.0 else 2.0,
+                    default =
+                        if (element is Curve || element is Polygon) {
+                            1.0
+                        } else {
+                            2.0
+                        },
                     minimum = 0.0,
                 )
             ) {
@@ -1051,7 +1159,7 @@ object JsxGraphEngine {
             val fillOpacity = when (
                 val result = number(
                     "fillopacity",
-                    default = 1.0,
+                    default = if (element is Polygon) 0.3 else 1.0,
                     minimum = 0.0,
                     maximum = 1.0,
                 )
@@ -1266,6 +1374,8 @@ object JsxGraphEngine {
         JsxGraphColor(red = 0, green = 114, blue = 178)
     private val DEFAULT_POINT_COLOR =
         JsxGraphColor(red = 213, green = 94, blue = 0)
+    private val DEFAULT_POLYGON_FILL_COLOR =
+        JsxGraphColor(red = 240, green = 228, blue = 66)
     private val NAMED_COLORS = mapOf(
         "none" to JsxGraphColor.Transparent,
         "transparent" to JsxGraphColor.Transparent,
@@ -1315,5 +1425,8 @@ object JsxGraphEngine {
         "firstarrow",
         "lastarrow",
         "linecap",
+    )
+    private val POLYGON_ATTRIBUTES = setOf(
+        "withlines",
     )
 }

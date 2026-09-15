@@ -80,6 +80,19 @@ object JsxGraphParityCorpus {
                 "parametric-curve",
             ),
         ),
+        JsxGraphParityCase(
+            id = "polygons",
+            title = "Polygons",
+            source = POLYGONS_SOURCE,
+            features = setOf(
+                "axis",
+                "grid",
+                "polygon",
+                "fill",
+                "border",
+                "implicit-vertices",
+            ),
+        ),
     )
 
     fun find(caseId: String): GMResult<JsxGraphParityCase, String> =
@@ -418,6 +431,49 @@ private const val CURVES_SOURCE: String = """
         "strokeColor": "#246BCE",
         "strokeWidth": 2,
         "fillColor": "none",
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val POLYGONS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "quadrilateral",
+      "type": "polygon",
+      "parents": [[-5, -2], [-3.5, 3], [-0.5, 1.8], [-1.2, -2.8]],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#0072B2",
+        "strokeWidth": 2,
+        "fillColor": "#F0E442",
+        "fillOpacity": 0.3,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "borderlessTriangle",
+      "type": "polygon",
+      "parents": [[1, -2.5], [3.2, 3], [5.2, -1.3]],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#16877A",
+        "strokeWidth": 2,
+        "fillColor": "#16877A",
+        "fillOpacity": 0.25,
+        "withLines": false,
         "fixed": true,
         "highlight": false
       }

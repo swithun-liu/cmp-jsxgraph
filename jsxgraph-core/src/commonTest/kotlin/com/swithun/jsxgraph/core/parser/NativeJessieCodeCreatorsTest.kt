@@ -8,6 +8,7 @@ import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
+import com.swithun.jsxgraph.core.base.Polygon
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -261,6 +262,58 @@ class NativeJessieCodeCreatorsTest {
             ),
             error.error,
         )
+    }
+
+    @Test
+    fun polygonCreatorSupportsCoordinateVerticesAndGeometryMethods() {
+        val board = board("polygon")
+        val values = assertIs<JessieCodeRuntimeValue.ArrayValue>(
+            evaluate(
+                source =
+                    "P = polygon([0, 0], [4, 0], [0, 3]); " +
+                        "[P.Area(), P.L(), Area(P), Perimeter(P), " +
+                        "P.vertices.length, P.borders.length, " +
+                        "P.BoundingBox()];",
+                board = board,
+            ),
+        ).values
+        val polygon = assertIs<Polygon>(board.select("P"))
+
+        assertEquals(4, polygon.vertices.size)
+        assertEquals(3, polygon.ownedVertices.size)
+        assertEquals(3, polygon.borders.size)
+        assertEquals(
+            listOf(6.0, 12.0, 6.0, 12.0, 4.0, 3.0),
+            values.dropLast(1).map {
+                assertIs<JessieCodeRuntimeValue.NumberValue>(it).value
+            },
+        )
+        assertEquals(
+            listOf(0.0, 3.0, 4.0, 0.0),
+            assertIs<JessieCodeRuntimeValue.ArrayValue>(
+                values.last(),
+            ).values.map {
+                assertIs<JessieCodeRuntimeValue.NumberValue>(it).value
+            },
+        )
+        assertEquals(
+            polygon.vertices.dropLast(1).map(Point::id).toSet(),
+            polygon.ownedVertices.map(Point::id).toSet(),
+        )
+    }
+
+    @Test
+    fun polygonCreatorRollsBackMaterializedPointsAfterFailure() {
+        val board = board("polygon-failure")
+        val error = creatorError(
+            source = "polygon([0, 0], [\"x +\", 1]);",
+            board = board,
+        )
+
+        assertEquals("polygon", error.creatorName)
+        assertIs<JessieCodeCreatorError.PointFactory>(error.error)
+        assertTrue(board.objects.isEmpty())
+        assertTrue(board.objectsList.isEmpty())
     }
 
     @Test

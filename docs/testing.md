@@ -102,13 +102,16 @@ Latest construction-document evidence (2026-09-15):
 | `coordinate_parents` | 0.986543 | 0.978321 |
 | `shifted_geometry` | 0.986997 | 0.974236 |
 | `curves` | 0.986698 | 0.975236 |
+| `polygons` | 0.986562 | 0.973171 |
 
 All captures passed the nonblank and browser-error checks. These numbers are
 evidence for this translated slice only; they do not satisfy the full Stable
 Gate. The Curve capture additionally verifies nonempty official SVG paths for
 the function graph, parametric curve, and discrete data plot. The capture
 harness rejects JSXGraph's `error compiling function` console warning so a
-JessieCode CSP failure cannot pass as an empty official curve.
+JessieCode CSP failure cannot pass as an empty official curve. The Polygon
+capture verifies independent fill and default border styles, `withLines:
+false`, and coordinate-array helper vertices.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:

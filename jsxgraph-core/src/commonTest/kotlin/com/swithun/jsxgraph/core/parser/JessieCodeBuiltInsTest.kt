@@ -316,7 +316,7 @@ class JessieCodeBuiltInsTest {
         )
         assertEquals("line", line.expected)
 
-        val circle = assertIs<JessieCodeRuntimeError.InvalidArgumentType>(
+        val area = assertIs<JessieCodeRuntimeError.InvalidArgumentType>(
             evaluateError(
                 source =
                     "A = point(1, 2); B = point(3, 4); " +
@@ -324,7 +324,7 @@ class JessieCodeBuiltInsTest {
                 environment = environment(board()),
             ),
         )
-        assertEquals("circle", circle.expected)
+        assertEquals("circle or polygon", area.expected)
     }
 
     private fun evaluate(

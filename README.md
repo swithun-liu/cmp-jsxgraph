@@ -18,8 +18,9 @@ Current parity cases:
 [finite segment](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=finite_segment),
 [coordinate parents](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=coordinate_parents),
 [shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry),
+[curves](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=curves),
 and
-[curves](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=curves).
+[polygons](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=polygons).
 
 ## Status
 
@@ -53,10 +54,11 @@ Implemented translation slices:
   removal, `IfThen`, recursive `eval`, injectable `randint`, static dependency
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, persistent JessieCode sessions,
-  assignment-LHS creator naming, native Point/Line/Circle creation, the
-  translated Point/Line/Circle `methodMap` subset, Point `X`/`Y` assignment,
-  element names, bounds, child links, immediate movement, coordinate
-  constraints, regular-update assignment, and resource limits;
+  assignment-LHS creator naming, native Point/Line/Circle/Curve/FunctionGraph/
+  Plot/Polygon creation, the translated Point/Line/Circle/Polygon `methodMap`
+  subset, Point `X`/`Y` assignment, element names, bounds, child links,
+  immediate movement, coordinate constraints, regular-update assignment, and
+  resource limits;
 - Circle radii defined by JessieCode strings, including functional update
   dependencies that remain separate from geometric parents;
 - Point coordinates defined by two or more JessieCode strings, including
@@ -65,22 +67,21 @@ Implemented translation slices:
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - a bounded production construction-document path for `boundingBox` and
   ordered `objects[]`, currently creating Point, Line, Circle, Curve,
-  FunctionGraph, and Plot elements through the translated Board and native
-  creator registry;
-- a platform-independent Point/Line/Circle/Curve render scene consumed by
-  Compose, including discrete data plots and right-open naive sampling for
-  explicit-domain function and parametric curves;
+  FunctionGraph, Plot, and Polygon elements through the translated Board and
+  native creator registry;
+- a platform-independent Point/Line/Circle/Curve/Polygon render scene consumed
+  by Compose, including discrete data plots, right-open naive sampling for
+  explicit-domain function and parametric curves, and filled/bordered polygons;
 - an interactive Compose geometry playground backed by the translated
-  line-circle intersection math.
+  line-circle intersection math;
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
   JSXGraph `1.13.3`, and native Compose previews.
 
 The playground is a renderer and interaction test surface. The remaining
 JessieCode creator registry, visual-property and function-valued element
-mutation, Polygon and Slider/Glider-backed built-ins, `import`/`$log`/`D`,
-the complete element `methodMap`, the remaining construction-document element
-types and attributes, and the complete element renderer are not yet
-translated.
+mutation, Slider/Glider-backed built-ins, `import`/`$log`/`D`, the complete
+element `methodMap`, the remaining construction-document element types and
+attributes, and the complete element renderer are not yet translated.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -141,10 +142,12 @@ The first production source contract maps directly to ordered
 
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
-types are `point`, `line`, `circle`, `curve`, `functiongraph`, and `plot`.
-Continuous curves currently require `doAdvancedPlot: false`; unsupported
-types, parent forms, plotting modes, and visual attributes fail explicitly
-instead of being omitted from the native render.
+types are `point`, `line`, `circle`, `curve`, `functiongraph`, `plot`, and
+`polygon`. Continuous curves currently require `doAdvancedPlot: false`;
+Polygon currently supports Point or coordinate-array vertices, `withLines`,
+top-level fill styling, and default border/vertex styles. Unsupported types,
+parent forms, plotting modes, nested Polygon styles, and visual attributes
+fail explicitly instead of being omitted from the native render.
 
 ## Build
 

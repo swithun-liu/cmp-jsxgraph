@@ -156,15 +156,15 @@ private val roadmapPhases = listOf(
         title = "Rendering & Interaction",
         subtitle = "Compose Canvas runtime",
         status = RoadmapStatus.IN_PROGRESS,
-        progress = 0.38f,
+        progress = 0.42f,
         accent = RenderingCoral,
         completedItems = listOf(
             "Portable render scene",
-            "Point, line, circle & curve Canvas",
+            "Point, line, circle, curve & polygon Canvas",
             "Same-source visual parity",
         ),
-        nextTitle = "Text, polygons & interaction",
-        nextDetail = "Expand element rendering, then add hit testing and gestures",
+        nextTitle = "Text, labels & interaction",
+        nextDetail = "Translate text rendering, then add hit testing and gestures",
         exitGate = "Visual geometry and interaction traces meet the stable parity gates.",
     ),
 )
@@ -454,7 +454,7 @@ private fun OverallProgress(
 ) {
     Column(
         modifier = modifier
-            .semantics { contentDescription = "overall-progress:72" },
+            .semantics { contentDescription = "overall-progress:74" },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -471,7 +471,7 @@ private fun OverallProgress(
                 letterSpacing = 0.sp,
             )
             Text(
-                text = "72%",
+                text = "74%",
                 color = DashboardInk,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Black,

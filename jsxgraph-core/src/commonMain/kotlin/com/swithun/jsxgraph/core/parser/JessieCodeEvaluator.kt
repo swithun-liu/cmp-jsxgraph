@@ -14,6 +14,7 @@ import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsMath
@@ -1976,9 +1977,9 @@ private class EvaluationState(
             }
             "L", "Length" -> lineNumberCallable(name) { it.L() }
             "A", "area", "Area" ->
-                circleNumberCallable(name) { it.Area() }
+                areaNumberCallable(name)
             "perimeter", "Perimeter" ->
-                circleNumberCallable(name) { it.Perimeter() }
+                perimeterNumberCallable(name)
             "dist", "Dist" -> JessieCodeCallable { arguments, location ->
                 val first = when (
                     val result = coordinateElementArgument(
@@ -2248,6 +2249,62 @@ private class EvaluationState(
                     location = location,
                 )
             number(value(circle))
+        }
+
+    private fun areaNumberCallable(
+        functionName: String,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val element = when (
+                val result = elementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@JessieCodeCallable result
+            }
+            when (element) {
+                is Circle -> number(element.Area())
+                is Polygon -> number(element.Area())
+                else -> invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = 0,
+                    expected = "circle or polygon",
+                    actual = arguments.first(),
+                    location = location,
+                )
+            }
+        }
+
+    private fun perimeterNumberCallable(
+        functionName: String,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val element = when (
+                val result = elementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@JessieCodeCallable result
+            }
+            when (element) {
+                is Circle -> number(element.Perimeter())
+                is Polygon -> number(element.Perimeter())
+                else -> invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = 0,
+                    expected = "circle or polygon",
+                    actual = arguments.first(),
+                    location = location,
+                )
+            }
         }
 
     private fun angleCallable(

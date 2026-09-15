@@ -1,7 +1,8 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> resolveProperty and the methodMap
- * declarations in src/base/coordselement.js, line.js, and circle.js
+ * declarations in src/base/coordselement.js, line.js, circle.js, and
+ * polygon.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -15,6 +16,7 @@ import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
@@ -40,6 +42,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
         resolveGeometryProperty(element, property)?.let {
+            return it
+        }
+        resolvePolygonProperty(element, property, location)?.let {
             return it
         }
         resolveCircleProperty(element, property, location)?.let {
@@ -164,6 +169,29 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             }
             else -> null
         }
+
+    private fun resolvePolygonProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val polygon = element as? Polygon ?: return null
+        return when (property) {
+            "vertices" -> GMResult.Ok(elements(polygon.vertices))
+            "borders" -> GMResult.Ok(elements(polygon.borders))
+            "A", "Area" -> numberFunction("Area") {
+                polygon.Area()
+            }
+            "Perimeter", "L" -> numberFunction("Perimeter") {
+                polygon.Perimeter()
+            }
+            "boundingBox", "BoundingBox" ->
+                function("boundingBox") { _, _ ->
+                    GMResult.Ok(array(polygon.bounds()))
+                }
+            else -> unavailable(polygon, property, location)
+        }
+    }
 
     private fun resolveCircleProperty(
         element: GeometryElement,
@@ -355,6 +383,13 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
     private fun array(values: DoubleArray): JessieCodeRuntimeValue =
         JessieCodeRuntimeValue.ArrayValue(
             values.map(JessieCodeRuntimeValue::NumberValue),
+        )
+
+    private fun elements(
+        values: List<GeometryElement>,
+    ): JessieCodeRuntimeValue =
+        JessieCodeRuntimeValue.ArrayValue(
+            values.map(JessieCodeRuntimeValue::ElementReference),
         )
 
     private fun number(value: Double): ElementPropertyResult =
@@ -675,6 +710,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             is Circle -> element.bounds()
             is Line -> element.bounds()
             is Point -> element.bounds()
+            is Polygon -> element.bounds()
             else -> doubleArrayOf(0.0, 0.0, 0.0, 0.0)
         }
 
