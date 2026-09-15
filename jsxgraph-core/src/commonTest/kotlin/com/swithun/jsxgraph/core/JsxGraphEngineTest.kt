@@ -143,6 +143,78 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun curveDocumentsUseTranslatedFactoriesAndPreservePathBreaks() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-3, 5, 3, -1],
+                  "objects": [
+                    {
+                      "id": "A",
+                      "type": "point",
+                      "parents": [0, 2],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "visible": false
+                      }
+                    },
+                    {
+                      "id": "graph",
+                      "type": "functiongraph",
+                      "parents": ["A.Y() * x * x", -2, 2],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "doAdvancedPlot": false,
+                        "numberPointsHigh": 4
+                      }
+                    },
+                    {
+                      "id": "data",
+                      "type": "curve",
+                      "parents": [[-2, -1, 0], [1, 0]],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val graph = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements[1],
+        )
+        assertEquals(1.0, graph.style.strokeWidth)
+        assertEquals("round", graph.lineCap)
+        assertEquals(
+            listOf(
+                JsxGraphPoint2D(-2.0, 8.0),
+                JsxGraphPoint2D(-1.0, 2.0),
+                JsxGraphPoint2D(0.0, 0.0),
+                JsxGraphPoint2D(1.0, 2.0),
+            ),
+            graph.points,
+        )
+
+        val data = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements[2],
+        )
+        assertEquals(
+            listOf(
+                JsxGraphPoint2D(-2.0, 1.0),
+                JsxGraphPoint2D(-1.0, 0.0),
+                null,
+            ),
+            data.points,
+        )
+    }
+
+    @Test
     fun malformedDocumentsReturnStructuredErrors() {
         assertIs<JsxGraphDocumentError.InvalidJson>(
             assertError("{"),
@@ -240,6 +312,23 @@ class JsxGraphEngineTest {
                 ),
             ),
         )
+        assertIs<JsxGraphDocumentError.ElementCreation>(
+            assertError(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"f",
+                      "type":"functiongraph",
+                      "parents":["x * x",-2,2],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        )
         assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(
             assertError(
                 documentWithObjects(
@@ -268,6 +357,12 @@ class JsxGraphEngineTest {
                 limits = JsxGraphEngineLimits(maxJsonDepth = 0),
             ),
         )
+        assertIs<JsxGraphDocumentError.InvalidLimits>(
+            assertError(
+                source = """{"boundingBox":[-1,1,1,-1],"objects":[]}""",
+                limits = JsxGraphEngineLimits(maxCurvePoints = 0),
+            ),
+        )
         assertIs<JsxGraphDocumentError.SourceLengthExceeded>(
             assertError(
                 source = """{"boundingBox":[-1,1,1,-1],"objects":[]}""",
@@ -293,6 +388,24 @@ class JsxGraphEngineTest {
                     """{"id":"B","type":"point","parents":[1,1]}""",
                 ),
                 limits = JsxGraphEngineLimits(maxObjects = 1),
+            ),
+        )
+        assertIs<JsxGraphDocumentError.CurvePointLimitExceeded>(
+            assertError(
+                source = documentWithObjects(
+                    """
+                    {
+                      "id":"f",
+                      "type":"functiongraph",
+                      "parents":["x",-1,1],
+                      "attributes":{
+                        "doAdvancedPlot":false,
+                        "numberPointsHigh":4
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+                limits = JsxGraphEngineLimits(maxCurvePoints = 3),
             ),
         )
     }

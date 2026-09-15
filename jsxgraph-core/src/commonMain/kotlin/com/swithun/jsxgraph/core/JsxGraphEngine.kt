@@ -11,6 +11,7 @@ package com.swithun.jsxgraph.core
 
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
@@ -32,6 +33,7 @@ data class JsxGraphEngineLimits(
     val maxJsonDepth: Int = 64,
     val maxJsonValues: Int = 100_000,
     val maxObjects: Int = 10_000,
+    val maxCurvePoints: Int = 10_000,
 )
 
 sealed interface JsxGraphDocumentError {
@@ -95,6 +97,16 @@ sealed interface JsxGraphDocumentError {
     ) : JsxGraphDocumentError {
         override val message: String =
             "Object count $actual exceeds limit $limit"
+    }
+
+    data class CurvePointLimitExceeded(
+        val objectIndex: Int,
+        val id: String,
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' curve point count $actual exceeds limit $limit"
     }
 
     data class DuplicateObjectId(
@@ -424,6 +436,63 @@ object JsxGraphEngine {
                 )
             }
 
+            is Curve -> {
+                element.evaluationError?.let { error ->
+                    return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = source.index,
+                            id = source.id,
+                            type = source.type,
+                            reason = error.toString(),
+                        ),
+                    )
+                }
+                val lineCap = when (
+                    val result = attributes.string(
+                        name = "linecap",
+                        default = "round",
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Err -> return result
+                }
+                if (lineCap != "round") {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "lineCap",
+                            value = lineCap,
+                        ),
+                    )
+                }
+                if (
+                    style.fillColor.alpha > 0 &&
+                    style.fillOpacity > 0.0
+                ) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "fillColor",
+                            value = "non-transparent",
+                        ),
+                    )
+                }
+                JsxGraphSceneElement.Curve(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    points = element.points.map { coordinates ->
+                        val x = coordinates.usrCoords[1]
+                        val y = coordinates.usrCoords[2]
+                        if (x.isFinite() && y.isFinite()) {
+                            JsxGraphPoint2D(x, y)
+                        } else {
+                            null
+                        }
+                    },
+                    bezierDegree = element.bezierDegree,
+                    lineCap = lineCap,
+                )
+            }
+
             else -> return GMResult.Err(
                 JsxGraphDocumentError.UnsupportedElementType(
                     objectIndex = source.index,
@@ -519,6 +588,15 @@ object JsxGraphEngine {
                     ),
                 )
             }
+            when (
+                val result = validateCurvePointLimit(
+                    sourceObject,
+                    limits.maxCurvePoints,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
             objects += sourceObject
         }
         return GMResult.Ok(
@@ -611,6 +689,42 @@ object JsxGraphEngine {
                 attributes = normalizeObjectKeys(attributes),
             ),
         )
+    }
+
+    private fun validateCurvePointLimit(
+        sourceObject: ParsedObject,
+        limit: Int,
+    ): GMResult<Unit, JsxGraphDocumentError> {
+        if (
+            sourceObject.type !in
+            setOf("curve", "functiongraph", "plot")
+        ) {
+            return GMResult.Ok(Unit)
+        }
+        val dataPointCount = if (
+            sourceObject.type == "curve" &&
+            sourceObject.parents.size == 2
+        ) {
+            (sourceObject.parents.firstOrNull() as? JsonArray)?.size
+        } else {
+            null
+        }
+        val requested = dataPointCount ?: (
+            sourceObject.attributes["numberpointshigh"]
+                as? JsonPrimitive
+            )?.intOrNull ?: Curve.DEFAULT_SAMPLE_COUNT
+        return if (requested > limit) {
+            GMResult.Err(
+                JsxGraphDocumentError.CurvePointLimitExceeded(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    limit = limit,
+                    actual = requested,
+                ),
+            )
+        } else {
+            GMResult.Ok(Unit)
+        }
     }
 
     private fun runtimeAttributes(
@@ -709,6 +823,7 @@ object JsxGraphEngine {
                 "maxJsonDepth must be in 1..$MAX_JSON_DEPTH"
             limits.maxJsonValues <= 0 -> "maxJsonValues must be positive"
             limits.maxObjects <= 0 -> "maxObjects must be positive"
+            limits.maxCurvePoints <= 0 -> "maxCurvePoints must be positive"
             else -> null
         }
         return invalid?.let(JsxGraphDocumentError::InvalidLimits)
@@ -857,6 +972,7 @@ object JsxGraphEngine {
                 is Point -> POINT_ATTRIBUTES
                 is Line -> LINE_ATTRIBUTES
                 is Circle -> CIRCLE_ATTRIBUTES
+                is Curve -> CURVE_ATTRIBUTES
                 else -> emptySet()
             }
             attributes.keys.firstOrNull { it !in supported }?.let { name ->
@@ -914,7 +1030,7 @@ object JsxGraphEngine {
             val strokeWidth = when (
                 val result = number(
                     "strokewidth",
-                    default = 2.0,
+                    default = if (element is Curve) 1.0 else 2.0,
                     minimum = 0.0,
                 )
             ) {
@@ -1192,5 +1308,12 @@ object JsxGraphEngine {
     private val CIRCLE_ATTRIBUTES = setOf(
         "center",
         "point2",
+    )
+    private val CURVE_ATTRIBUTES = setOf(
+        "doadvancedplot",
+        "numberpointshigh",
+        "firstarrow",
+        "lastarrow",
+        "linecap",
     )
 }

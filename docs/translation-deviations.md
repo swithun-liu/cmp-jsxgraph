@@ -18,18 +18,31 @@ practical.
   `boundingBox`, Board flags, and ordered
   `objects[{id,type,parents,attributes}]`. This is a serialization of
   `Board.create(type, parents, attributes)`, not an upstream JSXGraph file
-  reader format. The current production subset creates Point, Line, and Circle
-  through the translated native registry and then snapshots the resulting
-  Board elements into a platform-independent scene. Unsupported element types,
-  fields, attributes, point faces, labels, arrows, and dash styles return
-  `JsxGraphDocumentError` instead of being ignored.
+  reader format. The current production subset creates Point, Line, Circle,
+  Curve, FunctionGraph, and Plot through the translated native registry and
+  then snapshots the resulting Board elements into a platform-independent
+  scene. Unsupported element types, fields, attributes, point faces, labels,
+  arrows, dash styles, and plotting modes return `JsxGraphDocumentError`
+  instead of being ignored.
 - Construction documents are limited by source length, JSON depth, JSON value
-  count, and object count. JSON and factory failures are converted to
-  `GMResult.Err`; object IDs are required and duplicate IDs are rejected.
-  Colors currently accept CSS hex forms plus a small named-color subset.
-  Top-level Point/Line/Circle defaults match JSXGraph `1.13.3`; helper Points
-  created from coordinate-array parents remain in the internal Board but are
-  omitted from the source-element scene, matching their role as sub-elements.
+  count, object count, and points per Curve. JSON and factory failures are
+  converted to `GMResult.Err`; object IDs are required and duplicate IDs are
+  rejected. Colors currently accept CSS hex forms plus a small named-color
+  subset. Top-level Point/Line/Circle/Curve defaults match JSXGraph `1.13.3`;
+  helper Points created from coordinate-array parents remain in the internal
+  Board but are omitted from the source-element scene, matching their role as
+  sub-elements.
+- The translated Curve subset accepts two numeric arrays for a discrete data
+  plot, four number/string terms for an explicit-domain parametric curve, or
+  three number/string terms for FunctionGraph/Plot. Continuous curves require
+  `doAdvancedPlot: false` and use
+  `src/math/plot.js -> updateParametricCurveNaive`, including its right-open
+  sampling interval. The default and maximum translated sample counts are
+  1,600 and 10,000. Non-finite sampled points become explicit scene path
+  breaks. Adaptive plot versions, omitted domains, function-valued and
+  mixed-array terms, transformations, polar curves, cubic Bezier paths,
+  fills, non-round caps, arrows, labels, and hit testing return structured
+  unsupported or creation errors until their upstream slices are translated.
 - JessieCode tokenization and the translated expression parser return
   `GMResult.Err` when configured source-length, token-count, AST-node, or
   AST-depth limits are exceeded. The upstream generated lexer and Jison parser
@@ -102,8 +115,8 @@ practical.
   `Type.deepCopy(..., true)`. As upstream does, an assignment target becomes
   the creator's implicit `name` when neither `name` nor `id` is supplied.
   Kotlin exposes custom creators through the explicit `JessieCodeCreator`
-  adapter and gives them precedence over the native `point`, `line`, and
-  `circle` registry. Attributes on an ordinary function return
+  adapter and gives them precedence over the native `point`, `line`, `circle`,
+  `curve`, `functiongraph`, and `plot` registry. Attributes on an ordinary function return
   `UnexpectedCreatorAttributes` instead of throwing, and attribute
   nesting/collection growth shares the evaluator resource limits.
 - Native JessieCode creators currently apply `id`, `name`, and
@@ -112,6 +125,12 @@ practical.
   not translated yet. Invalid supported attribute types, unavailable Boards,
   unsupported parent combinations, and native factory failures return
   `CreatorFailure` instead of throwing.
+- The debug-only official JSXGraph iframe allows CSP `unsafe-eval` because
+  upstream JessieCode compiles string curve expressions through JavaScript
+  evaluation. That permission is confined to the comparison renderer;
+  `jsxgraph-core` and `jsxgraph-compose` contain no JavaScript engine or
+  WebView dependency. The visual capture harness treats upstream
+  `error compiling function` console messages as failures.
 - The deprecated `delete` statement removes a resolved geometry element
   through the translated `Board.removeObject` lifecycle and returns
   `UndefinedValue`. Kotlin does not emit the upstream deprecation warning

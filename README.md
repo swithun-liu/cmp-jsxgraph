@@ -17,8 +17,9 @@ Current parity cases:
 [baseline](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=baseline_geometry),
 [finite segment](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=finite_segment),
 [coordinate parents](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=coordinate_parents),
+[shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry),
 and
-[shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry).
+[curves](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=curves).
 
 ## Status
 
@@ -63,9 +64,12 @@ Implemented translation slices:
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - a bounded production construction-document path for `boundingBox` and
-  ordered `objects[]`, currently creating Point, Line, and Circle elements
-  through the translated Board and native creator registry;
-- a platform-independent Point/Line/Circle render scene consumed by Compose;
+  ordered `objects[]`, currently creating Point, Line, Circle, Curve,
+  FunctionGraph, and Plot elements through the translated Board and native
+  creator registry;
+- a platform-independent Point/Line/Circle/Curve render scene consumed by
+  Compose, including discrete data plots and right-open naive sampling for
+  explicit-domain function and parametric curves;
 - an interactive Compose geometry playground backed by the translated
   line-circle intersection math.
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
@@ -137,8 +141,10 @@ The first production source contract maps directly to ordered
 
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
-types are `point`, `line`, and `circle`; unsupported types and visual
-attributes fail explicitly instead of being omitted from the native render.
+types are `point`, `line`, `circle`, `curve`, `functiongraph`, and `plot`.
+Continuous curves currently require `doAdvancedPlot: false`; unsupported
+types, parent forms, plotting modes, and visual attributes fail explicitly
+instead of being omitted from the native render.
 
 ## Build
 

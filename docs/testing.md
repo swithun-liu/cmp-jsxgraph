@@ -93,7 +93,7 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest Point/Line/Circle construction-document evidence (2026-09-15):
+Latest construction-document evidence (2026-09-15):
 
 | Case | Desktop SSIM | `390 x 844` SSIM |
 |---|---:|---:|
@@ -101,10 +101,14 @@ Latest Point/Line/Circle construction-document evidence (2026-09-15):
 | `finite_segment` | 0.987172 | 0.974567 |
 | `coordinate_parents` | 0.986543 | 0.978321 |
 | `shifted_geometry` | 0.986997 | 0.974236 |
+| `curves` | 0.986698 | 0.975236 |
 
 All captures passed the nonblank and browser-error checks. These numbers are
 evidence for this translated slice only; they do not satisfy the full Stable
-Gate.
+Gate. The Curve capture additionally verifies nonempty official SVG paths for
+the function graph, parametric curve, and discrete data plot. The capture
+harness rejects JSXGraph's `error compiling function` console warning so a
+JessieCode CSP failure cannot pass as an empty official curve.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:

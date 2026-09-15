@@ -67,6 +67,19 @@ object JsxGraphParityCorpus {
                 "element-parent",
             ),
         ),
+        JsxGraphParityCase(
+            id = "curves",
+            title = "Curves",
+            source = CURVES_SOURCE,
+            features = setOf(
+                "axis",
+                "grid",
+                "curve",
+                "functiongraph",
+                "data-plot",
+                "parametric-curve",
+            ),
+        ),
     )
 
     fun find(caseId: String): GMResult<JsxGraphParityCase, String> =
@@ -339,6 +352,72 @@ private const val SHIFTED_GEOMETRY_SOURCE: String = """
         "strokeColor": "#16877A",
         "fillColor": "none",
         "strokeWidth": 2.5,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val CURVES_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "parabola",
+      "type": "functiongraph",
+      "parents": ["0.16 * x * x - 2.5", -6, 6],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#D9553F",
+        "strokeWidth": 2.5,
+        "fillColor": "none",
+        "doAdvancedPlot": false,
+        "numberPointsHigh": 600,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "parametricCircle",
+      "type": "curve",
+      "parents": [
+        "2 * cos(x) + 0.5",
+        "2 * sin(x) + 0.6",
+        0,
+        6.283185307179586
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#16877A",
+        "strokeWidth": 2.5,
+        "fillColor": "none",
+        "doAdvancedPlot": false,
+        "numberPointsHigh": 600,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "dataPlot",
+      "type": "curve",
+      "parents": [
+        [-5, -3.5, -2, -0.5, 1, 2.5, 4, 5.5],
+        [2.8, 1.5, 2.2, 0.8, 1.4, 0.2, 1.1, -0.4]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#246BCE",
+        "strokeWidth": 2,
+        "fillColor": "none",
         "fixed": true,
         "highlight": false
       }

@@ -33,7 +33,10 @@ try {
         pageErrors.push(error.message);
     });
     page.on("console", (message) => {
-        if (message.type() === "error") {
+        if (
+            message.type() === "error" ||
+            message.text().includes("error compiling function")
+        ) {
             pageErrors.push(message.text());
         }
     });

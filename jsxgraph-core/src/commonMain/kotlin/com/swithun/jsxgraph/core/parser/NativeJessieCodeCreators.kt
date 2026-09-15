@@ -3,7 +3,8 @@
  * Upstream: src/parser/jessiecode.js -> creator / isCreator,
  * src/base/point.js -> createPoint,
  * src/base/line.js -> createLine,
- * src/base/circle.js -> createCircle
+ * src/base/circle.js -> createCircle,
+ * src/base/curve.js -> createCurve / createFunctiongraph
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -14,6 +15,8 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.CircleError
+import com.swithun.jsxgraph.core.base.Curve
+import com.swithun.jsxgraph.core.base.CurveError
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.LineError
@@ -34,6 +37,11 @@ internal sealed interface JessieCodeCreatorError {
         val actual: String,
     ) : JessieCodeCreatorError
 
+    data class UnsupportedAttributeValue(
+        val attribute: String,
+        val actual: String,
+    ) : JessieCodeCreatorError
+
     data class PointFactory(
         val error: PointError,
     ) : JessieCodeCreatorError
@@ -44,6 +52,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class CircleFactory(
         val error: CircleError,
+    ) : JessieCodeCreatorError
+
+    data class CurveFactory(
+        val error: CurveError,
     ) : JessieCodeCreatorError
 }
 
@@ -61,6 +73,32 @@ internal object NativeJessieCodeCreators {
         },
         "circle" to JessieCodeCreator { board, parents, attributes, location ->
             createCircle(board, parents, attributes, location)
+        },
+        "curve" to JessieCodeCreator { board, parents, attributes, location ->
+            createCurve(board, parents, attributes, location)
+        },
+        "functiongraph" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createFunctionGraph(
+                board,
+                parents,
+                attributes,
+                location,
+                creatorName = "functiongraph",
+            )
+        },
+        "plot" to JessieCodeCreator { board, parents, attributes, location ->
+            createFunctionGraph(
+                board,
+                parents,
+                attributes,
+                location,
+                creatorName = "plot",
+            )
         },
     )
 
@@ -311,6 +349,214 @@ internal object NativeJessieCodeCreators {
             )
         }
     }
+
+    private fun createCurve(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                "curve",
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes("curve", attributes, location)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            parents.size == 2 &&
+            parents[0] is JessieCodeRuntimeValue.ArrayValue &&
+            parents[1] is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            val dataX = numericArray(parents[0]) ?: return unsupported(
+                "curve",
+                parents,
+                location,
+            )
+            val dataY = numericArray(parents[1]) ?: return unsupported(
+                "curve",
+                parents,
+                location,
+            )
+            return curveResult(
+                creatorName = "curve",
+                location = location,
+                result = Curve.createData(
+                    board = resolvedBoard,
+                    dataX = dataX,
+                    dataY = dataY,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                ),
+            )
+        }
+        if (parents.size != 4) {
+            return unsupported("curve", parents, location)
+        }
+        val sources = parents.map(::curveTermSource)
+        if (sources.any { it == null }) {
+            return unsupported("curve", parents, location)
+        }
+        val sampleCount = when (
+            val result = curveSampleCount("curve", attributes, location)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return curveResult(
+            creatorName = "curve",
+            location = location,
+            result = Curve.createParametric(
+                board = resolvedBoard,
+                xSource = sources[0] ?: "",
+                ySource = sources[1] ?: "",
+                minimumSource = sources[2] ?: "",
+                maximumSource = sources[3] ?: "",
+                sampleCount = sampleCount,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+        )
+    }
+
+    private fun createFunctionGraph(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+        creatorName: String,
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val sources = parents.map(::curveTermSource)
+        if (sources.any { it == null }) {
+            return unsupported(creatorName, parents, location)
+        }
+        val sampleCount = when (
+            val result = curveSampleCount(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return curveResult(
+            creatorName = creatorName,
+            location = location,
+            result = Curve.createFunctionGraph(
+                board = resolvedBoard,
+                ySource = sources[0] ?: "",
+                minimumSource = sources[1] ?: "",
+                maximumSource = sources[2] ?: "",
+                sampleCount = sampleCount,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+        )
+    }
+
+    private fun curveSampleCount(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Int, JessieCodeRuntimeError> {
+        val advanced = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "doadvancedplot",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (advanced) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "doAdvancedPlot",
+                    actual = "true",
+                ),
+                location = location,
+            )
+        }
+        return integerAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "numberpointshigh",
+            default = Curve.DEFAULT_SAMPLE_COUNT,
+            minimum = 1,
+            maximum = Curve.MAX_SAMPLE_COUNT,
+            location = location,
+        )
+    }
+
+    private fun curveResult(
+        creatorName: String,
+        location: JessieCodeAstLocation,
+        result: GMResult<Curve, CurveError>,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.CurveFactory(result.error),
+                location = location,
+            )
+        }
+
+    private fun numericArray(
+        value: JessieCodeRuntimeValue,
+    ): DoubleArray? {
+        val values = (value as? JessieCodeRuntimeValue.ArrayValue)?.values
+            ?: return null
+        val result = DoubleArray(values.size)
+        for ((index, item) in values.withIndex()) {
+            result[index] = (
+                item as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return null
+        }
+        return result
+    }
+
+    private fun curveTermSource(
+        value: JessieCodeRuntimeValue,
+    ): String? =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                JsNumberFormat.compact(value.value)
+            is JessieCodeRuntimeValue.StringValue -> value.value
+            else -> null
+        }
 
     private fun createElementRadiusCircle(
         board: Board,
@@ -660,6 +906,46 @@ internal object NativeJessieCodeCreators {
                 location,
             )
         }
+    }
+
+    private fun integerAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: Int,
+        minimum: Int,
+        maximum: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<Int, JessieCodeRuntimeError> {
+        val value = attributes.properties[name]
+            ?: return GMResult.Ok(default)
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return GMResult.Ok(default)
+        }
+        val number = (value as? JessieCodeRuntimeValue.NumberValue)?.value
+            ?: return invalidAttribute(
+                creatorName,
+                name,
+                "integer",
+                value,
+                location,
+            )
+        val integer = number.toInt()
+        if (
+            !number.isFinite() ||
+            integer.toDouble() != number ||
+            integer !in minimum..maximum
+        ) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = name,
+                    actual = number.toString(),
+                ),
+                location = location,
+            )
+        }
+        return GMResult.Ok(integer)
     }
 
     private fun <T> invalidAttribute(

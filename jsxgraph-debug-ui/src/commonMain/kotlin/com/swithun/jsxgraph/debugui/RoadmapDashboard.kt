@@ -156,15 +156,15 @@ private val roadmapPhases = listOf(
         title = "Rendering & Interaction",
         subtitle = "Compose Canvas runtime",
         status = RoadmapStatus.IN_PROGRESS,
-        progress = 0.32f,
+        progress = 0.38f,
         accent = RenderingCoral,
         completedItems = listOf(
             "Portable render scene",
-            "Point, line & circle Canvas",
+            "Point, line, circle & curve Canvas",
             "Same-source visual parity",
         ),
-        nextTitle = "Curves, text & interaction",
-        nextDetail = "Expand element rendering before hit testing and gestures",
+        nextTitle = "Text, polygons & interaction",
+        nextDetail = "Expand element rendering, then add hit testing and gestures",
         exitGate = "Visual geometry and interaction traces meet the stable parity gates.",
     ),
 )
@@ -173,15 +173,15 @@ private val upcomingMilestones = listOf(
     UpcomingMilestone(
         title = "Parser",
         detail = "Construction documents & JessieCode",
-        progress = 0.42f,
-        status = "42%",
+        progress = 0.46f,
+        status = "46%",
         accent = NumericsBlue,
     ),
     UpcomingMilestone(
         title = "Composition",
         detail = "Board order, z-order & clipping",
-        progress = 0.15f,
-        status = "15%",
+        progress = 0.18f,
+        status = "18%",
         accent = GeometryAmber,
     ),
     UpcomingMilestone(
@@ -454,7 +454,7 @@ private fun OverallProgress(
 ) {
     Column(
         modifier = modifier
-            .semantics { contentDescription = "overall-progress:70" },
+            .semantics { contentDescription = "overall-progress:72" },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -471,14 +471,14 @@ private fun OverallProgress(
                 letterSpacing = 0.sp,
             )
             Text(
-                text = "70%",
+                text = "72%",
                 color = DashboardInk,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 0.sp,
             )
         }
-        ProgressTrack(progress = 0.70f, accent = FoundationGreen)
+        ProgressTrack(progress = 0.72f, accent = FoundationGreen)
     }
 }
 

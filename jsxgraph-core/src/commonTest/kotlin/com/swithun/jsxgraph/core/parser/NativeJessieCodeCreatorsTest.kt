@@ -4,6 +4,7 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.BoardError
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
@@ -188,6 +189,81 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
+    fun curveCreatorsSupportDataParametricAndFunctionGraphParents() {
+        val data = curve(
+            evaluate(
+                source = "curve([-2, 0, 3], [4, 1, -2]);",
+                board = board("data-curve"),
+            ),
+        )
+        assertEquals("plot", data.curveType)
+        assertEquals(3, data.numberPoints)
+        assertContentEquals(
+            doubleArrayOf(-2.0, 0.0, 3.0),
+            data.points.map { it.usrCoords[1] }.toDoubleArray(),
+        )
+
+        val parametric = curve(
+            evaluate(
+                source =
+                    "curve(\"2 * x\", \"x * x\", -1, 1) << " +
+                        "doAdvancedPlot: false, numberPointsHigh: 4 >>;",
+                board = board("parametric-curve"),
+            ),
+        )
+        assertEquals("parameter", parametric.curveType)
+        assertContentEquals(
+            doubleArrayOf(-2.0, -1.0, 0.0, 1.0),
+            parametric.points.map { it.usrCoords[1] }.toDoubleArray(),
+        )
+
+        val functionGraph = curve(
+            evaluate(
+                source =
+                    "functiongraph(\"x * x\", -2, 2) << " +
+                        "doAdvancedPlot: false, numberPointsHigh: 4 >>;",
+                board = board("function-graph"),
+            ),
+        )
+        assertEquals("functiongraph", functionGraph.curveType)
+        assertContentEquals(
+            doubleArrayOf(4.0, 1.0, 0.0, 1.0),
+            functionGraph.points.map { it.usrCoords[2] }.toDoubleArray(),
+        )
+
+        val plot = curve(
+            evaluate(
+                source =
+                    "plot(\"x + 1\", -1, 1) << " +
+                        "doAdvancedPlot: false, numberPointsHigh: 2 >>;",
+                board = board("plot-alias"),
+            ),
+        )
+        assertEquals("functiongraph", plot.curveType)
+        assertContentEquals(
+            doubleArrayOf(0.0, 1.0),
+            plot.points.map { it.usrCoords[2] }.toDoubleArray(),
+        )
+    }
+
+    @Test
+    fun continuousCurveCreatorRequiresTranslatedSamplingMode() {
+        val error = creatorError(
+            source = "functiongraph(\"x\", -1, 1);",
+            board = board(),
+        )
+
+        assertEquals("functiongraph", error.creatorName)
+        assertEquals(
+            JessieCodeCreatorError.UnsupportedAttributeValue(
+                attribute = "doAdvancedPlot",
+                actual = "true",
+            ),
+            error.error,
+        )
+    }
+
+    @Test
     fun creatorUsesTheBoardSelectedByUse() {
         val first = board("first")
         val second = board("second")
@@ -343,6 +419,10 @@ class NativeJessieCodeCreatorsTest {
             .element.let(::assertIs)
 
     private fun circle(value: JessieCodeRuntimeValue): Circle =
+        assertIs<JessieCodeRuntimeValue.ElementReference>(value)
+            .element.let(::assertIs)
+
+    private fun curve(value: JessieCodeRuntimeValue): Curve =
         assertIs<JessieCodeRuntimeValue.ElementReference>(value)
             .element.let(::assertIs)
 

@@ -306,6 +306,8 @@ fun JsxGraphScenePreview(
                     drawSceneLine(element, metrics)
                 is JsxGraphSceneElement.Circle ->
                     drawSceneCircle(element, metrics)
+                is JsxGraphSceneElement.Curve ->
+                    drawSceneCurve(element, metrics)
             }
         }
     }
@@ -461,6 +463,54 @@ private fun DrawScope.drawSceneCircle(
             topLeft = topLeft,
             size = ellipseSize,
             style = Stroke(width = circle.style.strokeWidth.dp.toPx()),
+        )
+    }
+}
+
+// JSXGraph: src/renderer/abstract.js -> updatePathStringPoint / drawCurve.
+private fun DrawScope.drawSceneCurve(
+    curve: JsxGraphSceneElement.Curve,
+    metrics: BoardMetrics,
+) {
+    if (curve.bezierDegree != 1) {
+        return
+    }
+    val path = Path()
+    var startsSubpath = true
+    var segmentCount = 0
+    for (point in curve.points) {
+        if (point == null) {
+            startsSubpath = true
+            continue
+        }
+        val screen = metrics.toScreen(point.toOffset())
+        if (!screen.x.isFinite() || !screen.y.isFinite()) {
+            startsSubpath = true
+            continue
+        }
+        if (startsSubpath) {
+            path.moveTo(screen.x, screen.y)
+            startsSubpath = false
+        } else {
+            path.lineTo(screen.x, screen.y)
+            segmentCount += 1
+        }
+    }
+    val stroke = curve.style.strokeColor.toComposeColor(
+        opacity = curve.style.strokeOpacity,
+    )
+    if (
+        segmentCount > 0 &&
+        stroke.alpha > 0.0f &&
+        curve.style.strokeWidth > 0.0
+    ) {
+        drawPath(
+            path = path,
+            color = stroke,
+            style = Stroke(
+                width = curve.style.strokeWidth.dp.toPx(),
+                cap = StrokeCap.Round,
+            ),
         )
     }
 }
