@@ -322,6 +322,38 @@ class GeometryTest {
     }
 
     @Test
+    fun meetDispatchesStandardFormsLikeOfficialGeometry() {
+        val verticalAxis = line(0.0, 1.0, 0.0)
+        val horizontalAxis = line(0.0, 0.0, 1.0)
+        val firstCircle = circle(0.0, 0.0, 2.0)
+        val secondCircle = circle(2.0, 0.0, 2.0)
+
+        assertContentEquals(
+            Geometry.meetLineLine(verticalAxis, horizontalAxis),
+            Geometry.meet(verticalAxis, horizontalAxis, 0),
+        )
+        assertContentEquals(
+            Geometry.meetLineCircle(horizontalAxis, firstCircle, 1),
+            Geometry.meet(firstCircle, horizontalAxis, 1),
+        )
+        assertContentEquals(
+            Geometry.meetLineCircle(horizontalAxis, firstCircle, 0),
+            Geometry.meet(horizontalAxis, firstCircle, 0),
+        )
+        assertContentEquals(
+            Geometry.meetCircleCircle(firstCircle, secondCircle, 1),
+            Geometry.meet(firstCircle, secondCircle, 1),
+        )
+
+        val nearZeroQuadratic = verticalAxis.copyOf()
+        nearZeroQuadratic[3] = Mat.eps * 0.5
+        assertContentEquals(
+            Geometry.meetLineLine(nearZeroQuadratic, horizontalAxis),
+            Geometry.meet(nearZeroQuadratic, horizontalAxis, 0),
+        )
+    }
+
+    @Test
     fun segmentIntersectionsMatchOfficialReferences() {
         val intersection = Geometry.meetSegmentSegment(
             firstStart = doubleArrayOf(1.0, 0.0, 0.0),

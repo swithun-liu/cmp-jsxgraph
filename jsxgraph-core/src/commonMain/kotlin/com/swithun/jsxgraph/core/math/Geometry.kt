@@ -2160,6 +2160,43 @@ object Geometry {
         return Mat.hypot(horizontal, vertical)
     }
 
+    // JSXGraph: src/math/geometry.js -> meet
+    fun meet(
+        firstStandardForm: DoubleArray,
+        secondStandardForm: DoubleArray,
+        intersectionIndex: Int,
+    ): DoubleArray {
+        val firstIsLine =
+            abs(firstStandardForm.valueOrNaN(3)) < Mat.eps
+        val secondIsLine =
+            abs(secondStandardForm.valueOrNaN(3)) < Mat.eps
+        return when {
+            firstIsLine && secondIsLine ->
+                meetLineLine(firstStandardForm, secondStandardForm)
+
+            !firstIsLine && secondIsLine ->
+                meetLineCircle(
+                    secondStandardForm,
+                    firstStandardForm,
+                    intersectionIndex,
+                )
+
+            firstIsLine && !secondIsLine ->
+                meetLineCircle(
+                    firstStandardForm,
+                    secondStandardForm,
+                    intersectionIndex,
+                )
+
+            else ->
+                meetCircleCircle(
+                    firstStandardForm,
+                    secondStandardForm,
+                    intersectionIndex,
+                )
+        }
+    }
+
     // JSXGraph: src/math/geometry.js -> meetLineLine
     fun meetLineLine(
         firstLine: DoubleArray,
