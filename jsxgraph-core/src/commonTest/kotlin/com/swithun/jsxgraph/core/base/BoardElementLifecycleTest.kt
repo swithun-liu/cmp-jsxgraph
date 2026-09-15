@@ -195,6 +195,23 @@ class BoardElementLifecycleTest {
         )
     }
 
+    @Test
+    fun parentIdsAndPropertyGettersMatchOfficialElement() {
+        val board = board()
+        val first = registeredElement(board, "first")
+        val second = registeredElement(board, "second")
+        val target = registeredElement(board, "target")
+
+        target
+            .addParents(listOf(first, first))
+            .addParentIds(listOf("missing", second.id, first.id))
+
+        assertEquals(listOf("first", "second"), target.parents)
+
+        target.setParents(listOf(second))
+        assertEquals(listOf("second"), target.parents)
+    }
+
     private fun board(id: String = "board"): Board = Board(
         originX = 0.0,
         originY = 0.0,

@@ -234,6 +234,15 @@ internal class Board(
         return this
     }
 
+    // JSXGraph: src/base/board.js -> removeAncestors
+    internal fun removeAncestors(element: GeometryElement): Board {
+        for (ancestor in element.ancestors.values.toList()) {
+            removeAncestors(ancestor)
+        }
+        removeObject(element)
+        return this
+    }
+
     // JSXGraph: src/base/board.js -> prepareUpdate
     internal fun prepareUpdate(): Board {
         for (element in objectsList) {

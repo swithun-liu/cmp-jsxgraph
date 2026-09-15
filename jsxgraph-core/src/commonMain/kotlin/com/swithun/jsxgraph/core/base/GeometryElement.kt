@@ -22,6 +22,7 @@ internal open class GeometryElement(
     internal val elementClass: Int = Const.OBJECT_CLASS_OTHER,
     internal var needsRegularUpdate: Boolean = true,
 ) {
+    // JSXGraph: src/base/element.js -> name / getName
     internal var name: String = name ?: ""
         private set
     private var needsGeneratedName: Boolean = name == null
@@ -32,6 +33,7 @@ internal open class GeometryElement(
     internal val childElements = linkedMapOf<String, GeometryElement>()
     internal val descendants = linkedMapOf<String, GeometryElement>()
     internal val ancestors = linkedMapOf<String, GeometryElement>()
+    // JSXGraph: src/base/element.js -> parents / getParents
     internal val parents = mutableListOf<String>()
 
     // JSXGraph: src/base/element.js -> GeometryElement name initialization
@@ -87,6 +89,16 @@ internal open class GeometryElement(
         for (element in elements) {
             if (element.id !in parents) {
                 parents += element.id
+            }
+        }
+        return this
+    }
+
+    // JSXGraph: src/base/element.js -> addParents
+    internal fun addParentIds(elementIds: Iterable<String>): GeometryElement {
+        for (elementId in elementIds) {
+            if (elementId in board.objects && elementId !in parents) {
+                parents += elementId
             }
         }
         return this

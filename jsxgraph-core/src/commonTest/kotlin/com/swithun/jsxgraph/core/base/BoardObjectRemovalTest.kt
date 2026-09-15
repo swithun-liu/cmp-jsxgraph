@@ -102,6 +102,24 @@ class BoardObjectRemovalTest {
         assertEquals(0, childBoardSurvivor.positionInBoard)
     }
 
+    @Test
+    fun removeAncestorsRemovesTheDependencyChainAndTarget() {
+        val board = board()
+        val removalLog = mutableListOf<String>()
+        val grandparent = registeredElement(board, "grandparent", removalLog)
+        val parent = registeredElement(board, "parent", removalLog)
+        val target = registeredElement(board, "target", removalLog)
+        val survivor = registeredElement(board, "survivor", removalLog)
+        grandparent.addChild(parent)
+        parent.addChild(target)
+
+        board.removeAncestors(target)
+
+        assertEquals(listOf("target", "parent", "grandparent"), removalLog)
+        assertEquals(listOf<GeometryElement>(survivor), board.objectsList)
+        assertEquals(0, survivor.positionInBoard)
+    }
+
     private fun board(id: String = "board"): Board = Board(
         originX = 0.0,
         originY = 0.0,
