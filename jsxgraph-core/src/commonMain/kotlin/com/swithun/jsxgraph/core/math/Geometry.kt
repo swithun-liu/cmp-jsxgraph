@@ -30,7 +30,14 @@ data class PerpendicularResult(
     val change: Boolean,
 )
 
+data class HullPoint(
+    val index: Int,
+    val coordinates: DoubleArray,
+)
+
 object Geometry {
+    private const val AKL_TOUSSAINT_THRESHOLD = 1024
+
     // JSXGraph: src/math/geometry.js -> angle
     fun angle(
         first: DoubleArray,
@@ -361,6 +368,366 @@ object Geometry {
                     (second.valueOrNaN(2) - first.valueOrNaN(2)) *
                     (third.valueOrNaN(1) - first.valueOrNaN(1))
             )
+
+    // JSXGraph: src/math/geometry.js -> sortVertices
+    fun sortVertices(points: List<DoubleArray>): List<DoubleArray> {
+        if (points.size <= 1) {
+            return points.toList()
+        }
+
+        val sorted = points.toMutableList()
+        val first = sorted[0]
+        var lastPoint: DoubleArray? = null
+        while (
+            sorted.size > 1 &&
+            first.valueOrNaN(0) == sorted.last().valueOrNaN(0) &&
+            first.valueOrNaN(1) == sorted.last().valueOrNaN(1) &&
+            first.valueOrNaN(2) == sorted.last().valueOrNaN(2)
+        ) {
+            lastPoint = sorted.removeAt(sorted.lastIndex)
+        }
+
+        val origin = sorted[0]
+        sorted.sortWith { firstPoint, secondPoint ->
+            val firstAngle =
+                if (
+                    firstPoint.valueOrNaN(2) == origin.valueOrNaN(2) &&
+                    firstPoint.valueOrNaN(1) == origin.valueOrNaN(1)
+                ) {
+                    Double.NEGATIVE_INFINITY
+                } else {
+                    atan2(
+                        firstPoint.valueOrNaN(2) - origin.valueOrNaN(2),
+                        firstPoint.valueOrNaN(1) - origin.valueOrNaN(1),
+                    )
+                }
+            val secondAngle =
+                if (
+                    secondPoint.valueOrNaN(2) == origin.valueOrNaN(2) &&
+                    secondPoint.valueOrNaN(1) == origin.valueOrNaN(1)
+                ) {
+                    Double.NEGATIVE_INFINITY
+                } else {
+                    atan2(
+                        secondPoint.valueOrNaN(2) - origin.valueOrNaN(2),
+                        secondPoint.valueOrNaN(1) - origin.valueOrNaN(1),
+                    )
+                }
+            when {
+                firstAngle < secondAngle -> -1
+                firstAngle > secondAngle -> 1
+                else -> 0
+            }
+        }
+        if (lastPoint != null) {
+            sorted += lastPoint
+        }
+        return sorted
+    }
+
+    // JSXGraph: src/math/geometry.js -> signedPolygon
+    fun signedPolygon(
+        points: List<DoubleArray>,
+        sort: Boolean = true,
+    ): Double {
+        if (points.isEmpty()) {
+            return 0.0
+        }
+
+        val polygon = if (!sort) {
+            sortVertices(points).toMutableList()
+        } else {
+            points.toMutableList().also { it.add(0, points.last()) }
+        }
+        var area = 0.0
+        for (index in 1 until polygon.size) {
+            area +=
+                polygon[index - 1].valueOrNaN(1) *
+                polygon[index].valueOrNaN(2) -
+                polygon[index].valueOrNaN(1) *
+                polygon[index - 1].valueOrNaN(2)
+        }
+        return area * 0.5
+    }
+
+    // JSXGraph: src/math/geometry.js -> GrahamScan
+    @Suppress("FunctionName")
+    fun GrahamScan(points: List<DoubleArray>): List<HullPoint> {
+        if (points.isEmpty()) {
+            return emptyList()
+        }
+
+        val pointCount = points.size
+        var minimumXIndex = 0
+        var maximumXIndex = 0
+        var minimumYIndex = 0
+        var maximumYIndex = 0
+        var minimumXMinusYIndex = 0
+        var maximumXMinusYIndex = 0
+        var minimumXPlusYIndex = 0
+        var maximumXPlusYIndex = 0
+
+        if (pointCount > AKL_TOUSSAINT_THRESHOLD) {
+            var minimumX = points[0].valueOrNaN(1)
+            var maximumX = minimumX
+            var minimumY = points[0].valueOrNaN(2)
+            var maximumY = minimumY
+            var minimumXMinusY = minimumX - minimumY
+            var maximumXMinusY = minimumXMinusY
+            var minimumXPlusY = minimumX + minimumY
+            var maximumXPlusY = minimumXPlusY
+
+            for (index in 1 until pointCount) {
+                var value = points[index].valueOrNaN(1)
+                if (value < minimumX) {
+                    minimumX = value
+                    minimumXIndex = index
+                } else if (value > maximumX) {
+                    maximumX = value
+                    maximumXIndex = index
+                }
+
+                value = points[index].valueOrNaN(2)
+                if (value < minimumY) {
+                    minimumY = value
+                    minimumYIndex = index
+                } else if (value > maximumY) {
+                    maximumY = value
+                    maximumYIndex = index
+                }
+
+                value =
+                    points[index].valueOrNaN(1) -
+                        points[index].valueOrNaN(2)
+                if (value < minimumXMinusY) {
+                    minimumXMinusY = value
+                    minimumXMinusYIndex = index
+                } else if (value > maximumXMinusY) {
+                    maximumXMinusY = value
+                    maximumXMinusYIndex = index
+                }
+
+                value =
+                    points[index].valueOrNaN(1) +
+                        points[index].valueOrNaN(2)
+                if (value < minimumXPlusY) {
+                    minimumXPlusY = value
+                    minimumXPlusYIndex = index
+                } else if (value > maximumXPlusY) {
+                    maximumXPlusY = value
+                    maximumXPlusYIndex = index
+                }
+            }
+        }
+
+        val epsilon = Mat.eps * Mat.eps
+        val extremeIndices = setOf(
+            minimumXIndex,
+            maximumXIndex,
+            minimumYIndex,
+            maximumYIndex,
+            minimumXPlusYIndex,
+            minimumXMinusYIndex,
+            maximumXPlusYIndex,
+            maximumXMinusYIndex,
+        )
+        val candidates = ArrayList<HullPoint>(pointCount)
+        for (index in points.indices) {
+            val point = points[index]
+            if (
+                pointCount <= AKL_TOUSSAINT_THRESHOLD ||
+                index in extremeIndices ||
+                (
+                    minimumXIndex != minimumXMinusYIndex &&
+                        signedTriangle(
+                            points[minimumXIndex],
+                            points[minimumXMinusYIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    minimumXMinusYIndex != maximumYIndex &&
+                        signedTriangle(
+                            points[minimumXMinusYIndex],
+                            points[maximumYIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    maximumYIndex != maximumXPlusYIndex &&
+                        signedTriangle(
+                            points[maximumYIndex],
+                            points[maximumXPlusYIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    maximumXPlusYIndex != maximumXIndex &&
+                        signedTriangle(
+                            points[maximumXPlusYIndex],
+                            points[maximumXIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    maximumXIndex != maximumXMinusYIndex &&
+                        signedTriangle(
+                            points[maximumXIndex],
+                            points[maximumXMinusYIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    maximumXMinusYIndex != minimumYIndex &&
+                        signedTriangle(
+                            points[maximumXMinusYIndex],
+                            points[minimumYIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    minimumYIndex != minimumXPlusYIndex &&
+                        signedTriangle(
+                            points[minimumYIndex],
+                            points[minimumXPlusYIndex],
+                            point,
+                        ) >= -epsilon
+                ) ||
+                (
+                    minimumXPlusYIndex != minimumXIndex &&
+                        signedTriangle(
+                            points[minimumXPlusYIndex],
+                            points[minimumXIndex],
+                            point,
+                        ) >= -epsilon
+                )
+            ) {
+                candidates += HullPoint(index = index, coordinates = point)
+            }
+        }
+
+        var lowestIndex = 0
+        var lowestX = candidates[0].coordinates.valueOrNaN(1)
+        var lowestY = candidates[0].coordinates.valueOrNaN(2)
+        for (index in 1 until candidates.size) {
+            val coordinates = candidates[index].coordinates
+            if (
+                coordinates.valueOrNaN(2) < lowestY ||
+                (
+                    coordinates.valueOrNaN(2) == lowestY &&
+                        coordinates.valueOrNaN(1) < lowestX
+                )
+            ) {
+                lowestX = coordinates.valueOrNaN(1)
+                lowestY = coordinates.valueOrNaN(2)
+                lowestIndex = index
+            }
+        }
+        val swap = candidates[0]
+        candidates[0] = candidates[lowestIndex]
+        candidates[lowestIndex] = swap
+
+        val origin = candidates[0].coordinates
+        candidates.sortWith { firstPoint, secondPoint ->
+            val orientation = signedTriangle(
+                origin,
+                firstPoint.coordinates,
+                secondPoint.coordinates,
+            )
+            if (orientation == 0.0) {
+                val firstDistance = Mat.hypot(
+                    firstPoint.coordinates.valueOrNaN(1) -
+                        origin.valueOrNaN(1),
+                    firstPoint.coordinates.valueOrNaN(2) -
+                        origin.valueOrNaN(2),
+                )
+                val secondDistance = Mat.hypot(
+                    secondPoint.coordinates.valueOrNaN(1) -
+                        origin.valueOrNaN(1),
+                    secondPoint.coordinates.valueOrNaN(2) -
+                        origin.valueOrNaN(2),
+                )
+                when {
+                    firstDistance < secondDistance -> -1
+                    firstDistance > secondDistance -> 1
+                    else -> 0
+                }
+            } else {
+                when {
+                    orientation > 0.0 -> -1
+                    orientation < 0.0 -> 1
+                    else -> 0
+                }
+            }
+        }
+
+        val hull = ArrayList<HullPoint>()
+        for (candidate in candidates) {
+            while (
+                hull.size > 1 &&
+                signedTriangle(
+                    hull[hull.lastIndex - 1].coordinates,
+                    hull[hull.lastIndex].coordinates,
+                    candidate.coordinates,
+                ) <= 0.0
+            ) {
+                hull.removeAt(hull.lastIndex)
+            }
+            hull += candidate
+        }
+        return hull
+    }
+
+    // JSXGraph: src/math/geometry.js -> convexHull
+    fun convexHull(points: List<DoubleArray>): List<DoubleArray> =
+        GrahamScan(points).map(HullPoint::coordinates)
+
+    // JSXGraph: src/math/geometry.js -> isConvex
+    fun isConvex(points: List<DoubleArray>): Boolean {
+        if (points.size < 3) {
+            return true
+        }
+
+        val epsilon = Mat.eps * Mat.eps
+        var orientation: Int? = null
+        var oldX = points[points.lastIndex - 1].valueOrNaN(1)
+        var oldY = points[points.lastIndex - 1].valueOrNaN(2)
+        var newX = points.last().valueOrNaN(1)
+        var newY = points.last().valueOrNaN(2)
+        var newDirection = atan2(newY - oldY, newX - oldX)
+        var angleSum = 0.0
+
+        for (point in points) {
+            oldX = newX
+            oldY = newY
+            val oldDirection = newDirection
+            newX = point.valueOrNaN(1)
+            newY = point.valueOrNaN(2)
+            if (oldX == newX && oldY == newY) {
+                continue
+            }
+
+            newDirection = atan2(newY - oldY, newX - oldX)
+            var angle = newDirection - oldDirection
+            if (angle <= -PI) {
+                angle += 2.0 * PI
+            } else if (angle > PI) {
+                angle -= 2.0 * PI
+            }
+
+            if (orientation == null) {
+                if (angle == 0.0) {
+                    continue
+                }
+                orientation = if (angle > 0.0) 1 else -1
+            } else if (orientation * angle < -epsilon) {
+                return false
+            }
+            angleSum += angle
+        }
+
+        return abs(angleSum / (2.0 * PI)) - 1.0 < epsilon
+    }
 
     // JSXGraph: src/math/geometry.js -> calcLabelQuadrant
     fun calcLabelQuadrant(inputAngle: Double): String {

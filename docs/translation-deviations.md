@@ -79,6 +79,9 @@ practical.
 - Curve-intersection Newton wrappers return `GMResult.Err(SingularMatrix)` for
   parallel or singular tangents. JSXGraph `1.13.3` propagates `NaN`
   coordinates and parameters.
+- `Geometry.sortVertices` returns an unchanged copy for empty and single-point
+  inputs. JSXGraph `1.13.3` throws while repeatedly removing a closing point
+  from those inputs.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is
