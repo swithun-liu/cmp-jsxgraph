@@ -79,6 +79,11 @@ practical.
 - Curve-intersection Newton wrappers return `GMResult.Err(SingularMatrix)` for
   parallel or singular tangents. JSXGraph `1.13.3` propagates `NaN`
   coordinates and parameters.
+- `Geometry.meetBezierCurveRedBlueSegments` uses an internal
+  `DiscreteCurve2D` adapter until the full `Curve` element is translated. It
+  returns `GMResult.Err` for a negative intersection index or an unsupported
+  Bezier-degree pairing; direct upstream calls can fail while indexing or
+  recursing for those inputs.
 - `Geometry.projectCoordsToPolygon` returns `GMResult.Err` for fewer than two
   vertices or when every edge produces an undefined projection. JSXGraph
   `1.13.3` returns JavaScript `undefined` in those cases.

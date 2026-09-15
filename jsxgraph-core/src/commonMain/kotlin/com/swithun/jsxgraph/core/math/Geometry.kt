@@ -46,8 +46,21 @@ data class BezierArcResult(
     val yCoordinates: DoubleArray,
 )
 
+internal data class DiscreteCurve2D(
+    val points: List<DoubleArray>,
+    val bezierDegree: Int,
+    val isSector: Boolean = false,
+)
+
 sealed interface GeometryError {
     data class InvalidPolygonPointCount(val pointCount: Int) : GeometryError
+
+    data class InvalidBezierCurveDegrees(
+        val firstDegree: Int,
+        val secondDegree: Int,
+    ) : GeometryError
+
+    data class InvalidIntersectionIndex(val index: Int) : GeometryError
 
     data object PolygonProjectionUnavailable : GeometryError
 }
@@ -1181,6 +1194,130 @@ object Geometry {
                 intersections[index - 1].firstParameter ||
                 intersection.secondParameter !=
                 intersections[index - 1].secondParameter
+        }
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetBezierCurveRedBlueSegments
+    internal fun meetBezierCurveRedBlueSegments(
+        initialRed: DiscreteCurve2D,
+        initialBlue: DiscreteCurve2D,
+        intersectionIndex: Int,
+    ): GMResult<DoubleArray, GeometryError> {
+        if (intersectionIndex < 0) {
+            return GMResult.Err(
+                GeometryError.InvalidIntersectionIndex(intersectionIndex),
+            )
+        }
+        if (
+            !(
+                (
+                    initialRed.bezierDegree == 3 &&
+                        initialBlue.bezierDegree in setOf(1, 3)
+                ) ||
+                    (
+                        initialRed.bezierDegree == 1 &&
+                            initialBlue.bezierDegree == 3
+                    )
+            )
+        ) {
+            return GMResult.Err(
+                GeometryError.InvalidBezierCurveDegrees(
+                    initialRed.bezierDegree,
+                    initialBlue.bezierDegree,
+                ),
+            )
+        }
+        if (
+            initialBlue.points.size < initialBlue.bezierDegree + 1 ||
+            initialRed.points.size < initialRed.bezierDegree + 1
+        ) {
+            return GMResult.Ok(doubleArrayOf(0.0, Double.NaN, Double.NaN))
+        }
+
+        var red = initialRed
+        var blue = initialBlue
+        if (red.bezierDegree == 1 && blue.bezierDegree == 3) {
+            val swap = red
+            red = blue
+            blue = swap
+        }
+
+        var redStart = 0
+        var blueStart = 0
+        var redLength = red.points.size - red.bezierDegree
+        var blueLength = blue.points.size - blue.bezierDegree
+        if (red.isSector) {
+            redStart = 3
+            redLength -= 3
+        }
+        if (blue.isSector) {
+            blueStart = 3
+            blueLength -= 3
+        }
+
+        val intersections = mutableListOf<SegmentIntersection>()
+        var redIndex = redStart
+        while (redIndex < redLength) {
+            val redSegment = mutableListOf(
+                red.points[redIndex].sliceArray(1..2),
+                red.points[redIndex + 1].sliceArray(1..2),
+            )
+            if (red.bezierDegree == 3) {
+                redSegment += red.points[redIndex + 2].sliceArray(1..2)
+                redSegment += red.points[redIndex + 3].sliceArray(1..2)
+            }
+            val redBoundingBox = bezierBoundingBox(redSegment)
+
+            var blueIndex = blueStart
+            while (blueIndex < blueLength) {
+                val blueSegment = mutableListOf(
+                    blue.points[blueIndex].sliceArray(1..2),
+                    blue.points[blueIndex + 1].sliceArray(1..2),
+                )
+                if (blue.bezierDegree == 3) {
+                    blueSegment +=
+                        blue.points[blueIndex + 2].sliceArray(1..2)
+                    blueSegment +=
+                        blue.points[blueIndex + 3].sliceArray(1..2)
+                }
+
+                if (
+                    bezierOverlap(
+                        redBoundingBox,
+                        bezierBoundingBox(blueSegment),
+                    )
+                ) {
+                    val segmentIntersections =
+                        meetBeziersegmentBeziersegment(
+                            redSegment,
+                            blueSegment,
+                        )
+                    for (intersection in segmentIntersections) {
+                        if (
+                            intersection.firstParameter < -Mat.eps ||
+                            intersection.firstParameter > 1.0 + Mat.eps ||
+                            intersection.secondParameter < -Mat.eps ||
+                            intersection.secondParameter > 1.0 + Mat.eps
+                        ) {
+                            continue
+                        }
+                        intersections += intersection
+                    }
+                    if (intersections.size > intersectionIndex) {
+                        return GMResult.Ok(
+                            intersections[intersectionIndex].point,
+                        )
+                    }
+                }
+                blueIndex += blue.bezierDegree
+            }
+            redIndex += red.bezierDegree
+        }
+
+        return if (intersections.size > intersectionIndex) {
+            GMResult.Ok(intersections[intersectionIndex].point)
+        } else {
+            GMResult.Ok(doubleArrayOf(0.0, Double.NaN, Double.NaN))
         }
     }
 
