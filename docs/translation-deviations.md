@@ -98,6 +98,10 @@ practical.
   `1.13.3` returns JavaScript `undefined` in those cases.
 - `Geometry.getPlaneBounds` returns `GMResult.Err` when either 2D linear solve
   is singular. JSXGraph `1.13.3` throws from `Numerics.Gauss`.
+- `Geometry.meetPlaneSphere` and `Geometry.meetSphereSphere` return a numeric
+  `Circle3DIntersection` snapshot. JSXGraph returns element-bound functions
+  that recalculate center and radius; the future Plane3D/Sphere3D layer will
+  provide that dynamic wrapper around these pure calculations.
 - `Geometry.sortVertices` returns an unchanged copy for empty and single-point
   inputs. JSXGraph `1.13.3` throws while repeatedly removing a closing point
   from those inputs.

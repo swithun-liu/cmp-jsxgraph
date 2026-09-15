@@ -46,6 +46,12 @@ data class BezierArcResult(
     val yCoordinates: DoubleArray,
 )
 
+data class Circle3DIntersection(
+    val center: DoubleArray,
+    val normal: DoubleArray,
+    val radius: Double,
+)
+
 internal data class DiscreteCurve2D(
     val points: List<DoubleArray>,
     val bezierDegree: Int,
@@ -2262,6 +2268,77 @@ object Geometry {
         )
     }
 
+    // JSXGraph: src/math/geometry.js -> meetPlaneSphere
+    fun meetPlaneSphere(
+        planeNormal: DoubleArray,
+        planeDistance: Double,
+        sphereCenter: DoubleArray,
+        sphereRadius: Double,
+    ): Circle3DIntersection {
+        val signedDistance =
+            Mat.innerProduct(planeNormal, sphereCenter, 4) -
+                planeDistance
+        return Circle3DIntersection(
+            center = Mat.axpy(
+                scalar = -signedDistance,
+                x = planeNormal,
+                y = sphereCenter,
+            ),
+            normal = planeNormal,
+            radius = sqrt(
+                sphereRadius * sphereRadius -
+                    signedDistance * signedDistance,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetSphereSphere
+    fun meetSphereSphere(
+        firstCenter: DoubleArray,
+        firstRadius: Double,
+        secondCenter: DoubleArray,
+        secondRadius: Double,
+    ): Circle3DIntersection {
+        val centerDistance = point3DDistance(firstCenter, secondCenter)
+        val skew =
+            (firstRadius - secondRadius) *
+                (firstRadius + secondRadius) /
+                (centerDistance * centerDistance)
+        val center = doubleArrayOf(
+            1.0,
+            0.5 *
+                (
+                    (1.0 - skew) * firstCenter[1] +
+                        (1.0 + skew) * secondCenter[1]
+                ),
+            0.5 *
+                (
+                    (1.0 - skew) * firstCenter[2] +
+                        (1.0 + skew) * secondCenter[2]
+                ),
+            0.5 *
+                (
+                    (1.0 - skew) * firstCenter[3] +
+                        (1.0 + skew) * secondCenter[3]
+                ),
+        )
+        val radiusSquared =
+            0.5 *
+                (
+                    firstRadius * firstRadius +
+                        secondRadius * secondRadius -
+                        0.5 *
+                        centerDistance *
+                        centerDistance *
+                        (1.0 + skew * skew)
+                )
+        return Circle3DIntersection(
+            center = center,
+            normal = Statistics.subtract(secondCenter, firstCenter),
+            radius = sqrt(radiusSquared),
+        )
+    }
+
     // JSXGraph: src/math/geometry.js -> project3DTo3DPlane
     fun project3DTo3DPlane(
         point: DoubleArray,
@@ -2318,6 +2395,23 @@ object Geometry {
             ),
         )
     }
+
+    private fun point3DDistance(
+        first: DoubleArray,
+        second: DoubleArray,
+    ): Double =
+        if (
+            first[0] * first[0] > 1.0e-12 &&
+            second[0] * second[0] > 1.0e-12
+        ) {
+            Mat.hypot(
+                second[1] - first[1],
+                second[2] - first[2],
+                second[3] - first[3],
+            )
+        } else {
+            Double.POSITIVE_INFINITY
+        }
 
     private fun midpoint(
         first: DoubleArray,
