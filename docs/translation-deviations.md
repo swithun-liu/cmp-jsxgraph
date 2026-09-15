@@ -84,6 +84,10 @@ practical.
   returns `GMResult.Err` for a negative intersection index or an unsupported
   Bezier-degree pairing; direct upstream calls can fail while indexing or
   recursing for those inputs.
+- The discrete `plot` branch of `Geometry.projectCoordsToCurve` also uses
+  `DiscreteCurve2D` until the full `Curve` domain and transform lifecycle is
+  available. Unsupported degrees and incomplete cubic control-point groups
+  return `GMResult.Err` instead of failing while indexing.
 - `Geometry.projectCoordsToPolygon` returns `GMResult.Err` for fewer than two
   vertices or when every edge produces an undefined projection. JSXGraph
   `1.13.3` returns JavaScript `undefined` in those cases.

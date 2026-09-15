@@ -60,7 +60,18 @@ sealed interface GeometryError {
         val secondDegree: Int,
     ) : GeometryError
 
+    data class InvalidDiscreteCurveDegree(val degree: Int) : GeometryError
+
+    data class InvalidDiscreteCurvePointCount(
+        val pointCount: Int,
+        val degree: Int,
+    ) : GeometryError
+
     data class InvalidIntersectionIndex(val index: Int) : GeometryError
+
+    data class NumericalProjectionFailure(
+        val cause: NumericsError,
+    ) : GeometryError
 
     data object PolygonProjectionUnavailable : GeometryError
 }
@@ -1648,6 +1659,143 @@ object Geometry {
                     curve.y(minimum + start),
                 ),
                 parameter = minimum,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> projectCoordsToCurve (plot branch)
+    internal fun projectCoordsToCurve(
+        point: DoubleArray,
+        curve: DiscreteCurve2D,
+    ): GMResult<ProjectionResult, GeometryError> {
+        if (curve.bezierDegree != 1 && curve.bezierDegree != 3) {
+            return GMResult.Err(
+                GeometryError.InvalidDiscreteCurveDegree(
+                    curve.bezierDegree,
+                ),
+            )
+        }
+        if (
+            curve.bezierDegree == 3 &&
+            curve.points.size > 1 &&
+            (curve.points.size - 1) % curve.bezierDegree != 0
+        ) {
+            return GMResult.Err(
+                GeometryError.InvalidDiscreteCurvePointCount(
+                    pointCount = curve.points.size,
+                    degree = curve.bezierDegree,
+                ),
+            )
+        }
+        if (curve.points.isEmpty()) {
+            return GMResult.Ok(
+                ProjectionResult(
+                    point = doubleArrayOf(0.0, 1.0, 1.0),
+                    parameter = 0.0,
+                ),
+            )
+        }
+
+        var bestPoint = curve.points[0].copyOf()
+        var bestParameter = 0.0
+        var bestDistance = Double.POSITIVE_INFINITY
+        if (curve.points.size <= 1) {
+            return GMResult.Ok(
+                ProjectionResult(bestPoint, bestParameter),
+            )
+        }
+
+        var pointIndex = 0
+        var bezierSegmentIndex = 0
+        while (pointIndex < curve.points.lastIndex) {
+            val projection = if (curve.bezierDegree == 3) {
+                val segment = listOf(
+                    curve.points[pointIndex].sliceArray(1..2),
+                    curve.points[pointIndex + 1].sliceArray(1..2),
+                    curve.points[pointIndex + 2].sliceArray(1..2),
+                    curve.points[pointIndex + 3].sliceArray(1..2),
+                )
+                val segmentIndex = bezierSegmentIndex.toDouble()
+                val parametricCurve = ParametricCurve2D(
+                    x = { parameter ->
+                        bezierSegmentEval(
+                            parameter - segmentIndex,
+                            segment,
+                        )[1]
+                    },
+                    y = { parameter ->
+                        bezierSegmentEval(
+                            parameter - segmentIndex,
+                            segment,
+                        )[2]
+                    },
+                )
+                when (
+                    val result = projectCoordsToBeziersegment(
+                        point = point,
+                        curve = parametricCurve,
+                        start = segmentIndex,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        return GMResult.Err(
+                            GeometryError.NumericalProjectionFailure(
+                                result.error,
+                            ),
+                        )
+                    }
+                }
+            } else {
+                projectCoordsToSegment(
+                    point = point,
+                    first = curve.points[pointIndex],
+                    second = curve.points[pointIndex + 1],
+                )
+            }
+
+            val candidate = when {
+                projection.parameter in 0.0..1.0 ->
+                    ProjectionResult(
+                        point = projection.point,
+                        parameter = pointIndex + projection.parameter,
+                    )
+
+                projection.parameter < 0.0 ->
+                    ProjectionResult(
+                        point = curve.points[pointIndex],
+                        parameter = pointIndex.toDouble(),
+                    )
+
+                projection.parameter > 1.0 &&
+                    pointIndex == curve.points.lastIndex - 1 ->
+                    ProjectionResult(
+                        point = curve.points[pointIndex + 1],
+                        parameter = curve.points.lastIndex.toDouble(),
+                    )
+
+                else -> null
+            }
+            if (candidate != null) {
+                val candidateDistance = distance(candidate.point, point)
+                if (candidateDistance < bestDistance) {
+                    bestPoint = candidate.point.copyOf()
+                    bestParameter = candidate.parameter
+                    bestDistance = candidateDistance
+                }
+            }
+
+            if (curve.bezierDegree == 3) {
+                bezierSegmentIndex += 1
+                pointIndex += 3
+            } else {
+                pointIndex += 1
+            }
+        }
+        return GMResult.Ok(
+            ProjectionResult(
+                point = bestPoint,
+                parameter = bestParameter,
             ),
         )
     }
