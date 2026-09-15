@@ -2,7 +2,7 @@
  * Kotlin translation of JSXGraph.
  * Upstream: src/base/coordselement.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
- * Alfred Wassermann, and Peter Wilfahrt.
+ * and Alfred Wassermann.
  * Used under the MIT License option.
  */
 package com.swithun.jsxgraph.core.base
@@ -17,6 +17,18 @@ package com.swithun.jsxgraph.core.base
 internal open class CoordsElement(
     board: Board,
     coordinates: DoubleArray = doubleArrayOf(1.0, 0.0, 0.0),
+    id: String = "",
+    name: String? = null,
+    type: Int = 0,
+    elementClass: Int = Const.OBJECT_CLASS_OTHER,
+    needsRegularUpdate: Boolean = true,
+) : GeometryElement(
+    board = board,
+    id = id,
+    name = name,
+    type = type,
+    elementClass = elementClass,
+    needsRegularUpdate = needsRegularUpdate,
 ) {
     // JSXGraph: src/base/coordselement.js -> CoordsElement constructor.
     internal val coords = Coords(
@@ -36,6 +48,14 @@ internal open class CoordsElement(
         coordinates = coordinates,
         board = board,
     )
+
+    internal var position: Double? = null
+    internal var isConstrained: Boolean = false
+    internal var onPolygon: Boolean = false
+    internal var slideObject: GeometryElement? = null
+    internal val slideObjects = mutableListOf<GeometryElement>()
+    internal var needsUpdateFromParent: Boolean = true
+    internal var isDraggable: Boolean = true
 
     internal val isReal: Boolean
         get() = coords.isReal()
@@ -71,4 +91,45 @@ internal open class CoordsElement(
         } else {
             Double.NaN
         }
+
+    /*
+     * These hooks preserve setPositionDirectly's upstream call order. Their
+     * attribute-driven algorithms are translated with the visual-property and
+     * attractor models.
+     */
+    internal open fun handleSnapToGrid(): CoordsElement = this
+
+    internal open fun handleSnapToPoints(): CoordsElement = this
+
+    internal open fun handleAttractors(): CoordsElement = this
+
+    // JSXGraph: src/base/coordselement.js -> setPositionDirectly
+    internal fun setPositionDirectly(
+        method: Int,
+        coordinates: DoubleArray,
+    ): CoordsElement {
+        coords.setCoordinates(method, coordinates)
+        handleSnapToGrid()
+        handleSnapToPoints()
+        handleAttractors()
+
+        actualCoords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = coords.usrCoords,
+        )
+
+        /*
+         * relativeCoords and transformation preimages are intentionally not
+         * represented until their owner models are translated.
+         */
+        prepareUpdate()
+        update()
+        return this
+    }
+
+    // JSXGraph: src/base/coordselement.js -> setPosition
+    internal fun setPosition(
+        method: Int,
+        coordinates: DoubleArray,
+    ): CoordsElement = setPositionDirectly(method, coordinates)
 }

@@ -22,7 +22,7 @@
 | `src/base/board.js` | coordinate origin, zoom, units, ID/name registration and selection, automatic element names, object removal and creation order, recursive child cleanup and position reindexing, and the basic prepare/update/render/full/suspend lifecycle | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |
 | `src/base/element.js` | element identity and name changes, direct children, transitive descendants/ancestors, explicit parents, child removal/counting, and the basic prepare/update/visibility/render/remove lifecycle | `base/GeometryElement.kt` | Translated dependency subset |
-| `src/base/coordselement.js` | coordinate storage and `X`, `Y`, `Z`, `Coords`, evaluator, and distance accessors | `base/CoordsElement.kt` | Translated dependency subset |
+| `src/base/coordselement.js` | GeometryElement integration; coordinate storage; glider/constraint base state; `X`, `Y`, `Z`, `Coords`, evaluator, and distance accessors; and the free untransformed `setPositionDirectly` lifecycle | `base/CoordsElement.kt` | Translated dependency subset |
 | `src/unused/symbolic.js` | `Symbolic` | None | Intentionally unsupported |
 
 ## License-Constrained Upstream Symbols

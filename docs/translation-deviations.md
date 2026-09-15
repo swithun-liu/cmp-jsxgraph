@@ -31,6 +31,10 @@ practical.
   strings. Unknown and empty strings return `null` instead of the unchanged
   input string. Group lookup and function/object filter `Composition` results
   remain pending with those untranslated models.
+- `CoordsElement.setPositionDirectly` currently covers free elements without
+  relative coordinates or transformations. Its snap-to-grid, snap-to-point,
+  and attractor calls are lifecycle hooks with no-op defaults until the
+  visual-property and attractor models are translated.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again
