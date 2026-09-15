@@ -799,6 +799,122 @@ object Geometry {
             (second.valueOrNaN(1) - point.valueOrNaN(1)) *
             (first.valueOrNaN(2) - point.valueOrNaN(2))
 
+    // JSXGraph: src/math/geometry.js -> windingNumber
+    fun windingNumber(
+        point: DoubleArray,
+        path: List<DoubleArray>,
+        doNotClosePath: Boolean = false,
+    ): Int {
+        if (path.isEmpty()) {
+            return 0
+        }
+
+        val x = point.valueOrNaN(1)
+        val y = point.valueOrNaN(2)
+        if (x.isNaN() || y.isNaN()) {
+            return 1
+        }
+
+        val first = path[0]
+        if (first.valueOrNaN(1) == x && first.valueOrNaN(2) == y) {
+            return 1
+        }
+
+        val edgeCount = path.size - if (doNotClosePath) 1 else 0
+        var windingNumber = 0
+        for (index in 0 until edgeCount) {
+            val edgeStart = path[index]
+            val edgeEnd = path[(index + 1) % path.size]
+            if (
+                edgeStart.valueOrNaN(0) == 0.0 ||
+                edgeEnd.valueOrNaN(0) == 0.0 ||
+                edgeStart.valueOrNaN(1).isNaN() ||
+                edgeEnd.valueOrNaN(1).isNaN() ||
+                edgeStart.valueOrNaN(2).isNaN() ||
+                edgeEnd.valueOrNaN(2).isNaN()
+            ) {
+                continue
+            }
+
+            if (edgeEnd.valueOrNaN(2) == y) {
+                if (edgeEnd.valueOrNaN(1) == x) {
+                    return 1
+                }
+                if (
+                    edgeStart.valueOrNaN(2) == y &&
+                    (edgeEnd.valueOrNaN(1) > x) ==
+                    (edgeStart.valueOrNaN(1) < x)
+                ) {
+                    return 0
+                }
+            }
+
+            if (
+                (edgeStart.valueOrNaN(2) < y) !=
+                (edgeEnd.valueOrNaN(2) < y)
+            ) {
+                val sign =
+                    2 *
+                    (if (edgeEnd.valueOrNaN(2) > edgeStart.valueOrNaN(2)) 1 else 0) -
+                    1
+                if (edgeStart.valueOrNaN(1) >= x) {
+                    if (edgeEnd.valueOrNaN(1) > x) {
+                        windingNumber += sign
+                    } else {
+                        val determinant = det3p(edgeStart, edgeEnd, point)
+                        if (determinant == 0.0) {
+                            return 0
+                        }
+                        if (
+                            (determinant > Mat.eps) ==
+                            (edgeEnd.valueOrNaN(2) > edgeStart.valueOrNaN(2))
+                        ) {
+                            windingNumber += sign
+                        }
+                    }
+                } else if (edgeEnd.valueOrNaN(1) > x) {
+                    val determinant = det3p(edgeStart, edgeEnd, point)
+                    if (
+                        (determinant > Mat.eps) ==
+                        (edgeEnd.valueOrNaN(2) > edgeStart.valueOrNaN(2))
+                    ) {
+                        windingNumber += sign
+                    }
+                }
+            }
+        }
+        return windingNumber
+    }
+
+    // JSXGraph: src/math/geometry.js -> pnpoly
+    fun pnpoly(
+        screenX: Double,
+        screenY: Double,
+        closedPath: List<DoubleArray>,
+    ): Boolean {
+        var isInside = false
+        var previousIndex = closedPath.size - 2
+        for (index in 0 until closedPath.size - 1) {
+            val current = closedPath[index]
+            val previous = closedPath[previousIndex]
+            if (
+                (current.valueOrNaN(2) > screenY) !=
+                (previous.valueOrNaN(2) > screenY) &&
+                screenX <
+                (
+                    (previous.valueOrNaN(1) - current.valueOrNaN(1)) *
+                        (screenY - current.valueOrNaN(2))
+                ) /
+                (previous.valueOrNaN(2) - current.valueOrNaN(2)) +
+                current.valueOrNaN(1)
+            ) {
+                isInside = !isInside
+            }
+            previousIndex = index
+        }
+        return isInside
+    }
+
     // JSXGraph: src/math/geometry.js -> distPointLine
     fun distPointLine(
         point: DoubleArray,
