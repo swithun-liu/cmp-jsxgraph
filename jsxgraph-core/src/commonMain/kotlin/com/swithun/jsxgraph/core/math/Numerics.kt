@@ -455,6 +455,68 @@ internal class CardinalSplineInterpolation internal constructor(
     }
 }
 
+internal class BezierInterpolation internal constructor(
+    private val points: List<CoordsElement>,
+) {
+    private var lastCompletePointIndex: Int? = null
+    private var segmentCount: Int? = null
+
+    internal fun x(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, suspendedUpdate, CoordsElement::X)
+
+    internal fun y(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, suspendedUpdate, CoordsElement::Y)
+
+    internal val start: Double = 0.0
+
+    internal fun end(): Double = kotlin.math.floor(points.size / 3.0)
+
+    private fun evaluate(
+        parameter: Double,
+        suspendedUpdate: Boolean,
+        coordinate: (CoordsElement) -> Double,
+    ): Double {
+        if (!suspendedUpdate) {
+            lastCompletePointIndex =
+                3 * kotlin.math.floor((points.size - 1) / 3.0).toInt()
+            segmentCount = (lastCompletePointIndex ?: 0) / 3
+        }
+
+        if (parameter < 0.0) {
+            return points.firstOrNull()?.let(coordinate) ?: Double.NaN
+        }
+
+        val cachedSegmentCount = segmentCount
+        if (cachedSegmentCount != null && parameter >= cachedSegmentCount.toDouble()) {
+            val pointIndex = lastCompletePointIndex ?: return Double.NaN
+            return points.getOrNull(pointIndex)?.let(coordinate) ?: Double.NaN
+        }
+
+        if (parameter.isNaN()) {
+            return Double.NaN
+        }
+
+        val firstPointIndex = kotlin.math.floor(parameter).toInt() * 3
+        val first = points.getOrNull(firstPointIndex) ?: return Double.NaN
+        val firstControl = points.getOrNull(firstPointIndex + 1) ?: return Double.NaN
+        val secondControl = points.getOrNull(firstPointIndex + 2) ?: return Double.NaN
+        val second = points.getOrNull(firstPointIndex + 3) ?: return Double.NaN
+        val localParameter = parameter % 1.0
+        val inverseParameter = 1.0 - localParameter
+        return inverseParameter * inverseParameter * (
+            inverseParameter * coordinate(first) +
+                3.0 * localParameter * coordinate(firstControl)
+        ) + (
+            3.0 * inverseParameter * coordinate(secondControl) +
+                localParameter * coordinate(second)
+        ) * localParameter * localParameter
+    }
+}
+
 object Numerics {
     private data class PolylineSplit(
         val distance: Double,
@@ -1520,6 +1582,10 @@ object Numerics {
         tension = 0.5,
         type = type,
     )
+
+    // JSXGraph: src/math/numerics.js -> bezier
+    internal fun bezier(points: List<CoordsElement>): BezierInterpolation =
+        BezierInterpolation(points)
 
     // JSXGraph: src/math/numerics.js -> splineDef
     fun splineDef(

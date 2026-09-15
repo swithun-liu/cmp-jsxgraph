@@ -59,6 +59,9 @@ practical.
   `suspendedUpdate` requests a non-knot value before that coordinate's
   coefficient cache is initialized. JSXGraph `1.13.3` throws `TypeError` while
   indexing the absent cache despite a subsequent missing-coefficient guard.
+- Bezier evaluation returns `NaN` for an empty point list or an unavailable
+  control point. JSXGraph `1.13.3` throws `TypeError` while indexing the
+  missing point.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is
