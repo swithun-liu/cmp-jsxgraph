@@ -7,6 +7,7 @@
  */
 package com.swithun.jsxgraph.core.math
 
+import com.swithun.jsxgraph.core.GMResult
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -33,6 +34,11 @@ data class PerpendicularResult(
 data class HullPoint(
     val index: Int,
     val coordinates: DoubleArray,
+)
+
+data class ProjectionResult(
+    val point: DoubleArray,
+    val parameter: Double,
 )
 
 object Geometry {
@@ -915,6 +921,134 @@ object Geometry {
         return isInside
     }
 
+    // JSXGraph: src/math/geometry.js -> _bezierSplit
+    internal fun bezierSplit(
+        curve: List<DoubleArray>,
+    ): List<List<DoubleArray>> {
+        val firstMidpoint = midpoint(curve[0], curve[1])
+        val secondMidpoint = midpoint(curve[1], curve[2])
+        val thirdMidpoint = midpoint(curve[2], curve[3])
+        val firstQuarter = midpoint(firstMidpoint, secondMidpoint)
+        val thirdQuarter = midpoint(secondMidpoint, thirdMidpoint)
+        val center = midpoint(firstQuarter, thirdQuarter)
+        return listOf(
+            listOf(curve[0], firstMidpoint, firstQuarter, center),
+            listOf(center, thirdQuarter, thirdMidpoint, curve[3]),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> _bezierBbox
+    internal fun bezierBoundingBox(curve: List<DoubleArray>): DoubleArray =
+        if (curve.size == 4) {
+            doubleArrayOf(
+                minOf(curve[0][0], curve[1][0], curve[2][0], curve[3][0]),
+                maxOf(curve[0][1], curve[1][1], curve[2][1], curve[3][1]),
+                maxOf(curve[0][0], curve[1][0], curve[2][0], curve[3][0]),
+                minOf(curve[0][1], curve[1][1], curve[2][1], curve[3][1]),
+            )
+        } else {
+            doubleArrayOf(
+                minOf(curve[0][0], curve[1][0]),
+                maxOf(curve[0][1], curve[1][1]),
+                maxOf(curve[0][0], curve[1][0]),
+                minOf(curve[0][1], curve[1][1]),
+            )
+        }
+
+    // JSXGraph: src/math/geometry.js -> _bezierOverlap
+    internal fun bezierOverlap(
+        firstBoundingBox: DoubleArray,
+        secondBoundingBox: DoubleArray,
+    ): Boolean =
+        firstBoundingBox[2] >= secondBoundingBox[0] &&
+            firstBoundingBox[0] <= secondBoundingBox[2] &&
+            firstBoundingBox[1] >= secondBoundingBox[3] &&
+            firstBoundingBox[3] <= secondBoundingBox[1]
+
+    // JSXGraph: src/math/geometry.js -> bezierSegmentEval
+    internal fun bezierSegmentEval(
+        parameter: Double,
+        curve: List<DoubleArray>,
+    ): DoubleArray {
+        val inverseParameter = 1.0 - parameter
+        val firstWeight =
+            inverseParameter * inverseParameter * inverseParameter
+        val firstControlWeight =
+            3.0 * parameter * inverseParameter * inverseParameter
+        val secondControlWeight =
+            3.0 * parameter * parameter * inverseParameter
+        val secondWeight = parameter * parameter * parameter
+        return doubleArrayOf(
+            1.0,
+            firstWeight * curve[0][0] +
+                firstControlWeight * curve[1][0] +
+                secondControlWeight * curve[2][0] +
+                secondWeight * curve[3][0],
+            firstWeight * curve[0][1] +
+                firstControlWeight * curve[1][1] +
+                secondControlWeight * curve[2][1] +
+                secondWeight * curve[3][1],
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> projectCoordsToSegment
+    fun projectCoordsToSegment(
+        point: DoubleArray,
+        first: DoubleArray,
+        second: DoubleArray,
+    ): ProjectionResult {
+        val directionX = second.valueOrNaN(1) - first.valueOrNaN(1)
+        val directionY = second.valueOrNaN(2) - first.valueOrNaN(2)
+        if (abs(directionX) < Mat.eps && abs(directionY) < Mat.eps) {
+            return ProjectionResult(point = first, parameter = 0.0)
+        }
+
+        val offsetX = point.valueOrNaN(1) - first.valueOrNaN(1)
+        val offsetY = point.valueOrNaN(2) - first.valueOrNaN(2)
+        val parameter =
+            (offsetX * directionX + offsetY * directionY) /
+                (directionX * directionX + directionY * directionY)
+        return ProjectionResult(
+            point = doubleArrayOf(
+                1.0,
+                parameter * directionX + first.valueOrNaN(1),
+                parameter * directionY + first.valueOrNaN(2),
+            ),
+            parameter = parameter,
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> projectCoordsToBeziersegment
+    internal fun projectCoordsToBeziersegment(
+        point: DoubleArray,
+        curve: ParametricCurve2D,
+        start: Double,
+    ): GMResult<ProjectionResult, NumericsError> {
+        val minimum = when (
+            val result = Numerics.fminbr(
+                function = { parameter ->
+                    val x = curve.x(start + parameter) - point.valueOrNaN(1)
+                    val y = curve.y(start + parameter) - point.valueOrNaN(2)
+                    x * x + y * y
+                },
+                interval = doubleArrayOf(0.0, 1.0),
+            )
+        ) {
+            is GMResult.Err -> return result
+            is GMResult.Ok -> result.value
+        }
+        return GMResult.Ok(
+            ProjectionResult(
+                point = doubleArrayOf(
+                    1.0,
+                    curve.x(minimum + start),
+                    curve.y(minimum + start),
+                ),
+                parameter = minimum,
+            ),
+        )
+    }
+
     // JSXGraph: src/math/geometry.js -> distPointLine
     fun distPointLine(
         point: DoubleArray,
@@ -1167,6 +1301,14 @@ object Geometry {
                 }
         return SegmentIntersection(point, firstParameter, secondParameter)
     }
+
+    private fun midpoint(
+        first: DoubleArray,
+        second: DoubleArray,
+    ): DoubleArray = doubleArrayOf(
+        (first[0] + second[0]) * 0.5,
+        (first[1] + second[1]) * 0.5,
+    )
 
     private fun clampInfiniteDifference(value: Double): Double = when (value) {
         Double.POSITIVE_INFINITY -> 1_000_000.0
