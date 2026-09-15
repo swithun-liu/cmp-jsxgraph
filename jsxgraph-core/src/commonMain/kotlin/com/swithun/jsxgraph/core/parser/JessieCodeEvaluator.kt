@@ -1,0 +1,1429 @@
+/*
+ * Kotlin translation of JSXGraph.
+ * Upstream: src/parser/jessiecode.js -> execute, add, sub, neg, mul, div,
+ * mod, and pow
+ * Copyright 2008-2026 Matthias Ehmann, Carsten Miller, Andreas Walter,
+ * and Alfred Wassermann.
+ * Used under the MIT License option.
+ */
+package com.swithun.jsxgraph.core.parser
+
+import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Const
+import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.utils.JsMath
+import com.swithun.jsxgraph.core.utils.JsNumberFormat
+import kotlin.math.E
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.acosh
+import kotlin.math.asin
+import kotlin.math.asinh
+import kotlin.math.atan
+import kotlin.math.atan2
+import kotlin.math.atanh
+import kotlin.math.ceil
+import kotlin.math.cos
+import kotlin.math.cosh
+import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.sin
+import kotlin.math.sinh
+import kotlin.math.sqrt
+import kotlin.math.tan
+import kotlin.math.tanh
+
+internal class JessieCodeEvaluator(
+    private val limits: JessieCodeEvaluatorLimits =
+        JessieCodeEvaluatorLimits(),
+) {
+    // JSXGraph: src/parser/jessiecode.js -> execute
+    internal fun evaluate(
+        node: JessieCodeAstNode,
+        environment: JessieCodeRuntimeEnvironment =
+            JessieCodeRuntimeEnvironment(),
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
+        if (
+            limits.maxEvaluationSteps < 1 ||
+            limits.maxEvaluationDepth
+                !in 1..MAX_SUPPORTED_EVALUATION_DEPTH
+        ) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidLimits(
+                    maxEvaluationSteps = limits.maxEvaluationSteps,
+                    maxEvaluationDepth = limits.maxEvaluationDepth,
+                ),
+            )
+        }
+
+        return EvaluationState(
+            limits = limits,
+            environment = environment,
+        ).evaluate(node)
+    }
+}
+
+private class EvaluationState(
+    private val limits: JessieCodeEvaluatorLimits,
+    private val environment: JessieCodeRuntimeEnvironment,
+) {
+    private var evaluationSteps = 0
+
+    fun evaluate(
+        node: JessieCodeAstNode,
+        depth: Int = 1,
+        functionPosition: Boolean = false,
+    ): EvaluationResult {
+        if (depth > limits.maxEvaluationDepth) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
+                    limit = limits.maxEvaluationDepth,
+                    location = node.location,
+                ),
+            )
+        }
+        evaluationSteps += 1
+        if (evaluationSteps > limits.maxEvaluationSteps) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationStepLimitExceeded(
+                    limit = limits.maxEvaluationSteps,
+                    location = node.location,
+                ),
+            )
+        }
+
+        return when (node.type) {
+            JessieCodeAstNodeType.OPERATION ->
+                evaluateOperation(node, depth)
+
+            JessieCodeAstNodeType.VARIABLE ->
+                evaluateVariable(node, functionPosition)
+
+            JessieCodeAstNodeType.CONSTANT ->
+                evaluateConstant(node)
+
+            JessieCodeAstNodeType.BOOLEAN_CONSTANT ->
+                evaluateBoolean(node)
+
+            JessieCodeAstNodeType.STRING ->
+                evaluateString(node)
+        }
+    }
+
+    private fun evaluateOperation(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val operator = when (val value = node.value) {
+            is JessieCodeAstValue.Text -> value.value
+            else -> return invalidAst(
+                node,
+                "Operation value must be text.",
+            )
+        }
+
+        return when (operator) {
+            "op_none" -> evaluateSequence(node, depth)
+            "op_array" -> evaluateArray(node, depth)
+            "op_extvalue" -> evaluateIndex(node, depth)
+            "op_execfun" -> evaluateCall(node, depth)
+            "op_property" -> evaluateProperty(node, depth)
+            "op_conditional" -> evaluateConditional(node, depth)
+            "op_or" -> evaluateLogicalOr(node, depth)
+            "op_and" -> evaluateLogicalAnd(node, depth)
+            "op_not" -> evaluateUnary(node, depth) {
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.BooleanValue(!isTruthy(it)),
+                )
+            }
+            "op_neg" -> evaluateUnary(node, depth) {
+                negate(it, node)
+            }
+            "op_eq" -> evaluateBinary(node, depth) { left, right ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.BooleanValue(
+                        looselyEqual(left, right),
+                    ),
+                )
+            }
+            "op_neq" -> evaluateBinary(node, depth) { left, right ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.BooleanValue(
+                        !looselyEqual(left, right),
+                    ),
+                )
+            }
+            "op_approx" -> evaluateBinary(node, depth) { left, right ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.BooleanValue(
+                        abs(toNumber(left) - toNumber(right)) < Mat.eps,
+                    ),
+                )
+            }
+            "op_lt" -> comparison(node, depth, Comparison.LESS)
+            "op_gt" -> comparison(node, depth, Comparison.GREATER)
+            "op_leq" -> comparison(node, depth, Comparison.LESS_OR_EQUAL)
+            "op_geq" -> comparison(node, depth, Comparison.GREATER_OR_EQUAL)
+            "op_add" -> evaluateBinary(node, depth) { left, right ->
+                add(left, right, node)
+            }
+            "op_sub" -> evaluateBinary(node, depth) { left, right ->
+                subtract(left, right, node)
+            }
+            "op_mul" -> evaluateBinary(node, depth) { left, right ->
+                multiply(left, right, node)
+            }
+            "op_div" -> evaluateBinary(node, depth) { left, right ->
+                divide(left, right, node)
+            }
+            "op_mod" -> evaluateBinary(node, depth) { left, right ->
+                modulo(left, right, node)
+            }
+            "op_exp" -> evaluateBinary(node, depth) { left, right ->
+                power(left, right, node)
+            }
+            else -> GMResult.Err(
+                JessieCodeRuntimeError.UnsupportedOperation(
+                    operator = operator,
+                    operandTypes = emptyList(),
+                    location = node.location,
+                ),
+            )
+        }
+    }
+
+    private fun evaluateSequence(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        var result: JessieCodeRuntimeValue =
+            JessieCodeRuntimeValue.NumberValue(0.0)
+        for (child in node.children) {
+            val childNode = when (child) {
+                is JessieCodeAstChild.Node -> child.value
+                else -> return invalidAst(
+                    node,
+                    "op_none children must be nodes.",
+                )
+            }
+            result = when (
+                val childResult = evaluate(childNode, depth + 1)
+            ) {
+                is GMResult.Ok -> childResult.value
+                is GMResult.Err -> return childResult
+            }
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun evaluateArray(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val elements = when (
+            val result = nodeListChild(node, index = 0)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val values = mutableListOf<JessieCodeRuntimeValue>()
+        for (element in elements) {
+            when (val result = evaluate(element, depth + 1)) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(values))
+    }
+
+    private fun evaluateIndex(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val receiver = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val index = when (
+            val result = evaluateNodeChild(node, 1, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val numericIndex = (
+            index as? JessieCodeRuntimeValue.NumberValue
+        )?.value ?: return GMResult.Ok(
+            JessieCodeRuntimeValue.UndefinedValue,
+        )
+        if (
+            !numericIndex.isFinite() ||
+            abs(JsMath.round(numericIndex) - numericIndex) >=
+            INDEX_INTEGER_TOLERANCE
+        ) {
+            return GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+        }
+
+        return GMResult.Ok(index(receiver, numericIndex))
+    }
+
+    private fun evaluateCall(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val functionNode = when (val result = nodeChild(node, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val argumentNodes = when (
+            val result = nodeListChild(node, 1)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val function = when (
+            val result = evaluate(
+                node = functionNode,
+                depth = depth + 1,
+                functionPosition = true,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val arguments = mutableListOf<JessieCodeRuntimeValue>()
+        for (argumentNode in argumentNodes) {
+            when (val result = evaluate(argumentNode, depth + 1)) {
+                is GMResult.Ok -> arguments += result.value
+                is GMResult.Err -> return result
+            }
+        }
+
+        val callable = function as? JessieCodeRuntimeValue.FunctionValue
+            ?: return GMResult.Err(
+                JessieCodeRuntimeError.NotCallable(
+                    valueType = typeName(function),
+                    location = node.location,
+                ),
+            )
+        return callable.callable.call(arguments, node.location)
+    }
+
+    private fun evaluateProperty(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val receiver = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val property = when (val result = textChild(node, 1)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return resolveProperty(receiver, property, node.location)
+    }
+
+    private fun evaluateConditional(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val condition = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return evaluateNodeChild(
+            node = node,
+            index = if (isTruthy(condition)) 1 else 2,
+            parentDepth = depth,
+        )
+    }
+
+    private fun evaluateLogicalOr(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val left = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return if (isTruthy(left)) {
+            GMResult.Ok(left)
+        } else {
+            evaluateNodeChild(node, 1, depth)
+        }
+    }
+
+    private fun evaluateLogicalAnd(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val left = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return if (!isTruthy(left)) {
+            GMResult.Ok(left)
+        } else {
+            evaluateNodeChild(node, 1, depth)
+        }
+    }
+
+    private inline fun evaluateUnary(
+        node: JessieCodeAstNode,
+        depth: Int,
+        operation: (JessieCodeRuntimeValue) -> EvaluationResult,
+    ): EvaluationResult {
+        val operand = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(operand)
+    }
+
+    private inline fun evaluateBinary(
+        node: JessieCodeAstNode,
+        depth: Int,
+        operation: (
+            JessieCodeRuntimeValue,
+            JessieCodeRuntimeValue,
+        ) -> EvaluationResult,
+    ): EvaluationResult {
+        val left = when (
+            val result = evaluateNodeChild(node, 0, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (
+            val result = evaluateNodeChild(node, 1, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return operation(left, right)
+    }
+
+    private fun evaluateNodeChild(
+        node: JessieCodeAstNode,
+        index: Int,
+        parentDepth: Int,
+    ): EvaluationResult =
+        when (val result = nodeChild(node, index)) {
+            is GMResult.Ok -> evaluate(
+                node = result.value,
+                depth = parentDepth + 1,
+            )
+            is GMResult.Err -> result
+        }
+
+    private fun evaluateVariable(
+        node: JessieCodeAstNode,
+        functionPosition: Boolean,
+    ): EvaluationResult {
+        val name = when (val value = node.value) {
+            is JessieCodeAstValue.Text -> value.value
+            else -> return invalidAst(
+                node,
+                "Variable value must be text.",
+            )
+        }
+        if (environment.variables.containsKey(name)) {
+            return GMResult.Ok(
+                environment.variables.getValue(name),
+            )
+        }
+        when (name) {
+            "PI" -> return number(PI)
+            "EULER" -> return number(E)
+            "\$board" -> return GMResult.Ok(
+                environment.board?.let {
+                    JessieCodeRuntimeValue.BoardReference(it)
+                } ?: JessieCodeRuntimeValue.UndefinedValue,
+            )
+        }
+
+        if (functionPosition) {
+            val callable = standardCallable(name)
+                ?: environment.functions[name]
+            if (callable != null) {
+                return GMResult.Ok(
+                    JessieCodeRuntimeValue.FunctionValue(
+                        name = name,
+                        callable = callable,
+                    ),
+                )
+            }
+        }
+
+        val element = environment.board?.select(name)
+        return GMResult.Ok(
+            element?.let {
+                JessieCodeRuntimeValue.ElementReference(it)
+            } ?: JessieCodeRuntimeValue.UndefinedValue,
+        )
+    }
+
+    private fun evaluateConstant(
+        node: JessieCodeAstNode,
+    ): EvaluationResult =
+        when (val value = node.value) {
+            is JessieCodeAstValue.Number -> number(value.value)
+            JessieCodeAstValue.Null ->
+                GMResult.Ok(JessieCodeRuntimeValue.NullValue)
+            else -> invalidAst(
+                node,
+                "Constant value must be a number or null.",
+            )
+        }
+
+    private fun evaluateBoolean(
+        node: JessieCodeAstNode,
+    ): EvaluationResult =
+        when (val value = node.value) {
+            is JessieCodeAstValue.Boolean -> GMResult.Ok(
+                JessieCodeRuntimeValue.BooleanValue(value.value),
+            )
+            else -> invalidAst(
+                node,
+                "Boolean constant value must be boolean.",
+            )
+        }
+
+    private fun evaluateString(
+        node: JessieCodeAstNode,
+    ): EvaluationResult =
+        when (val value = node.value) {
+            is JessieCodeAstValue.Text -> GMResult.Ok(
+                JessieCodeRuntimeValue.StringValue(
+                    removeJessieCodeEscapes(value.value),
+                ),
+            )
+            else -> invalidAst(
+                node,
+                "String value must be text.",
+            )
+        }
+
+    private fun comparison(
+        node: JessieCodeAstNode,
+        depth: Int,
+        comparison: Comparison,
+    ): EvaluationResult = evaluateBinary(node, depth) { left, right ->
+        val result = compare(left, right)
+        val matches = when {
+            result == null -> false
+            comparison == Comparison.LESS -> result < 0
+            comparison == Comparison.GREATER -> result > 0
+            comparison == Comparison.LESS_OR_EQUAL -> result <= 0
+            else -> result >= 0
+        }
+        GMResult.Ok(JessieCodeRuntimeValue.BooleanValue(matches))
+    }
+
+    private fun add(
+        initialLeft: JessieCodeRuntimeValue,
+        initialRight: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val left = when (val result = evalSlider(initialLeft, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (val result = evalSlider(initialRight, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (
+            left is JessieCodeRuntimeValue.ArrayValue &&
+            right is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            val length = minOf(left.values.size, right.values.size)
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    List(length) { index ->
+                        jsAdd(
+                            left.values[index],
+                            right.values[index],
+                        )
+                    },
+                ),
+            )
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return number(left.value + right.value)
+        }
+        if (
+            left is JessieCodeRuntimeValue.StringValue ||
+            right is JessieCodeRuntimeValue.StringValue
+        ) {
+            val leftString = explicitToString(left)
+                ?: return unsupported(node, "op_add", left, right)
+            val rightString = explicitToString(right)
+                ?: return unsupported(node, "op_add", left, right)
+            return string(leftString + rightString)
+        }
+        return unsupported(node, "op_add", left, right)
+    }
+
+    private fun subtract(
+        initialLeft: JessieCodeRuntimeValue,
+        initialRight: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val left = when (val result = evalSlider(initialLeft, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (val result = evalSlider(initialRight, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            left is JessieCodeRuntimeValue.ArrayValue &&
+            right is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            val length = minOf(left.values.size, right.values.size)
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    List(length) { index ->
+                        JessieCodeRuntimeValue.NumberValue(
+                            toNumber(left.values[index]) -
+                                toNumber(right.values[index]),
+                        )
+                    },
+                ),
+            )
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return number(left.value - right.value)
+        }
+        return unsupported(node, "op_sub", left, right)
+    }
+
+    private fun negate(
+        initialValue: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val value = when (val result = evalSlider(initialValue, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (value) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.ArrayValue(
+                        value.values.map {
+                            JessieCodeRuntimeValue.NumberValue(
+                                -toNumber(it),
+                            )
+                        },
+                    ),
+                )
+            is JessieCodeRuntimeValue.NumberValue ->
+                number(-value.value)
+            else -> unsupported(node, "op_neg", value)
+        }
+    }
+
+    private fun multiply(
+        initialLeft: JessieCodeRuntimeValue,
+        initialRight: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        var left = when (val result = evalSlider(initialLeft, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        var right = when (val result = evalSlider(initialRight, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (
+            left is JessieCodeRuntimeValue.ArrayValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            // Preserve JSXGraph 1.13.3 exactly: its swap branch assigns the
+            // numeric right operand to both operands.
+            left = right
+            right = left
+        }
+
+        if (
+            left is JessieCodeRuntimeValue.ArrayValue &&
+            right is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            val length = minOf(left.values.size, right.values.size)
+            var result = 0.0
+            for (index in 0 until length) {
+                result +=
+                    toNumber(left.values[index]) *
+                    toNumber(right.values[index])
+            }
+            return number(result)
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    right.values.map {
+                        JessieCodeRuntimeValue.NumberValue(
+                            left.value * toNumber(it),
+                        )
+                    },
+                ),
+            )
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return number(left.value * right.value)
+        }
+        return unsupported(node, "op_mul", left, right)
+    }
+
+    private fun divide(
+        initialLeft: JessieCodeRuntimeValue,
+        initialRight: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val left = when (val result = evalSlider(initialLeft, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (val result = evalSlider(initialRight, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            left is JessieCodeRuntimeValue.ArrayValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    left.values.map {
+                        JessieCodeRuntimeValue.NumberValue(
+                            toNumber(it) / right.value,
+                        )
+                    },
+                ),
+            )
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return number(left.value / right.value)
+        }
+        return unsupported(node, "op_div", left, right)
+    }
+
+    private fun modulo(
+        initialLeft: JessieCodeRuntimeValue,
+        initialRight: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val left = when (val result = evalSlider(initialLeft, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (val result = evalSlider(initialRight, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            left is JessieCodeRuntimeValue.ArrayValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    left.values.map {
+                        JessieCodeRuntimeValue.NumberValue(
+                            Mat.mod(toNumber(it), right.value),
+                        )
+                    },
+                ),
+            )
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return number(Mat.mod(left.value, right.value))
+        }
+        return unsupported(node, "op_mod", left, right)
+    }
+
+    private fun power(
+        initialLeft: JessieCodeRuntimeValue,
+        initialRight: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        val left = when (val result = evalSlider(initialLeft, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (val result = evalSlider(initialRight, node)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return number(Mat.pow(toNumber(left), toNumber(right)))
+    }
+
+    private fun evalSlider(
+        value: JessieCodeRuntimeValue,
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        if (
+            value is JessieCodeRuntimeValue.ElementReference &&
+            value.element.type == Const.OBJECT_TYPE_GLIDER
+        ) {
+            return environment.elementRuntime.valueOf(
+                element = value.element,
+                location = node.location,
+            )
+        }
+        return GMResult.Ok(value)
+    }
+
+    private fun resolveProperty(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult =
+        when (receiver) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                if (property == "length") {
+                    number(receiver.values.size.toDouble())
+                } else {
+                    unknownProperty(receiver, property, location)
+                }
+            is JessieCodeRuntimeValue.StringValue ->
+                if (property == "length") {
+                    number(receiver.value.length.toDouble())
+                } else {
+                    unknownProperty(receiver, property, location)
+                }
+            is JessieCodeRuntimeValue.ObjectValue ->
+                receiver.properties[property]?.let {
+                    GMResult.Ok(it)
+                } ?: unknownProperty(receiver, property, location)
+            is JessieCodeRuntimeValue.ElementReference ->
+                environment.elementRuntime.resolveProperty(
+                    element = receiver.element,
+                    property = property,
+                    location = location,
+                )
+            is JessieCodeRuntimeValue.FunctionValue -> GMResult.Err(
+                JessieCodeRuntimeError.FunctionPropertyAccess(
+                    property = property,
+                    location = location,
+                ),
+            )
+            else -> unknownProperty(receiver, property, location)
+        }
+
+    private fun index(
+        receiver: JessieCodeRuntimeValue,
+        numericIndex: Double,
+    ): JessieCodeRuntimeValue {
+        if (floor(numericIndex) != numericIndex) {
+            return JessieCodeRuntimeValue.UndefinedValue
+        }
+        if (
+            numericIndex < 0.0 ||
+            numericIndex > Int.MAX_VALUE.toDouble()
+        ) {
+            return JessieCodeRuntimeValue.UndefinedValue
+        }
+        val index = numericIndex.toInt()
+        return when (receiver) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                receiver.values.getOrNull(index)
+                    ?: JessieCodeRuntimeValue.UndefinedValue
+            is JessieCodeRuntimeValue.StringValue ->
+                receiver.value.getOrNull(index)?.let {
+                    JessieCodeRuntimeValue.StringValue(it.toString())
+                } ?: JessieCodeRuntimeValue.UndefinedValue
+            is JessieCodeRuntimeValue.ObjectValue ->
+                receiver.properties[
+                    JsNumberFormat.compact(numericIndex)
+                ] ?: JessieCodeRuntimeValue.UndefinedValue
+            else -> JessieCodeRuntimeValue.UndefinedValue
+        }
+    }
+
+    private fun standardCallable(name: String): JessieCodeCallable? =
+        when (name) {
+            "\$" -> JessieCodeCallable { arguments, _ ->
+                val id = arguments.firstOrNull()?.let(::propertyKey)
+                val element = id?.let { environment.board?.elementById(it) }
+                GMResult.Ok(
+                    element?.let {
+                        JessieCodeRuntimeValue.ElementReference(it)
+                    } ?: JessieCodeRuntimeValue.UndefinedValue,
+                )
+            }
+            "\$value" -> JessieCodeCallable { arguments, location ->
+                val id = arguments.firstOrNull()?.let(::propertyKey)
+                val element = id?.let { environment.board?.elementById(it) }
+                if (element == null) {
+                    GMResult.Err(
+                        JessieCodeRuntimeError.ElementValueUnavailable(
+                            elementId = id ?: "undefined",
+                            location = location,
+                        ),
+                    )
+                } else {
+                    environment.elementRuntime.valueOf(element, location)
+                }
+            }
+            "sin" -> unaryNumber(::sin)
+            "cos" -> unaryNumber(::cos)
+            "tan" -> unaryNumber(::tan)
+            "asin" -> unaryNumber(::asin)
+            "acos" -> unaryNumber(::acos)
+            "atan" -> unaryNumber(::atan)
+            "atan2" -> binaryNumber(::atan2)
+            "sinh" -> unaryNumber(::sinh)
+            "cosh" -> unaryNumber(::cosh)
+            "tanh" -> unaryNumber(::tanh)
+            "asinh" -> unaryNumber(::asinh)
+            "acosh" -> unaryNumber(::acosh)
+            "atanh" -> unaryNumber(::atanh)
+            "sqrt" -> unaryNumber(::sqrt)
+            "exp" -> unaryNumber(::exp)
+            "abs" -> unaryNumber(::abs)
+            "floor" -> unaryNumber(::floor)
+            "ceil" -> unaryNumber(::ceil)
+            "round" -> unaryNumber(JsMath::round)
+            "trunc" -> unaryNumber {
+                if (it < 0.0) ceil(it) else floor(it)
+            }
+            "ln" -> unaryNumber(::ln)
+            "log" -> JessieCodeCallable { arguments, _ ->
+                val value = toNumber(
+                    arguments.getOrElse(0) {
+                        JessieCodeRuntimeValue.UndefinedValue
+                    },
+                )
+                val base = arguments.getOrNull(1)
+                number(
+                    if (base == null) {
+                        ln(value)
+                    } else {
+                        Mat.log(value, toNumber(base))
+                    },
+                )
+            }
+            "log2", "lb", "ld" -> unaryNumber(Mat::log2)
+            "log10", "lg" -> unaryNumber(Mat::log10)
+            "pow" -> binaryNumber(Mat::pow)
+            "min" -> variadicExtrema(isMinimum = true)
+            "max" -> variadicExtrema(isMinimum = false)
+            "sign" -> unaryNumber(Mat::sign)
+            "cbrt" -> unaryNumber(Mat::cbrt)
+            "cot" -> unaryNumber(Mat::cot)
+            "acot" -> unaryNumber(Mat::acot)
+            "factorial" -> unaryNumber(Mat::factorial)
+            "erf" -> unaryNumber(Mat::erf)
+            "erfc" -> unaryNumber(Mat::erfc)
+            "erfi" -> unaryNumber(Mat::erfi)
+            "ndtr" -> unaryNumber(Mat::ndtr)
+            "ndtri" -> unaryNumber(Mat::ndtri)
+            "nthroot" -> binaryNumber(Mat::nthroot)
+            else -> null
+        }
+
+    private fun unaryNumber(
+        function: (Double) -> Double,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, _ ->
+            number(
+                function(
+                    toNumber(
+                        arguments.getOrElse(0) {
+                            JessieCodeRuntimeValue.UndefinedValue
+                        },
+                    ),
+                ),
+            )
+        }
+
+    private fun binaryNumber(
+        function: (Double, Double) -> Double,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, _ ->
+            number(
+                function(
+                    toNumber(
+                        arguments.getOrElse(0) {
+                            JessieCodeRuntimeValue.UndefinedValue
+                        },
+                    ),
+                    toNumber(
+                        arguments.getOrElse(1) {
+                            JessieCodeRuntimeValue.UndefinedValue
+                        },
+                    ),
+                ),
+            )
+        }
+
+    private fun variadicExtrema(
+        isMinimum: Boolean,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, _ ->
+            if (arguments.isEmpty()) {
+                number(
+                    if (isMinimum) {
+                        Double.POSITIVE_INFINITY
+                    } else {
+                        Double.NEGATIVE_INFINITY
+                    },
+                )
+            } else {
+                var result = toNumber(arguments[0])
+                for (index in 1 until arguments.size) {
+                    val candidate = toNumber(arguments[index])
+                    result = when {
+                        result.isNaN() || candidate.isNaN() -> Double.NaN
+                        isMinimum && candidate < result -> candidate
+                        isMinimum &&
+                            candidate == 0.0 &&
+                            result == 0.0 &&
+                            candidate.toBits() == NEGATIVE_ZERO_BITS ->
+                            candidate
+                        !isMinimum && candidate > result -> candidate
+                        !isMinimum &&
+                            candidate == 0.0 &&
+                            result == 0.0 &&
+                            result.toBits() == NEGATIVE_ZERO_BITS ->
+                            candidate
+                        else -> result
+                    }
+                }
+                number(result)
+            }
+        }
+
+    private fun nodeChild(
+        node: JessieCodeAstNode,
+        index: Int,
+    ): NodeResult {
+        val child = node.children.getOrNull(index)
+            ?: return invalidAst(
+                node,
+                "Missing node child at index $index.",
+            )
+        return when (child) {
+            is JessieCodeAstChild.Node -> GMResult.Ok(child.value)
+            else -> invalidAst(
+                node,
+                "Child at index $index must be a node.",
+            )
+        }
+    }
+
+    private fun nodeListChild(
+        node: JessieCodeAstNode,
+        index: Int,
+    ): NodeListResult {
+        val child = node.children.getOrNull(index)
+            ?: return invalidAst(
+                node,
+                "Missing node-list child at index $index.",
+            )
+        return when (child) {
+            is JessieCodeAstChild.NodeList -> GMResult.Ok(child.value)
+            else -> invalidAst(
+                node,
+                "Child at index $index must be a node list.",
+            )
+        }
+    }
+
+    private fun textChild(
+        node: JessieCodeAstNode,
+        index: Int,
+    ): TextResult {
+        val child = node.children.getOrNull(index)
+            ?: return invalidAst(
+                node,
+                "Missing text child at index $index.",
+            )
+        return when (child) {
+            is JessieCodeAstChild.Text -> GMResult.Ok(child.value)
+            else -> invalidAst(
+                node,
+                "Child at index $index must be text.",
+            )
+        }
+    }
+
+    private fun invalidAst(
+        node: JessieCodeAstNode,
+        reason: String,
+    ): GMResult.Err<JessieCodeRuntimeError> =
+        GMResult.Err(
+            JessieCodeRuntimeError.InvalidAst(
+                reason = reason,
+                location = node.location,
+            ),
+        )
+
+    private fun unsupported(
+        node: JessieCodeAstNode,
+        operator: String,
+        vararg operands: JessieCodeRuntimeValue,
+    ): EvaluationResult =
+        GMResult.Err(
+            JessieCodeRuntimeError.UnsupportedOperation(
+                operator = operator,
+                operandTypes = operands.map(::typeName),
+                location = node.location,
+            ),
+        )
+
+    private fun unknownProperty(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult =
+        GMResult.Err(
+            JessieCodeRuntimeError.UnknownProperty(
+                receiverType = typeName(receiver),
+                property = property,
+                location = location,
+            ),
+        )
+
+    private fun number(value: Double): EvaluationResult =
+        GMResult.Ok(JessieCodeRuntimeValue.NumberValue(value))
+
+    private fun string(value: String): EvaluationResult =
+        GMResult.Ok(JessieCodeRuntimeValue.StringValue(value))
+
+    private fun isTruthy(value: JessieCodeRuntimeValue): Boolean =
+        when (value) {
+            JessieCodeRuntimeValue.NullValue,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> false
+            is JessieCodeRuntimeValue.BooleanValue -> value.value
+            is JessieCodeRuntimeValue.NumberValue ->
+                value.value != 0.0 && !value.value.isNaN()
+            is JessieCodeRuntimeValue.StringValue ->
+                value.value.isNotEmpty()
+            is JessieCodeRuntimeValue.ArrayValue,
+            is JessieCodeRuntimeValue.ObjectValue,
+            is JessieCodeRuntimeValue.FunctionValue,
+            is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.ElementReference,
+            -> true
+        }
+
+    private fun looselyEqual(
+        left: JessieCodeRuntimeValue,
+        right: JessieCodeRuntimeValue,
+    ): Boolean {
+        if (left::class == right::class) {
+            return when {
+                left === JessieCodeRuntimeValue.NullValue -> true
+                left === JessieCodeRuntimeValue.UndefinedValue -> true
+                left is JessieCodeRuntimeValue.NumberValue &&
+                    right is JessieCodeRuntimeValue.NumberValue ->
+                    left.value == right.value
+                left is JessieCodeRuntimeValue.BooleanValue &&
+                    right is JessieCodeRuntimeValue.BooleanValue ->
+                    left.value == right.value
+                left is JessieCodeRuntimeValue.StringValue &&
+                    right is JessieCodeRuntimeValue.StringValue ->
+                    left.value == right.value
+                left is JessieCodeRuntimeValue.ElementReference &&
+                    right is JessieCodeRuntimeValue.ElementReference ->
+                    left.element === right.element
+                left is JessieCodeRuntimeValue.BoardReference &&
+                    right is JessieCodeRuntimeValue.BoardReference ->
+                    left.board === right.board
+                else -> left === right
+            }
+        }
+        if (
+            left === JessieCodeRuntimeValue.NullValue &&
+            right === JessieCodeRuntimeValue.UndefinedValue ||
+            left === JessieCodeRuntimeValue.UndefinedValue &&
+            right === JessieCodeRuntimeValue.NullValue
+        ) {
+            return true
+        }
+        if (
+            left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.StringValue
+        ) {
+            return left.value == toNumber(right)
+        }
+        if (
+            left is JessieCodeRuntimeValue.StringValue &&
+            right is JessieCodeRuntimeValue.NumberValue
+        ) {
+            return toNumber(left) == right.value
+        }
+        if (left is JessieCodeRuntimeValue.BooleanValue) {
+            return looselyEqual(
+                JessieCodeRuntimeValue.NumberValue(toNumber(left)),
+                right,
+            )
+        }
+        if (right is JessieCodeRuntimeValue.BooleanValue) {
+            return looselyEqual(
+                left,
+                JessieCodeRuntimeValue.NumberValue(toNumber(right)),
+            )
+        }
+        if (isObjectLike(left) && isPrimitive(right)) {
+            return looselyEqual(toPrimitive(left), right)
+        }
+        if (isPrimitive(left) && isObjectLike(right)) {
+            return looselyEqual(left, toPrimitive(right))
+        }
+        return false
+    }
+
+    private fun compare(
+        left: JessieCodeRuntimeValue,
+        right: JessieCodeRuntimeValue,
+    ): Int? {
+        val leftPrimitive = toPrimitive(left)
+        val rightPrimitive = toPrimitive(right)
+        if (
+            leftPrimitive is JessieCodeRuntimeValue.StringValue &&
+            rightPrimitive is JessieCodeRuntimeValue.StringValue
+        ) {
+            return leftPrimitive.value.compareTo(rightPrimitive.value)
+        }
+        val leftNumber = toNumber(leftPrimitive)
+        val rightNumber = toNumber(rightPrimitive)
+        if (leftNumber.isNaN() || rightNumber.isNaN()) {
+            return null
+        }
+        return when {
+            leftNumber < rightNumber -> -1
+            leftNumber > rightNumber -> 1
+            else -> 0
+        }
+    }
+
+    private fun toNumber(value: JessieCodeRuntimeValue): Double =
+        when (value) {
+            JessieCodeRuntimeValue.UndefinedValue -> Double.NaN
+            JessieCodeRuntimeValue.NullValue -> 0.0
+            is JessieCodeRuntimeValue.NumberValue -> value.value
+            is JessieCodeRuntimeValue.BooleanValue ->
+                if (value.value) 1.0 else 0.0
+            is JessieCodeRuntimeValue.StringValue ->
+                parseJavaScriptNumber(value.value)
+            else -> toNumber(toPrimitive(value))
+        }
+
+    private fun toPrimitive(
+        value: JessieCodeRuntimeValue,
+    ): JessieCodeRuntimeValue =
+        when (value) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                JessieCodeRuntimeValue.StringValue(
+                    arrayToString(value),
+                )
+            is JessieCodeRuntimeValue.ObjectValue,
+            is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.ElementReference,
+            -> JessieCodeRuntimeValue.StringValue("[object Object]")
+            is JessieCodeRuntimeValue.FunctionValue ->
+                JessieCodeRuntimeValue.StringValue(
+                    "function ${value.name}() { }",
+                )
+            else -> value
+        }
+
+    private fun explicitToString(
+        value: JessieCodeRuntimeValue,
+    ): String? =
+        when (value) {
+            JessieCodeRuntimeValue.NullValue,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> null
+            else -> toJsString(value)
+        }
+
+    private fun toJsString(value: JessieCodeRuntimeValue): String =
+        when (value) {
+            JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+            JessieCodeRuntimeValue.NullValue -> "null"
+            is JessieCodeRuntimeValue.NumberValue ->
+                JsNumberFormat.compact(value.value)
+            is JessieCodeRuntimeValue.BooleanValue ->
+                value.value.toString()
+            is JessieCodeRuntimeValue.StringValue -> value.value
+            is JessieCodeRuntimeValue.ArrayValue ->
+                arrayToString(value)
+            is JessieCodeRuntimeValue.ObjectValue,
+            is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.ElementReference,
+            -> "[object Object]"
+            is JessieCodeRuntimeValue.FunctionValue ->
+                "function ${value.name}() { }"
+        }
+
+    private fun jsAdd(
+        left: JessieCodeRuntimeValue,
+        right: JessieCodeRuntimeValue,
+    ): JessieCodeRuntimeValue {
+        val leftPrimitive = toPrimitive(left)
+        val rightPrimitive = toPrimitive(right)
+        return if (
+            leftPrimitive is JessieCodeRuntimeValue.StringValue ||
+            rightPrimitive is JessieCodeRuntimeValue.StringValue
+        ) {
+            JessieCodeRuntimeValue.StringValue(
+                toJsString(leftPrimitive) + toJsString(rightPrimitive),
+            )
+        } else {
+            JessieCodeRuntimeValue.NumberValue(
+                toNumber(leftPrimitive) + toNumber(rightPrimitive),
+            )
+        }
+    }
+
+    private fun propertyKey(value: JessieCodeRuntimeValue): String =
+        toJsString(toPrimitive(value))
+
+    private fun arrayToString(
+        value: JessieCodeRuntimeValue.ArrayValue,
+    ): String =
+        value.values.joinToString(separator = ",") {
+            when (it) {
+                JessieCodeRuntimeValue.NullValue,
+                JessieCodeRuntimeValue.UndefinedValue,
+                -> ""
+                else -> toJsString(it)
+            }
+        }
+
+    private fun isPrimitive(value: JessieCodeRuntimeValue): Boolean =
+        value is JessieCodeRuntimeValue.NumberValue ||
+            value is JessieCodeRuntimeValue.BooleanValue ||
+            value is JessieCodeRuntimeValue.StringValue ||
+            value === JessieCodeRuntimeValue.NullValue ||
+            value === JessieCodeRuntimeValue.UndefinedValue
+
+    private fun isObjectLike(value: JessieCodeRuntimeValue): Boolean =
+        !isPrimitive(value)
+
+    private fun typeName(value: JessieCodeRuntimeValue): String =
+        when (value) {
+            JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+            JessieCodeRuntimeValue.NullValue -> "null"
+            is JessieCodeRuntimeValue.NumberValue -> "number"
+            is JessieCodeRuntimeValue.BooleanValue -> "boolean"
+            is JessieCodeRuntimeValue.StringValue -> "string"
+            is JessieCodeRuntimeValue.ArrayValue -> "array"
+            is JessieCodeRuntimeValue.ObjectValue -> "object"
+            is JessieCodeRuntimeValue.FunctionValue -> "function"
+            is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.ElementReference -> "element"
+        }
+
+    private enum class Comparison {
+        LESS,
+        GREATER,
+        LESS_OR_EQUAL,
+        GREATER_OR_EQUAL,
+    }
+
+    private companion object {
+        const val INDEX_INTEGER_TOLERANCE = 1.0e-12
+        val NEGATIVE_ZERO_BITS = (-0.0).toBits()
+    }
+}
+
+private typealias EvaluationResult =
+    GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError>
+private typealias NodeResult =
+    GMResult<JessieCodeAstNode, JessieCodeRuntimeError>
+private typealias NodeListResult =
+    GMResult<List<JessieCodeAstNode>, JessieCodeRuntimeError>
+private typealias TextResult =
+    GMResult<String, JessieCodeRuntimeError>
+
+private const val MAX_SUPPORTED_EVALUATION_DEPTH = 64
+
+private fun parseJavaScriptNumber(source: String): Double {
+    val value = source.trim()
+    if (value.isEmpty()) {
+        return 0.0
+    }
+    return when {
+        value == "Infinity" || value == "+Infinity" ->
+            Double.POSITIVE_INFINITY
+        value == "-Infinity" -> Double.NEGATIVE_INFINITY
+        HEX_NUMBER.matches(value) ->
+            value.drop(2).toLongOrNull(radix = 16)?.toDouble()
+                ?: Double.NaN
+        BINARY_NUMBER.matches(value) ->
+            value.drop(2).toLongOrNull(radix = 2)?.toDouble()
+                ?: Double.NaN
+        OCTAL_NUMBER.matches(value) ->
+            value.drop(2).toLongOrNull(radix = 8)?.toDouble()
+                ?: Double.NaN
+        else -> value.toDoubleOrNull() ?: Double.NaN
+    }
+}
+
+private fun removeJessieCodeEscapes(source: String): String =
+    buildString(source.length) {
+        var index = 0
+        while (index < source.length) {
+            val current = source[index]
+            if (
+                current == '\\' &&
+                index + 1 < source.length &&
+                source[index + 1] != '\n' &&
+                source[index + 1] != '\r' &&
+                source[index + 1] != '\u2028' &&
+                source[index + 1] != '\u2029'
+            ) {
+                append(source[index + 1])
+                index += 2
+            } else {
+                append(current)
+                index += 1
+            }
+        }
+    }
+
+private val HEX_NUMBER = Regex("""^0[xX][0-9a-fA-F]+$""")
+private val BINARY_NUMBER = Regex("""^0[bB][01]+$""")
+private val OCTAL_NUMBER = Regex("""^0[oO][0-7]+$""")

@@ -24,8 +24,27 @@ practical.
   `ConditionalExpression ';' EOF` statement from the upstream
   `Expression ';' EOF` entry. Successful supported expressions preserve the
   upstream AST node/value/child shape, `isMath` flags, and generated-action
-  locations. Remaining statements, assignment/function/map/object syntax,
-  evaluation, scopes, and dependency discovery remain pending.
+  locations. The evaluator covers every AST node produced by this subset,
+  including JavaScript truthiness and primitive/array coercion, short-circuit
+  logic, calls, properties, indexes, board element references, and the first
+  core math built-ins. Remaining statements, assignment/function/map/object
+  syntax, nested mutable scopes, the complete built-in set, and the complete
+  element `methodMap` remain pending.
+- JessieCode evaluation returns structured `GMResult.Err` values for malformed
+  ASTs, unsupported operand combinations, unavailable element properties or
+  values, and non-callable values instead of propagating JavaScript
+  exceptions. Evaluation is capped by node-step and depth limits; the maximum
+  configurable recursive depth is 64 to stay below the browser Wasm stack
+  limit.
+- JessieCode geometry values cross the interpreter through
+  `JessieCodeElementRuntime`. This preserves board object identity while the
+  full upstream `methodMap`, visual-property, and generic `Value()` contracts
+  are still untranslated.
+- Static JessieCode dependency discovery preserves the upstream reverse child
+  traversal and direct-name / `$()` / `$value()` lookup behavior. It uses an
+  explicit traversal stack and returns `GMResult.Err(MissingExplicitElement)`
+  for an unknown literal `$()` or `$value()` ID; upstream stores an
+  `undefined` dependency and fails later when that dependency is attached.
 - Parser errors retain both the offending token location and the previous
   shifted-token location used by Jison's error hash. Expected-token lists
   describe the translated grammar subset rather than the complete generated
