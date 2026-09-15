@@ -2,6 +2,8 @@ package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -93,6 +95,243 @@ class PointTest {
         )
         assertTrue(board.objects.isEmpty())
         assertEquals(0, board.numObjects)
+    }
+
+    @Test
+    fun stringCoordinatesMatchOfficialStableIdAndUpdateBehavior() {
+        val board = board()
+        val driver = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(3.0, 4.0),
+                name = "A",
+            ),
+        )
+
+        val constrained = point(
+            Point.create(
+                board = board,
+                coordinateExpressions = listOf(
+                    "A.X() + 1",
+                    "A.Y() * 2",
+                ),
+                name = "Dynamic",
+            ),
+        )
+
+        assertEquals(Const.OBJECT_TYPE_CAS, constrained.type)
+        assertEquals(Const.OBJECT_TYPE_POINT, constrained.originalType)
+        assertTrue(constrained.isConstrained)
+        assertFalse(constrained.isDraggable)
+        assertNull(constrained.baseElement)
+        assertEquals("A.X() + 1", constrained.Xjc)
+        assertEquals("A.Y() * 2", constrained.Yjc)
+        assertContentEquals(
+            doubleArrayOf(1.0, 4.0, 8.0),
+            constrained.coords.usrCoords,
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 0.0),
+            constrained.initialCoords.usrCoords,
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 0.0),
+            constrained.actualCoords.usrCoords,
+        )
+        assertTrue(constrained.parents.isEmpty())
+        assertEquals(
+            listOf(driver.id),
+            constrained.coordinateFunctions[0]
+                .dependencies.keys.toList(),
+        )
+        assertEquals(
+            listOf(driver.id),
+            constrained.coordinateFunctions[1]
+                .dependencies.keys.toList(),
+        )
+        assertSame(
+            constrained,
+            driver.childElements[constrained.id],
+        )
+        assertSame(driver, constrained.ancestors[driver.id])
+        assertNull(constrained.coordinateEvaluationError)
+
+        driver.setName("Renamed")
+        driver.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(5.0, 6.0),
+        )
+        board.update()
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 6.0, 12.0),
+            constrained.coords.usrCoords,
+        )
+        assertNull(constrained.coordinateEvaluationError)
+    }
+
+    @Test
+    fun homogeneousStringCoordinatesUseTheFirstThreeTerms() {
+        val board = board()
+        val driver = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(3.0, 4.0),
+                name = "A",
+            ),
+        )
+
+        val constrained = point(
+            Point.create(
+                board = board,
+                coordinateExpressions = listOf(
+                    "2",
+                    "A.X() * 2",
+                    "A.Y() * 3",
+                    "\"ignored\"",
+                ),
+            ),
+        )
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 3.0, 6.0),
+            constrained.coords.usrCoords,
+        )
+        assertEquals(4, constrained.coordinateFunctions.size)
+        assertNull(constrained.Xjc)
+        assertNull(constrained.Yjc)
+        assertSame(
+            constrained,
+            driver.childElements[constrained.id],
+        )
+    }
+
+    @Test
+    fun stringCoordinateFailuresDoNotPolluteBoardOrDependencies() {
+        val board = board()
+        val driver = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(3.0, 4.0),
+                name = "A",
+            ),
+        )
+
+        assertEquals(
+            PointError.InvalidCoordinateCount(1),
+            assertIs<GMResult.Err<PointError.InvalidCoordinateCount>>(
+                Point.create(
+                    board = board,
+                    coordinateExpressions = listOf("1"),
+                ),
+            ).error,
+        )
+
+        val compileError = assertIs<
+            GMResult.Err<PointError.CoordinateExpressionCompile>
+            >(
+            Point.create(
+                board = board,
+                coordinateExpressions = listOf("0", "1 +"),
+            ),
+        ).error
+        assertEquals(1, compileError.coordinateIndex)
+        assertIs<JessieCodeExpressionCompileError.Parser>(
+            compileError.error,
+        )
+
+        val evaluationError = assertIs<
+            GMResult.Err<PointError.CoordinateExpressionEvaluation>
+            >(
+            Point.create(
+                board = board,
+                coordinateExpressions = listOf(
+                    "A.Unknown()",
+                    "0",
+                ),
+            ),
+        ).error.error
+        val runtimeError = assertIs<
+            CoordinateConstraintError.Evaluation
+            >(evaluationError)
+        assertEquals(0, runtimeError.coordinateIndex)
+        assertIs<JessieCodeRuntimeError.ElementPropertyUnavailable>(
+            runtimeError.error,
+        )
+
+        assertEquals(
+            CoordinateConstraintError.NonNumericResult(
+                coordinateIndex = 1,
+                actualType = "string",
+            ),
+            assertIs<
+                GMResult.Err<PointError.CoordinateExpressionEvaluation>
+                >(
+                Point.create(
+                    board = board,
+                    coordinateExpressions = listOf(
+                        "0",
+                        "\"y\"",
+                    ),
+                ),
+            ).error.error,
+        )
+
+        assertIs<GMResult.Err<PointError.Registration>>(
+            Point.create(
+                board = board,
+                coordinateExpressions = listOf(
+                    "A.X()",
+                    "A.Y()",
+                ),
+                id = driver.id,
+            ),
+        )
+
+        assertEquals(1, board.numObjects)
+        assertSame(driver, board.elementById(driver.id))
+        assertTrue(driver.childElements.isEmpty())
+    }
+
+    @Test
+    fun missingCoordinateDependencyReturnsErrorAndUpdateUsesNaN() {
+        val board = board()
+        val driver = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(3.0, 4.0),
+                name = "A",
+            ),
+        )
+        val constrained = point(
+            Point.create(
+                board = board,
+                coordinateExpressions = listOf(
+                    "A.X() + 1",
+                    "A.Y() * 2",
+                ),
+            ),
+        )
+
+        board.removeObject(driver)
+
+        val explicitError = assertIs<
+            GMResult.Err<CoordinateConstraintError.Evaluation>
+            >(constrained.coordinateConstraintResult()).error
+        assertEquals(0, explicitError.coordinateIndex)
+        assertIs<JessieCodeRuntimeError.UnknownProperty>(
+            explicitError.error,
+        )
+
+        constrained.needsUpdate = true
+        constrained.update(fromParent = true)
+
+        assertEquals(1.0, constrained.coords.usrCoords[0])
+        assertTrue(constrained.coords.usrCoords[1].isNaN())
+        assertTrue(constrained.coords.usrCoords[2].isNaN())
+        assertIs<CoordinateConstraintError.Evaluation>(
+            constrained.coordinateEvaluationError,
+        )
     }
 
     @Test

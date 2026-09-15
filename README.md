@@ -32,6 +32,8 @@ Implemented translation slices:
   limits;
 - Circle radii defined by JessieCode strings, including functional update
   dependencies that remain separate from geometric parents;
+- Point coordinates defined by two or more JessieCode strings, including
+  Euclidean and homogeneous updates;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - an interactive Compose geometry playground backed by the translated

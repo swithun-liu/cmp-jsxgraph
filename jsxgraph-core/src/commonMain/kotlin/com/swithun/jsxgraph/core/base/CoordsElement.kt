@@ -7,12 +7,34 @@
  */
 package com.swithun.jsxgraph.core.base
 
+import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+
+internal sealed interface CoordinateConstraintError {
+    data class UnsupportedFunctionCount(
+        val count: Int,
+    ) : CoordinateConstraintError
+
+    data class Evaluation(
+        val coordinateIndex: Int,
+        val error: JessieCodeRuntimeError,
+    ) : CoordinateConstraintError
+
+    data class NonNumericResult(
+        val coordinateIndex: Int,
+        val actualType: String,
+    ) : CoordinateConstraintError
+}
+
 /**
  * Initial coordinate-access slice of JXG.CoordsElement.
  *
- * Constraint, glider, transformation, animation, and renderer behavior remain
- * in the untranslated element model. This class stays internal until those
- * lifecycle contracts are available.
+ * JessieCode coordinate constraints and their update lifecycle are present.
+ * Function, slider, single-array, glider, transformation, animation, and
+ * renderer behavior remain in the untranslated element model. This class
+ * stays internal until those lifecycle contracts are available.
  */
 internal open class CoordsElement(
     board: Board,
@@ -22,6 +44,8 @@ internal open class CoordsElement(
     type: Int = 0,
     elementClass: Int = Const.OBJECT_CLASS_OTHER,
     needsRegularUpdate: Boolean = true,
+    internal val coordinateFunctions:
+        List<JessieCodeExpressionFunction> = emptyList(),
 ) : GeometryElement(
     board = board,
     id = id,
@@ -50,14 +74,18 @@ internal open class CoordsElement(
     )
 
     internal var position: Double? = null
-    internal var isConstrained: Boolean = false
+    internal var isConstrained: Boolean = coordinateFunctions.isNotEmpty()
     internal var onPolygon: Boolean = false
     internal var slideObject: GeometryElement? = null
     internal val slideObjects = mutableListOf<GeometryElement>()
     internal var needsUpdateFromParent: Boolean = true
+    internal var Xjc: String? = null
+    internal var Yjc: String? = null
+    internal var coordinateEvaluationError: CoordinateConstraintError? = null
+        private set
 
     init {
-        isDraggable = true
+        isDraggable = coordinateFunctions.isEmpty()
     }
 
     internal val isReal: Boolean
@@ -95,8 +123,81 @@ internal open class CoordsElement(
             Double.NaN
         }
 
+    // JSXGraph: src/base/coordselement.js -> addConstraint / updateConstraint
+    internal fun coordinateConstraintResult(): GMResult<
+        DoubleArray,
+        CoordinateConstraintError,
+        > {
+        if (coordinateFunctions.isEmpty()) {
+            return GMResult.Ok(coords.usrCoords.copyOf())
+        }
+        if (coordinateFunctions.size < 2) {
+            return GMResult.Err(
+                CoordinateConstraintError.UnsupportedFunctionCount(
+                    coordinateFunctions.size,
+                ),
+            )
+        }
+
+        val coordinateCount =
+            if (coordinateFunctions.size == 2) 2 else 3
+        val values = DoubleArray(coordinateCount)
+        for (index in 0 until coordinateCount) {
+            when (val result = coordinateFunctions[index].evaluate()) {
+                is GMResult.Err -> return GMResult.Err(
+                    CoordinateConstraintError.Evaluation(
+                        coordinateIndex = index,
+                        error = result.error,
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val value = result.value
+                    if (value !is JessieCodeRuntimeValue.NumberValue) {
+                        return GMResult.Err(
+                            CoordinateConstraintError.NonNumericResult(
+                                coordinateIndex = index,
+                                actualType = runtimeType(value),
+                            ),
+                        )
+                    }
+                    values[index] = value.value
+                }
+            }
+        }
+        return GMResult.Ok(values)
+    }
+
     // JSXGraph: src/base/coordselement.js -> updateConstraint
-    internal open fun updateConstraint(): CoordsElement = this
+    internal open fun updateConstraint(): CoordsElement {
+        if (coordinateFunctions.isEmpty()) {
+            return this
+        }
+
+        when (val result = coordinateConstraintResult()) {
+            is GMResult.Ok -> applyCoordinateConstraint(result.value)
+            is GMResult.Err -> {
+                coordinateEvaluationError = result.error
+                coords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = DoubleArray(
+                        if (coordinateFunctions.size == 2) 2 else 3,
+                    ) { Double.NaN },
+                )
+            }
+        }
+        return this
+    }
+
+    internal fun applyCoordinateConstraint(
+        coordinates: DoubleArray,
+    ): CoordsElement {
+        coordinateEvaluationError = null
+        coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = coordinates,
+        )
+        return this
+    }
 
     // JSXGraph: src/base/coordselement.js -> updateTransform
     internal open fun updateTransform(fromParent: Boolean): CoordsElement = this
@@ -156,4 +257,20 @@ internal open class CoordsElement(
         method: Int,
         coordinates: DoubleArray,
     ): CoordsElement = setPositionDirectly(method, coordinates)
+
+    private fun runtimeType(
+        value: JessieCodeRuntimeValue,
+    ): String =
+        when (value) {
+            JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+            JessieCodeRuntimeValue.NullValue -> "null"
+            is JessieCodeRuntimeValue.NumberValue -> "number"
+            is JessieCodeRuntimeValue.BooleanValue -> "boolean"
+            is JessieCodeRuntimeValue.StringValue -> "string"
+            is JessieCodeRuntimeValue.ArrayValue -> "array"
+            is JessieCodeRuntimeValue.ObjectValue -> "object"
+            is JessieCodeRuntimeValue.FunctionValue -> "function"
+            is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.ElementReference -> "element"
+        }
 }

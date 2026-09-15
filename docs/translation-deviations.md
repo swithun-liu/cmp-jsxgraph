@@ -86,10 +86,16 @@ practical.
   relative coordinates or transformations. Its snap-to-grid, snap-to-point,
   and attractor calls are lifecycle hooks with no-op defaults until the
   visual-property and attractor models are translated.
-- `Point.create` currently accepts numeric free-point coordinates only and
-  returns `GMResult.Err` for fewer than two coordinates or a board registration
-  failure. JSXGraph throws from `createPoint` when its dynamic parent array
-  cannot be interpreted as a free, constrained, or transformed point.
+- `Point.create` accepts numeric free-point coordinates or a list of at least
+  two JessieCode string coordinate expressions. String-expression compilation,
+  first evaluation, and numeric validation return `GMResult.Err` before
+  registration. Later failures are exposed through
+  `coordinateConstraintResult()` and `coordinateEvaluationError`; the regular
+  update path writes `NaN` coordinate values instead of throwing or retaining
+  stale geometry. Mixed numeric/string terms, direct function and slider
+  terms, a single function returning coordinates, and transformed points
+  remain pending. JSXGraph throws from `createPoint` when its dynamic parent
+  array cannot be interpreted as a free, constrained, or transformed point.
 - `Point.isOn` currently supports translated `Point`, ordinary `Line`, and
   circle-boundary targets. Segment clipping, circle interior hits, curves,
   polygons, and turtles remain pending on their element and visual-property
