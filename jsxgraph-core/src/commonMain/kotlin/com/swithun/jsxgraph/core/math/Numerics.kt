@@ -107,6 +107,18 @@ sealed interface NumericsError {
     ) : NumericsError
 
     data class InvalidPolynomialPrecision(val precision: Int) : NumericsError
+
+    data class InvalidRegressionData(
+        val xCount: Int,
+        val yCount: Int,
+    ) : NumericsError
+
+    data class InvalidRegressionDegree(val degree: Double) : NumericsError
+
+    data class RegressionCoefficientsUnavailable(
+        val degree: Int,
+        val coefficientCount: Int,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -631,6 +643,101 @@ internal class BSplineInterpolation internal constructor(
             }
         }
         return basis
+    }
+}
+
+internal class RegressionPolynomial internal constructor(
+    private val degreeProvider: () -> Double,
+    private val xProviders: List<() -> Double>,
+    private val yProviders: List<() -> Double>,
+) {
+    private var coefficients: DoubleArray? = null
+    private var term = ""
+
+    internal operator fun invoke(
+        value: Double,
+        suspendedUpdate: Boolean = false,
+    ): GMResult<Double, NumericsError> {
+        val rawDegree = degreeProvider()
+        if (!rawDegree.isFinite() || rawDegree < 0.0 || rawDegree > Int.MAX_VALUE.toDouble()) {
+            return GMResult.Err(NumericsError.InvalidRegressionDegree(rawDegree))
+        }
+        val degree = kotlin.math.floor(rawDegree).toInt()
+
+        if (!suspendedUpdate) {
+            when (val update = updateCoefficients(degree)) {
+                is GMResult.Err -> return update
+                is GMResult.Ok -> Unit
+            }
+        }
+
+        val currentCoefficients = coefficients
+        if (currentCoefficients == null || degree !in currentCoefficients.indices) {
+            return GMResult.Err(
+                NumericsError.RegressionCoefficientsUnavailable(
+                    degree = degree,
+                    coefficientCount = currentCoefficients?.size ?: 0,
+                ),
+            )
+        }
+
+        var result = currentCoefficients[degree]
+        for (index in degree - 1 downTo 0) {
+            result = result * value + currentCoefficients[index]
+        }
+        return GMResult.Ok(result)
+    }
+
+    internal fun getTerm(): String = term
+
+    private fun updateCoefficients(
+        degree: Int,
+    ): GMResult<Unit, NumericsError> {
+        val size = xProviders.size
+        if (size == 0 || size != yProviders.size) {
+            return GMResult.Err(
+                NumericsError.InvalidRegressionData(
+                    xCount = size,
+                    yCount = yProviders.size,
+                ),
+            )
+        }
+        if (degree >= size) {
+            return GMResult.Err(NumericsError.SingularMatrix)
+        }
+
+        val xValues = DoubleArray(size) { index -> xProviders[index]() }
+        val yValues = DoubleArray(size) { index -> yProviders[index]() }
+        val vandermonde = Array(size) { row ->
+            DoubleArray(degree + 1).also { values ->
+                values[0] = 1.0
+                for (column in 1..degree) {
+                    values[column] = values[column - 1] * xValues[row]
+                }
+            }
+        }
+        val transpose = Mat.transpose(vandermonde)
+        val normalMatrix = Mat.matMatMult(transpose, vandermonde)
+        val normalVector = Mat.matVecMult(transpose, yValues)
+        val solved = when (val result = Numerics.Gauss(normalMatrix, normalVector)) {
+            is GMResult.Err -> return result
+            is GMResult.Ok -> result.value
+        }
+        val generatedTerm = when (
+            val result = Numerics.generatePolynomialTerm(
+                coefficients = solved,
+                degree = degree,
+                variableName = "x",
+                precision = 3,
+            )
+        ) {
+            is GMResult.Err -> return result
+            is GMResult.Ok -> result.value
+        }
+
+        coefficients = solved
+        term = generatedTerm
+        return GMResult.Ok(Unit)
     }
 }
 
@@ -1709,6 +1816,57 @@ object Numerics {
         points: List<CoordsElement>,
         order: Int,
     ): BSplineInterpolation = BSplineInterpolation(points, order)
+
+    // JSXGraph: src/math/numerics.js -> regressionPolynomial
+    internal fun regressionPolynomial(
+        degree: Double,
+        dataX: DoubleArray,
+        dataY: DoubleArray,
+    ): GMResult<RegressionPolynomial, NumericsError> = regressionPolynomial(
+        degree = { degree },
+        dataX = dataX.indices.map { index -> { dataX[index] } },
+        dataY = dataY.indices.map { index -> { dataY[index] } },
+    )
+
+    // JSXGraph: src/math/numerics.js -> regressionPolynomial
+    internal fun regressionPolynomial(
+        degree: () -> Double,
+        dataX: List<() -> Double>,
+        dataY: List<() -> Double>,
+    ): GMResult<RegressionPolynomial, NumericsError> {
+        if (dataX.isEmpty() || dataX.size != dataY.size) {
+            return GMResult.Err(
+                NumericsError.InvalidRegressionData(
+                    xCount = dataX.size,
+                    yCount = dataY.size,
+                ),
+            )
+        }
+        return GMResult.Ok(
+            RegressionPolynomial(
+                degreeProvider = degree,
+                xProviders = dataX,
+                yProviders = dataY,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> regressionPolynomial point-array input
+    internal fun regressionPolynomial(
+        degree: () -> Double,
+        points: List<CoordsElement>,
+    ): GMResult<RegressionPolynomial, NumericsError> = regressionPolynomial(
+        degree = degree,
+        dataX = points.map { point -> { point.X() } },
+        dataY = points.map { point -> { point.Y() } },
+    )
+
+    // JSXGraph: src/math/numerics.js -> regressionPolynomial point-array input
+    internal fun regressionPolynomial(
+        degree: Double,
+        points: List<CoordsElement>,
+    ): GMResult<RegressionPolynomial, NumericsError> =
+        regressionPolynomial(degree = { degree }, points = points)
 
     // JSXGraph: src/math/numerics.js -> splineDef
     fun splineDef(

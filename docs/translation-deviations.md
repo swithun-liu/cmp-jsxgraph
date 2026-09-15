@@ -65,6 +65,10 @@ practical.
 - B-spline order is an `Int`, matching the documented degree-plus-one
   contract. JavaScript non-integer orders only produce incidental
   `undefined`/`NaN` array-property behavior and are not represented.
+- Regression polynomial construction and evaluation use `GMResult` for empty
+  or mismatched data, invalid degrees, singular normal equations, and a
+  suspended evaluation without compatible cached coefficients. JSXGraph
+  `1.13.3` throws or propagates `undefined`/`NaN` for these cases.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is
