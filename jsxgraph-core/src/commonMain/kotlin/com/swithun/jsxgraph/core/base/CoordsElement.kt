@@ -55,7 +55,10 @@ internal open class CoordsElement(
     internal var slideObject: GeometryElement? = null
     internal val slideObjects = mutableListOf<GeometryElement>()
     internal var needsUpdateFromParent: Boolean = true
-    internal var isDraggable: Boolean = true
+
+    init {
+        isDraggable = true
+    }
 
     internal val isReal: Boolean
         get() = coords.isReal()

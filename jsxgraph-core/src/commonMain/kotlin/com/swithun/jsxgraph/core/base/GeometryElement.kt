@@ -36,9 +36,17 @@ internal open class GeometryElement(
 
     internal var needsUpdate: Boolean = true
     internal var positionInBoard: Int = -1
+    internal var isDraggable: Boolean = false
 
     // JSXGraph: src/base/element.js -> stdform
     internal var stdform = doubleArrayOf(1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0)
+
+    // JSXGraph: src/base/element.js -> quadraticform
+    internal var quadraticform = arrayOf(
+        doubleArrayOf(1.0, 0.0, 0.0),
+        doubleArrayOf(0.0, 1.0, 0.0),
+        doubleArrayOf(0.0, 0.0, 1.0),
+    )
 
     internal val childElements = linkedMapOf<String, GeometryElement>()
     internal val descendants = linkedMapOf<String, GeometryElement>()

@@ -159,6 +159,7 @@ internal open class Line internal constructor(
                     point1.addChild(line)
                     point2.addChild(line)
                     line.setParents(listOf(point1, point2))
+                    line.isDraggable = true
                     line.updateStdform()
                     GMResult.Ok(line)
                 }

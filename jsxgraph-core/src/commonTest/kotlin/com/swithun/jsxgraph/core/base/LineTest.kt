@@ -24,6 +24,7 @@ class LineTest {
         assertEquals(Const.OBJECT_TYPE_LINE, line.originalType)
         assertEquals(Const.OBJECT_CLASS_LINE, line.elementClass)
         assertNull(line.baseElement)
+        assertTrue(line.isDraggable)
         assertSame(line, board.select(line.id))
         assertSame(line, board.select(line.name))
         assertEquals(listOf(point1.id, point2.id), line.parents)
