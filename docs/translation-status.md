@@ -21,6 +21,7 @@
 | `src/utils/event.js` | `EventEmitter.trigger`, `on`, `off` | `utils/EventEmitter.kt` | Translated |
 | `src/base/board.js` | coordinate origin, zoom, units | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |
+| `src/base/coordselement.js` | coordinate storage and `X`, `Y`, `Z`, `Coords`, evaluator, and distance accessors | `base/CoordsElement.kt` | Translated dependency subset |
 | `src/unused/symbolic.js` | `Symbolic` | None | Intentionally unsupported |
 
 ## Update Procedure
