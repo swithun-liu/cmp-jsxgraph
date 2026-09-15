@@ -2275,6 +2275,50 @@ object Geometry {
         return Mat.axpy(-parameter, normal, point)
     }
 
+    // JSXGraph: src/math/geometry.js -> getPlaneBounds
+    fun getPlaneBounds(
+        firstVector: DoubleArray,
+        secondVector: DoubleArray,
+        point: DoubleArray,
+        start: Double,
+        end: Double,
+    ): GMResult<DoubleArray?, NumericsError> {
+        if (firstVector[2] + secondVector[0] == 0.0) {
+            return GMResult.Ok(null)
+        }
+
+        val matrix = arrayOf(
+            doubleArrayOf(firstVector[0], secondVector[0]),
+            doubleArrayOf(firstVector[1], secondVector[1]),
+        )
+        val startSolution = when (
+            val result = Numerics.Gauss(
+                matrix,
+                doubleArrayOf(start - point[0], start - point[1]),
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val endSolution = when (
+            val result = Numerics.Gauss(
+                matrix,
+                doubleArrayOf(end - point[0], end - point[1]),
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            doubleArrayOf(
+                startSolution[0],
+                endSolution[0],
+                startSolution[1],
+                endSolution[1],
+            ),
+        )
+    }
+
     private fun midpoint(
         first: DoubleArray,
         second: DoubleArray,

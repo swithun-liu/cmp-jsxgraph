@@ -1,8 +1,12 @@
 package com.swithun.jsxgraph.core.math
 
+import com.swithun.jsxgraph.core.GMResult
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class Geometry3DTest {
@@ -97,6 +101,66 @@ class Geometry3DTest {
             ),
         )
     }
+
+    @Test
+    fun planeBoundsMatchOfficialLinearSystemReferences() {
+        assertContentEquals(
+            doubleArrayOf(-2.0, 8.0, -3.0, 7.0),
+            definedBounds(
+                Geometry.getPlaneBounds(
+                    firstVector = doubleArrayOf(1.0, 0.0, 1.0),
+                    secondVector = doubleArrayOf(0.0, 1.0, 0.0),
+                    point = doubleArrayOf(2.0, 3.0, 4.0),
+                    start = 0.0,
+                    end = 10.0,
+                ),
+            ),
+        )
+        assertArrayClose(
+            doubleArrayOf(-3.2, -0.8, 1.4, 2.6),
+            definedBounds(
+                Geometry.getPlaneBounds(
+                    firstVector = doubleArrayOf(2.0, 1.0, 0.0),
+                    secondVector = doubleArrayOf(1.0, 3.0, 0.0),
+                    point = doubleArrayOf(4.0, -2.0, 0.0),
+                    start = -1.0,
+                    end = 5.0,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun planeBoundsPreserveEarlyExitAndReportSingularMatrix() {
+        assertNull(
+            bounds(
+                Geometry.getPlaneBounds(
+                    firstVector = doubleArrayOf(1.0, 0.0, 0.0),
+                    secondVector = doubleArrayOf(0.0, 1.0, 0.0),
+                    point = doubleArrayOf(0.0, 0.0, 0.0),
+                    start = -1.0,
+                    end = 1.0,
+                ),
+            ),
+        )
+        assertIs<GMResult.Err<NumericsError.SingularMatrix>>(
+            Geometry.getPlaneBounds(
+                firstVector = doubleArrayOf(1.0, 2.0, 1.0),
+                secondVector = doubleArrayOf(2.0, 4.0, 0.0),
+                point = doubleArrayOf(0.0, 0.0, 0.0),
+                start = -1.0,
+                end = 1.0,
+            ),
+        )
+    }
+
+    private fun bounds(
+        result: GMResult<DoubleArray?, NumericsError>,
+    ): DoubleArray? = assertIs<GMResult.Ok<DoubleArray?>>(result).value
+
+    private fun definedBounds(
+        result: GMResult<DoubleArray?, NumericsError>,
+    ): DoubleArray = assertNotNull(bounds(result))
 
     private fun assertArrayClose(
         expected: DoubleArray,

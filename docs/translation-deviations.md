@@ -96,6 +96,8 @@ practical.
 - `Geometry.projectCoordsToPolygon` returns `GMResult.Err` for fewer than two
   vertices or when every edge produces an undefined projection. JSXGraph
   `1.13.3` returns JavaScript `undefined` in those cases.
+- `Geometry.getPlaneBounds` returns `GMResult.Err` when either 2D linear solve
+  is singular. JSXGraph `1.13.3` throws from `Numerics.Gauss`.
 - `Geometry.sortVertices` returns an unchanged copy for empty and single-point
   inputs. JSXGraph `1.13.3` throws while repeatedly removing a closing point
   from those inputs.
