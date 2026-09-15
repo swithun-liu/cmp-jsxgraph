@@ -35,6 +35,10 @@ practical.
   relative coordinates or transformations. Its snap-to-grid, snap-to-point,
   and attractor calls are lifecycle hooks with no-op defaults until the
   visual-property and attractor models are translated.
+- `Point.create` currently accepts numeric free-point coordinates only and
+  returns `GMResult.Err` for fewer than two coordinates or a board registration
+  failure. JSXGraph throws from `createPoint` when its dynamic parent array
+  cannot be interpreted as a free, constrained, or transformed point.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again

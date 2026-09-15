@@ -62,6 +62,12 @@ internal class Board(
     internal fun setId(
         element: GeometryElement,
         type: Int,
+    ): GMResult<String, BoardError> = setId(element, type.toString())
+
+    // JSXGraph: src/base/board.js -> setId
+    internal fun setId(
+        element: GeometryElement,
+        type: String,
     ): GMResult<String, BoardError> {
         val creationIndex = numObjects
         val requestedId = element.id

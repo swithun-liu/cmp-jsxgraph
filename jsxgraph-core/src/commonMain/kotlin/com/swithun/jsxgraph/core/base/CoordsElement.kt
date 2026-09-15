@@ -92,6 +92,27 @@ internal open class CoordsElement(
             Double.NaN
         }
 
+    // JSXGraph: src/base/coordselement.js -> updateConstraint
+    internal open fun updateConstraint(): CoordsElement = this
+
+    // JSXGraph: src/base/coordselement.js -> updateTransform
+    internal open fun updateTransform(fromParent: Boolean): CoordsElement = this
+
+    // JSXGraph: src/base/coordselement.js -> updateCoords
+    internal fun updateCoords(fromParent: Boolean = false): CoordsElement {
+        if (!needsUpdate) {
+            return this
+        }
+
+        /*
+         * This is the free-element path. Frozen visual properties, glider
+         * projection, and transformations are added with their owner models.
+         */
+        updateConstraint()
+        updateTransform(fromParent)
+        return this
+    }
+
     /*
      * These hooks preserve setPositionDirectly's upstream call order. Their
      * attribute-driven algorithms are translated with the visual-property and

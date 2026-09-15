@@ -18,10 +18,15 @@ internal open class GeometryElement(
     internal val board: Board,
     internal var id: String = "",
     name: String? = null,
-    internal val type: Int = 0,
+    internal var type: Int = 0,
     internal val elementClass: Int = Const.OBJECT_CLASS_OTHER,
     internal var needsRegularUpdate: Boolean = true,
 ) {
+    // JSXGraph: src/base/element.js -> elType / _org_type
+    internal var elType: String = ""
+    internal val originalType: Int = type
+    internal var baseElement: GeometryElement? = null
+
     // JSXGraph: src/base/element.js -> name / getName
     internal var name: String = name ?: ""
         private set
