@@ -587,11 +587,14 @@ private class EvaluationState(
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val value = when (
-            val result = evaluateNodeChild(node, 1, depth)
-        ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return result
+        val assignmentScope = currentScope
+        val previousCreatorName = assignmentScope.implicitCreatorName
+        assignmentScope.implicitCreatorName = target.implicitCreatorName
+        val valueResult = evaluateNodeChild(node, 1, depth)
+        assignmentScope.implicitCreatorName = previousCreatorName
+        val value = when (valueResult) {
+            is GMResult.Ok -> valueResult.value
+            is GMResult.Err -> return valueResult
         }
         return when (
             val result = assign(
@@ -1086,14 +1089,33 @@ private class EvaluationState(
             }
         }
 
+        val creatorAttributes = attributes
+            ?: JessieCodeRuntimeValue.ObjectValue(emptyMap())
+        if (
+            callable.creator != null &&
+            isUndefinedAttribute(creatorAttributes, "name") &&
+            isUndefinedAttribute(creatorAttributes, "id")
+        ) {
+            currentScope.implicitCreatorName?.let {
+                creatorAttributes.properties["name"] =
+                    JessieCodeRuntimeValue.StringValue(it)
+            }
+        }
         return callable.creator?.create(
             board = currentBoard,
             parents = arguments,
-            attributes = attributes
-                ?: JessieCodeRuntimeValue.ObjectValue(emptyMap()),
+            attributes = creatorAttributes,
             location = node.location,
         ) ?: callable.callable.call(arguments, node.location)
     }
+
+    private fun isUndefinedAttribute(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+    ): Boolean =
+        attributes.properties[name] == null ||
+            attributes.properties[name] ===
+            JessieCodeRuntimeValue.UndefinedValue
 
     private fun evaluateCreatorAttributes(
         nodes: List<JessieCodeAstNode>,
@@ -1419,6 +1441,7 @@ private class EvaluationState(
                 )
             }
             val creator = environment.creators[name]
+                ?: NativeJessieCodeCreators.creator(name)
             if (creator != null) {
                 return GMResult.Ok(
                     JessieCodeRuntimeValue.FunctionValue(
@@ -2444,22 +2467,32 @@ private class EvaluationState(
     }
 
     private sealed interface AssignmentTarget {
+        val implicitCreatorName: String
+
         data class Variable(
             val scope: RuntimeScope,
             val name: String,
-        ) : AssignmentTarget
+        ) : AssignmentTarget {
+            override val implicitCreatorName: String
+                get() = name
+        }
 
         data class Property(
             val receiver: JessieCodeRuntimeValue,
             val property: String,
-        ) : AssignmentTarget
+        ) : AssignmentTarget {
+            override val implicitCreatorName: String
+                get() = property
+        }
     }
 
     private class RuntimeScope(
         val parameters: List<String>,
         val locals: MutableMap<String, JessieCodeRuntimeValue>,
         val previous: RuntimeScope?,
-    )
+    ) {
+        var implicitCreatorName: String? = null
+    }
 }
 
 private typealias EvaluationResult =

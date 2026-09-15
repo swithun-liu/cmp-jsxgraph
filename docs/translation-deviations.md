@@ -72,12 +72,19 @@ practical.
   of throwing the upstream runtime exception.
 - Creator attribute expressions are evaluated before parent expressions and
   merged recursively from left to right with lower-case keys, matching
-  `Type.deepCopy(..., true)`. Kotlin exposes creators through the explicit
-  `JessieCodeCreator` adapter; attaching the complete upstream creator registry
-  to `Board.create` remains part of the construction-parser slice. Attributes
-  on an ordinary function return `UnexpectedCreatorAttributes` instead of
-  throwing, and attribute nesting/collection growth shares the evaluator
-  resource limits.
+  `Type.deepCopy(..., true)`. As upstream does, an assignment target becomes
+  the creator's implicit `name` when neither `name` nor `id` is supplied.
+  Kotlin exposes custom creators through the explicit `JessieCodeCreator`
+  adapter and gives them precedence over the native `point`, `line`, and
+  `circle` registry. Attributes on an ordinary function return
+  `UnexpectedCreatorAttributes` instead of throwing, and attribute
+  nesting/collection growth shares the evaluator resource limits.
+- Native JessieCode creators currently apply `id`, `name`, and
+  `needsRegularUpdate`. Other visual and nested element attributes are
+  evaluated and merged but not applied because the visual-property model is
+  not translated yet. Invalid supported attribute types, unavailable Boards,
+  unsupported parent combinations, and native factory failures return
+  `CreatorFailure` instead of throwing.
 - The deprecated `delete` statement removes a resolved geometry element
   through the translated `Board.removeObject` lifecycle and returns
   `UndefinedValue`. Kotlin does not emit the upstream deprecation warning
@@ -144,24 +151,27 @@ practical.
   and attractor calls are lifecycle hooks with no-op defaults until the
   visual-property and attractor models are translated.
 - `Point.create` accepts numeric free-point coordinates or a list of at least
-  two JessieCode string coordinate expressions. String-expression compilation,
-  first evaluation, and numeric validation return `GMResult.Err` before
-  registration. Later failures are exposed through
+  two JessieCode string coordinate expressions. The native JessieCode creator
+  also accepts mixed numeric/string terms by preserving string expressions and
+  converting numeric constants to JessieCode number sources. String-expression
+  compilation, first evaluation, and numeric validation return `GMResult.Err`
+  before registration. Later failures are exposed through
   `coordinateConstraintResult()` and `coordinateEvaluationError`; the regular
   update path writes `NaN` coordinate values instead of throwing or retaining
-  stale geometry. Mixed numeric/string terms, direct function and slider
-  terms, a single function returning coordinates, and transformed points
-  remain pending. JSXGraph throws from `createPoint` when its dynamic parent
-  array cannot be interpreted as a free, constrained, or transformed point.
+  stale geometry. Direct function and slider terms, a single function
+  returning coordinates, and transformed points remain pending. JSXGraph
+  throws from `createPoint` when its dynamic parent array cannot be interpreted
+  as a free, constrained, or transformed point.
 - `Point.isOn` currently supports translated `Point`, ordinary `Line`, and
   circle-boundary targets. Segment clipping, circle interior hits, curves,
   polygons, and turtles remain pending on their element and visual-property
   models.
 - `Line.create` currently accepts two already registered `Point` instances from
-  the same `Board`. It returns `GMResult.Err` for a cross-board or unregistered
-  parent and for board registration failure. JSXGraph's dynamic `createLine`
-  also accepts point IDs, coordinate arrays, functions, transformations, and
-  three standard-form coordinates, and throws for unsupported parent values.
+  the same `Board`. The native JessieCode creator additionally resolves Point
+  names/IDs, creates unnamed helper Points from coordinate arrays, and
+  translates the numeric three-standard-form-coordinate branch. Function
+  parents and transformations remain pending. Factory and creator failures use
+  `GMResult.Err`; JSXGraph throws for unsupported parent values.
 - `Line.getAngle(String)` returns `GMResult.Err(UnsupportedAngleUnit)` for an
   unknown unit. JSXGraph returns JavaScript `undefined`; valid unit prefixes
   and the no-unit radians result retain upstream behavior.
@@ -173,9 +183,10 @@ practical.
   evaluation failures are available through `radiusResult()` and
   `radiusEvaluationError`, while the legacy numeric `Radius()` path returns
   `NaN`. JSXGraph can instead throw during expression execution or propagate
-  JavaScript coercion. Its dynamic `createCircle` also accepts reversed parent
-  order, point IDs, coordinate arrays, function radii, three-point
-  circumcircles, and transformations.
+  JavaScript coercion. The native JessieCode creator resolves names/IDs,
+  creates unnamed helper Points from coordinate arrays, and accepts the
+  translated radius forms in either upstream order. Function radii,
+  three-point circumcircles, and transformations remain pending.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again

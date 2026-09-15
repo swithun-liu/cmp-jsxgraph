@@ -77,6 +77,12 @@ internal sealed interface JessieCodeRuntimeError {
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
 
+    data class CreatorFailure(
+        val creatorName: String,
+        val error: JessieCodeCreatorError,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
     data class UnknownProperty(
         val receiverType: String,
         val property: String,
@@ -257,5 +263,5 @@ internal data class JessieCodeRuntimeEnvironment(
     val board: Board? = null,
     val boardsByContainer: Map<String, Board> = emptyMap(),
     val elementRuntime: JessieCodeElementRuntime =
-        UnsupportedJessieCodeElementRuntime,
+        CoreGeometryElementRuntime,
 )
