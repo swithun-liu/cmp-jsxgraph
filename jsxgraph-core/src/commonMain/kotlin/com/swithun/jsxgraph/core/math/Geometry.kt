@@ -1607,6 +1607,51 @@ object Geometry {
         )
     }
 
+    // JSXGraph: src/math/geometry.js -> projectPointToCircle
+    fun projectPointToCircle(
+        point: DoubleArray,
+        center: DoubleArray,
+        radius: Double,
+    ): DoubleArray {
+        val weightDifference = point[0] - center[0]
+        var centerDistance = if (
+            weightDifference * weightDifference > Mat.eps * Mat.eps
+        ) {
+            Double.POSITIVE_INFINITY
+        } else {
+            Mat.hypot(
+                point[1] - center[1],
+                point[2] - center[2],
+            )
+        }
+        if (abs(centerDistance) < Mat.eps) {
+            centerDistance = Mat.eps
+        }
+
+        val factor = radius / centerDistance
+        return doubleArrayOf(
+            1.0,
+            center[1] + factor * (point[1] - center[1]),
+            center[2] + factor * (point[2] - center[2]),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> projectPointToLine
+    fun projectPointToLine(
+        point: DoubleArray,
+        line: DoubleArray,
+    ): DoubleArray {
+        val direction = doubleArrayOf(0.0, line[1], line[2])
+        val perpendicular = Mat.crossProduct(direction, point)
+        val projection = Mat.crossProduct(perpendicular, line)
+        if (abs(projection[0]) > Mat.eps) {
+            projection[1] /= projection[0]
+            projection[2] /= projection[0]
+            projection[0] = 1.0
+        }
+        return projection
+    }
+
     // JSXGraph: src/math/geometry.js -> meetCurveRedBlueSegments
     internal fun meetCurveRedBlueSegments(
         red: List<DoubleArray>,
