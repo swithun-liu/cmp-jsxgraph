@@ -14,6 +14,13 @@ practical.
 
 ## Kotlin Runtime Adaptations
 
+- JessieCode tokenization returns `GMResult.Err` when configured source-length
+  or token-count limits are exceeded. The upstream generated lexer has no
+  resource limits. Its recognized token stream, one-based lines, zero-based
+  columns, `INVALID` fallback tokens, and rule-order quirks are otherwise
+  preserved, including JSXGraph `1.13.3` splitting `!=` into `!` and `=`.
+  Parsing, AST construction, evaluation, scopes, and dependency discovery
+  remain pending.
 - Numeric vectors and matrices use `DoubleArray` and `Array<DoubleArray>`.
   Malformed dimensions are outside the internal contract and may fail
   differently from malformed JavaScript arrays.

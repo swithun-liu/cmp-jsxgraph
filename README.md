@@ -23,6 +23,8 @@ Implemented translation slices:
 - foundational angles, distances, orientation, transformations,
   perpendicular/circumcenter constructions, and analytic intersections from
   `src/math/geometry.js`;
+- JessieCode lexical analysis, source locations, and resource limits from the
+  generated lexer embedded in `src/parser/jessiecode.js`;
 - event emitter behavior from `src/utils/event.js`;
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - an interactive Compose geometry playground backed by the translated
@@ -30,8 +32,9 @@ Implemented translation slices:
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
   JSXGraph `1.13.3`, and native Compose previews.
 
-The playground is a renderer and interaction test surface. It is not yet a
-JSXGraph input parser or a complete element renderer.
+The playground is a renderer and interaction test surface. JessieCode parsing,
+AST evaluation, and the JSXGraph construction parser are not yet translated,
+and the element renderer is incomplete.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
