@@ -2192,6 +2192,89 @@ object Geometry {
         return SegmentIntersection(point, firstParameter, secondParameter)
     }
 
+    // JSXGraph: src/math/geometry.js -> meet3Planes
+    fun meet3Planes(
+        firstNormal: DoubleArray,
+        firstDistance: Double,
+        secondNormal: DoubleArray,
+        secondDistance: Double,
+        thirdNormal: DoubleArray,
+        thirdDistance: Double,
+    ): DoubleArray {
+        val thirdFirstCross = Mat.crossProduct(
+            thirdNormal.copyOfRange(1, 4),
+            firstNormal.copyOfRange(1, 4),
+        )
+        val firstSecondCross = Mat.crossProduct(
+            firstNormal.copyOfRange(1, 4),
+            secondNormal.copyOfRange(1, 4),
+        )
+        val secondThirdCross = Mat.crossProduct(
+            secondNormal.copyOfRange(1, 4),
+            thirdNormal.copyOfRange(1, 4),
+        )
+        val denominator = Mat.innerProduct(
+            firstNormal.copyOfRange(1, 4),
+            secondThirdCross,
+            3,
+        )
+        return doubleArrayOf(
+            1.0,
+            (
+                firstDistance * secondThirdCross[0] +
+                    secondDistance * thirdFirstCross[0] +
+                    thirdDistance * firstSecondCross[0]
+            ) / denominator,
+            (
+                firstDistance * secondThirdCross[1] +
+                    secondDistance * thirdFirstCross[1] +
+                    thirdDistance * firstSecondCross[1]
+            ) / denominator,
+            (
+                firstDistance * secondThirdCross[2] +
+                    secondDistance * thirdFirstCross[2] +
+                    thirdDistance * firstSecondCross[2]
+            ) / denominator,
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetPlanePlane
+    fun meetPlanePlane(
+        firstVector: DoubleArray,
+        secondVector: DoubleArray,
+        thirdVector: DoubleArray,
+        fourthVector: DoubleArray,
+    ): DoubleArray {
+        val firstNormal = Mat.crossProduct(
+            firstVector.copyOfRange(1, 4),
+            secondVector.copyOfRange(1, 4),
+        )
+        val secondNormal = Mat.crossProduct(
+            thirdVector.copyOfRange(1, 4),
+            fourthVector.copyOfRange(1, 4),
+        )
+        val direction = Mat.crossProduct(firstNormal, secondNormal)
+        return doubleArrayOf(
+            0.0,
+            direction[0],
+            direction[1],
+            direction[2],
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> project3DTo3DPlane
+    fun project3DTo3DPlane(
+        point: DoubleArray,
+        normal: DoubleArray,
+        foot: DoubleArray = doubleArrayOf(0.0, 0.0, 0.0),
+    ): DoubleArray {
+        val normalLength = Mat.norm(normal)
+        val pointDistance = Mat.innerProduct(point, normal, 3)
+        val footDistance = Mat.innerProduct(foot, normal, 3)
+        val parameter = (pointDistance - footDistance) / normalLength
+        return Mat.axpy(-parameter, normal, point)
+    }
+
     private fun midpoint(
         first: DoubleArray,
         second: DoubleArray,
