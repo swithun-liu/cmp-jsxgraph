@@ -11,6 +11,8 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.PointError
+import com.swithun.jsxgraph.core.math.RandomSource
+import kotlin.random.Random
 
 internal data class JessieCodeEvaluatorLimits(
     val maxEvaluationSteps: Int = 100_000,
@@ -154,6 +156,12 @@ internal sealed interface JessieCodeRuntimeError {
     data class ElementMethodUnavailable(
         val elementId: String,
         val method: String,
+        val reason: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class BuiltInInvocationFailure(
+        val functionName: String,
         val reason: String,
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
@@ -307,4 +315,7 @@ internal data class JessieCodeRuntimeEnvironment(
     val boardsByContainer: Map<String, Board> = emptyMap(),
     val elementRuntime: JessieCodeElementRuntime =
         CoreGeometryElementRuntime,
+    // JSXGraph: src/parser/jessiecode.js -> randint
+    val randomSource: RandomSource =
+        RandomSource { Random.nextDouble() },
 )

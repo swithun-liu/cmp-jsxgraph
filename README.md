@@ -47,7 +47,9 @@ Implemented translation slices:
   arrays and objects, function/map expressions, nested closures, calls,
   creator attribute lists with recursive merge semantics, properties,
   indexes, conditionals,
-  JavaScript-compatible coercion, core math functions, static dependency
+  JavaScript-compatible coercion, core math functions, coordinate and geometry
+  measurement built-ins, angle/combinatoric helpers, element naming and
+  removal, `IfThen`, recursive `eval`, injectable `randint`, static dependency
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, persistent JessieCode sessions,
   assignment-LHS creator naming, native Point/Line/Circle creation, the
@@ -67,9 +69,9 @@ Implemented translation slices:
 
 The playground is a renderer and interaction test surface. The remaining
 JessieCode creator registry, visual-property and function-valued element
-mutation, complete built-in and element `methodMap` surfaces, and the JSXGraph
-construction parser are not yet translated, and the element renderer is
-incomplete.
+mutation, Polygon and Slider/Glider-backed built-ins, `import`/`$log`/`D`,
+the complete element `methodMap`, and the JSXGraph construction parser are not
+yet translated, and the element renderer is incomplete.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

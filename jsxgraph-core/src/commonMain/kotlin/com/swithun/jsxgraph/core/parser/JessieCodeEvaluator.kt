@@ -9,7 +9,12 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
+import com.swithun.jsxgraph.core.base.CoordsElement
+import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsMath
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
@@ -1927,6 +1932,7 @@ private class EvaluationState(
         }
     }
 
+    // JSXGraph: src/parser/jessiecode.js -> defineBuiltIn
     private fun standardCallable(name: String): JessieCodeCallable? =
         when (name) {
             "\$" -> JessieCodeCallable { arguments, _ ->
@@ -1951,6 +1957,169 @@ private class EvaluationState(
                 } else {
                     environment.elementRuntime.valueOf(element, location)
                 }
+            }
+            "X" -> coordinateNumberCallable("X") { it.X() }
+            "Y" -> coordinateNumberCallable("Y") { it.Y() }
+            "V", "Value" -> JessieCodeCallable { arguments, location ->
+                val element = when (
+                    val result = elementArgument(
+                        functionName = name,
+                        arguments = arguments,
+                        argumentIndex = 0,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@JessieCodeCallable result
+                }
+                environment.elementRuntime.valueOf(element, location)
+            }
+            "L", "Length" -> lineNumberCallable(name) { it.L() }
+            "A", "area", "Area" ->
+                circleNumberCallable(name) { it.Area() }
+            "perimeter", "Perimeter" ->
+                circleNumberCallable(name) { it.Perimeter() }
+            "dist", "Dist" -> JessieCodeCallable { arguments, location ->
+                val first = when (
+                    val result = coordinateElementArgument(
+                        functionName = name,
+                        arguments = arguments,
+                        argumentIndex = 0,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@JessieCodeCallable result
+                }
+                val second = when (
+                    val result = coordinateElementArgument(
+                        functionName = name,
+                        arguments = arguments,
+                        argumentIndex = 1,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@JessieCodeCallable result
+                }
+                number(first.Dist(second))
+            }
+            "R", "radius", "Radius" ->
+                circleNumberCallable(name) { it.Radius() }
+            "slope", "Slope" ->
+                lineNumberCallable(name) { it.Slope() }
+            "getName", "name" -> JessieCodeCallable {
+                    arguments,
+                    _,
+                ->
+                val useId = arguments.getOrNull(1)?.let(::isTruthy) ?: false
+                val element = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element
+                when {
+                    element == null && useId ->
+                        GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+                    element == null ->
+                        GMResult.Ok(JessieCodeRuntimeValue.StringValue(""))
+                    element.name.isEmpty() && useId ->
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.StringValue(element.id),
+                        )
+                    else -> GMResult.Ok(
+                        JessieCodeRuntimeValue.StringValue(element.name),
+                    )
+                }
+            }
+            "deg" -> angleCallable("deg", Geometry::trueAngle)
+            "rad" -> angleCallable("rad", Geometry::rad)
+            "binomial" -> binaryNumber(Mat::binomial)
+            "gcd" -> binaryNumber(Mat::gcd)
+            "lcm" -> JessieCodeCallable { arguments, location ->
+                val first = arguments.getOrNull(0) as?
+                    JessieCodeRuntimeValue.NumberValue
+                val second = arguments.getOrNull(1) as?
+                    JessieCodeRuntimeValue.NumberValue
+                if (first == null || second == null) {
+                    number(Double.NaN)
+                } else if (first.value * second.value == 0.0) {
+                    number(0.0)
+                } else {
+                    missingMathContext(name, location)
+                }
+            }
+            "ratpow" -> JessieCodeCallable { arguments, location ->
+                val numerator = arguments.getOrNull(1)
+                val denominator = arguments.getOrNull(2)
+                when {
+                    numerator is JessieCodeRuntimeValue.NumberValue &&
+                        numerator.value == 0.0 -> number(1.0)
+                    denominator is JessieCodeRuntimeValue.NumberValue &&
+                        denominator.value == 0.0 -> number(Double.NaN)
+                    else -> missingMathContext(name, location)
+                }
+            }
+            "randint" -> JessieCodeCallable { arguments, _ ->
+                val minimum = toNumber(
+                    arguments.getOrElse(0) {
+                        JessieCodeRuntimeValue.UndefinedValue
+                    },
+                )
+                val maximum = toNumber(
+                    arguments.getOrElse(1) {
+                        JessieCodeRuntimeValue.UndefinedValue
+                    },
+                )
+                val stepValue = arguments.getOrNull(2)
+                val step = when (stepValue) {
+                    null,
+                    JessieCodeRuntimeValue.NullValue,
+                    JessieCodeRuntimeValue.UndefinedValue,
+                    -> 1.0
+                    else -> toNumber(stepValue)
+                }
+                number(
+                    JsMath.round(
+                        environment.randomSource.nextDouble() *
+                            (maximum - minimum) / step,
+                    ) * step + minimum,
+                )
+            }
+            "IfThen" -> JessieCodeCallable { arguments, _ ->
+                GMResult.Ok(
+                    if (
+                        isTruthy(
+                            arguments.getOrElse(0) {
+                                JessieCodeRuntimeValue.UndefinedValue
+                            },
+                        )
+                    ) {
+                        arguments.getOrElse(1) {
+                            JessieCodeRuntimeValue.UndefinedValue
+                        }
+                    } else {
+                        arguments.getOrElse(2) {
+                            JessieCodeRuntimeValue.UndefinedValue
+                        }
+                    },
+                )
+            }
+            "eval" -> JessieCodeCallable { arguments, location ->
+                evaluateBuiltInValue(
+                    value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = location,
+                )
+            }
+            "remove" -> JessieCodeCallable { arguments, _ ->
+                val element = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element
+                if (element != null) {
+                    currentBoard?.removeObject(element)
+                }
+                GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
             }
             "sin" -> unaryNumber(::sin)
             "cos" -> unaryNumber(::cos)
@@ -2008,6 +2177,294 @@ private class EvaluationState(
             "nthroot" -> binaryNumber(Mat::nthroot)
             else -> null
         }
+
+    private fun coordinateNumberCallable(
+        functionName: String,
+        value: (CoordsElement) -> Double,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            when (
+                val result = coordinateElementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> number(value(result.value))
+                is GMResult.Err -> result
+            }
+        }
+
+    private fun lineNumberCallable(
+        functionName: String,
+        value: (Line) -> Double,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val element = when (
+                val result = elementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@JessieCodeCallable result
+            }
+            val line = element as? Line
+                ?: return@JessieCodeCallable invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = 0,
+                    expected = "line",
+                    actual = arguments.first(),
+                    location = location,
+                )
+            number(value(line))
+        }
+
+    private fun circleNumberCallable(
+        functionName: String,
+        value: (Circle) -> Double,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val element = when (
+                val result = elementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@JessieCodeCallable result
+            }
+            val circle = element as? Circle
+                ?: return@JessieCodeCallable invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = 0,
+                    expected = "circle",
+                    actual = arguments.first(),
+                    location = location,
+                )
+            number(value(circle))
+        }
+
+    private fun angleCallable(
+        functionName: String,
+        value: (DoubleArray, DoubleArray, DoubleArray) -> Double,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val coordinates = mutableListOf<DoubleArray>()
+            for (index in 0 until 3) {
+                when (
+                    val result = coordinateArgument(
+                        functionName = functionName,
+                        arguments = arguments,
+                        argumentIndex = index,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> coordinates += result.value
+                    is GMResult.Err -> return@JessieCodeCallable result
+                }
+            }
+            number(value(coordinates[0], coordinates[1], coordinates[2]))
+        }
+
+    private fun elementArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        argumentIndex: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<GeometryElement, JessieCodeRuntimeError> {
+        val argument = arguments.getOrElse(argumentIndex) {
+            JessieCodeRuntimeValue.UndefinedValue
+        }
+        val element = (
+            argument as? JessieCodeRuntimeValue.ElementReference
+            )?.element ?: return invalidArgumentType(
+            functionName = functionName,
+            argumentIndex = argumentIndex,
+            expected = "element",
+            actual = argument,
+            location = location,
+        )
+        return GMResult.Ok(element)
+    }
+
+    private fun coordinateElementArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        argumentIndex: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<CoordsElement, JessieCodeRuntimeError> {
+        val element = when (
+            val result = elementArgument(
+                functionName = functionName,
+                arguments = arguments,
+                argumentIndex = argumentIndex,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val coordinates = element as? CoordsElement
+            ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = argumentIndex,
+                expected = "coordinate element",
+                actual = arguments[argumentIndex],
+                location = location,
+            )
+        return GMResult.Ok(coordinates)
+    }
+
+    private fun coordinateArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        argumentIndex: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val argument = arguments.getOrElse(argumentIndex) {
+            JessieCodeRuntimeValue.UndefinedValue
+        }
+        if (argument is JessieCodeRuntimeValue.ElementReference) {
+            val coordinates = argument.element as? CoordsElement
+                ?: return invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = argumentIndex,
+                    expected = "coordinate element or numeric array",
+                    actual = argument,
+                    location = location,
+                )
+            return GMResult.Ok(coordinates.Coords())
+        }
+        val values = (argument as? JessieCodeRuntimeValue.ArrayValue)?.values
+            ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = argumentIndex,
+                expected = "coordinate element or numeric array",
+                actual = argument,
+                location = location,
+            )
+        val coordinates = DoubleArray(values.size)
+        for ((index, coordinate) in values.withIndex()) {
+            val number = (
+                coordinate as? JessieCodeRuntimeValue.NumberValue
+                )?.value ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = argumentIndex,
+                expected = "numeric coordinate array",
+                actual = coordinate,
+                location = location,
+            )
+            coordinates[index] = number
+        }
+        return GMResult.Ok(coordinates)
+    }
+
+    private fun invalidArgumentType(
+        functionName: String,
+        argumentIndex: Int,
+        expected: String,
+        actual: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult.Err<JessieCodeRuntimeError> =
+        GMResult.Err(
+            JessieCodeRuntimeError.InvalidArgumentType(
+                functionName = functionName,
+                argumentIndex = argumentIndex,
+                expected = expected,
+                actual = typeName(actual),
+                location = location,
+            ),
+        )
+
+    private fun missingMathContext(
+        functionName: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult =
+        GMResult.Err(
+            JessieCodeRuntimeError.BuiltInInvocationFailure(
+                functionName = functionName,
+                reason =
+                    "JSXGraph 1.13.3 interpreter calls this " +
+                        "Mat method without its required context",
+                location = location,
+            ),
+        )
+
+    // JSXGraph: src/utils/type.js -> evaluate
+    private fun evaluateBuiltInValue(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+        depth: Int = 1,
+        activeArrays: MutableList<JessieCodeRuntimeValue.ArrayValue> =
+            mutableListOf(),
+    ): EvaluationResult {
+        if (depth > limits.maxEvaluationDepth) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationDepthLimitExceeded(
+                    limit = limits.maxEvaluationDepth,
+                    location = location,
+                ),
+            )
+        }
+        evaluationSteps += 1
+        if (evaluationSteps > limits.maxEvaluationSteps) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.EvaluationStepLimitExceeded(
+                    limit = limits.maxEvaluationSteps,
+                    location = location,
+                ),
+            )
+        }
+        return when (value) {
+            is JessieCodeRuntimeValue.FunctionValue ->
+                value.callable.call(emptyList(), location)
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                if (value.values.size > limits.maxCollectionSize) {
+                    return GMResult.Err(
+                        JessieCodeRuntimeError.CollectionSizeLimitExceeded(
+                            limit = limits.maxCollectionSize,
+                            requestedSize = value.values.size.toLong(),
+                            location = location,
+                        ),
+                    )
+                }
+                if (activeArrays.any { it === value }) {
+                    return GMResult.Err(
+                        JessieCodeRuntimeError.BuiltInInvocationFailure(
+                            functionName = "eval",
+                            reason = "cyclic array",
+                            location = location,
+                        ),
+                    )
+                }
+                activeArrays += value
+                val evaluated =
+                    mutableListOf<JessieCodeRuntimeValue>()
+                for (item in value.values) {
+                    when (
+                        val result = evaluateBuiltInValue(
+                            value = item,
+                            location = location,
+                            depth = depth + 1,
+                            activeArrays = activeArrays,
+                        )
+                    ) {
+                        is GMResult.Ok -> evaluated += result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                activeArrays.removeAt(activeArrays.lastIndex)
+                GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(evaluated))
+            }
+            else -> GMResult.Ok(value)
+        }
+    }
 
     private fun unaryNumber(
         function: (Double) -> Double,

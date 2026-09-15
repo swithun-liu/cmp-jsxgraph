@@ -139,6 +139,20 @@ practical.
   scheduler exists; function-valued constraints, remaining mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element
   classes return structured unavailable-property/value errors.
+- The translated JessieCode built-ins now include coordinate access,
+  Line/Circle measurements, names, angles, binomial/GCD, `randint`, `IfThen`,
+  recursive `eval`, and `remove`. `V`/`Value` delegates to
+  `JessieCodeElementRuntime` until Slider/Glider exists, and area/perimeter
+  currently accept Circle only until Polygon is translated. `randint` uses an
+  injectable `RandomSource`; its default remains nondeterministic.
+- JSXGraph `1.13.3` registers `Mat.lcm` and `Mat.ratpow` as unbound built-ins.
+  Their ordinary nonzero paths therefore throw `this.gcd is not a function`;
+  Kotlin preserves that observable defect as `BuiltInInvocationFailure`.
+  The upstream early-return cases (`lcm` with a zero product, `ratpow` with a
+  zero numerator or denominator) remain available. Recursive `eval` adds the
+  existing step, depth, and collection-size limits and reports cyclic arrays
+  as a structured failure instead of exhausting the runtime stack.
+  Unsupported built-ins `import`, `$log`, and `D` remain pending.
 - Parser errors retain both the offending token location and the previous
   shifted-token location used by Jison's error hash. Expected-token lists
   describe the translated grammar subset rather than the complete generated

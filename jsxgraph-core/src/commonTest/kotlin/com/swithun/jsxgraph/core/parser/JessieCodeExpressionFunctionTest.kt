@@ -306,10 +306,10 @@ class JessieCodeExpressionFunctionTest {
             GMResult.Ok<JessieCodeExpressionFunction>
             >(
             JessieCodeExpressionFunction.compile(
-                source = "A()",
+                source = "B()",
                 board = fixture.board,
                 functions = mapOf(
-                    "A" to JessieCodeCallable { _, _ ->
+                    "B" to JessieCodeCallable { _, _ ->
                         GMResult.Ok(
                             JessieCodeRuntimeValue.NumberValue(9.0),
                         )
