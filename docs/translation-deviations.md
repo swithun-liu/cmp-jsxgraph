@@ -8,6 +8,9 @@ practical.
 
 - `src/unused/symbolic.js`: Symbolic/CAS operations and symbolic locus
   derivation are not implemented.
+- `src/math/numerics.js -> glomin`: not imported because its embedded source
+  notice identifies the algorithm as GNU LGPL code. This repository requires
+  verified MIT-compatible provenance.
 
 ## Kotlin Runtime Adaptations
 
@@ -73,6 +76,9 @@ practical.
   counts and interval bounds. Lower/upper sampling stops when floating-point
   addition can no longer advance; this prevents the upstream loop from
   hanging on zero or subnormal effective widths.
+- Curve-intersection Newton wrappers return `GMResult.Err(SingularMatrix)` for
+  parallel or singular tangents. JSXGraph `1.13.3` propagates `NaN`
+  coordinates and parameters.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is

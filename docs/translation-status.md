@@ -16,13 +16,20 @@
 | `src/math/probfuncs.js` | `Mat.ProbFuncs` | `math/ProbFuncs.kt` | Translated |
 | `src/math/complex.js` | `JXG.Complex`, `JXG.C` | `math/Complex.kt` | Translated |
 | `src/math/statistics.js` | `Mat.Statistics` | `math/Statistics.kt` | Translated |
-| `src/math/numerics.js` | linear algebra; Neville and Lagrange interpolation; polynomial generation and regression; cardinal, Catmull-Rom, Bezier, and B-splines; Riemann sums; Newton-Cotes, Romberg, Gauss-Legendre, Gauss-Kronrod, and QAG integration; natural cubic splines; numerical derivative; scalar, multidimensional, and complex polynomial roots; domain search; Brent minimization; Runge-Kutta ODE solvers; Ramer-Douglas-Peucker and Visvalingam curve simplification | `math/Numerics.kt` | Partially translated |
+| `src/math/numerics.js` | linear algebra; Neville and Lagrange interpolation; polynomial generation and regression; cardinal, Catmull-Rom, Bezier, and B-splines; Riemann sums; Newton-Cotes, Romberg, Gauss-Legendre, Gauss-Kronrod, and QAG integration; natural cubic splines; numerical derivative; scalar, multidimensional, polynomial, and curve-intersection roots; domain search; Brent minimization; Runge-Kutta ODE solvers; Ramer-Douglas-Peucker, its deprecated alias, and Visvalingam curve simplification | `math/Numerics.kt` | Partially translated |
 | `src/math/geometry.js` | angles, distances, affine ratios, orientation, reflection, rotation, perpendicular and circumcenter constructions, point-to-line/segment distance, and line/circle/segment intersections | `math/Geometry.kt` | Partially translated |
 | `src/utils/event.js` | `EventEmitter.trigger`, `on`, `off` | `utils/EventEmitter.kt` | Translated |
 | `src/base/board.js` | coordinate origin, zoom, units | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |
 | `src/base/coordselement.js` | coordinate storage and `X`, `Y`, `Z`, `Coords`, evaluator, and distance accessors | `base/CoordsElement.kt` | Translated dependency subset |
 | `src/unused/symbolic.js` | `Symbolic` | None | Intentionally unsupported |
+
+## License-Constrained Upstream Symbols
+
+- `src/math/numerics.js -> glomin` is not imported. Its embedded source notice
+  identifies that algorithm as GNU LGPL code, while this project only accepts
+  the JSXGraph MIT license option. Translation requires a verified
+  MIT-compatible provenance or an independent implementation.
 
 ## Update Procedure
 

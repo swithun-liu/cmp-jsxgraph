@@ -45,6 +45,26 @@ class NumericsSimplificationTest {
     }
 
     @Test
+    fun deprecatedRamerDouglasPeukerAliasUsesScreenCoordinates() {
+        val points = points(
+            0.0 to 0.0,
+            1.0 to 0.1,
+            2.0 to -0.1,
+            3.0 to 4.0,
+            4.0 to 4.1,
+            5.0 to 4.0,
+        )
+
+        assertPointIndexes(
+            expected = listOf(0, 2, 3, 5),
+            original = points,
+            actual = simplifiedValueOf(
+                Numerics.RamerDouglasPeuker(points, tolerance = 0.25),
+            ),
+        )
+    }
+
+    @Test
     fun ramerDouglasPeuckerPreservesNaNSeparators() {
         val points = points(
             0.0 to 0.0,

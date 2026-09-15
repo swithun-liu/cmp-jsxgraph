@@ -193,6 +193,11 @@ data class RiemannResult(
     val sum: Double,
 )
 
+internal data class ParametricCurve2D(
+    val x: (Double) -> Double,
+    val y: (Double) -> Double,
+)
+
 internal class NevilleInterpolation internal constructor(
     private val points: List<CoordsElement>,
 ) {
@@ -2035,6 +2040,140 @@ object Numerics {
         return GMResult.Ok(result)
     }
 
+    // JSXGraph: src/math/numerics.js -> generalizedNewton
+    internal fun generalizedNewton(
+        firstCurve: ParametricCurve2D,
+        secondCurve: ParametricCurve2D,
+        firstInitialParameter: Double,
+        secondInitialParameter: Double,
+    ): GMResult<DoubleArray, NumericsError> {
+        var firstParameter = firstInitialParameter
+        var secondParameter = secondInitialParameter
+        var xDifference =
+            firstCurve.x(firstParameter) - secondCurve.x(secondParameter)
+        var yDifference =
+            firstCurve.y(firstParameter) - secondCurve.y(secondParameter)
+        var squaredResidual =
+            xDifference * xDifference + yDifference * yDifference
+        val firstXDerivative = D(firstCurve.x)
+        val secondXDerivative = D(secondCurve.x)
+        val firstYDerivative = D(firstCurve.y)
+        val secondYDerivative = D(secondCurve.y)
+        var iteration = 0
+
+        while (squaredResidual > Mat.eps && iteration < 10) {
+            val firstFirst = firstXDerivative(firstParameter)
+            val firstSecond = -secondXDerivative(secondParameter)
+            val secondFirst = firstYDerivative(firstParameter)
+            val secondSecond = -secondYDerivative(secondParameter)
+            val determinant =
+                firstFirst * secondSecond - firstSecond * secondFirst
+            if (abs(determinant) <= Mat.eps * Mat.eps) {
+                return GMResult.Err(NumericsError.SingularMatrix)
+            }
+
+            firstParameter -=
+                (secondSecond * xDifference - firstSecond * yDifference) /
+                determinant
+            secondParameter -=
+                (firstFirst * yDifference - secondFirst * xDifference) /
+                determinant
+            xDifference =
+                firstCurve.x(firstParameter) - secondCurve.x(secondParameter)
+            yDifference =
+                firstCurve.y(firstParameter) - secondCurve.y(secondParameter)
+            squaredResidual =
+                xDifference * xDifference + yDifference * yDifference
+            iteration += 1
+        }
+
+        return if (abs(firstParameter) < abs(secondParameter)) {
+            GMResult.Ok(
+                doubleArrayOf(
+                    firstCurve.x(firstParameter),
+                    firstCurve.y(firstParameter),
+                ),
+            )
+        } else {
+            GMResult.Ok(
+                doubleArrayOf(
+                    secondCurve.x(secondParameter),
+                    secondCurve.y(secondParameter),
+                ),
+            )
+        }
+    }
+
+    // JSXGraph: src/math/numerics.js -> generalizedDampedNewtonCurves
+    internal fun generalizedDampedNewtonCurves(
+        firstCurve: ParametricCurve2D,
+        secondCurve: ParametricCurve2D,
+        firstInitialParameter: Double,
+        secondInitialParameter: Double,
+        damping: Double,
+        epsilon: Double,
+    ): GMResult<DampedNewtonResult, NumericsError> {
+        var firstParameter = firstInitialParameter
+        var secondParameter = secondInitialParameter
+        var xDifference =
+            firstCurve.x(firstParameter) - secondCurve.x(secondParameter)
+        var yDifference =
+            firstCurve.y(firstParameter) - secondCurve.y(secondParameter)
+        var squaredResidual =
+            xDifference * xDifference + yDifference * yDifference
+        var iteration = 0
+
+        while (squaredResidual > epsilon && iteration < 40) {
+            val step = Mat.eps
+            val firstFirst =
+                (
+                    firstCurve.x(firstParameter + step) -
+                        firstCurve.x(firstParameter - step)
+                ) / (2.0 * step)
+            val firstSecond = -(
+                secondCurve.x(secondParameter + step) -
+                    secondCurve.x(secondParameter - step)
+            ) / (2.0 * step)
+            val secondFirst =
+                (
+                    firstCurve.y(firstParameter + step) -
+                        firstCurve.y(firstParameter - step)
+                ) / (2.0 * step)
+            val secondSecond = -(
+                secondCurve.y(secondParameter + step) -
+                    secondCurve.y(secondParameter - step)
+            ) / (2.0 * step)
+            val determinant =
+                firstFirst * secondSecond - firstSecond * secondFirst
+            if (abs(determinant) <= Mat.eps * Mat.eps) {
+                return GMResult.Err(NumericsError.SingularMatrix)
+            }
+
+            firstParameter -=
+                damping *
+                (secondSecond * xDifference - firstSecond * yDifference) /
+                determinant
+            secondParameter -=
+                damping *
+                (firstFirst * yDifference - secondFirst * xDifference) /
+                determinant
+            xDifference =
+                firstCurve.x(firstParameter) - secondCurve.x(secondParameter)
+            yDifference =
+                firstCurve.y(firstParameter) - secondCurve.y(secondParameter)
+            squaredResidual =
+                xDifference * xDifference + yDifference * yDifference
+            iteration += 1
+        }
+
+        return GMResult.Ok(
+            DampedNewtonResult(
+                parameters = doubleArrayOf(firstParameter, secondParameter),
+                squaredResidual = squaredResidual,
+            ),
+        )
+    }
+
     // JSXGraph: src/math/numerics.js -> generalizedDampedNewton
     fun generalizedDampedNewton(
         function: (DoubleArray, Int) -> DoubleArray,
@@ -3070,6 +3209,17 @@ object Numerics {
         }
         return GMResult.Ok(simplified)
     }
+
+    // JSXGraph: src/math/numerics.js -> RamerDouglasPeuker
+    @Suppress("FunctionName")
+    internal fun RamerDouglasPeuker(
+        points: List<Coords>,
+        tolerance: Double,
+    ): GMResult<List<Coords>, NumericsError> = RamerDouglasPeucker(
+        points = points,
+        tolerance = tolerance,
+        useUserCoordinates = false,
+    )
 
     // JSXGraph: src/math/numerics.js -> Visvalingam
     internal fun Visvalingam(
