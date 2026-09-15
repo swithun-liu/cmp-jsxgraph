@@ -7,6 +7,8 @@
  */
 package com.swithun.jsxgraph.core.base
 
+import com.swithun.jsxgraph.core.math.Mat
+
 /**
  * Initial lifecycle and dependency slice of JXG.GeometryElement.
  *
@@ -34,6 +36,9 @@ internal open class GeometryElement(
 
     internal var needsUpdate: Boolean = true
     internal var positionInBoard: Int = -1
+
+    // JSXGraph: src/base/element.js -> stdform
+    internal var stdform = doubleArrayOf(1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0)
 
     internal val childElements = linkedMapOf<String, GeometryElement>()
     internal val descendants = linkedMapOf<String, GeometryElement>()
@@ -134,6 +139,12 @@ internal open class GeometryElement(
     // JSXGraph: src/base/element.js -> countChildren
     internal fun countChildren(): Int =
         childElements.keys.count { childId -> "Label" !in childId }
+
+    // JSXGraph: src/base/element.js -> normalize
+    internal fun normalize(): GeometryElement {
+        stdform = Mat.normalize(stdform)
+        return this
+    }
 
     // JSXGraph: src/base/element.js -> prepareUpdate
     internal open fun prepareUpdate(): GeometryElement {

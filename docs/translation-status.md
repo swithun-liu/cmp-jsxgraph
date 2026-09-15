@@ -21,9 +21,10 @@
 | `src/utils/event.js` | `EventEmitter.trigger`, `on`, `off` | `utils/EventEmitter.kt` | Translated |
 | `src/base/board.js` | coordinate origin, zoom, units, ID/name registration and selection, automatic element names, object/ancestor removal and creation order, recursive child cleanup and position reindexing, and the basic prepare/update/render/full/suspend lifecycle | `base/Board.kt` | Translated dependency subset |
 | `src/base/coords.js` | `Coords` | `base/Coords.kt` | Translated |
-| `src/base/element.js` | element identity, original/current type and name changes; direct children; transitive descendants/ancestors; explicit element/ID parents; child removal/counting; and the basic prepare/update/visibility/render/remove lifecycle | `base/GeometryElement.kt` | Translated dependency subset |
+| `src/base/element.js` | element identity, original/current type and name changes; standard-form storage and normalization; direct children; transitive descendants/ancestors; explicit element/ID parents; child removal/counting; and the basic prepare/update/visibility/render/remove lifecycle | `base/GeometryElement.kt` | Translated dependency subset |
 | `src/base/coordselement.js` | GeometryElement integration; coordinate storage; glider/constraint base state; `X`, `Y`, `Z`, `Coords`, evaluator, and distance accessors; and the free untransformed `updateCoords` / `setPositionDirectly` lifecycle | `base/CoordsElement.kt` | Translated dependency subset |
 | `src/base/point.js` | numeric free-point construction, board registration, coordinate update, and point bounds | `base/Point.kt` | Translated dependency subset |
+| `src/base/line.js` | two-registered-point construction and dependencies; `update`, `updateStdform`, `getRise`, `Slope`, `Direction`, `isVertical`, `L`, and `bounds` | `base/Line.kt` | Translated dependency subset |
 | `src/unused/symbolic.js` | `Symbolic` | None | Intentionally unsupported |
 
 ## License-Constrained Upstream Symbols
