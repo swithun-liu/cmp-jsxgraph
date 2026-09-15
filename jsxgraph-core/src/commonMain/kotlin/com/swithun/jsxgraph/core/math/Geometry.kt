@@ -41,6 +41,11 @@ data class ProjectionResult(
     val parameter: Double,
 )
 
+data class BezierArcResult(
+    val xCoordinates: DoubleArray,
+    val yCoordinates: DoubleArray,
+)
+
 object Geometry {
     private const val AKL_TOUSSAINT_THRESHOLD = 1024
     private const val BEZIER_SUBDIVISION_MAX_LEVEL = 5
@@ -1196,6 +1201,155 @@ object Geometry {
                 firstControlWeight * curve[1][1] +
                 secondControlWeight * curve[2][1] +
                 secondWeight * curve[3][1],
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> bezierArc
+    internal fun bezierArc(
+        first: DoubleArray,
+        center: DoubleArray,
+        third: DoubleArray,
+        withLegs: Boolean,
+        sign: Double,
+    ): BezierArcResult {
+        val radius = distance(center, first)
+        val centerX = center[1] / center[0]
+        val centerY = center[2] / center[0]
+        var remainingAngle = rad(
+            first.sliceArray(1..2),
+            center.sliceArray(1..2),
+            third.sliceArray(1..2),
+        )
+        if (sign == -1.0) {
+            remainingAngle = 2.0 * PI - remainingAngle
+        }
+        val angleStep = remainingAngle / 4.0
+
+        var firstControlPoint = first
+        firstControlPoint[1] /= firstControlPoint[0]
+        firstControlPoint[2] /= firstControlPoint[0]
+        firstControlPoint[0] /= firstControlPoint[0]
+        var fourthControlPoint = firstControlPoint.copyOf()
+
+        val xCoordinates = mutableListOf<Double>()
+        val yCoordinates = mutableListOf<Double>()
+        if (withLegs) {
+            xCoordinates += listOf(
+                centerX,
+                centerX + 0.333 * (firstControlPoint[1] - centerX),
+                centerX + 0.666 * (firstControlPoint[1] - centerX),
+                firstControlPoint[1],
+            )
+            yCoordinates += listOf(
+                centerY,
+                centerY + 0.333 * (firstControlPoint[2] - centerY),
+                centerY + 0.666 * (firstControlPoint[2] - centerY),
+                firstControlPoint[2],
+            )
+        } else {
+            xCoordinates += firstControlPoint[1]
+            yCoordinates += firstControlPoint[2]
+        }
+
+        while (remainingAngle > Mat.eps) {
+            val angle = if (remainingAngle > angleStep) {
+                remainingAngle -= angleStep
+                angleStep
+            } else {
+                val finalAngle = remainingAngle
+                remainingAngle = 0.0
+                finalAngle
+            }
+            val cosine = kotlin.math.cos(sign * angle)
+            val sine = kotlin.math.sin(sign * angle)
+            val rotation = arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0),
+                doubleArrayOf(
+                    centerX * (1.0 - cosine) + centerY * sine,
+                    cosine,
+                    -sine,
+                ),
+                doubleArrayOf(
+                    centerY * (1.0 - cosine) - centerX * sine,
+                    sine,
+                    cosine,
+                ),
+            )
+            val rotated = Mat.matVecMult(rotation, firstControlPoint)
+            fourthControlPoint = doubleArrayOf(
+                rotated[0] / rotated[0],
+                rotated[1] / rotated[0],
+                rotated[2] / rotated[0],
+            )
+
+            val firstX = firstControlPoint[1] - centerX
+            val firstY = firstControlPoint[2] - centerY
+            val fourthX = fourthControlPoint[1] - centerX
+            val fourthY = fourthControlPoint[2] - centerY
+            val diagonal =
+                Mat.hypot(firstX + fourthX, firstY + fourthY)
+            val scale = if (abs(fourthY - firstY) > Mat.eps) {
+                (
+                    (
+                        (firstX + fourthX) *
+                            (radius / diagonal - 0.5)
+                    ) /
+                        (fourthY - firstY) *
+                        8.0
+                ) / 3.0
+            } else {
+                (
+                    (
+                        (firstY + fourthY) *
+                            (radius / diagonal - 0.5)
+                    ) /
+                        (firstX - fourthX) *
+                        8.0
+                ) / 3.0
+            }
+
+            val secondControlPoint = doubleArrayOf(
+                1.0,
+                firstControlPoint[1] - scale * firstY,
+                firstControlPoint[2] + scale * firstX,
+            )
+            val thirdControlPoint = doubleArrayOf(
+                1.0,
+                fourthControlPoint[1] + scale * fourthY,
+                fourthControlPoint[2] - scale * fourthX,
+            )
+            xCoordinates += listOf(
+                secondControlPoint[1],
+                thirdControlPoint[1],
+                fourthControlPoint[1],
+            )
+            yCoordinates += listOf(
+                secondControlPoint[2],
+                thirdControlPoint[2],
+                fourthControlPoint[2],
+            )
+            firstControlPoint = fourthControlPoint.copyOf()
+        }
+
+        if (withLegs) {
+            xCoordinates += listOf(
+                fourthControlPoint[1] +
+                    0.333 * (centerX - fourthControlPoint[1]),
+                fourthControlPoint[1] +
+                    0.666 * (centerX - fourthControlPoint[1]),
+                centerX,
+            )
+            yCoordinates += listOf(
+                fourthControlPoint[2] +
+                    0.333 * (centerY - fourthControlPoint[2]),
+                fourthControlPoint[2] +
+                    0.666 * (centerY - fourthControlPoint[2]),
+                centerY,
+            )
+        }
+        return BezierArcResult(
+            xCoordinates = xCoordinates.toDoubleArray(),
+            yCoordinates = yCoordinates.toDoubleArray(),
         )
     }
 

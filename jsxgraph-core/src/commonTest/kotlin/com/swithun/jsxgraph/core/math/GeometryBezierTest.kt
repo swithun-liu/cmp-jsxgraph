@@ -245,6 +245,128 @@ class GeometryBezierTest {
     }
 
     @Test
+    fun bezierArcMatchesOfficialQuarterCircleReference() {
+        val result = Geometry.bezierArc(
+            first = point(1.0, 0.0),
+            center = point(0.0, 0.0),
+            third = point(0.0, 1.0),
+            withLegs = false,
+            sign = 1.0,
+        )
+
+        assertArrayClose(
+            expected = doubleArrayOf(
+                1.0,
+                1.0,
+                0.9741342369048523,
+                0.9238795325112867,
+                0.8736248281177211,
+                0.799965366789788,
+                0.7071067811865475,
+                0.6142481955833079,
+                0.5040090212850851,
+                0.38268343236508967,
+                0.261357843445093,
+                0.1313218711428856,
+                -1.1102230246251565e-16,
+            ),
+            actual = result.xCoordinates,
+        )
+        assertArrayClose(
+            expected = doubleArrayOf(
+                0.0,
+                0.13132187114288582,
+                0.261357843445093,
+                0.3826834323650898,
+                0.5040090212850865,
+                0.614248195583307,
+                0.7071067811865476,
+                0.799965366789787,
+                0.8736248281177217,
+                0.9238795325112867,
+                0.9741342369048522,
+                1.0,
+                1.0,
+            ),
+            actual = result.yCoordinates,
+        )
+    }
+
+    @Test
+    fun bezierArcAddsSectorLegsAndSupportsMajorDirection() {
+        val sector = Geometry.bezierArc(
+            first = point(1.0, 0.0),
+            center = point(0.0, 0.0),
+            third = point(0.0, 1.0),
+            withLegs = true,
+            sign = 1.0,
+        )
+        assertEquals(19, sector.xCoordinates.size)
+        assertEquals(19, sector.yCoordinates.size)
+        assertArrayClose(
+            expected = doubleArrayOf(0.0, 0.333, 0.666, 1.0),
+            actual = sector.xCoordinates.copyOfRange(0, 4),
+        )
+        assertArrayClose(
+            expected = doubleArrayOf(1.0, 0.667, 0.334, 0.0),
+            actual = sector.yCoordinates.copyOfRange(15, 19),
+        )
+
+        val major = Geometry.bezierArc(
+            first = point(1.0, 0.0),
+            center = point(0.0, 0.0),
+            third = point(0.0, 1.0),
+            withLegs = false,
+            sign = -1.0,
+        )
+        assertEquals(13, major.xCoordinates.size)
+        assertEquals(13, major.yCoordinates.size)
+        assertEquals(
+            0.7563578220184242,
+            major.xCoordinates[2],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            -0.40446224480978993,
+            major.yCoordinates[1],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            0.0,
+            major.xCoordinates.last(),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            1.0,
+            major.yCoordinates.last(),
+            absoluteTolerance = 1.0e-12,
+        )
+    }
+
+    @Test
+    fun bezierArcPreservesDegenerateAndInputNormalizationSemantics() {
+        val first = doubleArrayOf(2.0, 2.0, 0.0)
+        Geometry.bezierArc(
+            first = first,
+            center = point(0.0, 0.0),
+            third = point(0.0, 1.0),
+            withLegs = false,
+            sign = 1.0,
+        )
+        assertContentEquals(point(1.0, 0.0), first)
+
+        val degenerate = Geometry.bezierArc(
+            first = point(1.0, 0.0),
+            center = point(0.0, 0.0),
+            third = point(1.0, 0.0),
+            withLegs = false,
+            sign = 1.0,
+        )
+        assertContentEquals(doubleArrayOf(1.0), degenerate.xCoordinates)
+        assertContentEquals(doubleArrayOf(0.0), degenerate.yCoordinates)
+    }
+
+    @Test
     fun segmentProjectionMatchesOfficialUnclampedParameters() {
         val first = point(0.0, 0.0)
         val second = point(2.0, 0.0)
@@ -379,6 +501,20 @@ class GeometryBezierTest {
             intersection.secondParameter,
             absoluteTolerance = 1.0e-12,
         )
+    }
+
+    private fun assertArrayClose(
+        expected: DoubleArray,
+        actual: DoubleArray,
+    ) {
+        assertEquals(expected.size, actual.size)
+        for (index in expected.indices) {
+            assertEquals(
+                expected[index],
+                actual[index],
+                absoluteTolerance = 1.0e-12,
+            )
+        }
     }
 
     private fun assertNestedContentEquals(
