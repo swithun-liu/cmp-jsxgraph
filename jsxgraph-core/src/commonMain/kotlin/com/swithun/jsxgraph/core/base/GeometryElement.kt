@@ -17,11 +17,15 @@ package com.swithun.jsxgraph.core.base
 internal open class GeometryElement(
     internal val board: Board,
     internal var id: String = "",
-    internal var name: String = "",
+    name: String? = null,
     internal val type: Int = 0,
-    internal val elementClass: Int = 0,
+    internal val elementClass: Int = Const.OBJECT_CLASS_OTHER,
     internal var needsRegularUpdate: Boolean = true,
 ) {
+    internal var name: String = name ?: ""
+        private set
+    private var needsGeneratedName: Boolean = name == null
+
     internal var needsUpdate: Boolean = true
     internal var positionInBoard: Int = -1
 
@@ -29,6 +33,26 @@ internal open class GeometryElement(
     internal val descendants = linkedMapOf<String, GeometryElement>()
     internal val ancestors = linkedMapOf<String, GeometryElement>()
     internal val parents = mutableListOf<String>()
+
+    // JSXGraph: src/base/element.js -> GeometryElement name initialization
+    internal fun finalizeName() {
+        if (needsGeneratedName) {
+            name = board.generateName(this)
+            needsGeneratedName = false
+        }
+        if (name.isNotEmpty()) {
+            board.elementsByName[name] = this
+        }
+    }
+
+    // JSXGraph: src/base/element.js -> _set("name", value)
+    internal fun setName(value: String): GeometryElement {
+        board.elementsByName.remove(name)
+        name = value
+        needsGeneratedName = false
+        board.elementsByName[name] = this
+        return this
+    }
 
     // JSXGraph: src/base/element.js -> addChild
     internal fun addChild(element: GeometryElement): GeometryElement {

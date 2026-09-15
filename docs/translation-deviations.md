@@ -23,6 +23,14 @@ practical.
   duplicated id instead of silently replacing the previous `objects` entry.
   Generated-id collisions use deterministic increasing suffixes instead of
   JSXGraph's random suffix, while preserving uniqueness and creation order.
+- Automatic element names and `elementsByName` registration are finalized
+  after a successful `Board.setId` call instead of in the raw element
+  constructor. The public factory is not translated yet; this ordering avoids
+  leaving an orphaned name when Kotlin rejects a duplicate explicit id.
+- The translated `Board.select` overloads cover direct elements and ID/name
+  strings. Unknown and empty strings return `null` instead of the unchanged
+  input string. Group lookup and function/object filter `Composition` results
+  remain pending with those untranslated models.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again

@@ -28,6 +28,7 @@ internal class Board(
     internal var zoomX: Double = 1.0,
     internal var zoomY: Double = 1.0,
     internal val id: String = "jxgBoard1",
+    internal val maxNameLength: Int = 1,
 ) {
     internal class Origin(
         val usrCoords: DoubleArray,
@@ -46,6 +47,7 @@ internal class Board(
 
     internal val objects = linkedMapOf<String, GeometryElement>()
     internal val objectsList = mutableListOf<GeometryElement>()
+    internal val elementsByName = linkedMapOf<String, GeometryElement>()
     internal var numObjects: Int = 0
         private set
 
@@ -83,10 +85,81 @@ internal class Board(
         objects[elementId] = element
         element.positionInBoard = objectsList.size
         objectsList += element
+        element.finalizeName()
         return GMResult.Ok(elementId)
     }
 
     internal fun elementById(id: String): GeometryElement? = objects[id]
+
+    internal fun elementByName(name: String): GeometryElement? =
+        elementsByName[name]
+
+    // JSXGraph: src/base/board.js -> generateName
+    internal fun generateName(element: GeometryElement): String {
+        if (element.type == Const.OBJECT_TYPE_TICKS || maxNameLength <= 0) {
+            return ""
+        }
+
+        val possibleNames = when {
+            element.elementClass == Const.OBJECT_CLASS_POINT ||
+                element.type == Const.OBJECT_TYPE_POINT3D -> CAPITAL_NAMES
+            element.type == Const.OBJECT_TYPE_ANGLE -> ANGLE_NAMES
+            else -> LOWERCASE_NAMES
+        }
+        val (prefix, suffix) = when {
+            element.elementClass == Const.OBJECT_CLASS_POINT ||
+                element.type == Const.OBJECT_TYPE_POINT3D ||
+                element.elementClass == Const.OBJECT_CLASS_LINE ||
+                element.type == Const.OBJECT_TYPE_ANGLE -> "" to ""
+            element.type == Const.OBJECT_TYPE_POLYGON -> "P_{" to "}"
+            element.elementClass == Const.OBJECT_CLASS_CIRCLE -> "k_{" to "}"
+            element.elementClass == Const.OBJECT_CLASS_TEXT -> "t_{" to "}"
+            else -> "s_{" to "}"
+        }
+        val indices = IntArray(maxNameLength)
+
+        while (indices[maxNameLength - 1] < possibleNames.size) {
+            for (firstIndex in 1 until possibleNames.size) {
+                indices[0] = firstIndex
+                val candidate = buildString {
+                    append(prefix)
+                    for (index in maxNameLength downTo 1) {
+                        append(possibleNames[indices[index - 1]])
+                    }
+                    append(suffix)
+                }
+                if (candidate !in elementsByName) {
+                    return candidate
+                }
+            }
+
+            indices[0] = possibleNames.size
+            for (index in 1 until maxNameLength) {
+                if (indices[index - 1] == possibleNames.size) {
+                    indices[index - 1] = 1
+                    indices[index] += 1
+                }
+            }
+        }
+
+        return ""
+    }
+
+    // JSXGraph: src/base/board.js -> select
+    internal fun select(reference: String): GeometryElement? {
+        if (reference.isEmpty()) {
+            return null
+        }
+        return objects[reference] ?: elementsByName[reference]
+    }
+
+    // JSXGraph: src/base/board.js -> select
+    internal fun select(element: GeometryElement?): GeometryElement? {
+        if (element == null || element.id !in objects) {
+            return null
+        }
+        return element
+    }
 
     // JSXGraph: src/base/board.js -> _removeObj
     private fun removeElement(
@@ -128,6 +201,7 @@ internal class Board(
         }
 
         objects.remove(element.id)
+        elementsByName.remove(element.name)
         element.positionInBoard = -1
         element.remove()
     }
@@ -144,9 +218,9 @@ internal class Board(
 
     // JSXGraph: src/base/board.js -> removeObject
     internal fun removeObject(
-        elementId: String,
+        elementReference: String,
         saveMethod: Boolean = false,
-    ): Board = removeObject(objects[elementId], saveMethod)
+    ): Board = removeObject(select(elementReference), saveMethod)
 
     // JSXGraph: src/base/board.js -> removeObject
     internal fun removeObjects(
@@ -235,5 +309,25 @@ internal class Board(
             fullUpdate()
         }
         return this
+    }
+
+    private companion object {
+        val CAPITAL_NAMES = listOf(
+            "",
+            "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+            "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+        )
+        val LOWERCASE_NAMES = listOf(
+            "",
+            "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+            "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+        )
+        val ANGLE_NAMES = listOf(
+            "",
+            "&alpha;", "&beta;", "&gamma;", "&delta;", "&epsilon;", "&zeta;",
+            "&eta;", "&theta;", "&iota;", "&kappa;", "&lambda;", "&mu;", "&nu;",
+            "&xi;", "&omicron;", "&pi;", "&rho;", "&sigma;", "&tau;", "&upsilon;",
+            "&phi;", "&chi;", "&psi;", "&omega;",
+        )
     }
 }
