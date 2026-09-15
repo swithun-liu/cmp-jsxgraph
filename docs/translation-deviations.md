@@ -69,6 +69,10 @@ practical.
   or mismatched data, invalid degrees, singular normal equations, and a
   suspended evaluation without compatible cached coefficients. JSXGraph
   `1.13.3` throws or propagates `undefined`/`NaN` for these cases.
+- Riemann geometry and sum generation use `GMResult` for non-finite rectangle
+  counts and interval bounds. Lower/upper sampling stops when floating-point
+  addition can no longer advance; this prevents the upstream loop from
+  hanging on zero or subnormal effective widths.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is

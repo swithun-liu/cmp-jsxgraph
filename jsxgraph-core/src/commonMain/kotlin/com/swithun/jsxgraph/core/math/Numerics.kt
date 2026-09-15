@@ -119,6 +119,13 @@ sealed interface NumericsError {
         val degree: Int,
         val coefficientCount: Int,
     ) : NumericsError
+
+    data class InvalidRiemannRectangleCount(val rectangleCount: Double) : NumericsError
+
+    data class InvalidRiemannInterval(
+        val start: Double,
+        val end: Double,
+    ) : NumericsError
 }
 
 enum class IntegrationType {
@@ -178,6 +185,12 @@ data class ButcherTableau(
     val coefficients: Array<DoubleArray>,
     val weights: DoubleArray,
     val nodes: DoubleArray,
+)
+
+data class RiemannResult(
+    val xCoordinates: DoubleArray,
+    val yCoordinates: DoubleArray,
+    val sum: Double,
 )
 
 internal class NevilleInterpolation internal constructor(
@@ -919,6 +932,7 @@ object Numerics {
     }
 
     private val defaultRandomSource = RandomSource { Random.nextDouble() }
+    private const val RIEMANN_SIMPSON_STEPS = 30
 
     var maxIterationsRoot: Int = 80
     var maxIterationsMinimize: Int = 500
@@ -2154,6 +2168,291 @@ object Numerics {
     fun D(function: (Double) -> Double): (Double) -> Double = { value ->
         val step = 0.00001
         (function(value + step) - function(value - step)) / (2.0 * step)
+    }
+
+    // JSXGraph: src/math/numerics.js -> _riemannValue
+    internal fun riemannValue(
+        initialX: Double,
+        function: (Double) -> Double,
+        initialType: String,
+        initialDelta: Double,
+        random: RandomSource = defaultRandomSource,
+    ): Double {
+        var x = initialX
+        var type = initialType
+        var delta = initialDelta
+        if (delta < 0.0) {
+            if (type != "trapezoidal") {
+                x += delta
+            }
+            delta *= -1.0
+            type = when (type) {
+                "lower" -> "upper"
+                "upper" -> "lower"
+                else -> type
+            }
+        }
+        if (!delta.isFinite()) {
+            return Double.NaN
+        }
+        if (delta == 0.0 && (type == "lower" || type == "upper")) {
+            return function(x)
+        }
+
+        return when (type) {
+            "right" -> function(x + delta)
+            "middle" -> function(x + delta * 0.5)
+            "left", "trapezoidal" -> function(x)
+            "lower" -> {
+                var result = function(x)
+                val sampleStep = delta * 0.01
+                var sampleX = x + sampleStep
+                while (sampleX <= x + delta) {
+                    val sample = function(sampleX)
+                    if (sample < result) {
+                        result = sample
+                    }
+                    val nextSampleX = sampleX + sampleStep
+                    if (nextSampleX == sampleX) {
+                        break
+                    }
+                    sampleX = nextSampleX
+                }
+                val endpoint = function(x + delta)
+                if (endpoint < result) endpoint else result
+            }
+
+            "upper" -> {
+                var result = function(x)
+                val sampleStep = delta * 0.01
+                var sampleX = x + sampleStep
+                while (sampleX <= x + delta) {
+                    val sample = function(sampleX)
+                    if (sample > result) {
+                        result = sample
+                    }
+                    val nextSampleX = sampleX + sampleStep
+                    if (nextSampleX == sampleX) {
+                        break
+                    }
+                    sampleX = nextSampleX
+                }
+                val endpoint = function(x + delta)
+                if (endpoint > result) endpoint else result
+            }
+
+            "random" -> function(x + delta * random.nextDouble())
+            "simpson" -> (
+                function(x) +
+                    4.0 * function(x + delta * 0.5) +
+                    function(x + delta)
+            ) / 6.0
+
+            else -> function(x)
+        }
+    }
+
+    // JSXGraph: src/math/numerics.js -> riemann
+    internal fun riemann(
+        upperFunction: (Double) -> Double,
+        rectangleCount: Double,
+        type: String,
+        start: Double,
+        end: Double,
+        lowerFunction: ((Double) -> Double)? = null,
+        random: RandomSource = defaultRandomSource,
+    ): GMResult<RiemannResult, NumericsError> {
+        if (
+            !rectangleCount.isFinite() ||
+            rectangleCount > Int.MAX_VALUE.toDouble() ||
+            rectangleCount < Int.MIN_VALUE.toDouble()
+        ) {
+            return GMResult.Err(
+                NumericsError.InvalidRiemannRectangleCount(rectangleCount),
+            )
+        }
+        if (!start.isFinite() || !end.isFinite()) {
+            return GMResult.Err(NumericsError.InvalidRiemannInterval(start, end))
+        }
+
+        val count = kotlin.math.floor(rectangleCount).toInt()
+        if (count <= 0) {
+            return GMResult.Ok(
+                RiemannResult(
+                    xCoordinates = doubleArrayOf(),
+                    yCoordinates = doubleArrayOf(),
+                    sum = 0.0,
+                ),
+            )
+        }
+
+        val xCoordinates = ArrayList<Double>()
+        val yCoordinates = ArrayList<Double>()
+        val delta = (end - start) / count
+        var x = start
+        var sum = 0.0
+        var y: Double
+
+        for (index in 0 until count) {
+            if (type == "simpson") {
+                sum += riemannValue(
+                    initialX = x,
+                    function = upperFunction,
+                    initialType = type,
+                    initialDelta = delta,
+                    random = random,
+                ) * delta
+
+                val halfDelta = delta * 0.5
+                val firstValue = upperFunction(x)
+                val middleValue = upperFunction(x + halfDelta)
+                val secondValue = upperFunction(x + 2.0 * halfDelta)
+                val quadratic =
+                    (secondValue + firstValue - 2.0 * middleValue) /
+                        (halfDelta * halfDelta) *
+                        0.5
+                val linear = (secondValue - firstValue) / (2.0 * halfDelta)
+                for (step in 0 until RIEMANN_SIMPSON_STEPS) {
+                    val localX = step * delta / RIEMANN_SIMPSON_STEPS - halfDelta
+                    xCoordinates.add(x + localX + halfDelta)
+                    yCoordinates.add(
+                        quadratic * localX * localX +
+                            linear * localX +
+                            middleValue,
+                    )
+                }
+                x += delta
+                y = secondValue
+            } else {
+                y = riemannValue(
+                    initialX = x,
+                    function = upperFunction,
+                    initialType = type,
+                    initialDelta = delta,
+                    random = random,
+                )
+                xCoordinates.add(x)
+                yCoordinates.add(y)
+
+                x += delta
+                if (type == "trapezoidal") {
+                    val endpoint = upperFunction(x)
+                    sum += (y + endpoint) * 0.5 * delta
+                    y = endpoint
+                } else {
+                    sum += y * delta
+                }
+            }
+            xCoordinates.add(x)
+            yCoordinates.add(y)
+        }
+
+        for (index in 0 until count) {
+            if (type == "simpson" && lowerFunction != null) {
+                sum -= riemannValue(
+                    initialX = x,
+                    function = lowerFunction,
+                    initialType = type,
+                    initialDelta = -delta,
+                    random = random,
+                ) * delta
+
+                val halfDelta = delta * 0.5
+                val firstValue = lowerFunction(x)
+                val middleValue = lowerFunction(x - halfDelta)
+                val secondValue = lowerFunction(x - 2.0 * halfDelta)
+                val quadratic =
+                    (secondValue + firstValue - 2.0 * middleValue) /
+                        (halfDelta * halfDelta) *
+                        0.5
+                val linear = (secondValue - firstValue) / (2.0 * halfDelta)
+                for (step in 0 until RIEMANN_SIMPSON_STEPS) {
+                    val localX = step * delta / RIEMANN_SIMPSON_STEPS - halfDelta
+                    xCoordinates.add(x - localX - halfDelta)
+                    yCoordinates.add(
+                        quadratic * localX * localX +
+                            linear * localX +
+                            middleValue,
+                    )
+                }
+                x -= delta
+                y = secondValue
+            } else {
+                y = if (lowerFunction != null) {
+                    riemannValue(
+                        initialX = x,
+                        function = lowerFunction,
+                        initialType = type,
+                        initialDelta = -delta,
+                        random = random,
+                    )
+                } else {
+                    0.0
+                }
+                xCoordinates.add(x)
+                yCoordinates.add(y)
+
+                x -= delta
+                if (lowerFunction != null) {
+                    if (type == "trapezoidal") {
+                        val endpoint = lowerFunction(x)
+                        sum -= (y + endpoint) * 0.5 * delta
+                        y = endpoint
+                    } else {
+                        sum -= y * delta
+                    }
+                }
+            }
+            xCoordinates.add(x)
+            yCoordinates.add(y)
+
+            xCoordinates.add(x)
+            yCoordinates.add(
+                if (type == "simpson") {
+                    upperFunction(x)
+                } else {
+                    riemannValue(
+                        initialX = x,
+                        function = upperFunction,
+                        initialType = type,
+                        initialDelta = delta,
+                        random = random,
+                    )
+                },
+            )
+        }
+
+        return GMResult.Ok(
+            RiemannResult(
+                xCoordinates = xCoordinates.toDoubleArray(),
+                yCoordinates = yCoordinates.toDoubleArray(),
+                sum = sum,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/numerics.js -> riemannsum
+    internal fun riemannsum(
+        upperFunction: (Double) -> Double,
+        rectangleCount: Double,
+        type: String,
+        start: Double,
+        end: Double,
+        lowerFunction: ((Double) -> Double)? = null,
+        random: RandomSource = defaultRandomSource,
+    ): GMResult<Double, NumericsError> = when (
+        val result = riemann(
+            upperFunction = upperFunction,
+            rectangleCount = rectangleCount,
+            type = type,
+            start = start,
+            end = end,
+            lowerFunction = lowerFunction,
+            random = random,
+        )
+    ) {
+        is GMResult.Err -> result
+        is GMResult.Ok -> GMResult.Ok(result.value.sum)
     }
 
     // JSXGraph: src/math/numerics.js -> rungeKutta
