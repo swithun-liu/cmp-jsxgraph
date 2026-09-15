@@ -20,27 +20,32 @@ practical.
   have no resource limits. A separate parser-nesting limit is capped at 64 so
   malformed recursive syntax is rejected before exhausting the browser Wasm
   stack.
-- The translated parser currently accepts an empty program or one
-  `ConditionalExpression ';' EOF` statement from the upstream
-  `Expression ';' EOF` entry. Successful supported expressions preserve the
-  upstream AST node/value/child shape, `isMath` flags, and generated-action
-  locations. The evaluator covers every AST node produced by this subset,
-  including JavaScript truthiness and primitive/array coercion, object
-  literals, short-circuit logic, calls, properties, indexes, board element
-  references, and the first core math built-ins. Remaining statements,
-  assignment/function/map syntax, nested mutable scopes, the complete built-in
-  set, and the complete element `methodMap` remain pending.
+- The translated parser currently accepts an empty program or an expression
+  statement list. Its expressions include right-associative assignment,
+  conditionals, literals, variables, arrays, objects, calls, properties,
+  indexes, and unary/binary precedence. Successful supported input preserves
+  the upstream AST node/value/child shape, `isMath` flags, and generated-action
+  locations. Control statements, function/map syntax, and creator attributes
+  remain pending.
 - JSXGraph `1.13.3` stores string and numeric object-literal property AST nodes
   directly as JavaScript object keys. JavaScript coerces each of those nodes to
   `"[object Object]"`, so such keys collide while identifier keys behave
   normally. The Kotlin runtime preserves that observable behavior instead of
   normalizing literal property names.
 - JessieCode evaluation returns structured `GMResult.Err` values for malformed
-  ASTs, unsupported operand combinations, unavailable element properties or
-  values, and non-callable values instead of propagating JavaScript
-  exceptions. Evaluation is capped by node-step and depth limits; the maximum
-  configurable recursive depth is 64 to stay below the browser Wasm stack
-  limit.
+  ASTs, invalid assignment targets, unsupported operand combinations,
+  unavailable element properties or values, and non-callable values instead
+  of propagating JavaScript exceptions. Evaluation is capped by node-step,
+  depth, and collection-size limits; the maximum configurable recursive depth
+  is 64 to stay below the browser Wasm stack limit.
+- Assignment preserves upstream right associativity and resolves a property or
+  index receiver before evaluating the right-hand value. Arrays and objects
+  retain mutable identity. Kotlin materializes JavaScript sparse-array holes
+  as `UndefinedValue`, preserving observable translated indexing and `length`
+  behavior while using bounded storage. Element `setProp` mutation remains
+  pending and returns `AssignmentTargetUnavailable`.
+- Assignment locals currently live for one evaluator invocation. Persistent
+  JessieCode global locals and saved nested function scopes remain pending.
 - JessieCode geometry values cross the interpreter through
   `JessieCodeElementRuntime`. This preserves board object identity while the
   full upstream `methodMap`, visual-property, and generic `Value()` contracts
@@ -57,12 +62,18 @@ practical.
   elements. Both directions return structured node/depth-limit errors instead
   of traversing without resource limits. A malformed node carrying the
   internal `replaced` marker returns `InvalidReplacedNode`; upstream throws
-  while indexing the assumed replacement-call shape. Assignment-local
-  discovery remains pending with the statement and mutable-scope grammar.
+  while indexing the assumed replacement-call shape. A direct variable
+  assignment target remains local even when a Board element has the same
+  name; property and index receivers are still replaced. Static dependency
+  discovery preserves the upstream behavior of also recording a same-named
+  Board element for a direct variable target.
 - `JessieCodeExpressionFunction` covers the string branch of
   `Type.createFunction`, including argument binding, stable references, and
-  dependency metadata. Direct Kotlin number, array, and function adapters are
-  deferred until a translated caller needs those parent forms.
+  dependency metadata. It accepts at most one expression statement, including
+  a single assignment expression; a multi-statement source returns
+  `MultipleStatements` until return statements and nested function scopes are
+  translated. Direct Kotlin number, array, and function adapters are deferred
+  until a translated caller needs those parent forms.
 - The core element runtime exposes the translated read-only `methodMap`
   subset for coordinate elements, lines, and circles. Mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element

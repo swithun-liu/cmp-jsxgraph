@@ -264,6 +264,46 @@ class JessieCodeExpressionParserTest {
     }
 
     @Test
+    fun assignmentsAndStatementListsMatchOfficialAst() {
+        val program = parse("a = b = 3; a + b;")
+
+        assertEquals(
+            "op_none(" +
+                "op_none(" +
+                "op_none()," +
+                "op_assign(" +
+                "variable:a," +
+                "op_assign(variable:b,number:3.0)))," +
+                "op_add(variable:a,variable:b))",
+            describe(program),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 10),
+            program.location,
+        )
+        val assignment = childNode(childNode(program, 0), 1)
+        assertEquals(false, assignment.isMath)
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 1),
+            assignment.location,
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 4, 1, 5),
+            childNode(assignment, 1).location,
+        )
+
+        val parenthesized = expression("(a) = 1;")
+        assertEquals(
+            "op_assign(variable:a,number:1.0)",
+            describe(parenthesized),
+        )
+        assertEquals(
+            JessieCodeAstLocation(1, 0, 1, 3),
+            parenthesized.location,
+        )
+    }
+
+    @Test
     fun parserErrorsRetainOffendingAndJisonParserLocations() {
         val missingOperand = error("1 + ;")
         val unexpected = assertIs<
@@ -357,11 +397,29 @@ class JessieCodeExpressionParserTest {
             JessieCodeParserError.UnsupportedSyntax
             >(error("map (x) -> x;"))
         assertEquals("map expressions", map.feature)
+    }
 
-        val assignment = assertIs<
-            JessieCodeParserError.UnsupportedSyntax
-            >(error("a = 1;"))
-        assertEquals("assignment expressions", assignment.feature)
+    @Test
+    fun invalidAssignmentGrammarReturnsStructuredErrors() {
+        val invalid = assertIs<
+            JessieCodeParserError.UnexpectedToken
+            >(error("a + b = 2;"))
+        assertEquals(JessieCodeTokenType.ASSIGN, invalid.token.type)
+        assertEquals(
+            listOf(JessieCodeTokenType.SEMICOLON),
+            invalid.expected,
+        )
+
+        assertEquals(
+            "op_assign(number:1.0,number:2.0)",
+            describe(expression("1 = 2;")),
+        )
+        assertEquals(
+            "op_assign(" +
+                "op_execfun(variable:foo,list[])," +
+                "number:2.0)",
+            describe(expression("foo() = 2;")),
+        )
     }
 
     @Test

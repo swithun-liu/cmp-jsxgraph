@@ -48,12 +48,14 @@ internal class JessieCodeEvaluator(
         if (
             limits.maxEvaluationSteps < 1 ||
             limits.maxEvaluationDepth
-                !in 1..MAX_SUPPORTED_EVALUATION_DEPTH
+                !in 1..MAX_SUPPORTED_EVALUATION_DEPTH ||
+            limits.maxCollectionSize < 1
         ) {
             return GMResult.Err(
                 JessieCodeRuntimeError.InvalidLimits(
                     maxEvaluationSteps = limits.maxEvaluationSteps,
                     maxEvaluationDepth = limits.maxEvaluationDepth,
+                    maxCollectionSize = limits.maxCollectionSize,
                 ),
             )
         }
@@ -70,6 +72,7 @@ private class EvaluationState(
     private val environment: JessieCodeRuntimeEnvironment,
 ) {
     private var evaluationSteps = 0
+    private val localVariables = environment.variables.toMutableMap()
 
     fun evaluate(
         node: JessieCodeAstNode,
@@ -137,6 +140,7 @@ private class EvaluationState(
 
         return when (operator) {
             "op_none" -> evaluateSequence(node, depth)
+            "op_assign" -> evaluateAssignment(node, depth)
             "op_array" -> evaluateArray(node, depth)
             "op_emptyobject" -> evaluateEmptyObject(node)
             "op_proplst_val" -> evaluateObject(node, depth)
@@ -247,6 +251,15 @@ private class EvaluationState(
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        if (elements.size > limits.maxCollectionSize) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.CollectionSizeLimitExceeded(
+                    limit = limits.maxCollectionSize,
+                    requestedSize = elements.size.toLong(),
+                    location = node.location,
+                ),
+            )
+        }
         val values = mutableListOf<JessieCodeRuntimeValue>()
         for (element in elements) {
             when (val result = evaluate(element, depth + 1)) {
@@ -255,6 +268,242 @@ private class EvaluationState(
             }
         }
         return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(values))
+    }
+
+    private fun evaluateAssignment(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): EvaluationResult {
+        val left = when (val result = nodeChild(node, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val target = when (
+            val result = resolveAssignmentTarget(left, depth + 1)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val value = when (
+            val result = evaluateNodeChild(node, 1, depth)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = assign(
+                target = target,
+                value = value,
+                location = node.location,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(value)
+            is GMResult.Err -> result
+        }
+    }
+
+    private fun resolveAssignmentTarget(
+        node: JessieCodeAstNode,
+        depth: Int,
+    ): GMResult<AssignmentTarget, JessieCodeRuntimeError> {
+        when (val result = enterNode(node, depth)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        return when {
+            node.type == JessieCodeAstNodeType.VARIABLE -> {
+                val name = (node.value as? JessieCodeAstValue.Text)?.value
+                    ?: return invalidAst(
+                        node,
+                        "Assignment variable value must be text.",
+                    )
+                GMResult.Ok(AssignmentTarget.Variable(name))
+            }
+            operationName(node) == "op_property" -> {
+                val receiver = when (
+                    val result = evaluateNodeChild(node, 0, depth)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val property = when (val result = textChild(node, 1)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                GMResult.Ok(
+                    AssignmentTarget.Property(receiver, property),
+                )
+            }
+            operationName(node) == "op_extvalue" -> {
+                val receiver = when (
+                    val result = evaluateNodeChild(node, 0, depth)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val index = when (
+                    val result = evaluateNodeChild(node, 1, depth)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                GMResult.Ok(
+                    AssignmentTarget.Property(
+                        receiver = receiver,
+                        property = propertyKey(index),
+                    ),
+                )
+            }
+            else -> GMResult.Err(
+                JessieCodeRuntimeError.InvalidAssignmentTarget(
+                    targetType = assignmentTargetType(node),
+                    location = node.location,
+                ),
+            )
+        }
+    }
+
+    private fun assign(
+        target: AssignmentTarget,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        when (target) {
+            is AssignmentTarget.Variable -> {
+                localVariables[target.name] = value
+                GMResult.Ok(Unit)
+            }
+            is AssignmentTarget.Property -> assignProperty(
+                receiver = target.receiver,
+                property = target.property,
+                value = value,
+                location = location,
+            )
+        }
+
+    private fun assignProperty(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        when (receiver) {
+            is JessieCodeRuntimeValue.ObjectValue -> {
+                if (
+                    property !in receiver.properties &&
+                    receiver.properties.size >= limits.maxCollectionSize
+                ) {
+                    GMResult.Err(
+                        JessieCodeRuntimeError
+                            .CollectionSizeLimitExceeded(
+                                limit = limits.maxCollectionSize,
+                                requestedSize =
+                                    receiver.properties.size.toLong() + 1L,
+                                location = location,
+                            ),
+                    )
+                } else {
+                    receiver.properties[property] = value
+                    GMResult.Ok(Unit)
+                }
+            }
+            is JessieCodeRuntimeValue.ArrayValue ->
+                assignArrayProperty(
+                    array = receiver,
+                    property = property,
+                    value = value,
+                    location = location,
+                )
+            else -> GMResult.Err(
+                JessieCodeRuntimeError.AssignmentTargetUnavailable(
+                    receiverType = typeName(receiver),
+                    property = property,
+                    location = location,
+                ),
+            )
+        }
+
+    private fun assignArrayProperty(
+        array: JessieCodeRuntimeValue.ArrayValue,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        if (property == "length") {
+            val length = toNumber(value)
+            if (
+                !length.isFinite() ||
+                length < 0.0 ||
+                floor(length) != length ||
+                length > MAX_JAVASCRIPT_ARRAY_LENGTH.toDouble()
+            ) {
+                return assignmentUnavailable(
+                    receiver = array,
+                    property = property,
+                    location = location,
+                )
+            }
+            val requestedSize = length.toLong()
+            if (requestedSize > limits.maxCollectionSize.toLong()) {
+                return GMResult.Err(
+                    JessieCodeRuntimeError.CollectionSizeLimitExceeded(
+                        limit = limits.maxCollectionSize,
+                        requestedSize = requestedSize,
+                        location = location,
+                    ),
+                )
+            }
+            return resizeArray(array, requestedSize.toInt())
+        }
+
+        val index = arrayIndex(property)
+        if (index != null) {
+            val requestedSize = index + 1L
+            if (requestedSize > limits.maxCollectionSize.toLong()) {
+                return GMResult.Err(
+                    JessieCodeRuntimeError.CollectionSizeLimitExceeded(
+                        limit = limits.maxCollectionSize,
+                        requestedSize = requestedSize,
+                        location = location,
+                    ),
+                )
+            }
+            val targetIndex = index.toInt()
+            while (array.values.size.toLong() < requestedSize) {
+                array.values += JessieCodeRuntimeValue.UndefinedValue
+            }
+            array.values[targetIndex] = value
+            return GMResult.Ok(Unit)
+        }
+
+        if (
+            property !in array.properties &&
+            array.properties.size >= limits.maxCollectionSize
+        ) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.CollectionSizeLimitExceeded(
+                    limit = limits.maxCollectionSize,
+                    requestedSize =
+                        array.properties.size.toLong() + 1L,
+                    location = location,
+                ),
+            )
+        }
+        array.properties[property] = value
+        return GMResult.Ok(Unit)
+    }
+
+    private fun resizeArray(
+        array: JessieCodeRuntimeValue.ArrayValue,
+        requestedSize: Int,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        while (array.values.size > requestedSize) {
+            array.values.removeAt(array.values.lastIndex)
+        }
+        while (array.values.size < requestedSize) {
+            array.values += JessieCodeRuntimeValue.UndefinedValue
+        }
+        return GMResult.Ok(Unit)
     }
 
     private fun evaluateEmptyObject(
@@ -381,6 +630,20 @@ private class EvaluationState(
                 ) {
                     is GMResult.Ok -> result.value
                     is GMResult.Err -> return result
+                }
+                if (
+                    propertyName !in properties &&
+                    properties.size >= limits.maxCollectionSize
+                ) {
+                    return GMResult.Err(
+                        JessieCodeRuntimeError
+                            .CollectionSizeLimitExceeded(
+                                limit = limits.maxCollectionSize,
+                                requestedSize =
+                                    properties.size.toLong() + 1L,
+                                location = node.location,
+                            ),
+                    )
                 }
                 properties[propertyName] = value
                 GMResult.Ok(Unit)
@@ -595,9 +858,9 @@ private class EvaluationState(
                 "Variable value must be text.",
             )
         }
-        if (environment.variables.containsKey(name)) {
+        if (localVariables.containsKey(name)) {
             return GMResult.Ok(
-                environment.variables.getValue(name),
+                localVariables.getValue(name),
             )
         }
         when (name) {
@@ -973,6 +1236,8 @@ private class EvaluationState(
             is JessieCodeRuntimeValue.ArrayValue ->
                 if (property == "length") {
                     number(receiver.values.size.toDouble())
+                } else if (property in receiver.properties) {
+                    GMResult.Ok(receiver.properties.getValue(property))
                 } else {
                     unknownProperty(receiver, property, location)
                 }
@@ -1008,25 +1273,36 @@ private class EvaluationState(
         if (floor(numericIndex) != numericIndex) {
             return JessieCodeRuntimeValue.UndefinedValue
         }
-        if (
-            numericIndex < 0.0 ||
-            numericIndex > Int.MAX_VALUE.toDouble()
-        ) {
-            return JessieCodeRuntimeValue.UndefinedValue
-        }
-        val index = numericIndex.toInt()
+        val property = JsNumberFormat.compact(numericIndex)
         return when (receiver) {
-            is JessieCodeRuntimeValue.ArrayValue ->
-                receiver.values.getOrNull(index)
-                    ?: JessieCodeRuntimeValue.UndefinedValue
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val index = arrayIndex(property)
+                if (
+                    index != null &&
+                    index <= Int.MAX_VALUE.toLong()
+                ) {
+                    receiver.values.getOrNull(index.toInt())
+                        ?: receiver.properties[property]
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                } else {
+                    receiver.properties[property]
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                }
+            }
             is JessieCodeRuntimeValue.StringValue ->
-                receiver.value.getOrNull(index)?.let {
-                    JessieCodeRuntimeValue.StringValue(it.toString())
-                } ?: JessieCodeRuntimeValue.UndefinedValue
+                if (
+                    numericIndex >= 0.0 &&
+                    numericIndex <= Int.MAX_VALUE.toDouble()
+                ) {
+                    receiver.value.getOrNull(numericIndex.toInt())?.let {
+                        JessieCodeRuntimeValue.StringValue(it.toString())
+                    } ?: JessieCodeRuntimeValue.UndefinedValue
+                } else {
+                    JessieCodeRuntimeValue.UndefinedValue
+                }
             is JessieCodeRuntimeValue.ObjectValue ->
-                receiver.properties[
-                    JsNumberFormat.compact(numericIndex)
-                ] ?: JessieCodeRuntimeValue.UndefinedValue
+                receiver.properties[property]
+                    ?: JessieCodeRuntimeValue.UndefinedValue
             else -> JessieCodeRuntimeValue.UndefinedValue
         }
     }
@@ -1276,6 +1552,38 @@ private class EvaluationState(
             ),
         )
 
+    private fun assignmentUnavailable(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): GMResult.Err<
+        JessieCodeRuntimeError.AssignmentTargetUnavailable,
+        > = GMResult.Err(
+        JessieCodeRuntimeError.AssignmentTargetUnavailable(
+            receiverType = typeName(receiver),
+            property = property,
+            location = location,
+        ),
+    )
+
+    private fun operationName(node: JessieCodeAstNode): String? =
+        if (node.type == JessieCodeAstNodeType.OPERATION) {
+            (node.value as? JessieCodeAstValue.Text)?.value
+        } else {
+            null
+        }
+
+    private fun assignmentTargetType(node: JessieCodeAstNode): String =
+        operationName(node) ?: node.type.upstreamName
+
+    private fun arrayIndex(property: String): Long? {
+        if (!ARRAY_INDEX.matches(property)) {
+            return null
+        }
+        val index = property.toLongOrNull() ?: return null
+        return index.takeIf { it <= MAX_JAVASCRIPT_ARRAY_INDEX }
+    }
+
     private fun number(value: Double): EvaluationResult =
         GMResult.Ok(JessieCodeRuntimeValue.NumberValue(value))
 
@@ -1519,7 +1827,21 @@ private class EvaluationState(
 
     private companion object {
         const val INDEX_INTEGER_TOLERANCE = 1.0e-12
+        const val MAX_JAVASCRIPT_ARRAY_INDEX = 4_294_967_294L
+        const val MAX_JAVASCRIPT_ARRAY_LENGTH = 4_294_967_295L
         val NEGATIVE_ZERO_BITS = (-0.0).toBits()
+        val ARRAY_INDEX = Regex("""^(0|[1-9][0-9]*)$""")
+    }
+
+    private sealed interface AssignmentTarget {
+        data class Variable(
+            val name: String,
+        ) : AssignmentTarget
+
+        data class Property(
+            val receiver: JessieCodeRuntimeValue,
+            val property: String,
+        ) : AssignmentTarget
     }
 }
 

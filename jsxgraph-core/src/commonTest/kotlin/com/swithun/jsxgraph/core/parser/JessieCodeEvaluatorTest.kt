@@ -163,6 +163,57 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun assignmentsAndStatementListsMatchOfficialRuntime() {
+        val fixtures = mapOf(
+            "a = 1; a + 2;" to "number:3.0",
+            "a = b = 3; a + b;" to "number:6.0",
+            "a = [1, 2]; a[0] = 7; a[0] + a[1];" to
+                "number:9.0",
+            "a = << x: 1 >>; a.x = 9; a.x;" to "number:9.0",
+            "a = []; a[2] = 7; " +
+                "[a.length, a[0], a[1], a[2]];" to
+                "array:[number:3.0,undefined,undefined,number:7.0]",
+            "a = [1, 2, 3]; a.length = 1; a.length;" to
+                "number:1.0",
+            "a = []; a[-1] = 4; a[-1];" to "number:4.0",
+            "a = []; a[1.2] = 4; a[1.2];" to "undefined",
+        )
+
+        for ((source, expected) in fixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+    }
+
+    @Test
+    fun assignmentResolvesTargetBeforeEvaluatingValue() {
+        val calls = mutableListOf<String>()
+        val box = JessieCodeRuntimeValue.ObjectValue(emptyMap())
+        val environment = JessieCodeRuntimeEnvironment(
+            functions = mapOf(
+                "target" to JessieCodeCallable { _, _ ->
+                    calls += "target"
+                    GMResult.Ok(box)
+                },
+                "value" to JessieCodeCallable { _, _ ->
+                    calls += "value"
+                    GMResult.Ok(
+                        JessieCodeRuntimeValue.NumberValue(7.0),
+                    )
+                },
+            ),
+        )
+
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(7.0),
+            evaluate(
+                "target().x = value(); target().x;",
+                environment,
+            ),
+        )
+        assertEquals(listOf("target", "value", "target"), calls)
+    }
+
+    @Test
     fun indexesPropertiesCallsAndMathBuiltInsMatchOfficialRuntime() {
         val add = JessieCodeRuntimeValue.FunctionValue(
             name = "add",
@@ -378,6 +429,13 @@ class JessieCodeEvaluatorTest {
             ).property,
         )
 
+        assertIs<JessieCodeRuntimeError.InvalidAssignmentTarget>(
+            evaluateError("1 = missing();"),
+        )
+        assertIs<JessieCodeRuntimeError.AssignmentTargetUnavailable>(
+            evaluateError("\"text\".x = 1;"),
+        )
+
         val invalidLimits = evaluatorError(
             source = "1;",
             limits = JessieCodeEvaluatorLimits(
@@ -385,6 +443,16 @@ class JessieCodeEvaluatorTest {
             ),
         )
         assertIs<JessieCodeRuntimeError.InvalidLimits>(invalidLimits)
+
+        val invalidCollectionLimit = evaluatorError(
+            source = "1;",
+            limits = JessieCodeEvaluatorLimits(
+                maxCollectionSize = 0,
+            ),
+        )
+        assertIs<JessieCodeRuntimeError.InvalidLimits>(
+            invalidCollectionLimit,
+        )
 
         val unsafeDepthLimit = evaluatorError(
             source = "1;",
@@ -415,6 +483,36 @@ class JessieCodeEvaluatorTest {
         assertIs<
             JessieCodeRuntimeError.EvaluationStepLimitExceeded
             >(objectStepLimit)
+
+        val collectionLimit = evaluatorError(
+            source = "a = []; a[5] = 1;",
+            limits = JessieCodeEvaluatorLimits(
+                maxCollectionSize = 5,
+            ),
+        )
+        assertEquals(
+            6L,
+            assertIs<
+                JessieCodeRuntimeError.CollectionSizeLimitExceeded
+                >(collectionLimit).requestedSize,
+        )
+
+        val lengthCollectionLimit = evaluatorError(
+            source = "a = []; a.length = 4294967295;",
+            limits = JessieCodeEvaluatorLimits(
+                maxCollectionSize = 5,
+            ),
+        )
+        assertEquals(
+            4_294_967_295L,
+            assertIs<
+                JessieCodeRuntimeError.CollectionSizeLimitExceeded
+                >(lengthCollectionLimit).requestedSize,
+        )
+
+        assertIs<JessieCodeRuntimeError.AssignmentTargetUnavailable>(
+            evaluateError("a = []; a.length = 4294967296;"),
+        )
 
         val depthLimit = evaluatorError(
             source = "1 + 2 + 3;",

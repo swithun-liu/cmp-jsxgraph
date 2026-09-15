@@ -58,13 +58,11 @@ internal sealed interface JessieCodeParserError {
 }
 
 /**
- * JessieCode expression parser for an empty program or one expression
- * statement.
+ * JessieCode parser for an empty program or expression statements.
  *
- * The upstream entry is `Expression ';' EOF`; this slice implements its
- * `ConditionalExpression` branch, including array and object literals.
- * Statement execution, assignment, functions, and maps are intentionally
- * left for later slices.
+ * This slice implements `StatementList` through `ExpressionStatement`, plus
+ * assignment, array and object literals. Control statements, functions, maps,
+ * and creator attributes are intentionally left for later slices.
  */
 internal class JessieCodeExpressionParser(
     private val lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
@@ -141,47 +139,74 @@ private class ParserState(
             return GMResult.Ok(initial.node)
         }
 
-        val expression = when (val result = parseConditional()) {
+        var program = initial
+        while (current().type != JessieCodeTokenType.EOF) {
+            val expression = when (val result = parseAssignment()) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (current().type == JessieCodeTokenType.SHIFT_LEFT) {
+                return unsupported("call attribute lists")
+            }
+            val semicolon = when (
+                val result = expect(JessieCodeTokenType.SEMICOLON)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            program = when (
+                val result = createNode(
+                    type = JessieCodeAstNodeType.OPERATION,
+                    value = JessieCodeAstValue.Text("op_none"),
+                    children = listOf(
+                        JessieCodeAstChild.Node(program.node),
+                        JessieCodeAstChild.Node(expression.node),
+                    ),
+                    nodeLocation = program.span,
+                    childDepths = listOf(
+                        program.depth,
+                        expression.depth,
+                    ),
+                )
+            ) {
+                is GMResult.Ok -> result.value.copy(
+                    span = span(program.span, semicolon.location),
+                )
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(program.node)
+    }
+
+    // JSXGraph: AssignmentExpression
+    private fun parseAssignment(): ParserResult<ParsedExpression> {
+        val left = when (val result = parseConditional()) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        if (current().type != JessieCodeTokenType.ASSIGN) {
+            return GMResult.Ok(left)
+        }
+        if (!left.isLeftHandSideExpression) {
+            return unexpected(listOf(JessieCodeTokenType.SEMICOLON))
+        }
 
-        when (current().type) {
-            JessieCodeTokenType.ASSIGN -> {
-                return unsupported("assignment expressions")
+        consume()
+        val right = when (
+            val result = nested(current().location) {
+                parseAssignment()
             }
-
-            JessieCodeTokenType.SHIFT_LEFT -> {
-                return unsupported("call attribute lists")
-            }
-
-            else -> Unit
-        }
-
-        when (val result = expect(JessieCodeTokenType.SEMICOLON)) {
-            is GMResult.Ok -> Unit
-            is GMResult.Err -> return result
-        }
-        if (current().type != JessieCodeTokenType.EOF) {
-            return unexpected(listOf(JessieCodeTokenType.EOF))
-        }
-
-        val root = when (
-            val result = createNode(
-                type = JessieCodeAstNodeType.OPERATION,
-                value = JessieCodeAstValue.Text("op_none"),
-                children = listOf(
-                    JessieCodeAstChild.Node(initial.node),
-                    JessieCodeAstChild.Node(expression.node),
-                ),
-                nodeLocation = INITIAL_SOURCE_LOCATION,
-                childDepths = listOf(initial.depth, expression.depth),
-            )
         ) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        return GMResult.Ok(root.node)
+        return operation(
+            upstreamName = "op_assign",
+            children = listOf(left, right),
+            nodeLocation = left.span,
+            span = span(left.span, right.span),
+            isMath = false,
+        )
     }
 
     // JSXGraph: ConditionalExpression
@@ -197,7 +222,7 @@ private class ParserState(
         consume()
         val whenTrue = when (
             val result = nested(current().location) {
-                parseConditional()
+                parseAssignment()
             }
         ) {
             is GMResult.Ok -> result.value
@@ -209,7 +234,7 @@ private class ParserState(
         }
         val whenFalse = when (
             val result = nested(current().location) {
-                parseConditional()
+                parseAssignment()
             }
         ) {
             is GMResult.Ok -> result.value
@@ -321,6 +346,7 @@ private class ParserState(
                 return GMResult.Ok(
                     operand.copy(
                         span = span(operatorToken.location, operand.span),
+                        isLeftHandSideExpression = false,
                     ),
                 )
             }
@@ -356,6 +382,7 @@ private class ParserState(
             nodeLocation = base.span,
             span = span(base.span, exponent.span),
             isMath = true,
+            isLeftHandSideExpression = false,
         )
     }
 
@@ -392,6 +419,7 @@ private class ParserState(
                                 property.location,
                             ),
                             isMath = true,
+                            isLeftHandSideExpression = true,
                         )
                     ) {
                         is GMResult.Ok -> result.value
@@ -403,7 +431,7 @@ private class ParserState(
                     consume()
                     val index = when (
                         val result = nested(current().location) {
-                            parseConditional()
+                            parseAssignment()
                         }
                     ) {
                         is GMResult.Ok -> result.value
@@ -427,6 +455,7 @@ private class ParserState(
                                 closing.location,
                             ),
                             isMath = true,
+                            isLeftHandSideExpression = true,
                         )
                     ) {
                         is GMResult.Ok -> result.value
@@ -470,6 +499,7 @@ private class ParserState(
                                 closing.location,
                             ),
                             isMath = true,
+                            isLeftHandSideExpression = true,
                         )
                     ) {
                         is GMResult.Ok -> result.value
@@ -539,7 +569,7 @@ private class ParserState(
         val opening = consume()
         val expression = when (
             val result = nested(opening.location) {
-                parseConditional()
+                parseAssignment()
             }
         ) {
             is GMResult.Ok -> result.value
@@ -556,6 +586,7 @@ private class ParserState(
         return GMResult.Ok(
             expression.copy(
                 span = span(opening.location, closing.location),
+                isLeftHandSideExpression = true,
             ),
         )
     }
@@ -598,6 +629,7 @@ private class ParserState(
                 node = created.node,
                 span = span(opening.location, closing.location),
                 depth = created.depth,
+                isLeftHandSideExpression = true,
             ),
         )
     }
@@ -614,6 +646,7 @@ private class ParserState(
                 nodeLocation = opening.location,
                 span = span(opening.location, closing.location),
                 isMath = false,
+                isLeftHandSideExpression = true,
             )
         }
 
@@ -636,6 +669,7 @@ private class ParserState(
             nodeLocation = opening.location,
             span = span(opening.location, closing.location),
             isMath = false,
+            isLeftHandSideExpression = true,
         )
     }
 
@@ -685,14 +719,11 @@ private class ParserState(
         }
         val value = when (
             val result = nested(current().location) {
-                parseConditional()
+                parseAssignment()
             }
         ) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
-        }
-        if (current().type == JessieCodeTokenType.ASSIGN) {
-            return unsupported("assignment expressions")
         }
         val property = when (
             val result = operationWithRawChildren(
@@ -797,7 +828,7 @@ private class ParserState(
         while (true) {
             val expression = when (
                 val result = nested(current().location) {
-                    parseConditional()
+                    parseAssignment()
                 }
             ) {
                 is GMResult.Ok -> result.value
@@ -895,6 +926,7 @@ private class ParserState(
                 node = created.node,
                 span = token.location,
                 depth = created.depth,
+                isLeftHandSideExpression = true,
             ),
         )
     }
@@ -905,6 +937,7 @@ private class ParserState(
         nodeLocation: JessieCodeSourceLocation,
         span: JessieCodeSourceLocation,
         isMath: Boolean?,
+        isLeftHandSideExpression: Boolean = false,
     ): ParserResult<ParsedExpression> =
         operationWithRawChildren(
             upstreamName = upstreamName,
@@ -915,6 +948,7 @@ private class ParserState(
             nodeLocation = nodeLocation,
             span = span,
             isMath = isMath,
+            isLeftHandSideExpression = isLeftHandSideExpression,
         )
 
     private fun operationWithRawChildren(
@@ -924,6 +958,7 @@ private class ParserState(
         nodeLocation: JessieCodeSourceLocation,
         span: JessieCodeSourceLocation,
         isMath: Boolean?,
+        isLeftHandSideExpression: Boolean = false,
     ): ParserResult<ParsedExpression> {
         val created = when (
             val result = createNode(
@@ -943,6 +978,7 @@ private class ParserState(
                 node = created.node,
                 span = span,
                 depth = created.depth,
+                isLeftHandSideExpression = isLeftHandSideExpression,
             ),
         )
     }
@@ -992,6 +1028,7 @@ private class ParserState(
                     isMath = isMath,
                 ),
                 depth = depth,
+                span = nodeLocation,
             ),
         )
     }
@@ -1070,6 +1107,7 @@ private class ParserState(
         val node: JessieCodeAstNode,
         val span: JessieCodeSourceLocation,
         val depth: Int,
+        val isLeftHandSideExpression: Boolean = false,
     )
 
     private data class ParsedPropertyName(
@@ -1081,6 +1119,7 @@ private class ParserState(
     private data class CreatedNode(
         val node: JessieCodeAstNode,
         val depth: Int,
+        val span: JessieCodeSourceLocation,
     )
 
     private companion object {

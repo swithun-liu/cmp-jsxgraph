@@ -14,12 +14,14 @@ import com.swithun.jsxgraph.core.base.GeometryElement
 internal data class JessieCodeEvaluatorLimits(
     val maxEvaluationSteps: Int = 100_000,
     val maxEvaluationDepth: Int = 64,
+    val maxCollectionSize: Int = 100_000,
 )
 
 internal sealed interface JessieCodeRuntimeError {
     data class InvalidLimits(
         val maxEvaluationSteps: Int,
         val maxEvaluationDepth: Int,
+        val maxCollectionSize: Int,
     ) : JessieCodeRuntimeError
 
     data class EvaluationStepLimitExceeded(
@@ -34,6 +36,23 @@ internal sealed interface JessieCodeRuntimeError {
 
     data class InvalidAst(
         val reason: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class InvalidAssignmentTarget(
+        val targetType: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class AssignmentTargetUnavailable(
+        val receiverType: String,
+        val property: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class CollectionSizeLimitExceeded(
+        val limit: Int,
+        val requestedSize: Long,
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
 
@@ -117,12 +136,20 @@ internal sealed interface JessieCodeRuntimeValue {
     data object UndefinedValue : JessieCodeRuntimeValue
 
     class ArrayValue(
-        val values: List<JessieCodeRuntimeValue>,
-    ) : JessieCodeRuntimeValue
+        values: List<JessieCodeRuntimeValue>,
+    ) : JessieCodeRuntimeValue {
+        val values: MutableList<JessieCodeRuntimeValue> =
+            values.toMutableList()
+        internal val properties:
+            MutableMap<String, JessieCodeRuntimeValue> = mutableMapOf()
+    }
 
     class ObjectValue(
-        val properties: Map<String, JessieCodeRuntimeValue>,
-    ) : JessieCodeRuntimeValue
+        properties: Map<String, JessieCodeRuntimeValue>,
+    ) : JessieCodeRuntimeValue {
+        val properties: MutableMap<String, JessieCodeRuntimeValue> =
+            properties.toMutableMap()
+    }
 
     class FunctionValue(
         val name: String,

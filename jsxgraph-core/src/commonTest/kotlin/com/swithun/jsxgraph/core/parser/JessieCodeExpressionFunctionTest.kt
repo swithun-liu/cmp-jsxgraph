@@ -63,6 +63,34 @@ class JessieCodeExpressionFunctionTest {
     }
 
     @Test
+    fun directAssignmentTargetsRemainLocalWhenBoardNamesMatch() {
+        val fixture = boardFixture()
+        val replaced = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeNameReplacer(fixture.board).replace(
+                node = parse("A = B;"),
+                forceValueCall = false,
+            ),
+        ).value
+        val assignment = expression(replaced)
+        val target = nodeChild(assignment, 0)
+        val value = nodeChild(assignment, 1)
+
+        assertEquals(JessieCodeAstNodeType.VARIABLE, target.type)
+        assertEquals("A", textValue(target))
+        assertEquals("op_execfun", operationName(value))
+        assertEquals("P2", textValue(nodeList(value, 1).single()))
+
+        val dependencies = assertIs<
+            GMResult.Ok<Map<String, GeometryElement>>
+            >(
+            JessieCodeDependencyCollector(fixture.board).collect(
+                replaced,
+            ),
+        ).value
+        assertEquals(listOf("P2", "P1"), dependencies.keys.toList())
+    }
+
+    @Test
     fun idReplacementMatchesOfficialCurrentNameRoundTrip() {
         val fixture = boardFixture()
         val replacer = JessieCodeNameReplacer(fixture.board)
@@ -296,6 +324,27 @@ class JessieCodeExpressionFunctionTest {
     }
 
     @Test
+    fun compiledAssignmentUsesAFunctionLocalEvenWhenBoardNameMatches() {
+        val fixture = boardFixture()
+        val function = assertIs<
+            GMResult.Ok<JessieCodeExpressionFunction>
+            >(
+            JessieCodeExpressionFunction.compile(
+                source = "A = 1",
+                board = fixture.board,
+            ),
+        ).value
+
+        assertEquals(listOf("P1"), function.dependencies.keys.toList())
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(1.0),
+            assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+                function.evaluate(),
+            ).value,
+        )
+    }
+
+    @Test
     fun compiledSliderExpressionUsesValueAndTracksDependency() {
         val fixture = boardFixture()
         val function = compile(
@@ -453,6 +502,21 @@ class JessieCodeExpressionFunctionTest {
         ).error
         assertIs<JessieCodeExpressionCompileError.Parser>(
             parserFailure,
+        )
+
+        val multipleStatements = assertIs<
+            GMResult.Err<JessieCodeExpressionCompileError>
+            >(
+            JessieCodeExpressionFunction.compile(
+                source = "a = 1; a + 2",
+                board = fixture.board,
+            ),
+        ).error
+        assertEquals(
+            2,
+            assertIs<
+                JessieCodeExpressionCompileError.MultipleStatements
+                >(multipleStatements).statementCount,
         )
 
         val dependencyFailure = assertIs<

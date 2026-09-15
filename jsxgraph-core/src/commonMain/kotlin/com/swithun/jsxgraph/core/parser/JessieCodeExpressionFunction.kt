@@ -24,6 +24,10 @@ internal sealed interface JessieCodeExpressionCompileError {
     data class Dependency(
         val error: JessieCodeDependencyError,
     ) : JessieCodeExpressionCompileError
+
+    data class MultipleStatements(
+        val statementCount: Int,
+    ) : JessieCodeExpressionCompileError
 }
 
 /**
@@ -92,6 +96,14 @@ internal class JessieCodeExpressionFunction private constructor(
                     ),
                 )
             }
+            val statementCount = expressionStatementCount(parsed)
+            if (statementCount > 1) {
+                return GMResult.Err(
+                    JessieCodeExpressionCompileError.MultipleStatements(
+                        statementCount = statementCount,
+                    ),
+                )
+            }
             val boundNames =
                 variableNames.toSet() + variables.keys + functions.keys
             val replaced = when (
@@ -152,5 +164,27 @@ internal class JessieCodeExpressionFunction private constructor(
             } else {
                 "$source;"
             }
+
+        private fun expressionStatementCount(
+            program: JessieCodeAstNode,
+        ): Int {
+            var count = 0
+            var current = program
+            while (
+                current.type == JessieCodeAstNodeType.OPERATION &&
+                (current.value as? JessieCodeAstValue.Text)?.value ==
+                "op_none"
+            ) {
+                if (current.children.isEmpty()) {
+                    return count
+                }
+                count += 1
+                current = (
+                    current.children.firstOrNull() as?
+                        JessieCodeAstChild.Node
+                    )?.value ?: return count
+            }
+            return count + 1
+        }
     }
 }

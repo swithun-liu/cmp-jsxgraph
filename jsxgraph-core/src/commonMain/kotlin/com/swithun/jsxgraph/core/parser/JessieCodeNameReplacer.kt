@@ -221,6 +221,7 @@ private class ReplacementState(
         callValue: Boolean = false,
         depth: Int = 1,
         programRoot: Boolean = true,
+        directAssignmentTarget: Boolean = false,
     ): GMResult<
         JessieCodeAstNode,
         JessieCodeNameReplacementError,
@@ -249,6 +250,7 @@ private class ReplacementState(
         if (
             node.type == JessieCodeAstNodeType.VARIABLE &&
             variableName != null &&
+            !directAssignmentTarget &&
             variableName !in boundNames &&
             variableName !in CONSTANT_NAMES
         ) {
@@ -275,6 +277,11 @@ private class ReplacementState(
                     programRoot &&
                         isWholeExpressionVariable(node, child, index)
                 )
+            val childIsDirectAssignmentTarget =
+                operationName(node) == "op_assign" &&
+                    index == 0 &&
+                    child is JessieCodeAstChild.Node &&
+                    child.value.type == JessieCodeAstNodeType.VARIABLE
             when (child) {
                 is JessieCodeAstChild.Node -> {
                     when (
@@ -283,6 +290,8 @@ private class ReplacementState(
                             callValue = childCallValue,
                             depth = depth + 1,
                             programRoot = false,
+                            directAssignmentTarget =
+                                childIsDirectAssignmentTarget,
                         )
                     ) {
                         is GMResult.Ok -> {
