@@ -88,6 +88,11 @@ practical.
   `DiscreteCurve2D` until the full `Curve` domain and transform lifecycle is
   available. Unsupported degrees and incomplete cubic control-point groups
   return `GMResult.Err` instead of failing while indexing.
+- The continuous `parameter`, `polar`, and `functiongraph` projection branch
+  uses an internal `ContinuousCurve2D` adapter and returns coordinates before
+  `curve.updateTransform`. Non-finite or reversed domains return
+  `GMResult.Err`; transform application remains pending on the full element
+  lifecycle.
 - `Geometry.projectCoordsToPolygon` returns `GMResult.Err` for fewer than two
   vertices or when every edge produces an undefined projection. JSXGraph
   `1.13.3` returns JavaScript `undefined` in those cases.

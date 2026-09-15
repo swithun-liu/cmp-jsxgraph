@@ -52,6 +52,19 @@ internal data class DiscreteCurve2D(
     val isSector: Boolean = false,
 )
 
+internal enum class ContinuousCurveType {
+    PARAMETER,
+    POLAR,
+    FUNCTION_GRAPH,
+}
+
+internal data class ContinuousCurve2D(
+    val curve: ParametricCurve2D,
+    val minimumParameter: Double,
+    val maximumParameter: Double,
+    val type: ContinuousCurveType,
+)
+
 sealed interface GeometryError {
     data class InvalidPolygonPointCount(val pointCount: Int) : GeometryError
 
@@ -65,6 +78,11 @@ sealed interface GeometryError {
     data class InvalidDiscreteCurvePointCount(
         val pointCount: Int,
         val degree: Int,
+    ) : GeometryError
+
+    data class InvalidContinuousCurveDomain(
+        val minimum: Double,
+        val maximum: Double,
     ) : GeometryError
 
     data class InvalidIntersectionIndex(val index: Int) : GeometryError
@@ -1796,6 +1814,127 @@ object Geometry {
             ProjectionResult(
                 point = bestPoint,
                 parameter = bestParameter,
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> projectCoordsToCurve (continuous branch)
+    internal fun projectCoordsToCurve(
+        horizontal: Double,
+        vertical: Double,
+        initialParameter: Double,
+        continuousCurve: ContinuousCurve2D,
+    ): GMResult<ProjectionResult, GeometryError> {
+        val curve = continuousCurve.curve
+        val globalMinimum = continuousCurve.minimumParameter
+        val globalMaximum = continuousCurve.maximumParameter
+        if (
+            !globalMinimum.isFinite() ||
+            !globalMaximum.isFinite() ||
+            globalMinimum > globalMaximum
+        ) {
+            return GMResult.Err(
+                GeometryError.InvalidContinuousCurveDomain(
+                    minimum = globalMinimum,
+                    maximum = globalMaximum,
+                ),
+            )
+        }
+
+        var minimum = globalMinimum
+        var maximum = globalMaximum
+        if (continuousCurve.type == ContinuousCurveType.FUNCTION_GRAPH) {
+            val verticalDifference =
+                abs(vertical - curve.y(horizontal))
+            if (!verticalDifference.isNaN()) {
+                minimum = horizontal - verticalDifference
+                maximum = horizontal + verticalDifference
+            }
+        }
+
+        val distanceSquared = { parameter: Double ->
+            if (parameter < globalMinimum || parameter > globalMaximum) {
+                Double.POSITIVE_INFINITY
+            } else {
+                val horizontalDifference =
+                    horizontal - curve.x(parameter)
+                val verticalDifference =
+                    vertical - curve.y(parameter)
+                horizontalDifference * horizontalDifference +
+                    verticalDifference * verticalDifference
+            }
+        }
+
+        var parameter = initialParameter
+        var bestDistance = distanceSquared(parameter)
+        val steps = 50
+        val step = (maximum - minimum) / steps
+        var candidate = minimum
+        repeat(steps) {
+            val candidateDistance = distanceSquared(candidate)
+            if (
+                candidateDistance < bestDistance ||
+                bestDistance == Double.POSITIVE_INFINITY ||
+                bestDistance.isNaN()
+            ) {
+                parameter = candidate
+                bestDistance = candidateDistance
+            }
+            candidate += step
+        }
+
+        var lowerStep = step
+        var iteration = 0
+        while (
+            iteration < 20 &&
+            distanceSquared(parameter - lowerStep).isNaN()
+        ) {
+            lowerStep *= 0.5
+            iteration += 1
+        }
+        if (distanceSquared(parameter - lowerStep).isNaN()) {
+            lowerStep = 0.0
+        }
+
+        var upperStep = step
+        iteration = 0
+        while (
+            iteration < 20 &&
+            distanceSquared(parameter + upperStep).isNaN()
+        ) {
+            upperStep *= 0.5
+            iteration += 1
+        }
+        if (distanceSquared(parameter + upperStep).isNaN()) {
+            upperStep = 0.0
+        }
+
+        parameter = when (
+            val result = Numerics.fminbr(
+                function = distanceSquared,
+                interval = doubleArrayOf(
+                    maxOf(parameter - lowerStep, minimum),
+                    minOf(parameter + upperStep, maximum),
+                ),
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return GMResult.Err(
+                    GeometryError.NumericalProjectionFailure(result.error),
+                )
+            }
+        }
+        parameter = maxOf(parameter, globalMinimum)
+        parameter = minOf(parameter, globalMaximum)
+        return GMResult.Ok(
+            ProjectionResult(
+                point = doubleArrayOf(
+                    1.0,
+                    curve.x(parameter),
+                    curve.y(parameter),
+                ),
+                parameter = parameter,
             ),
         )
     }
