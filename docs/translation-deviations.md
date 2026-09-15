@@ -52,6 +52,9 @@ practical.
   The upstream implementation can recurse indefinitely or fail while indexing
   for those inputs. Ramer-Douglas-Peucker uses an explicit work stack to avoid
   exhausting the Kotlin call stack on adversarial curves.
+- `Numerics.generatePolynomialTerm` returns `GMResult` for an unavailable
+  coefficient or a precision outside JavaScript's `1..100` range instead of
+  propagating `TypeError` or `RangeError`.
 - The translated geometry primitives accept homogeneous coordinate and
   standard-form arrays directly. JSXGraph's `Point`, `Line`, `Circle`, and
   `Coords` overloads will wrap these functions when the element model is
@@ -61,6 +64,9 @@ practical.
 - `Complex.toString(digits)` uses a common Kotlin fixed-decimal formatter.
   Extremely large values and unsupported digit counts do not reproduce
   JavaScript `Number.toFixed` exceptions byte-for-byte.
+- Polynomial term generation uses a common Kotlin significant-digit formatter.
+  Extreme precisions can differ from JavaScript `Number.toPrecision` in digits
+  beyond the platform's shortest round-trip `Double` representation.
 - Native math functions can differ from JavaScript by a few final binary
   digits. Official-reference assertions use narrow numeric tolerances.
 - Statistics filters `NaN` values before sorting percentile and boxplot data.

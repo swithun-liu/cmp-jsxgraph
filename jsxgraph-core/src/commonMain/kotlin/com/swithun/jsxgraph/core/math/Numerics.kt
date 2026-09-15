@@ -9,6 +9,8 @@ package com.swithun.jsxgraph.core.math
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Coords
+import com.swithun.jsxgraph.core.base.CoordsElement
+import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -98,6 +100,13 @@ sealed interface NumericsError {
     data class InvalidSimplificationPointCount(val pointCount: Int) : NumericsError
 
     data class InvalidSimplificationTopology(val pointIndex: Int) : NumericsError
+
+    data class InvalidPolynomialDegree(
+        val degree: Int,
+        val coefficientCount: Int,
+    ) : NumericsError
+
+    data class InvalidPolynomialPrecision(val precision: Int) : NumericsError
 }
 
 enum class IntegrationType {
@@ -158,6 +167,111 @@ data class ButcherTableau(
     val weights: DoubleArray,
     val nodes: DoubleArray,
 )
+
+internal class NevilleInterpolation internal constructor(
+    private val points: List<CoordsElement>,
+) {
+    private var weights = DoubleArray(0)
+
+    internal fun x(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, suspendedUpdate, CoordsElement::X)
+
+    internal fun y(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(parameter, suspendedUpdate, CoordsElement::Y)
+
+    internal val start: Double = 0.0
+
+    internal fun end(): Double = (points.size - 1).toDouble()
+
+    private fun evaluate(
+        parameter: Double,
+        suspendedUpdate: Boolean,
+        coordinate: (CoordsElement) -> Double,
+    ): Double {
+        val size = points.size
+        if (!suspendedUpdate) {
+            var sign = 1.0
+            weights = DoubleArray(size) { index ->
+                val weight = Mat.binomial((size - 1).toDouble(), index.toDouble()) * sign
+                sign *= -1.0
+                weight
+            }
+        }
+
+        var difference = parameter
+        var numerator = 0.0
+        var denominator = 0.0
+        for (index in 0 until size) {
+            if (difference == 0.0) {
+                return coordinate(points[index])
+            }
+
+            val weight = weights.getOrElse(index) { Double.NaN } / difference
+            difference -= 1.0
+            numerator += coordinate(points[index]) * weight
+            denominator += weight
+        }
+        return numerator / denominator
+    }
+}
+
+internal class LagrangePolynomial internal constructor(
+    private val points: List<CoordsElement>,
+) {
+    private var weights = DoubleArray(0)
+
+    internal operator fun invoke(
+        value: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double {
+        val size = points.size
+        if (!suspendedUpdate) {
+            weights = DoubleArray(size)
+            for (index in 0 until size) {
+                val x = points[index].X()
+                var weight = 1.0
+                for (otherIndex in 0 until size) {
+                    if (otherIndex != index) {
+                        weight *= x - points[otherIndex].X()
+                    }
+                }
+                weights[index] = 1.0 / weight
+            }
+        }
+
+        var numerator = 0.0
+        var denominator = 0.0
+        for (index in 0 until size) {
+            val x = points[index].X()
+            if (value == x) {
+                return points[index].Y()
+            }
+
+            val weight = weights.getOrElse(index) { Double.NaN } / (value - x)
+            denominator += weight
+            numerator += weight * points[index].Y()
+        }
+        return numerator / denominator
+    }
+
+    internal fun getTerm(
+        digits: Int? = null,
+        parameter: String? = null,
+        multiplicationSymbol: String? = null,
+    ): String = Numerics.lagrangePolynomialTerm(
+        points = points,
+        digits = digits,
+        parameter = parameter,
+        multiplicationSymbol = multiplicationSymbol,
+    )()
+
+    internal fun getCoefficients(): DoubleArray =
+        Numerics.lagrangePolynomialCoefficients(points)()
+}
 
 object Numerics {
     private data class PolylineSplit(
@@ -1031,6 +1145,150 @@ object Numerics {
         interval: DoubleArray,
         function: (Double) -> Double,
     ): GMResult<Double, NumericsError> = Qag(interval, function)
+
+    // JSXGraph: src/math/numerics.js -> Neville
+    @Suppress("FunctionName")
+    internal fun Neville(points: List<CoordsElement>): NevilleInterpolation =
+        NevilleInterpolation(points)
+
+    // JSXGraph: src/math/numerics.js -> generatePolynomialTerm
+    internal fun generatePolynomialTerm(
+        coefficients: DoubleArray,
+        degree: Int,
+        variableName: String,
+        precision: Int,
+    ): GMResult<String, NumericsError> {
+        if (degree >= coefficients.size) {
+            return GMResult.Err(
+                NumericsError.InvalidPolynomialDegree(
+                    degree = degree,
+                    coefficientCount = coefficients.size,
+                ),
+            )
+        }
+        if (precision !in 1..100) {
+            return GMResult.Err(NumericsError.InvalidPolynomialPrecision(precision))
+        }
+
+        val term = StringBuilder()
+        for (index in degree downTo 0) {
+            term.append('(')
+            term.append(JsNumberFormat.precision(coefficients[index], precision))
+            term.append(')')
+            when {
+                index > 1 -> {
+                    term.append('*')
+                    term.append(variableName)
+                    term.append("<sup>")
+                    term.append(index)
+                    term.append("</sup> + ")
+                }
+
+                index == 1 -> {
+                    term.append('*')
+                    term.append(variableName)
+                    term.append(" + ")
+                }
+            }
+        }
+        return GMResult.Ok(term.toString())
+    }
+
+    // JSXGraph: src/math/numerics.js -> lagrangePolynomial
+    internal fun lagrangePolynomial(points: List<CoordsElement>): LagrangePolynomial =
+        LagrangePolynomial(points)
+
+    // JSXGraph: src/math/numerics.js -> lagrangePolynomialTerm
+    internal fun lagrangePolynomialTerm(
+        points: List<CoordsElement>,
+        digits: Int? = null,
+        parameter: String? = null,
+        multiplicationSymbol: String? = null,
+    ): () -> String = {
+        val degree = points.size - 1
+        val coefficients = lagrangePolynomialCoefficients(points)()
+        val variableName = parameter?.takeIf { it.isNotEmpty() } ?: "x"
+        val dot = multiplicationSymbol ?: " * "
+        val term = StringBuilder()
+        var isLeading = true
+
+        for (index in coefficients.indices) {
+            var coefficient = coefficients[index]
+            if (abs(coefficient) < Mat.eps) {
+                continue
+            }
+            if (digits != null) {
+                coefficient = JsNumberFormat.roundDecimal(coefficient, digits)
+            }
+
+            if (isLeading) {
+                if (coefficient > 0.0) {
+                    term.append(JsNumberFormat.compact(coefficient))
+                } else {
+                    term.append('-')
+                    term.append(JsNumberFormat.compact(-coefficient))
+                }
+                isLeading = false
+            } else if (coefficient > 0.0) {
+                term.append(" + ")
+                term.append(JsNumberFormat.compact(coefficient))
+            } else {
+                term.append(" - ")
+                term.append(JsNumberFormat.compact(-coefficient))
+            }
+
+            when {
+                degree - index > 1 -> {
+                    term.append(dot)
+                    term.append(variableName)
+                    term.append('^')
+                    term.append(degree - index)
+                }
+
+                degree - index == 1 -> {
+                    term.append(dot)
+                    term.append(variableName)
+                }
+            }
+        }
+        term.toString()
+    }
+
+    // JSXGraph: src/math/numerics.js -> lagrangePolynomialCoefficients
+    internal fun lagrangePolynomialCoefficients(
+        points: List<CoordsElement>,
+    ): () -> DoubleArray = {
+        val size = points.size
+        val coefficientSum = DoubleArray(size)
+
+        for (index in 0 until size) {
+            var scale = points[index].Y()
+            val x = points[index].X()
+            val zeroes = DoubleArray(size - 1)
+            var zeroIndex = 0
+            for (otherIndex in 0 until size) {
+                if (otherIndex != index) {
+                    scale /= x - points[otherIndex].X()
+                    zeroes[zeroIndex] = points[otherIndex].X()
+                    zeroIndex += 1
+                }
+            }
+
+            val vietaCoefficients = Mat.Vieta(zeroes)
+            for (coefficientIndex in 0 until size) {
+                val coefficient = if (coefficientIndex == 0) {
+                    1.0
+                } else {
+                    vietaCoefficients[coefficientIndex - 1]
+                }
+                coefficientSum[coefficientIndex] +=
+                    (if (coefficientIndex % 2 == 1) -1.0 else 1.0) *
+                    coefficient *
+                    scale
+            }
+        }
+        coefficientSum
+    }
 
     // JSXGraph: src/math/numerics.js -> splineDef
     fun splineDef(
