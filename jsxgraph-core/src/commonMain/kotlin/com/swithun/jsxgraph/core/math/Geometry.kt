@@ -8,6 +8,7 @@
 package com.swithun.jsxgraph.core.math
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.CoordsElement
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -52,6 +53,74 @@ data class Circle3DIntersection(
     val radius: Double,
 )
 
+internal class ReuleauxPolygonInterpolation internal constructor(
+    private val points: List<CoordsElement>,
+    private val vertexCount: Int,
+) {
+    private val period = 2.0 * PI
+    private val arcLength = period / vertexCount
+    private val diagonalIndex = (vertexCount - 1) / 2
+    private var radius = 0.0
+    private var beta = Double.NaN
+
+    internal val start: Double = 0.0
+    internal val end: Double = period
+
+    internal fun x(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(
+        parameter = parameter,
+        suspendedUpdate = suspendedUpdate,
+        coordinate = CoordsElement::X,
+        trigonometricFunction = { value -> kotlin.math.cos(value) },
+    )
+
+    internal fun y(
+        parameter: Double,
+        suspendedUpdate: Boolean = false,
+    ): Double = evaluate(
+        parameter = parameter,
+        suspendedUpdate = suspendedUpdate,
+        coordinate = CoordsElement::Y,
+        trigonometricFunction = { value -> kotlin.math.sin(value) },
+    )
+
+    private fun evaluate(
+        parameter: Double,
+        suspendedUpdate: Boolean,
+        coordinate: (CoordsElement) -> Double,
+        trigonometricFunction: (Double) -> Double,
+    ): Double {
+        if (!suspendedUpdate) {
+            radius = points[0].Dist(points[diagonalIndex])
+            beta = Geometry.rad(
+                doubleArrayOf(points[0].X() + 1.0, points[0].Y()),
+                doubleArrayOf(points[0].X(), points[0].Y()),
+                doubleArrayOf(
+                    points[diagonalIndex % vertexCount].X(),
+                    points[diagonalIndex % vertexCount].Y(),
+                ),
+            )
+        }
+
+        var localParameter =
+            ((parameter % period) + period) % period
+        val segmentValue = localParameter / arcLength
+        if (segmentValue.isNaN()) {
+            return segmentValue
+        }
+        val segmentIndex =
+            kotlin.math.floor(segmentValue).toInt() % vertexCount
+        localParameter =
+            localParameter * 0.5 +
+                segmentIndex * arcLength * 0.5 +
+                beta
+        return coordinate(points[segmentIndex]) +
+            radius * trigonometricFunction(localParameter)
+    }
+}
+
 internal data class DiscreteCurve2D(
     val points: List<DoubleArray>,
     val bezierDegree: Int,
@@ -92,6 +161,13 @@ sealed interface GeometryError {
     ) : GeometryError
 
     data class InvalidIntersectionIndex(val index: Int) : GeometryError
+
+    data class InvalidReuleauxVertexCount(val vertexCount: Int) : GeometryError
+
+    data class InvalidReuleauxPointCount(
+        val pointCount: Int,
+        val vertexCount: Int,
+    ) : GeometryError
 
     data class NumericalProjectionFailure(
         val cause: NumericsError,
@@ -2393,6 +2469,29 @@ object Geometry {
                 startSolution[1],
                 endSolution[1],
             ),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> reuleauxPolygon
+    internal fun reuleauxPolygon(
+        points: List<CoordsElement>,
+        vertexCount: Int,
+    ): GMResult<ReuleauxPolygonInterpolation, GeometryError> {
+        if (vertexCount <= 0 || vertexCount % 2 == 0) {
+            return GMResult.Err(
+                GeometryError.InvalidReuleauxVertexCount(vertexCount),
+            )
+        }
+        if (points.size < vertexCount) {
+            return GMResult.Err(
+                GeometryError.InvalidReuleauxPointCount(
+                    pointCount = points.size,
+                    vertexCount = vertexCount,
+                ),
+            )
+        }
+        return GMResult.Ok(
+            ReuleauxPolygonInterpolation(points, vertexCount),
         )
     }
 

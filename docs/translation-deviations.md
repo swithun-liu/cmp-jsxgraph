@@ -102,6 +102,10 @@ practical.
   `Circle3DIntersection` snapshot. JSXGraph returns element-bound functions
   that recalculate center and radius; the future Plane3D/Sphere3D layer will
   provide that dynamic wrapper around these pure calculations.
+- `Geometry.reuleauxPolygon` accepts a positive odd `Int` vertex count and
+  returns `GMResult.Err` for even/non-positive counts or too few points.
+  JSXGraph accepts a dynamic number and fails later while indexing for
+  incompatible inputs.
 - `Geometry.sortVertices` returns an unchanged copy for empty and single-point
   inputs. JSXGraph `1.13.3` throws while repeatedly removing a closing point
   from those inputs.
