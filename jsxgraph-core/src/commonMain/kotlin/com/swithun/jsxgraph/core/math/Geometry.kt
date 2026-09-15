@@ -46,6 +46,12 @@ data class BezierArcResult(
     val yCoordinates: DoubleArray,
 )
 
+sealed interface GeometryError {
+    data class InvalidPolygonPointCount(val pointCount: Int) : GeometryError
+
+    data object PolygonProjectionUnavailable : GeometryError
+}
+
 object Geometry {
     private const val AKL_TOUSSAINT_THRESHOLD = 1024
     private const val BEZIER_SUBDIVISION_MAX_LEVEL = 5
@@ -1351,6 +1357,104 @@ object Geometry {
             xCoordinates = xCoordinates.toDoubleArray(),
             yCoordinates = yCoordinates.toDoubleArray(),
         )
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetCurveRedBlueSegments
+    internal fun meetCurveRedBlueSegments(
+        red: List<DoubleArray>,
+        blue: List<DoubleArray>,
+        intersectionIndex: Int,
+    ): DoubleArray {
+        if (blue.size <= 1 || red.size <= 1) {
+            return doubleArrayOf(0.0, Double.NaN, Double.NaN)
+        }
+
+        var foundIndex = 0
+        for (redIndex in 1 until red.size) {
+            val redStart = red[redIndex - 1]
+            val redEnd = red[redIndex]
+            val minimumRedX = minOf(redStart[1], redEnd[1])
+            val maximumRedX = maxOf(redStart[1], redEnd[1])
+            var blueEnd = blue[0]
+
+            for (blueIndex in 1 until blue.size) {
+                val blueStart = blueEnd
+                blueEnd = blue[blueIndex]
+                if (
+                    minOf(blueStart[1], blueEnd[1]) < maximumRedX &&
+                    maxOf(blueStart[1], blueEnd[1]) > minimumRedX
+                ) {
+                    val intersection = meetSegmentSegment(
+                        redStart,
+                        redEnd,
+                        blueStart,
+                        blueEnd,
+                    )
+                    if (
+                        intersection.firstParameter >= 0.0 &&
+                        intersection.secondParameter >= 0.0 &&
+                        (
+                            (
+                                intersection.firstParameter < 1.0 &&
+                                    intersection.secondParameter < 1.0
+                            ) ||
+                                (
+                                    redIndex == red.lastIndex &&
+                                        intersection.firstParameter == 1.0
+                                ) ||
+                                (
+                                    blueIndex == blue.lastIndex &&
+                                        intersection.secondParameter == 1.0
+                                )
+                        )
+                    ) {
+                        if (foundIndex == intersectionIndex) {
+                            return intersection.point
+                        }
+                        foundIndex += 1
+                    }
+                }
+            }
+        }
+        return doubleArrayOf(0.0, Double.NaN, Double.NaN)
+    }
+
+    // JSXGraph: src/math/geometry.js -> projectCoordsToPolygon
+    internal fun projectCoordsToPolygon(
+        point: DoubleArray,
+        vertices: List<DoubleArray>,
+    ): GMResult<DoubleArray, GeometryError> {
+        if (vertices.size < 2) {
+            return GMResult.Err(
+                GeometryError.InvalidPolygonPointCount(vertices.size),
+            )
+        }
+
+        var bestDistance = Double.POSITIVE_INFINITY
+        var bestProjection: DoubleArray? = null
+        for (index in 0 until vertices.lastIndex) {
+            val projection = projectCoordsToSegment(
+                point,
+                vertices[index],
+                vertices[index + 1],
+            )
+            val candidate = when {
+                projection.parameter in 0.0..1.0 -> projection.point
+                projection.parameter < 0.0 -> vertices[index]
+                projection.parameter > 1.0 -> vertices[index + 1]
+                else -> continue
+            }
+            val candidateDistance = distance(candidate, point, 3)
+            if (candidateDistance < bestDistance) {
+                bestProjection = candidate.copyOf()
+                bestDistance = candidateDistance
+            }
+        }
+        return if (bestProjection != null) {
+            GMResult.Ok(bestProjection)
+        } else {
+            GMResult.Err(GeometryError.PolygonProjectionUnavailable)
+        }
     }
 
     // JSXGraph: src/math/geometry.js -> projectCoordsToSegment
