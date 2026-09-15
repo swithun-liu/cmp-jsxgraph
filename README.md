@@ -51,8 +51,8 @@ Implemented translation slices:
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, persistent JessieCode sessions,
   assignment-LHS creator naming, native Point/Line/Circle creation, the
-  translated Point/Line/Circle read-only `methodMap` subset, and resource
-  limits;
+  translated Point/Line/Circle `methodMap` subset, Point `X`/`Y` assignment,
+  element name and regular-update assignment, and resource limits;
 - Circle radii defined by JessieCode strings, including functional update
   dependencies that remain separate from geometric parents;
 - Point coordinates defined by two or more JessieCode strings, including
@@ -65,9 +65,10 @@ Implemented translation slices:
   JSXGraph `1.13.3`, and native Compose previews.
 
 The playground is a renderer and interaction test surface. The remaining
-JessieCode creator registry, element mutation, complete built-in and element
-`methodMap` surfaces, and the JSXGraph construction parser are not yet
-translated, and the element renderer is incomplete.
+JessieCode creator registry, visual-property and function-valued element
+mutation, complete built-in and element `methodMap` surfaces, and the JSXGraph
+construction parser are not yet translated, and the element renderer is
+incomplete.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

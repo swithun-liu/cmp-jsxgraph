@@ -44,8 +44,7 @@ internal open class CoordsElement(
     type: Int = 0,
     elementClass: Int = Const.OBJECT_CLASS_OTHER,
     needsRegularUpdate: Boolean = true,
-    internal val coordinateFunctions:
-        List<JessieCodeExpressionFunction> = emptyList(),
+    coordinateFunctions: List<JessieCodeExpressionFunction> = emptyList(),
 ) : GeometryElement(
     board = board,
     id = id,
@@ -54,6 +53,10 @@ internal open class CoordsElement(
     elementClass = elementClass,
     needsRegularUpdate = needsRegularUpdate,
 ) {
+    internal var coordinateFunctions:
+        List<JessieCodeExpressionFunction> = coordinateFunctions
+        private set
+
     // JSXGraph: src/base/coordselement.js -> CoordsElement constructor.
     internal val coords = Coords(
         method = Const.COORDS_BY_USER,
@@ -127,23 +130,27 @@ internal open class CoordsElement(
     internal fun coordinateConstraintResult(): GMResult<
         DoubleArray,
         CoordinateConstraintError,
-        > {
-        if (coordinateFunctions.isEmpty()) {
+        > = coordinateConstraintResult(coordinateFunctions)
+
+    internal fun coordinateConstraintResult(
+        functions: List<JessieCodeExpressionFunction>,
+    ): GMResult<DoubleArray, CoordinateConstraintError> {
+        if (functions.isEmpty()) {
             return GMResult.Ok(coords.usrCoords.copyOf())
         }
-        if (coordinateFunctions.size < 2) {
+        if (functions.size < 2) {
             return GMResult.Err(
                 CoordinateConstraintError.UnsupportedFunctionCount(
-                    coordinateFunctions.size,
+                    functions.size,
                 ),
             )
         }
 
         val coordinateCount =
-            if (coordinateFunctions.size == 2) 2 else 3
+            if (functions.size == 2) 2 else 3
         val values = DoubleArray(coordinateCount)
         for (index in 0 until coordinateCount) {
-            when (val result = coordinateFunctions[index].evaluate()) {
+            when (val result = functions[index].evaluate()) {
                 is GMResult.Err -> return GMResult.Err(
                     CoordinateConstraintError.Evaluation(
                         coordinateIndex = index,
@@ -165,6 +172,29 @@ internal open class CoordsElement(
             }
         }
         return GMResult.Ok(values)
+    }
+
+    // JSXGraph: src/base/coordselement.js -> addConstraint
+    internal fun replaceCoordinateFunctions(
+        functions: List<JessieCodeExpressionFunction>,
+    ): CoordsElement {
+        val oldDependencies = coordinateFunctions
+            .flatMap { it.dependencies.values }
+            .associateBy { it.id }
+        val newDependencies = functions
+            .flatMap { it.dependencies.values }
+            .associateBy { it.id }
+        for ((id, dependency) in oldDependencies) {
+            if (id !in newDependencies) {
+                dependency.removeChild(this)
+            }
+        }
+
+        coordinateFunctions = functions
+        isConstrained = functions.isNotEmpty()
+        isDraggable = functions.isEmpty()
+        addParentsFromJCFunctions(functions)
+        return this
     }
 
     // JSXGraph: src/base/coordselement.js -> updateConstraint

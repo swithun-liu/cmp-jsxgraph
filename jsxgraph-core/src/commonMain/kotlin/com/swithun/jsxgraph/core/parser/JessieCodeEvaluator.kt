@@ -725,6 +725,13 @@ private class EvaluationState(
                     value = value,
                     location = location,
                 )
+            is JessieCodeRuntimeValue.ElementReference ->
+                environment.elementRuntime.assignProperty(
+                    element = receiver.element,
+                    property = property,
+                    value = value,
+                    location = location,
+                )
             else -> GMResult.Err(
                 JessieCodeRuntimeError.AssignmentTargetUnavailable(
                     receiverType = typeName(receiver),

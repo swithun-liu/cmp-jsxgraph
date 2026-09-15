@@ -10,6 +10,7 @@ package com.swithun.jsxgraph.core.parser
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.PointError
 
 internal data class JessieCodeEvaluatorLimits(
     val maxEvaluationSteps: Int = 100_000,
@@ -128,6 +129,27 @@ internal sealed interface JessieCodeRuntimeError {
         val property: String,
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
+
+    data class ElementPropertyAssignmentUnavailable(
+        val elementId: String,
+        val property: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class InvalidElementPropertyValue(
+        val elementId: String,
+        val property: String,
+        val expected: String,
+        val actual: String,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class ElementCoordinateConstraintFailure(
+        val elementId: String,
+        val property: String,
+        val error: PointError,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
 }
 
 internal fun interface JessieCodeCallable {
@@ -221,6 +243,20 @@ internal interface JessieCodeElementRuntime {
         property: String,
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError>
+
+    fun assignProperty(
+        element: GeometryElement,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        GMResult.Err(
+            JessieCodeRuntimeError.ElementPropertyAssignmentUnavailable(
+                elementId = element.id,
+                property = property,
+                location = location,
+            ),
+        )
 }
 
 internal object UnsupportedJessieCodeElementRuntime :

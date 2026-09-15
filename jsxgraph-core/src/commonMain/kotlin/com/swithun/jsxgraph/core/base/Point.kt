@@ -96,6 +96,49 @@ internal open class Point internal constructor(
         }
     }
 
+    // JSXGraph: src/base/coordselement.js -> addConstraint
+    internal fun replaceCoordinateConstraints(
+        coordinateExpressions: List<String>,
+    ): GMResult<Point, PointError> {
+        if (coordinateExpressions.size < 2) {
+            return GMResult.Err(
+                PointError.InvalidCoordinateCount(
+                    coordinateExpressions.size,
+                ),
+            )
+        }
+        val functions = when (
+            val result = compileCoordinateFunctions(
+                board = board,
+                coordinateExpressions = coordinateExpressions,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val coordinates = when (
+            val result = coordinateConstraintResult(functions)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                PointError.CoordinateExpressionEvaluation(result.error),
+            )
+        }
+
+        replaceCoordinateFunctions(functions)
+        type = Const.OBJECT_TYPE_CAS
+        if (coordinateExpressions.size == 2) {
+            Xjc = coordinateExpressions[0]
+            Yjc = coordinateExpressions[1]
+        } else {
+            Xjc = null
+            Yjc = null
+        }
+        applyCoordinateConstraint(coordinates)
+        prepareUpdate().update()
+        return GMResult.Ok(this)
+    }
+
     internal companion object {
         private const val POINT_ID_PREFIX = "P"
         private const val POINT_ELEMENT_TYPE = "point"
@@ -152,23 +195,14 @@ internal open class Point internal constructor(
                 )
             }
 
-            val functions =
-                mutableListOf<JessieCodeExpressionFunction>()
-            for ((index, source) in coordinateExpressions.withIndex()) {
-                when (
-                    val result = JessieCodeExpressionFunction.compile(
-                        source = source,
-                        board = board,
-                    )
-                ) {
-                    is GMResult.Ok -> functions += result.value
-                    is GMResult.Err -> return GMResult.Err(
-                        PointError.CoordinateExpressionCompile(
-                            coordinateIndex = index,
-                            error = result.error,
-                        ),
-                    )
-                }
+            val functions = when (
+                val result = compileCoordinateFunctions(
+                    board = board,
+                    coordinateExpressions = coordinateExpressions,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
             }
 
             val point = Point(
@@ -218,6 +252,31 @@ internal open class Point internal constructor(
                     PointError.Registration(registration.error),
                 )
             }
+        }
+
+        private fun compileCoordinateFunctions(
+            board: Board,
+            coordinateExpressions: List<String>,
+        ): GMResult<List<JessieCodeExpressionFunction>, PointError> {
+            val functions =
+                mutableListOf<JessieCodeExpressionFunction>()
+            for ((index, source) in coordinateExpressions.withIndex()) {
+                when (
+                    val result = JessieCodeExpressionFunction.compile(
+                        source = source,
+                        board = board,
+                    )
+                ) {
+                    is GMResult.Ok -> functions += result.value
+                    is GMResult.Err -> return GMResult.Err(
+                        PointError.CoordinateExpressionCompile(
+                            coordinateIndex = index,
+                            error = result.error,
+                        ),
+                    )
+                }
+            }
+            return GMResult.Ok(functions)
         }
     }
 }

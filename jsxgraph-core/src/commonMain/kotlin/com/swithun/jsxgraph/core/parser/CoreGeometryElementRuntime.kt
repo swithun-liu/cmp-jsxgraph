@@ -10,9 +10,12 @@ package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.utils.JsNumberFormat
 
 /**
  * The methodMap subset backed by geometry classes translated so far.
@@ -34,6 +37,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         property: String,
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
+        resolveGeometryProperty(element, property)?.let {
+            return it
+        }
         resolveCircleProperty(element, property, location)?.let {
             return it
         }
@@ -45,6 +51,86 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         }
         return unavailable(element, property, location)
     }
+
+    override fun assignProperty(
+        element: GeometryElement,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        if (element is Point && (property == "X" || property == "Y")) {
+            return assignPointCoordinate(
+                point = element,
+                property = property,
+                value = value,
+                location = location,
+            )
+        }
+        when (normalizedAttributeName(property)) {
+            "name" -> return assignName(
+                element,
+                property,
+                value,
+                location,
+            )
+            "needsregularupdate" -> {
+                element.needsRegularUpdate = !(
+                    value == JessieCodeRuntimeValue.BooleanValue(false) ||
+                        value == JessieCodeRuntimeValue.StringValue("false")
+                    )
+                return GMResult.Ok(Unit)
+            }
+        }
+        return assignmentUnavailable(element, property, location)
+    }
+
+    private fun resolveGeometryProperty(
+        element: GeometryElement,
+        property: String,
+    ): ElementPropertyResult? =
+        when (property) {
+            "name" -> GMResult.Ok(
+                JessieCodeRuntimeValue.StringValue(element.name),
+            )
+            "needsRegularUpdate" -> GMResult.Ok(
+                JessieCodeRuntimeValue.BooleanValue(
+                    element.needsRegularUpdate,
+                ),
+            )
+            "getName", "Name" -> stringFunction("getName") {
+                element.name
+            }
+            "setName" -> function("setName") {
+                    arguments,
+                    callLocation,
+                ->
+                val name = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.StringValue
+                    )?.value
+                if (name == null) {
+                    GMResult.Err(
+                        JessieCodeRuntimeError.InvalidArgumentType(
+                            functionName = "setName",
+                            argumentIndex = 0,
+                            expected = "string",
+                            actual = typeName(
+                                arguments.firstOrNull()
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                            ),
+                            location = callLocation,
+                        ),
+                    )
+                } else {
+                    element.setName(
+                        name.replace("<", "&lt;")
+                            .replace(">", "&gt;"),
+                    )
+                    GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+                }
+            }
+            else -> null
+        }
 
     private fun resolveCircleProperty(
         element: GeometryElement,
@@ -190,6 +276,21 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             ),
         )
 
+    private fun stringFunction(
+        name: String,
+        value: () -> String,
+    ): ElementPropertyResult =
+        GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(
+                name = name,
+                callable = JessieCodeCallable { _, _ ->
+                    GMResult.Ok(
+                        JessieCodeRuntimeValue.StringValue(value()),
+                    )
+                },
+            ),
+        )
+
     private fun function(
         name: String,
         callable: JessieCodeCallable,
@@ -218,6 +319,132 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 location = location,
             ),
         )
+
+    private fun assignPointCoordinate(
+        point: Point,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        if (
+            point.isDraggable &&
+            value is JessieCodeRuntimeValue.NumberValue
+        ) {
+            val x = if (property == "X") value.value else point.X()
+            val y = if (property == "Y") value.value else point.Y()
+            point.setPosition(
+                method = Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(x, y),
+            )
+            point.board.update()
+            return GMResult.Ok(Unit)
+        }
+
+        val source = when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                JsNumberFormat.compact(value.value)
+            is JessieCodeRuntimeValue.StringValue -> value.value
+            else -> return invalidAssignmentValue(
+                element = point,
+                property = property,
+                expected = "number or string",
+                actual = value,
+                location = location,
+            )
+        }
+        val x = if (property == "X") {
+            source
+        } else {
+            coordinateOrigin(point, coordinateIndex = 0)
+        }
+        val y = if (property == "Y") {
+            source
+        } else {
+            coordinateOrigin(point, coordinateIndex = 1)
+        }
+        return when (
+            val result = point.replaceCoordinateConstraints(listOf(x, y))
+        ) {
+            is GMResult.Ok -> {
+                point.board.update()
+                GMResult.Ok(Unit)
+            }
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.ElementCoordinateConstraintFailure(
+                    elementId = point.id,
+                    property = property,
+                    error = result.error,
+                    location = location,
+                ),
+            )
+        }
+    }
+
+    private fun coordinateOrigin(
+        point: Point,
+        coordinateIndex: Int,
+    ): String {
+        val functionIndex = when (point.coordinateFunctions.size) {
+            2 -> coordinateIndex
+            in 3..Int.MAX_VALUE -> coordinateIndex + 1
+            else -> -1
+        }
+        return point.coordinateFunctions.getOrNull(functionIndex)?.origin
+            ?: JsNumberFormat.compact(
+                if (coordinateIndex == 0) point.X() else point.Y(),
+            )
+    }
+
+    private fun assignName(
+        element: GeometryElement,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        val name = (value as? JessieCodeRuntimeValue.StringValue)?.value
+            ?: return invalidAssignmentValue(
+                element = element,
+                property = property,
+                expected = "string",
+                actual = value,
+                location = location,
+            )
+        element.setName(name)
+        return GMResult.Ok(Unit)
+    }
+
+    private fun invalidAssignmentValue(
+        element: GeometryElement,
+        property: String,
+        expected: String,
+        actual: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        GMResult.Err(
+            JessieCodeRuntimeError.InvalidElementPropertyValue(
+                elementId = element.id,
+                property = property,
+                expected = expected,
+                actual = typeName(actual),
+                location = location,
+            ),
+        )
+
+    private fun assignmentUnavailable(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        GMResult.Err(
+            JessieCodeRuntimeError.ElementPropertyAssignmentUnavailable(
+                elementId = element.id,
+                property = property,
+                location = location,
+            ),
+        )
+
+    private fun normalizedAttributeName(property: String): String =
+        property.filterNot(Char::isWhitespace).lowercase()
 
     private fun isTruthy(value: JessieCodeRuntimeValue): Boolean =
         when (value) {

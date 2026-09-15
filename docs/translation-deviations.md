@@ -44,8 +44,19 @@ practical.
   index receiver before evaluating the right-hand value. Arrays and objects
   retain mutable identity. Kotlin materializes JavaScript sparse-array holes
   as `UndefinedValue`, preserving observable translated indexing and `length`
-  behavior while using bounded storage. Element `setProp` mutation remains
-  pending and returns `AssignmentTargetUnavailable`.
+  behavior while using bounded storage. Element targets delegate to
+  `JessieCodeElementRuntime.assignProperty`; unsupported writes return
+  `ElementPropertyAssignmentUnavailable`.
+- The translated `setProp` subset supports exact uppercase Point `X`/`Y`
+  assignment from numbers or strings, plus case-insensitive element `name`
+  and `needsRegularUpdate` attributes. Numeric coordinates on free Points use
+  `setPosition`; string coordinates and writes to already constrained Points
+  atomically compile and evaluate replacement coordinate functions before
+  changing dependency ownership. Kotlin stores numeric constraint origins as
+  JessieCode number sources. Function-valued coordinate writes, non-string
+  `name` values, Text coordinates, method-mapped fields, and visual-property
+  fallback remain pending and return structured errors instead of propagating
+  JavaScript exceptions or silently accepting an unsupported property.
 - Standalone `JessieCodeEvaluator.evaluate` calls retain isolated locals.
   `JessieCodeSession` explicitly opts into the upstream persistent-instance
   behavior: globals, function scopes, nested closure chains, selected Board,
@@ -118,8 +129,9 @@ practical.
   statement returns `UnsupportedStatement`. Direct Kotlin number, array, and
   function adapters are deferred until a translated caller needs those parent
   forms.
-- The core element runtime exposes the translated read-only `methodMap`
-  subset for coordinate elements, lines, and circles. Mutating methods,
+- The core element runtime exposes the translated `methodMap` subset for
+  coordinate elements, lines, circles, and common element names, plus the
+  bounded writable subset described above. Remaining mutating methods,
   visual-property fallback, generic `Value()`, and untranslated element
   classes return structured unavailable-property/value errors.
 - Parser errors retain both the offending token location and the previous
