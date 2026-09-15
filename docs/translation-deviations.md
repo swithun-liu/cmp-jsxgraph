@@ -19,6 +19,10 @@ practical.
   differently from malformed JavaScript arrays.
 - `EventEmitter` passes the registered context as an explicit callback
   argument because Kotlin has no dynamic JavaScript `this`.
+- `Board.setId` returns `GMResult.Err(DuplicateElementId)` for an explicitly
+  duplicated id instead of silently replacing the previous `objects` entry.
+  Generated-id collisions use deterministic increasing suffixes instead of
+  JSXGraph's random suffix, while preserving uniqueness and creation order.
 - Random-distribution functions accept an injectable `RandomSource`. Their
   default behavior still uses the platform random source; injection makes
   algorithm parity tests deterministic.
