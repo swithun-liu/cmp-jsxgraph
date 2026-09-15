@@ -483,29 +483,47 @@ private fun DrawScope.drawSceneCurve(
     curve: JsxGraphSceneElement.Curve,
     metrics: BoardMetrics,
 ) {
-    if (curve.bezierDegree != 1) {
-        return
-    }
+    val commands = curvePathCommands(
+        points = curve.points.map { point ->
+            point?.let {
+                metrics.toScreen(it.toOffset())
+            }?.takeIf { screen ->
+                screen.x.isFinite() && screen.y.isFinite()
+            }
+        },
+        bezierDegree = curve.bezierDegree,
+    )
     val path = Path()
-    var startsSubpath = true
     var segmentCount = 0
-    for (point in curve.points) {
-        if (point == null) {
-            startsSubpath = true
-            continue
+    for (command in commands) {
+        when (command) {
+            is CurvePathCommand.MoveTo ->
+                path.moveTo(command.point.x, command.point.y)
+            is CurvePathCommand.LineTo -> {
+                path.lineTo(command.point.x, command.point.y)
+                segmentCount += 1
+            }
+            is CurvePathCommand.CubicTo -> {
+                path.cubicTo(
+                    x1 = command.control1.x,
+                    y1 = command.control1.y,
+                    x2 = command.control2.x,
+                    y2 = command.control2.y,
+                    x3 = command.end.x,
+                    y3 = command.end.y,
+                )
+                segmentCount += 1
+            }
         }
-        val screen = metrics.toScreen(point.toOffset())
-        if (!screen.x.isFinite() || !screen.y.isFinite()) {
-            startsSubpath = true
-            continue
-        }
-        if (startsSubpath) {
-            path.moveTo(screen.x, screen.y)
-            startsSubpath = false
-        } else {
-            path.lineTo(screen.x, screen.y)
-            segmentCount += 1
-        }
+    }
+    val fill = curve.style.fillColor.toComposeColor(
+        opacity = curve.style.fillOpacity,
+    )
+    if (segmentCount > 0 && fill.alpha > 0.0f) {
+        drawPath(
+            path = path,
+            color = fill,
+        )
     }
     val stroke = curve.style.strokeColor.toComposeColor(
         opacity = curve.style.strokeOpacity,
@@ -524,6 +542,65 @@ private fun DrawScope.drawSceneCurve(
             ),
         )
     }
+}
+
+internal sealed interface CurvePathCommand {
+    data class MoveTo(
+        val point: Offset,
+    ) : CurvePathCommand
+
+    data class LineTo(
+        val point: Offset,
+    ) : CurvePathCommand
+
+    data class CubicTo(
+        val control1: Offset,
+        val control2: Offset,
+        val end: Offset,
+    ) : CurvePathCommand
+}
+
+// JSXGraph: src/renderer/abstract.js -> updatePathStringPoint.
+internal fun curvePathCommands(
+    points: List<Offset?>,
+    bezierDegree: Int,
+): List<CurvePathCommand> {
+    if (bezierDegree !in setOf(1, 3)) {
+        return emptyList()
+    }
+    val commands = mutableListOf<CurvePathCommand>()
+    val contiguous = mutableListOf<Offset>()
+
+    fun appendSubpath() {
+        val start = contiguous.firstOrNull() ?: return
+        commands += CurvePathCommand.MoveTo(start)
+        if (bezierDegree == 1) {
+            contiguous.drop(1).forEach { point ->
+                commands += CurvePathCommand.LineTo(point)
+            }
+        } else {
+            var index = 1
+            while (index + 2 < contiguous.size) {
+                commands += CurvePathCommand.CubicTo(
+                    control1 = contiguous[index],
+                    control2 = contiguous[index + 1],
+                    end = contiguous[index + 2],
+                )
+                index += 3
+            }
+        }
+        contiguous.clear()
+    }
+
+    for (point in points) {
+        if (point == null || !point.x.isFinite() || !point.y.isFinite()) {
+            appendSubpath()
+        } else {
+            contiguous += point
+        }
+    }
+    appendSubpath()
+    return commands
 }
 
 // JSXGraph: src/renderer/abstract.js -> drawPolygon / updatePolygon.

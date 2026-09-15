@@ -375,7 +375,7 @@ class JsxGraphEngineTest {
                 ),
             ),
         )
-        assertIs<JsxGraphDocumentError.UnsupportedElementType>(
+        assertIs<JsxGraphDocumentError.ElementCreation>(
             assertError(
                 documentWithObjects(
                     """{"id":"a","type":"angle","parents":[0,0,1]}""",
@@ -502,6 +502,123 @@ class JsxGraphEngineTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun buildsCubicArcSectorAndAngleSceneElements() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"A",
+                      "type":"point",
+                      "parents":[0,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"B",
+                      "type":"point",
+                      "parents":[3,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"C",
+                      "type":"point",
+                      "parents":[1,2],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"arc",
+                      "type":"arc",
+                      "parents":["A","B","C"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "selection":"minor",
+                        "fillColor":"none"
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"sector",
+                      "type":"sector",
+                      "parents":["A","B","C"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "fillColor":"#F0E442"
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"angle",
+                      "type":"angle",
+                      "parents":["B","A","C"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "radius":1.5,
+                        "orthoType":"sector"
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        val arc = assertIs<JsxGraphSceneElement.Curve>(scene.elements[3])
+        assertEquals(3, arc.bezierDegree)
+        assertEquals(13, arc.points.size)
+        assertEquals(0, arc.style.fillColor.alpha)
+
+        val sector = assertIs<JsxGraphSceneElement.Curve>(scene.elements[4])
+        assertEquals(19, sector.points.size)
+        assertEquals(JsxGraphPoint2D(0.0, 0.0), sector.points.first())
+        assertEquals(JsxGraphPoint2D(0.0, 0.0), sector.points.last())
+        assertEquals(255, sector.style.fillColor.alpha)
+
+        val angle = assertIs<JsxGraphSceneElement.Curve>(scene.elements[5])
+        assertEquals(19, angle.points.size)
+        assertEquals(JsxGraphPoint2D(1.5, 0.0), angle.points[3])
+    }
+
+    @Test
+    fun rejectsUnsupportedRightAngleDisplayInsteadOfChangingItsShape() {
+        val error = assertError(
+            documentWithObjects(
+                """
+                {"id":"A","type":"point","parents":[2,0],"attributes":{"name":"","withLabel":false}}
+                """.trimIndent(),
+                """
+                {"id":"B","type":"point","parents":[0,0],"attributes":{"name":"","withLabel":false}}
+                """.trimIndent(),
+                """
+                {"id":"C","type":"point","parents":[0,2],"attributes":{"name":"","withLabel":false}}
+                """.trimIndent(),
+                """
+                {
+                  "id":"angle",
+                  "type":"angle",
+                  "parents":["A","B","C"],
+                  "attributes":{"name":"","withLabel":false,"radius":1}
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val unsupported =
+            assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(error)
+        assertEquals("orthoType", unsupported.attribute)
+        assertEquals("square", unsupported.value)
     }
 
     @Test

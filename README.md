@@ -20,8 +20,9 @@ Current parity cases:
 [shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry),
 [curves](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=curves),
 [polygons](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=polygons),
+[text](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=text),
 and
-[text](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=text).
+[arcs and sectors](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=circular_regions).
 
 ## Status
 
@@ -56,7 +57,7 @@ Implemented translation slices:
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, persistent JessieCode sessions,
   assignment-LHS creator naming, native Point/Line/Circle/Curve/FunctionGraph/
-  Plot/Polygon/Text creation, the translated
+  Plot/Polygon/Text/Arc/Sector/Angle creation, the translated
   Point/Line/Circle/Polygon/Text `methodMap` subset, Point `X`/`Y` assignment,
   element names, bounds, child links, immediate movement, coordinate
   constraints, static and `<value>` Text content, regular-update assignment,
@@ -69,12 +70,14 @@ Implemented translation slices:
 - homogeneous user/screen coordinate conversion from `src/base/coords.js`;
 - a bounded production construction-document path for `boundingBox` and
   ordered `objects[]`, currently creating Point, Line, Circle, Curve,
-  FunctionGraph, Plot, Polygon, and Text elements through the translated Board
-  and native creator registry;
-- a platform-independent Point/Line/Circle/Curve/Polygon/Text render scene
+  FunctionGraph, Plot, Polygon, Text, Arc, Sector, and Angle elements through
+  the translated Board and native creator registry;
+- a platform-independent Point/Line/Circle/Curve/Polygon/Text/Arc/Sector/Angle
+  render scene
   consumed by Compose, including discrete data plots, right-open naive sampling
-  for explicit-domain function and parametric curves, filled/bordered polygons,
-  and anchored Canvas text using a bundled Arial-compatible font;
+  for explicit-domain function and parametric curves, cubic Bezier arcs,
+  filled sectors, fixed-radius angles, filled/bordered polygons, and anchored
+  Canvas text using a bundled Arial-compatible font;
 - an interactive Compose geometry playground backed by the translated
   line-circle intersection math;
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
@@ -146,14 +149,17 @@ The first production source contract maps directly to ordered
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
 types are `point`, `line`, `circle`, `curve`, `functiongraph`, `plot`,
-`polygon`, and `text`. Continuous curves currently require
+`polygon`, `text`, `arc`, `sector`, and `angle`. Continuous curves currently require
 `doAdvancedPlot: false`; Polygon currently supports Point or coordinate-array
 vertices, `withLines`, top-level fill styling, and default border/vertex
 styles. Text supports static strings/numbers, dynamic `<value>` JessieCode
 terms, constrained coordinates, number formatting, font size, color/opacity,
-and horizontal/vertical anchors. Unsupported types, parent forms, rich-text
-features, plotting modes, nested Polygon styles, and visual attributes fail
-explicitly instead of being omitted from the native render.
+and horizontal/vertical anchors. Arc and Sector support three Point or
+coordinate-array parents, minor/major/auto selection, both orientations, and
+cubic Bezier rendering. Angle supports the three-point form with numeric or
+`auto` radius and sector display. Unsupported types, parent forms, rich-text
+features, plotting modes, nested styles, and visual attributes fail explicitly
+instead of being omitted from the native render.
 
 ## Build
 

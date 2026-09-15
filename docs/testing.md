@@ -104,6 +104,7 @@ Latest construction-document evidence (2026-09-15):
 | `curves` | 0.986698 | 0.975236 |
 | `polygons` | 0.986562 | 0.973171 |
 | `text` | 0.981600 | 0.954662 |
+| `circular_regions` | 0.987047 | 0.974687 |
 
 All captures passed the nonblank and browser-error checks. These numbers are
 evidence for this translated slice only; they do not satisfy the full Stable
@@ -116,6 +117,9 @@ false`, and coordinate-array helper vertices.
 The Text capture verifies static and numeric content, dynamic
 `<value>` JessieCode evaluation, font size, stroke color/opacity, and all
 translated horizontal/vertical anchor directions.
+The circular-region capture verifies degree-three Bezier paths, Arc
+selection/orientation, filled Sector geometry, and fixed-radius Angle
+geometry.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:

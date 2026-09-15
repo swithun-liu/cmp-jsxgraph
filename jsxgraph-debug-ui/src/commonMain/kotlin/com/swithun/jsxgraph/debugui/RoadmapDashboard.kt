@@ -141,30 +141,30 @@ private val roadmapPhases = listOf(
         title = "Geometry",
         subtitle = "2D & spatial operations",
         status = RoadmapStatus.IN_PROGRESS,
-        progress = 0.62f,
+        progress = 0.70f,
         accent = GeometryAmber,
         completedItems = listOf(
             "Points, lines & segments",
             "Circles & intersections",
-            "Polygons & Bezier curves",
+            "Polygons, arcs & sectors",
         ),
         nextTitle = "Constructions",
-        nextDetail = "Dynamic elements, transformations and dependency updates",
+        nextDetail = "Transformations and remaining dynamic element factories",
         exitGate = "Element construction and update behavior matches JSXGraph 1.13.3.",
     ),
     RoadmapPhase(
         title = "Rendering & Interaction",
         subtitle = "Compose Canvas runtime",
         status = RoadmapStatus.IN_PROGRESS,
-        progress = 0.50f,
+        progress = 0.58f,
         accent = RenderingCoral,
         completedItems = listOf(
             "Portable render scene",
-            "Geometry & plain text Canvas",
+            "Linear & cubic geometry Canvas",
             "Same-source visual parity",
         ),
-        nextTitle = "Labels & interaction",
-        nextDetail = "Translate labels, then add hit testing and gestures",
+        nextTitle = "Production interaction",
+        nextDetail = "Point hit testing, drag lifecycle and state restoration",
         exitGate = "Visual geometry and interaction traces meet the stable parity gates.",
     ),
 )
@@ -454,7 +454,7 @@ private fun OverallProgress(
 ) {
     Column(
         modifier = modifier
-            .semantics { contentDescription = "overall-progress:76" },
+            .semantics { contentDescription = "overall-progress:79" },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -471,14 +471,14 @@ private fun OverallProgress(
                 letterSpacing = 0.sp,
             )
             Text(
-                text = "76%",
+                text = "79%",
                 color = DashboardInk,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 0.sp,
             )
         }
-        ProgressTrack(progress = 0.74f, accent = FoundationGreen)
+        ProgressTrack(progress = 0.79f, accent = FoundationGreen)
     }
 }
 

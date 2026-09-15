@@ -19,20 +19,21 @@ practical.
   `objects[{id,type,parents,attributes}]`. This is a serialization of
   `Board.create(type, parents, attributes)`, not an upstream JSXGraph file
   reader format. The current production subset creates Point, Line, Circle,
-  Curve, FunctionGraph, Plot, Polygon, and Text through the translated native
-  registry and then snapshots the resulting Board elements into a
-  platform-independent scene. Unsupported element types, fields, attributes,
-  point faces, labels, arrows, dash styles, and plotting modes return
-  `JsxGraphDocumentError` instead of being ignored.
+  Curve, FunctionGraph, Plot, Polygon, Text, Arc, Sector, and Angle through the
+  translated native registry and then snapshots the resulting Board elements
+  into a platform-independent scene. Unsupported element types, fields,
+  attributes, point faces, labels, arrows, dash styles, and plotting modes
+  return `JsxGraphDocumentError` instead of being ignored.
 - Construction documents are limited by source length, JSON depth, JSON value
   count, object count, points per Curve, vertices per Polygon, and characters
   per Text. JSON and factory failures are converted to `GMResult.Err`; object
   IDs are required and duplicate IDs are rejected. Colors currently accept CSS
   hex forms plus a small named-color subset. Top-level
-  Point/Line/Circle/Curve/Polygon/Text defaults match the translated JSXGraph
-  `1.13.3` subset; helper Points created from coordinate-array parents remain in
-  the internal Board and are rendered as Polygon sub-elements rather than
-  top-level source elements.
+  Point/Line/Circle/Curve/Polygon/Text/Arc/Sector/Angle defaults match the
+  translated JSXGraph `1.13.3` subset; helper Points created from
+  coordinate-array parents remain in the internal Board. Polygon-owned helper
+  Points are represented as Polygon scene sub-elements; other helpers are not
+  emitted as top-level source elements.
 - The translated Curve subset accepts two numeric arrays for a discrete data
   plot, four number/string terms for an explicit-domain parametric curve, or
   three number/string terms for FunctionGraph/Plot. Continuous curves require
@@ -55,6 +56,16 @@ practical.
   `polygonalchain`, labels, and hit testing remain pending. Construction
   failures roll back materialized helper Points and borders instead of
   leaving partially registered elements.
+- The translated Arc and Sector subsets accept three registered Point
+  references or coordinate arrays and preserve existing-versus-owned Point
+  dependencies. They support `auto`/`minor`/`major` selection, clockwise and
+  counterclockwise orientation, and the upstream four-segment cubic Bezier
+  approximation. Angle supports the three-point form, parent reordering,
+  numeric or `auto` radius, and `sector` display. Two-line Sector/Angle forms,
+  `useDirection`, visible/styled sub-elements, labels, transformations,
+  arrows, hit testing, Angle mutation, and `square`/`sectordot`/`none` display
+  are rejected or remain unavailable. A right Angle whose effective
+  `orthoType` is not `sector` is rejected instead of silently drawing a sector.
 - The translated Text subset accepts numeric or string coordinates, static
   string/number content, and numeric JessieCode expressions inside upstream
   `<value>...</value>` tags. It preserves the upstream short-math expansion,
@@ -139,15 +150,16 @@ practical.
   the creator's implicit `name` when neither `name` nor `id` is supplied.
   Kotlin exposes custom creators through the explicit `JessieCodeCreator`
   adapter and gives them precedence over the native `point`, `line`, `circle`,
-  `curve`, `functiongraph`, `plot`, `polygon`, and `text` registry. Attributes
-  on an ordinary function return `UnexpectedCreatorAttributes` instead of
-  throwing, and attribute nesting/collection growth shares the evaluator
-  resource limits.
+  `curve`, `functiongraph`, `plot`, `polygon`, `text`, `arc`, `sector`, and
+  `angle` registry. Attributes on an ordinary function return
+  `UnexpectedCreatorAttributes` instead of throwing, and attribute
+  nesting/collection growth shares the evaluator resource limits.
 - Native JessieCode creators currently apply `id`, `name`, and
   `needsRegularUpdate`; Curve creators additionally consume their translated
-  plotting attributes, Polygon consumes `withLines`, and Text consumes
-  `parse`, `formatNumber`, and `digits`. Other visual and nested element
-  attributes are evaluated and merged but not applied because the
+  plotting attributes, Polygon consumes `withLines`, Text consumes `parse`,
+  `formatNumber`, and `digits`, Arc/Sector consume `selection` and
+  `orientation`, and Angle also consumes `radius`. Other visual and nested
+  element attributes are evaluated and merged but not applied because the
   visual-property model is not translated yet. Invalid supported attribute
   types, unavailable Boards, unsupported parent combinations, and native
   factory failures return `CreatorFailure` instead of throwing.

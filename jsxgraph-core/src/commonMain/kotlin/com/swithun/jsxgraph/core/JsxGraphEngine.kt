@@ -10,13 +10,16 @@
 package com.swithun.jsxgraph.core
 
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import com.swithun.jsxgraph.core.parser.NativeJessieCodeCreators
@@ -460,6 +463,130 @@ object JsxGraphEngine {
                 )
             }
 
+            is Arc -> {
+                val useDirection = when (
+                    val result = attributes.boolean(
+                        name = "usedirection",
+                        default = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (useDirection) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "useDirection",
+                            value = "true",
+                        ),
+                    )
+                }
+                when (
+                    val result = curveSceneElement(
+                        element = element,
+                        points = element.points,
+                        bezierDegree = element.bezierDegree,
+                        style = style,
+                        attributes = attributes,
+                        allowFill = false,
+                        allowPathBreaks = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+
+            is Sector -> {
+                val useDirection = when (
+                    val result = attributes.boolean(
+                        name = "usedirection",
+                        default = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (useDirection) {
+                    return GMResult.Err(
+                        attributes.unsupportedValue(
+                            attribute = "useDirection",
+                            value = "true",
+                        ),
+                    )
+                }
+                if (element.isAngle) {
+                    val displayType = when (
+                        val result = attributes.string(
+                            name = "type",
+                            default = "sector",
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value.lowercase()
+                        is GMResult.Err -> return result
+                    }
+                    if (displayType != "sector") {
+                        return GMResult.Err(
+                            attributes.unsupportedValue(
+                                attribute = "type",
+                                value = displayType,
+                            ),
+                        )
+                    }
+                    val orthoType = when (
+                        val result = attributes.string(
+                            name = "orthotype",
+                            default = "square",
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value.lowercase()
+                        is GMResult.Err -> return result
+                    }
+                    val orthoSensitivity = when (
+                        val result = attributes.number(
+                            name = "orthosensitivity",
+                            default = 1.0,
+                            minimum = 0.0,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    val degrees = Geometry.trueAngle(
+                        element.point2.Coords(),
+                        element.point1.Coords(),
+                        element.point3.Coords(),
+                    )
+                    if (
+                        kotlin.math.abs(degrees - 90.0) <
+                        orthoSensitivity +
+                        com.swithun.jsxgraph.core.math.Mat.eps &&
+                        orthoType != "sector"
+                    ) {
+                        return GMResult.Err(
+                            attributes.unsupportedValue(
+                                attribute = "orthoType",
+                                value = orthoType,
+                            ),
+                        )
+                    }
+                }
+                when (
+                    val result = curveSceneElement(
+                        element = element,
+                        points = element.points,
+                        bezierDegree = element.bezierDegree,
+                        style = style,
+                        attributes = attributes,
+                        allowFill = true,
+                        allowPathBreaks = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+
             is Curve -> {
                 element.evaluationError?.let { error ->
                     return GMResult.Err(
@@ -471,50 +598,20 @@ object JsxGraphEngine {
                         ),
                     )
                 }
-                val lineCap = when (
-                    val result = attributes.string(
-                        name = "linecap",
-                        default = "round",
+                when (
+                    val result = curveSceneElement(
+                        element = element,
+                        points = element.points,
+                        bezierDegree = element.bezierDegree,
+                        style = style,
+                        attributes = attributes,
+                        allowFill = false,
+                        allowPathBreaks = true,
                     )
                 ) {
-                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Ok -> result.value
                     is GMResult.Err -> return result
                 }
-                if (lineCap != "round") {
-                    return GMResult.Err(
-                        attributes.unsupportedValue(
-                            attribute = "lineCap",
-                            value = lineCap,
-                        ),
-                    )
-                }
-                if (
-                    style.fillColor.alpha > 0 &&
-                    style.fillOpacity > 0.0
-                ) {
-                    return GMResult.Err(
-                        attributes.unsupportedValue(
-                            attribute = "fillColor",
-                            value = "non-transparent",
-                        ),
-                    )
-                }
-                JsxGraphSceneElement.Curve(
-                    id = element.id,
-                    name = element.name,
-                    style = style,
-                    points = element.points.map { coordinates ->
-                        val x = coordinates.usrCoords[1]
-                        val y = coordinates.usrCoords[2]
-                        if (x.isFinite() && y.isFinite()) {
-                            JsxGraphPoint2D(x, y)
-                        } else {
-                            null
-                        }
-                    },
-                    bezierDegree = element.bezierDegree,
-                    lineCap = lineCap,
-                )
             }
 
             is Polygon -> {
@@ -724,6 +821,78 @@ object JsxGraphEngine {
             )
         }
         return GMResult.Ok(sceneElement)
+    }
+
+    private fun curveSceneElement(
+        element: GeometryElement,
+        points: List<com.swithun.jsxgraph.core.base.Coords>,
+        bezierDegree: Int,
+        style: JsxGraphElementStyle,
+        attributes: AttributeReader,
+        allowFill: Boolean,
+        allowPathBreaks: Boolean,
+    ): GMResult<JsxGraphSceneElement.Curve, JsxGraphDocumentError> {
+        val lineCap = when (
+            val result = attributes.string(
+                name = "linecap",
+                default = "round",
+            )
+        ) {
+            is GMResult.Ok -> result.value.lowercase()
+            is GMResult.Err -> return result
+        }
+        if (lineCap != "round") {
+            return GMResult.Err(
+                attributes.unsupportedValue(
+                    attribute = "lineCap",
+                    value = lineCap,
+                ),
+            )
+        }
+        if (
+            !allowFill &&
+            style.fillColor.alpha > 0 &&
+            style.fillOpacity > 0.0
+        ) {
+            return GMResult.Err(
+                attributes.unsupportedValue(
+                    attribute = "fillColor",
+                    value = "non-transparent",
+                ),
+            )
+        }
+        val scenePoints = points.map { coordinates ->
+            val x = coordinates.usrCoords[1]
+            val y = coordinates.usrCoords[2]
+            if (x.isFinite() && y.isFinite()) {
+                JsxGraphPoint2D(x, y)
+            } else {
+                null
+            }
+        }
+        if (!allowPathBreaks && scenePoints.any { it == null }) {
+            return GMResult.Err(attributes.nonFiniteGeometry())
+        }
+        if (
+            bezierDegree !in setOf(1, 3) ||
+            (
+                bezierDegree == 3 &&
+                    scenePoints.isNotEmpty() &&
+                    (scenePoints.size - 1) % 3 != 0
+                )
+        ) {
+            return GMResult.Err(attributes.nonFiniteGeometry())
+        }
+        return GMResult.Ok(
+            JsxGraphSceneElement.Curve(
+                id = element.id,
+                name = element.name,
+                style = style,
+                points = scenePoints,
+                bezierDegree = bezierDegree,
+                lineCap = lineCap,
+            ),
+        )
     }
 
     private fun parseDocument(
@@ -1263,6 +1432,13 @@ object JsxGraphEngine {
                 is Point -> POINT_ATTRIBUTES
                 is Line -> LINE_ATTRIBUTES
                 is Circle -> CIRCLE_ATTRIBUTES
+                is Arc -> ARC_ATTRIBUTES
+                is Sector ->
+                    if (element.isAngle) {
+                        ANGLE_ATTRIBUTES
+                    } else {
+                        SECTOR_ATTRIBUTES
+                    }
                 is Curve -> CURVE_ATTRIBUTES
                 is Polygon -> POLYGON_ATTRIBUTES
                 is Text -> TEXT_ATTRIBUTES
@@ -1280,6 +1456,9 @@ object JsxGraphEngine {
             val nestedNames = when (element) {
                 is Line -> listOf("point1", "point2")
                 is Circle -> listOf("center", "point2")
+                is Arc -> listOf("center", "radiuspoint", "anglepoint")
+                is Sector ->
+                    listOf("center", "radiuspoint", "anglepoint", "arc")
                 else -> emptyList()
             }
             for (name in nestedNames) {
@@ -1297,11 +1476,23 @@ object JsxGraphEngine {
             val defaultStroke = when (element) {
                 is Point -> DEFAULT_POINT_COLOR
                 is Text -> DEFAULT_TEXT_COLOR
+                is Sector ->
+                    if (element.isAngle) {
+                        DEFAULT_ANGLE_COLOR
+                    } else {
+                        DEFAULT_STROKE_COLOR
+                    }
                 else -> DEFAULT_STROKE_COLOR
             }
             val defaultFill = when (element) {
                 is Point -> DEFAULT_POINT_COLOR
                 is Polygon -> DEFAULT_POLYGON_FILL_COLOR
+                is Sector ->
+                    if (element.isAngle) {
+                        DEFAULT_ANGLE_COLOR
+                    } else {
+                        DEFAULT_POLYGON_FILL_COLOR
+                    }
                 else -> JsxGraphColor.Transparent
             }
             val visible = when (
@@ -1326,7 +1517,12 @@ object JsxGraphEngine {
                 val result = number(
                     "strokewidth",
                     default =
-                        if (element is Curve || element is Polygon) {
+                        if (
+                            element is Curve ||
+                            element is Arc ||
+                            element is Sector ||
+                            element is Polygon
+                        ) {
                             1.0
                         } else {
                             2.0
@@ -1351,7 +1547,12 @@ object JsxGraphEngine {
             val fillOpacity = when (
                 val result = number(
                     "fillopacity",
-                    default = if (element is Polygon) 0.3 else 1.0,
+                    default =
+                        if (element is Polygon || element is Sector) {
+                            0.3
+                        } else {
+                            1.0
+                        },
                     minimum = 0.0,
                     maximum = 1.0,
                 )
@@ -1570,6 +1771,8 @@ object JsxGraphEngine {
         JsxGraphColor(red = 240, green = 228, blue = 66)
     private val DEFAULT_TEXT_COLOR =
         JsxGraphColor(red = 0, green = 0, blue = 0)
+    private val DEFAULT_ANGLE_COLOR =
+        JsxGraphColor(red = 230, green = 159, blue = 0)
     private val NAMED_COLORS = mapOf(
         "none" to JsxGraphColor.Transparent,
         "transparent" to JsxGraphColor.Transparent,
@@ -1619,6 +1822,26 @@ object JsxGraphEngine {
         "firstarrow",
         "lastarrow",
         "linecap",
+    )
+    private val ARC_ATTRIBUTES = setOf(
+        "selection",
+        "orientation",
+        "usedirection",
+        "firstarrow",
+        "lastarrow",
+        "linecap",
+        "center",
+        "radiuspoint",
+        "anglepoint",
+    )
+    private val SECTOR_ATTRIBUTES = ARC_ATTRIBUTES + setOf(
+        "arc",
+    )
+    private val ANGLE_ATTRIBUTES = SECTOR_ATTRIBUTES + setOf(
+        "radius",
+        "type",
+        "orthotype",
+        "orthosensitivity",
     )
     private val POLYGON_ATTRIBUTES = setOf(
         "withlines",

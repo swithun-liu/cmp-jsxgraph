@@ -107,6 +107,21 @@ object JsxGraphParityCorpus {
                 "dynamic-content",
             ),
         ),
+        JsxGraphParityCase(
+            id = "circular_regions",
+            title = "Arcs and sectors",
+            source = CIRCULAR_REGIONS_SOURCE,
+            features = setOf(
+                "axis",
+                "grid",
+                "arc",
+                "sector",
+                "angle",
+                "cubic-bezier",
+                "fill",
+                "orientation",
+            ),
+        ),
     )
 
     fun find(caseId: String): GMResult<JsxGraphParityCase, String> =
@@ -608,6 +623,125 @@ private const val TEXT_SOURCE: String = """
         "display": "internal",
         "parse": true,
         "digits": 1,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val CIRCULAR_REGIONS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "arcCenter",
+      "type": "point",
+      "parents": [-3, 1],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "arcRadius",
+      "type": "point",
+      "parents": [-1, 1],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "arcAngle",
+      "type": "point",
+      "parents": [-2.6, 3.2],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "arc",
+      "type": "arc",
+      "parents": ["arcCenter", "arcRadius", "arcAngle"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "selection": "minor",
+        "orientation": "counterclockwise",
+        "strokeColor": "#D9553F",
+        "fillColor": "none",
+        "strokeWidth": 3,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "sectorCenter",
+      "type": "point",
+      "parents": [2.5, 1.5],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "sectorRadius",
+      "type": "point",
+      "parents": [4, 1.5],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "sectorAngle",
+      "type": "point",
+      "parents": [2.2, 3.2],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "sector",
+      "type": "sector",
+      "parents": ["sectorCenter", "sectorRadius", "sectorAngle"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "selection": "minor",
+        "orientation": "counterclockwise",
+        "strokeColor": "#0072B2",
+        "fillColor": "#F0E442",
+        "fillOpacity": 0.35,
+        "strokeWidth": 2,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "angleFirst",
+      "type": "point",
+      "parents": [2, -2],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "angleVertex",
+      "type": "point",
+      "parents": [0, -2],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "angleThird",
+      "type": "point",
+      "parents": [1, -0.5],
+      "attributes": {"name": "", "withLabel": false, "visible": false}
+    },
+    {
+      "id": "angle",
+      "type": "angle",
+      "parents": ["angleFirst", "angleVertex", "angleThird"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "radius": 1.3,
+        "type": "sector",
+        "orthoType": "sector",
+        "selection": "minor",
+        "orientation": "counterclockwise",
+        "strokeColor": "#E69F00",
+        "fillColor": "#E69F00",
+        "fillOpacity": 0.3,
+        "strokeWidth": 1,
         "fixed": true,
         "highlight": false
       }

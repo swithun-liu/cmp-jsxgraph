@@ -1,6 +1,7 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.BoardError
 import com.swithun.jsxgraph.core.base.Circle
@@ -10,6 +11,7 @@ import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Text
 import kotlin.math.sqrt
 import kotlin.test.Test
@@ -247,6 +249,66 @@ class NativeJessieCodeCreatorsTest {
         assertContentEquals(
             doubleArrayOf(0.0, 1.0),
             plot.points.map { it.usrCoords[2] }.toDoubleArray(),
+        )
+    }
+
+    @Test
+    fun arcSectorAndAngleCreatorsUseThreePointParents() {
+        val board = board()
+
+        val arc = arc(
+            evaluate(
+                source =
+                    "A = point(0, 0); B = point(3, 0); " +
+                        "C = point(0, 2); " +
+                        "a = arc(A, B, C) << selection: \"minor\" >>; a;",
+                board = board,
+            ),
+        )
+        assertEquals(Arc.SELECTION_MINOR, arc.selection)
+        assertEquals(13, arc.numberPoints)
+
+        val sector = sector(
+            evaluate(
+                source =
+                    "s = sector(A, B, C) << " +
+                        "orientation: \"clockwise\" >>; s;",
+                board = board,
+            ),
+        )
+        assertEquals(Const.OBJECT_TYPE_SECTOR, sector.type)
+        assertEquals(Arc.ORIENTATION_CLOCKWISE, sector.orientation)
+        assertEquals(19, sector.numberPoints)
+
+        val angle = sector(
+            evaluate(
+                source =
+                    "alpha = angle(B, A, C) << radius: 2 >>; alpha;",
+                board = board,
+            ),
+        )
+        assertEquals(Const.OBJECT_TYPE_ANGLE, angle.type)
+        assertEquals(2.0, angle.Radius())
+        assertEquals(
+            listOf(
+                assertIs<Point>(board.select("B")).id,
+                assertIs<Point>(board.select("A")).id,
+                assertIs<Point>(board.select("C")).id,
+            ),
+            angle.parents,
+        )
+
+        val coordinateArc = arc(
+            evaluate(
+                source = "arc([0, 0], [2, 0], [0, 2]);",
+                board = board,
+            ),
+        )
+        assertEquals(3, coordinateArc.ownedPoints.size)
+        assertTrue(
+            coordinateArc.ownedPoints.all { point ->
+                coordinateArc.childElements[point.id] === point
+            },
         )
     }
 
@@ -541,6 +603,14 @@ class NativeJessieCodeCreatorsTest {
             .element.let(::assertIs)
 
     private fun curve(value: JessieCodeRuntimeValue): Curve =
+        assertIs<JessieCodeRuntimeValue.ElementReference>(value)
+            .element.let(::assertIs)
+
+    private fun arc(value: JessieCodeRuntimeValue): Arc =
+        assertIs<JessieCodeRuntimeValue.ElementReference>(value)
+            .element.let(::assertIs)
+
+    private fun sector(value: JessieCodeRuntimeValue): Sector =
         assertIs<JessieCodeRuntimeValue.ElementReference>(value)
             .element.let(::assertIs)
 

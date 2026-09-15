@@ -6,7 +6,9 @@
  * src/base/circle.js -> createCircle,
  * src/base/curve.js -> createCurve / createFunctiongraph,
  * src/base/polygon.js -> createPolygon,
- * src/base/text.js -> createText
+ * src/base/text.js -> createText,
+ * src/element/arc.js -> createArc,
+ * src/element/sector.js -> createSector / createAngle
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -14,6 +16,9 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.AngleRadius
+import com.swithun.jsxgraph.core.base.Arc
+import com.swithun.jsxgraph.core.base.ArcError
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.CircleError
@@ -26,6 +31,8 @@ import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.PolygonError
+import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.SectorError
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.TextError
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
@@ -71,6 +78,14 @@ internal sealed interface JessieCodeCreatorError {
     data class TextFactory(
         val error: TextError,
     ) : JessieCodeCreatorError
+
+    data class ArcFactory(
+        val error: ArcError,
+    ) : JessieCodeCreatorError
+
+    data class SectorFactory(
+        val error: SectorError,
+    ) : JessieCodeCreatorError
 }
 
 /**
@@ -87,6 +102,15 @@ internal object NativeJessieCodeCreators {
         },
         "circle" to JessieCodeCreator { board, parents, attributes, location ->
             createCircle(board, parents, attributes, location)
+        },
+        "arc" to JessieCodeCreator { board, parents, attributes, location ->
+            createArc(board, parents, attributes, location)
+        },
+        "sector" to JessieCodeCreator { board, parents, attributes, location ->
+            createSector(board, parents, attributes, location)
+        },
+        "angle" to JessieCodeCreator { board, parents, attributes, location ->
+            createAngle(board, parents, attributes, location)
         },
         "curve" to JessieCodeCreator { board, parents, attributes, location ->
             createCurve(board, parents, attributes, location)
@@ -446,6 +470,206 @@ internal object NativeJessieCodeCreators {
         )
     }
 
+    private fun createArc(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "arc"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val curveAttributes = when (
+            val result = arcAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val materialized = when (
+            val result = materializeThreePointParents(
+                board = resolvedBoard,
+                parents = parents,
+                creatorName = creatorName,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val points = materialized.points
+        return when (
+            val result = Arc.create(
+                board = resolvedBoard,
+                center = points[0],
+                radiuspoint = points[1],
+                anglepoint = points[2],
+                selection = curveAttributes.selection,
+                orientation = curveAttributes.orientation,
+                ownedPoints = materialized.ownedPoints,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                resolvedBoard.removeObjects(materialized.ownedPoints)
+                failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.ArcFactory(result.error),
+                    location = location,
+                )
+            }
+        }
+    }
+
+    private fun createSector(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        createSectorOrAngle(
+            board = board,
+            parents = parents,
+            attributes = attributes,
+            location = location,
+            isAngle = false,
+        )
+
+    private fun createAngle(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        createSectorOrAngle(
+            board = board,
+            parents = parents,
+            attributes = attributes,
+            location = location,
+            isAngle = true,
+        )
+
+    private fun createSectorOrAngle(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+        isAngle: Boolean,
+    ): CreatorResult {
+        val creatorName = if (isAngle) "angle" else "sector"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val curveAttributes = when (
+            val result = arcAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val radius = if (isAngle) {
+            when (
+                val result = angleRadius(
+                    attributes = attributes,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        } else {
+            null
+        }
+        val materialized = when (
+            val result = materializeThreePointParents(
+                board = resolvedBoard,
+                parents = parents,
+                creatorName = creatorName,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val points = materialized.points
+        val result =
+            if (radius == null) {
+                Sector.create(
+                    board = resolvedBoard,
+                    center = points[0],
+                    radiuspoint = points[1],
+                    anglepoint = points[2],
+                    selection = curveAttributes.selection,
+                    orientation = curveAttributes.orientation,
+                    ownedPoints = materialized.ownedPoints,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                )
+            } else {
+                Sector.createAngle(
+                    board = resolvedBoard,
+                    first = points[0],
+                    vertex = points[1],
+                    third = points[2],
+                    radius = radius,
+                    selection = curveAttributes.selection,
+                    orientation = curveAttributes.orientation,
+                    ownedPoints = materialized.ownedPoints,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                )
+            }
+        return when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                resolvedBoard.removeObjects(materialized.ownedPoints)
+                failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.SectorFactory(result.error),
+                    location = location,
+                )
+            }
+        }
+    }
+
     private fun createFunctionGraph(
         board: Board?,
         parents: List<JessieCodeRuntimeValue>,
@@ -752,6 +976,91 @@ internal object NativeJessieCodeCreators {
         )
     }
 
+    private fun arcAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ArcAttributes, JessieCodeRuntimeError> {
+        val selection = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "selection",
+                default = Arc.SELECTION_AUTO,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val orientation = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "orientation",
+                default = Arc.ORIENTATION_COUNTERCLOCKWISE,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ArcAttributes(
+                selection = selection,
+                orientation = orientation,
+            ),
+        )
+    }
+
+    private fun angleRadius(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<AngleRadius, JessieCodeRuntimeError> =
+        when (val value = attributes.properties["radius"]) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> GMResult.Ok(AngleRadius.Auto)
+
+            is JessieCodeRuntimeValue.NumberValue ->
+                if (value.value.isFinite()) {
+                    GMResult.Ok(AngleRadius.Fixed(value.value))
+                } else {
+                    failure(
+                        creatorName = "angle",
+                        error =
+                            JessieCodeCreatorError.UnsupportedAttributeValue(
+                                attribute = "radius",
+                                actual = value.value.toString(),
+                            ),
+                        location = location,
+                    )
+                }
+
+            is JessieCodeRuntimeValue.StringValue ->
+                if (value.value.lowercase() == "auto") {
+                    GMResult.Ok(AngleRadius.Auto)
+                } else {
+                    failure(
+                        creatorName = "angle",
+                        error =
+                            JessieCodeCreatorError.UnsupportedAttributeValue(
+                                attribute = "radius",
+                                actual = value.value,
+                            ),
+                        location = location,
+                    )
+                }
+
+            else -> invalidAttribute(
+                creatorName = "angle",
+                attribute = "radius",
+                expected = "number or \"auto\"",
+                actual = value,
+                location = location,
+            )
+        }
+
     private fun curveResult(
         creatorName: String,
         location: JessieCodeAstLocation,
@@ -934,6 +1243,61 @@ internal object NativeJessieCodeCreators {
             return null
         }
         return PointParent.Coordinates(coordinates.toList())
+    }
+
+    private fun materializeThreePointParents(
+        board: Board,
+        parents: List<JessieCodeRuntimeValue>,
+        creatorName: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<MaterializedPointParents, JessieCodeRuntimeError> {
+        if (parents.size != 3) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedParents(
+                    parents.map(::typeName),
+                ),
+                location = location,
+            )
+        }
+        val pointParents = parents.map { parent ->
+            pointParent(board, parent)
+                ?: return failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.UnsupportedParents(
+                        parents.map(::typeName),
+                    ),
+                    location = location,
+                )
+        }
+        val points = mutableListOf<Point>()
+        val ownedPoints = linkedSetOf<Point>()
+        for (pointParent in pointParents) {
+            when (val result = materializePoint(board, pointParent)) {
+                is GMResult.Ok -> {
+                    points += result.value
+                    if (pointParent is PointParent.Coordinates) {
+                        ownedPoints += result.value
+                    }
+                }
+                is GMResult.Err -> {
+                    board.removeObjects(ownedPoints)
+                    return failure(
+                        creatorName = creatorName,
+                        error = JessieCodeCreatorError.PointFactory(
+                            result.error,
+                        ),
+                        location = location,
+                    )
+                }
+            }
+        }
+        return GMResult.Ok(
+            MaterializedPointParents(
+                points = points,
+                ownedPoints = ownedPoints,
+            ),
+        )
     }
 
     private fun materializePoint(
@@ -1245,6 +1609,16 @@ internal object NativeJessieCodeCreators {
         val id: String,
         val name: String?,
         val needsRegularUpdate: Boolean,
+    )
+
+    private data class ArcAttributes(
+        val selection: String,
+        val orientation: String,
+    )
+
+    private data class MaterializedPointParents(
+        val points: List<Point>,
+        val ownedPoints: Set<Point>,
     )
 
     private sealed interface PointParent {
