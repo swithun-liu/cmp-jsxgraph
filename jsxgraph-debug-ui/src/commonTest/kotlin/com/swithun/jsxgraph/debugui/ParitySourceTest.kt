@@ -34,6 +34,16 @@ class ParitySourceTest {
     }
 
     @Test
+    fun everyCorpusSourceProducesANativeScene() {
+        for (parityCase in JsxGraphParityCorpus.cases) {
+            assertIs<GMResult.Ok<GeometryPlaygroundScene>>(
+                parseParitySource(parityCase.source),
+                parityCase.id,
+            )
+        }
+    }
+
+    @Test
     fun malformedAndUnsupportedSourcesReturnExplicitErrors() {
         assertIs<GMResult.Err<String>>(parseParitySource("not-json"))
         assertIs<GMResult.Err<String>>(

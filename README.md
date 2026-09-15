@@ -2,6 +2,7 @@
 
 [![Quality Gate](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/quality.yml)
 [![Web Progress](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml)
+[![Visual Parity](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/visual-parity.yml/badge.svg)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/visual-parity.yml)
 [![JSXGraph 1.13.3](https://img.shields.io/badge/JSXGraph-1.13.3-246BCE)](https://jsxgraph.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-16877A)](LICENSE)
 
@@ -11,6 +12,13 @@ Multiplatform Canvas renderer.
 **[Open the live Kotlin/Wasm progress site](https://swithun-liu.github.io/cmp-jsxgraph/)**
 to inspect the roadmap and switch the same parity source between Source,
 official JSXGraph `1.13.3`, and native Compose Canvas rendering.
+
+Current parity cases:
+[baseline](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=baseline_geometry),
+[tangent](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=tangent_intersection),
+[disjoint](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=disjoint_intersection),
+and
+[shifted](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=shifted_geometry).
 
 ## Status
 

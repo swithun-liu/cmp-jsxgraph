@@ -19,11 +19,15 @@ import kotlin.js.ExperimentalWasmJsInterop
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     val body = document.body ?: return
+    val auditMode = queryParameter("audit") == "true"
     ComposeViewport(body) {
         JsxGraphDebugApp(
             options = JsxGraphDebugOptions(
                 initialDestination =
-                    if (queryParameter("openParity") == "true") {
+                    if (
+                        auditMode ||
+                        queryParameter("openParity") == "true"
+                    ) {
                         JsxGraphDebugDestination.Parity
                     } else {
                         JsxGraphDebugDestination.Roadmap
@@ -34,6 +38,7 @@ fun main() {
                 parityCaseId = queryParameter("caseId")
                     ?: JsxGraphParityCorpus.DEFAULT_CASE_ID,
                 sourceOverride = queryParameter("source"),
+                boardOnly = auditMode,
             ),
         )
     }

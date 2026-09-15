@@ -1,0 +1,12 @@
+{
+  "name": "cmp-jsxgraph-visual-parity",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "capture": "node capture-web-parity.mjs",
+    "audit": "node audit-web-parity.mjs"
+  },
+  "dependencies": {
+    "puppeteer": "25.10.0"
+  }
+}

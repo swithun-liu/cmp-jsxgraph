@@ -84,6 +84,7 @@ data class JsxGraphDebugOptions(
     val initialPreview: JsxGraphDebugPreview = JsxGraphDebugPreview.Native,
     val parityCaseId: String = JsxGraphParityCorpus.DEFAULT_CASE_ID,
     val sourceOverride: String? = null,
+    val boardOnly: Boolean = false,
 )
 
 internal sealed interface OfficialRenderResult {
@@ -175,6 +176,27 @@ private fun ParityWorkspace(
     val caseMarker = when (parityCase) {
         is GMResult.Ok -> parityCase.value.id
         is GMResult.Err -> options.parityCaseId
+    }
+
+    if (options.boardOnly) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White)
+                .semantics {
+                    contentDescription =
+                        "$renderStatus jsxgraph-case:$caseMarker " +
+                            "jsxgraph-parity-board"
+                },
+        ) {
+            ParityPreview(
+                parityCase = parityCase,
+                parsedScene = parsedScene,
+                preview = preview,
+                onOfficialResult = { officialResult = it },
+            )
+        }
+        return
     }
 
     Scaffold(
@@ -304,26 +326,12 @@ private fun DebugContent(
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp,
             ) {
-                when (parityCase) {
-                    is GMResult.Err -> ErrorPreview(parityCase.error)
-                    is GMResult.Ok -> when (preview) {
-                        JsxGraphDebugPreview.Source -> SourcePreview(
-                            parityCase.value.source,
-                        )
-                        JsxGraphDebugPreview.Official -> OfficialJsxGraphDiagram(
-                            source = parityCase.value.source,
-                            modifier = Modifier.fillMaxSize(),
-                            onRenderResult = onOfficialResult,
-                        )
-                        JsxGraphDebugPreview.Native -> when (parsedScene) {
-                            is GMResult.Ok -> JsxGraphGeometryPreview(
-                                scene = parsedScene.value,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                            is GMResult.Err -> ErrorPreview(parsedScene.error)
-                        }
-                    }
-                }
+                ParityPreview(
+                    parityCase = parityCase,
+                    parsedScene = parsedScene,
+                    preview = preview,
+                    onOfficialResult = onOfficialResult,
+                )
             }
 
             if (!compactHeight) {
@@ -337,6 +345,35 @@ private fun DebugContent(
                     style = MaterialTheme.typography.labelMedium,
                     letterSpacing = 0.sp,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ParityPreview(
+    parityCase: GMResult<JsxGraphParityCase, String>,
+    parsedScene: GMResult<GeometryPlaygroundScene, String>,
+    preview: JsxGraphDebugPreview,
+    onOfficialResult: (OfficialRenderResult) -> Unit,
+) {
+    when (parityCase) {
+        is GMResult.Err -> ErrorPreview(parityCase.error)
+        is GMResult.Ok -> when (preview) {
+            JsxGraphDebugPreview.Source -> SourcePreview(
+                parityCase.value.source,
+            )
+            JsxGraphDebugPreview.Official -> OfficialJsxGraphDiagram(
+                source = parityCase.value.source,
+                modifier = Modifier.fillMaxSize(),
+                onRenderResult = onOfficialResult,
+            )
+            JsxGraphDebugPreview.Native -> when (parsedScene) {
+                is GMResult.Ok -> JsxGraphGeometryPreview(
+                    scene = parsedScene.value,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                is GMResult.Err -> ErrorPreview(parsedScene.error)
             }
         }
     }

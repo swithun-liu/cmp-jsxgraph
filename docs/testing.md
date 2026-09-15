@@ -30,6 +30,26 @@ Use JDK 17 or newer.
 ./gradlew :sample:webApp:wasmJsBrowserDistribution
 ```
 
+Capture and audit the current Web parity corpus:
+
+```bash
+npm ci --prefix tools/visual-parity
+./gradlew :sample:webApp:wasmJsBrowserDistribution
+python3 -m http.server 8093 \
+  --directory sample/webApp/build/dist/wasmJs/productionExecutable
+
+# Run these in another shell.
+BASE_URL=http://127.0.0.1:8093/ \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/web-parity/current \
+  npm --prefix tools/visual-parity run audit
+```
+
+The scheduled `Visual Parity` workflow runs the same audit at `1200 x 900` and
+`390 x 844`, requires nontrivial captures, enforces a provisional board SSIM
+floor of `0.90`, and uploads the PNG pairs, contact sheets, TSV summary, and
+JSON report as workflow artifacts.
+
 Capture the same source as source text, official JSXGraph, and Compose Canvas:
 
 ```bash
@@ -62,6 +82,10 @@ default case.
 is added only after the native implementation supports every feature declared
 by that case. This slice corpus is separate from the future full JSXGraph
 stable corpus.
+
+The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
+only the comparison board. This removes the surrounding debug UI from image
+metrics while retaining the exact same source lookup and renderer adapters.
 
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:

@@ -1,0 +1,109 @@
+name: Visual Parity
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 3 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build Web audit application
+        run: ./gradlew :sample:webApp:wasmJsBrowserDistribution
+
+      - name: Upload Web audit application
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-parity-web
+          path: sample/webApp/build/dist/wasmJs/productionExecutable
+          retention-days: 3
+
+  web-parity:
+    needs: build-web
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: desktop
+            width: 1200
+            height: 900
+            minimum_bytes: 12000
+          - profile: compact
+            width: 390
+            height: 844
+            minimum_bytes: 8000
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/visual-parity/package-lock.json
+
+      - name: Install visual audit dependencies
+        run: npm ci --prefix tools/visual-parity
+
+      - name: Download Web audit application
+        uses: actions/download-artifact@v4
+        with:
+          name: visual-parity-web
+          path: build/visual-parity-web
+
+      - name: Capture Native and Official pairs
+        run: |
+          python3 -m http.server 8093 \
+            --directory build/visual-parity-web \
+            >/tmp/cmp-jsxgraph-visual-parity.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8093/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }} \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=${{ matrix.minimum_bytes }} \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce visual parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }} \
+          MIN_CAPTURE_BYTES=${{ matrix.minimum_bytes }} \
+          MIN_BOARD_SSIM=0.90 \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Upload visual parity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-parity-${{ matrix.profile }}
+          path: captures/visual-parity/${{ matrix.profile }}
+          retention-days: 14
