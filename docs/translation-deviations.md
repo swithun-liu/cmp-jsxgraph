@@ -46,16 +46,18 @@ practical.
   as `UndefinedValue`, preserving observable translated indexing and `length`
   behavior while using bounded storage. Element `setProp` mutation remains
   pending and returns `AssignmentTargetUnavailable`.
-- Assignment locals currently live for one evaluator invocation. Function
-  scopes and nested closure chains persist for the lifetime of each returned
-  function value, while a reusable JessieCode global session across separate
-  evaluator invocations remains pending.
+- Standalone `JessieCodeEvaluator.evaluate` calls retain isolated locals.
+  `JessieCodeSession` explicitly opts into the upstream persistent-instance
+  behavior: globals, function scopes, nested closure chains, selected Board,
+  and stored source survive across parse calls. Evaluation step and depth
+  budgets reset at each top-level session call, and stored source has an
+  explicit length limit instead of growing without a bound.
 - The deprecated `use IDENTIFIER` statement switches all subsequent Board
   lookup, `$board`, deletion, function-dependency, and creator operations
   within the evaluator invocation. Since KMP has no global DOM container
   registry, callers expose the same lookup explicitly through
-  `boardsByContainer`. An unknown entry returns `BoardNotFound`; the selected
-  Board does not yet persist across separate evaluator invocations.
+  `boardsByContainer`. An unknown entry returns `BoardNotFound`; an explicit
+  `JessieCodeSession` retains the selected Board for later parse calls.
 - Loops use the evaluator's existing node-step limit as their execution budget.
   JSXGraph has no corresponding bound and can run an infinite loop.
 - `return` preserves the JSXGraph `1.13.3` interpreter behavior: it evaluates

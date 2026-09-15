@@ -44,27 +44,27 @@ internal class JessieCodeEvaluator(
         node: JessieCodeAstNode,
         environment: JessieCodeRuntimeEnvironment =
             JessieCodeRuntimeEnvironment(),
-    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
-        if (
-            limits.maxEvaluationSteps < 1 ||
-            limits.maxEvaluationDepth
-                !in 1..MAX_SUPPORTED_EVALUATION_DEPTH ||
-            limits.maxCollectionSize < 1
-        ) {
-            return GMResult.Err(
-                JessieCodeRuntimeError.InvalidLimits(
-                    maxEvaluationSteps = limits.maxEvaluationSteps,
-                    maxEvaluationDepth = limits.maxEvaluationDepth,
-                    maxCollectionSize = limits.maxCollectionSize,
-                ),
-            )
-        }
-
-        return EvaluationState(
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        EvaluationState(
             limits = limits,
             environment = environment,
-        ).evaluate(node)
-    }
+        ).evaluateRoot(node)
+}
+
+internal class JessieCodeEvaluationSession(
+    limits: JessieCodeEvaluatorLimits = JessieCodeEvaluatorLimits(),
+    environment: JessieCodeRuntimeEnvironment =
+        JessieCodeRuntimeEnvironment(),
+) {
+    private val state = EvaluationState(
+        limits = limits,
+        environment = environment,
+    )
+
+    internal fun evaluate(
+        node: JessieCodeAstNode,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        state.evaluateRoot(node)
 }
 
 private class EvaluationState(
@@ -79,6 +79,28 @@ private class EvaluationState(
         locals = environment.variables.toMutableMap(),
         previous = null,
     )
+
+    fun evaluateRoot(
+        node: JessieCodeAstNode,
+    ): EvaluationResult {
+        if (
+            limits.maxEvaluationSteps < 1 ||
+            limits.maxEvaluationDepth
+                !in 1..MAX_SUPPORTED_EVALUATION_DEPTH ||
+            limits.maxCollectionSize < 1
+        ) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidLimits(
+                    maxEvaluationSteps = limits.maxEvaluationSteps,
+                    maxEvaluationDepth = limits.maxEvaluationDepth,
+                    maxCollectionSize = limits.maxCollectionSize,
+                ),
+            )
+        }
+        evaluationSteps = 0
+        functionCallDepth = 0
+        return evaluate(node)
+    }
 
     fun evaluate(
         node: JessieCodeAstNode,
