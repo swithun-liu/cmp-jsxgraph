@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-15T20:32:18.673Z",
+  "minimumSsim": 0.93,
+  "caseCount": 24,
+  "failures": [],
+  "cases": [
+    {
+      "caseId": "prod_geometry_segment_network",
+      "ssim": 0.973656,
+      "minimumSsim": 0.93,
+      "officialBytes": 17104,
+      "nativeBytes": 16366
+    },
+    {
+      "caseId": "prod_geometry_infinite_crosshair",
+      "ssim": 0.97544,
+      "minimumSsim": 0.93,
+      "officialBytes": 18289,
+      "nativeBytes": 17825
+    },
+    {
+      "caseId": "prod_geometry_shifted_map",
+      "ssim": 0.986933,
+      "minimumSsim": 0.93,
+      "officialBytes": 13917,
+      "nativeBytes": 18023
+    },
+    {
+      "caseId": "prod_geometry_circle_fill",
+      "ssim": 0.975832,
+      "minimumSsim": 0.93,
+      "officialBytes": 28365,
+      "nativeBytes": 27788
+    },
+    {
+      "caseId": "prod_curve_quadratic_trend",
+      "ssim": 0.975118,
+      "minimumSsim": 0.93,
+      "officialBytes": 12382,
+      "nativeBytes": 15421
+    },
+    {
+      "caseId": "prod_curve_parametric_orbit",
+      "ssim": 0.974789,
+      "minimumSsim": 0.93,
+      "officialBytes": 13030,
+      "nativeBytes": 12423
+    },
+    {
+      "caseId": "prod_curve_sampled_series",
+      "ssim": 0.975243,
+      "minimumSsim": 0.93,
+      "officialBytes": 12279,
+      "nativeBytes": 11750
+    },
+    {
+      "caseId": "prod_curve_wave_comparison",
+      "ssim": 0.975011,
+      "minimumSsim": 0.93,
+      "officialBytes": 15349,
+      "nativeBytes": 14757
+    },
+    {
+      "caseId": "prod_polygon_convex_floorplan",
+      "ssim": 0.973827,
+      "minimumSsim": 0.93,
+      "officialBytes": 15833,
+      "nativeBytes": 15126
+    },
+    {
+      "caseId": "prod_polygon_concave_zone",
+      "ssim": 0.973253,
+      "minimumSsim": 0.93,
+      "officialBytes": 19477,
+      "nativeBytes": 18567
+    },
+    {
+      "caseId": "prod_polygon_borderless_overlay",
+      "ssim": 0.973501,
+      "minimumSsim": 0.93,
+      "officialBytes": 15056,
+      "nativeBytes": 16334
+    },
+    {
+      "caseId": "prod_polygon_shared_vertices",
+      "ssim": 0.972608,
+      "minimumSsim": 0.93,
+      "officialBytes": 15771,
+      "nativeBytes": 14862
+    },
+    {
+      "caseId": "prod_text_anchor_board",
+      "ssim": 0.962491,
+      "minimumSsim": 0.93,
+      "officialBytes": 17493,
+      "nativeBytes": 16489
+    },
+    {
+      "caseId": "prod_text_numeric_metric",
+      "ssim": 0.963797,
+      "minimumSsim": 0.93,
+      "officialBytes": 15111,
+      "nativeBytes": 14552
+    },
+    {
+      "caseId": "prod_text_dynamic_coordinate",
+      "ssim": 0.970904,
+      "minimumSsim": 0.93,
+      "officialBytes": 13807,
+      "nativeBytes": 13323
+    },
+    {
+      "caseId": "prod_text_opacity_caption",
+      "ssim": 0.961778,
+      "minimumSsim": 0.93,
+      "officialBytes": 17566,
+      "nativeBytes": 15851
+    },
+    {
+      "caseId": "prod_arc_minor_route",
+      "ssim": 0.974941,
+      "minimumSsim": 0.93,
+      "officialBytes": 10755,
+      "nativeBytes": 10304
+    },
+    {
+      "caseId": "prod_arc_major_clockwise",
+      "ssim": 0.974688,
+      "minimumSsim": 0.93,
+      "officialBytes": 12204,
+      "nativeBytes": 11737
+    },
+    {
+      "caseId": "prod_sector_capacity",
+      "ssim": 0.974819,
+      "minimumSsim": 0.93,
+      "officialBytes": 11771,
+      "nativeBytes": 11284
+    },
+    {
+      "caseId": "prod_angle_fixed_threshold",
+      "ssim": 0.975244,
+      "minimumSsim": 0.93,
+      "officialBytes": 11136,
+      "nativeBytes": 10632
+    },
+    {
+      "caseId": "prod_angle_auto_wedge",
+      "ssim": 0.950843,
+      "minimumSsim": 0.93,
+      "officialBytes": 10683,
+      "nativeBytes": 15148
+    },
+    {
+      "caseId": "prod_interaction_line_dependency",
+      "ssim": 0.973846,
+      "minimumSsim": 0.93,
+      "officialBytes": 12669,
+      "nativeBytes": 11853
+    },
+    {
+      "caseId": "prod_interaction_circle_dependency",
+      "ssim": 0.974278,
+      "minimumSsim": 0.93,
+      "officialBytes": 16103,
+      "nativeBytes": 15522
+    },
+    {
+      "caseId": "prod_mixed_operations_board",
+      "ssim": 0.96768,
+      "minimumSsim": 0.93,
+      "officialBytes": 28385,
+      "nativeBytes": 27085
+    }
+  ]
+}

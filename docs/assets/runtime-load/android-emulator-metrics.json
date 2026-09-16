@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-15",
+  "platform": "Android Emulator",
+  "caseCount": 24,
+  "finalCaseId": "prod_mixed_operations_board",
+  "finalCaseVisible": true,
+  "totalPssBytes": 125681664,
+  "totalRssBytes": 220151808,
+  "webViewCount": 0,
+  "outcome": "passed"
+}

@@ -20,11 +20,14 @@ import kotlin.js.ExperimentalWasmJsInterop
 fun main() {
     val body = document.body ?: return
     val auditMode = queryParameter("audit") == "true"
+    val loadMode = queryParameter("load") == "true"
     ComposeViewport(body) {
         JsxGraphDebugApp(
             options = JsxGraphDebugOptions(
                 initialDestination =
-                    if (
+                    if (loadMode) {
+                        JsxGraphDebugDestination.StableLoad
+                    } else if (
                         auditMode ||
                         queryParameter("openParity") == "true"
                     ) {

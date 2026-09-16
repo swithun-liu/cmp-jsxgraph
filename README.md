@@ -1,19 +1,26 @@
 # CMP JSXGraph
 
 [![Quality Gate](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/quality.yml)
-[![Web Progress](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml)
+[![Web Demo](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml/badge.svg?branch=main)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/deploy-pages.yml)
 [![Visual Parity](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/visual-parity.yml/badge.svg)](https://github.com/swithun-liu/cmp-jsxgraph/actions/workflows/visual-parity.yml)
 [![JSXGraph 1.13.3](https://img.shields.io/badge/JSXGraph-1.13.3-246BCE)](https://jsxgraph.org/)
 [![MIT License](https://img.shields.io/badge/license-MIT-16877A)](LICENSE)
 
-Pure Kotlin Multiplatform translation of JSXGraph with an early Compose
-Multiplatform Canvas renderer.
+Stable native JSXGraph rendering for the documented Kotlin and Compose
+Multiplatform support scope.
 
-**[Open the live Kotlin/Wasm progress site](https://swithun-liu.github.io/cmp-jsxgraph/)**
+**[Open the live Kotlin/Wasm demo](https://swithun-liu.github.io/cmp-jsxgraph/)**
 to inspect the roadmap and switch the same parity source between Source,
 official JSXGraph `1.13.3`, and native Compose Canvas rendering. In the
 baseline Native preview, drag the amber point to exercise the production Board
 session and dependent-line update path.
+
+Open the
+**[24-case Stable load screen](https://swithun-liu.github.io/cmp-jsxgraph/?load=true)**
+to scroll the independent production corpus through the native renderer.
+The evidence behind the release decision is in the
+**[Stable report](docs/stability-report.md)** and
+**[production-readiness contract](docs/production-readiness.md)**.
 
 Current parity cases:
 [baseline](https://swithun-liu.github.io/cmp-jsxgraph/?openParity=true&caseId=baseline_geometry),
@@ -28,8 +35,28 @@ and
 
 ## Status
 
-This repository is under active development and is not ready for production
-use. The current compatibility baseline is JSXGraph `1.13.3`.
+> [!IMPORTANT]
+> **CMP JSXGraph is Stable for its documented JSXGraph `1.13.3` support
+> scope.** This rating covers the construction-document, render-scene, and
+> Point-interaction contracts described below. It is not a claim of complete
+> JSXGraph API or element coverage.
+
+The release decision is based on repository-controlled evidence:
+
+| Evidence | Result |
+| --- | ---: |
+| Independent production scenarios | 24 |
+| Declared capability coverage | 44/44 |
+| Deterministic scene replay | 24/24 |
+| Deterministic interaction replay | 2/2 |
+| Separate generated Native stress inputs | 512 |
+| Generated interaction updates | 64 |
+| Native/Official visual pairs | 48 across Desktop and Compact |
+| Lowest Desktop / Compact SSIM | 0.967798 / 0.950843 |
+| JVM production soak | 720 renders, 1.185ms P95 |
+| Runtime load matrix | Android, iOS, Desktop, Web passed |
+
+The current compatibility baseline is JSXGraph `1.13.3`.
 
 Implemented translation slices:
 
@@ -91,11 +118,12 @@ Implemented translation slices:
 - a separate `jsxgraph-debug-ui` comparison dependency with Source, official
   JSXGraph `1.13.3`, and native Compose previews.
 
-The playground is a renderer and interaction test surface. The remaining
+The supported slice above is Stable. The remaining
 JessieCode creator registry, visual-property and function-valued element
 mutation, Slider/Glider-backed built-ins, `import`/`$log`/`D`, the complete
 element `methodMap`, the remaining construction-document element types and
-attributes, and the complete element renderer are not yet translated.
+attributes, and the complete element renderer are not yet translated and are
+outside the Stable contract.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -111,7 +139,8 @@ upstream commit and source-to-Kotlin mapping. Intentional edge-case
 differences are tracked in
 [docs/translation-deviations.md](docs/translation-deviations.md).
 Production milestones and acceptance gates are tracked in
-[docs/production-roadmap.md](docs/production-roadmap.md).
+[docs/production-roadmap.md](docs/production-roadmap.md). The current release
+evidence is recorded in [docs/stability-report.md](docs/stability-report.md).
 
 The intended runtime pipeline is:
 
@@ -182,8 +211,12 @@ JDK 17 or newer is required.
 ```bash
 ./gradlew :jsxgraph-core:allTests
 ./gradlew :jsxgraph-compose:allTests :jsxgraph-debug-ui:allTests
-./gradlew :sample:androidApp:assembleDebug
-./gradlew :sample:webApp:wasmJsBrowserDistribution
+./gradlew verifyPublicationCoordinates
+./gradlew \
+  :sample:androidApp:assembleDebug \
+  :sample:androidApp:assembleRelease \
+  :sample:desktopApp:createDistributable \
+  :sample:webApp:wasmJsBrowserDistribution
 ANDROID_SERIAL=<device-serial> ./tools/capture-android-parity.sh
 ```
 
@@ -195,9 +228,13 @@ gates.
 The project group and package namespace include the author name:
 
 - package root: `com.swithun.jsxgraph`
-- core artifact: `com.swithun:jsxgraph-core`
-- Compose artifact: `com.swithun:jsxgraph-compose`
-- debug comparison artifact: `com.swithun:jsxgraph-debug-ui`
+- core artifact: `com.swithun:jsxgraph-core:0.1.0`
+- Compose artifact: `com.swithun:jsxgraph-compose:0.1.0`
+
+`jsxgraph-debug-ui` is intentionally excluded from the production publication
+set. The first public artifact repository release has not been uploaded yet;
+until then, consume the repository modules directly or publish them to a local
+Maven repository.
 
 ## License
 

@@ -8,6 +8,17 @@ export const repositoryRoot = resolve(
 );
 
 export function parityCaseIds() {
+    if (process.env.CORPUS_SOURCE === "production") {
+        return productionCaseIds();
+    }
+    if (
+        process.env.CORPUS_SOURCE !== undefined &&
+        process.env.CORPUS_SOURCE !== "parity"
+    ) {
+        throw new Error(
+            `Unknown CORPUS_SOURCE: ${process.env.CORPUS_SOURCE}`
+        );
+    }
     const source = readFileSync(
         resolve(
             repositoryRoot,
@@ -35,6 +46,27 @@ export function parityCaseIds() {
     }
     if (ids.length === 0 || new Set(ids).size !== ids.length) {
         throw new Error("Parity corpus must contain unique case IDs");
+    }
+    return ids;
+}
+
+function productionCaseIds() {
+    const source = readFileSync(
+        resolve(
+            repositoryRoot,
+            "jsxgraph-debug-ui/src/commonMain/kotlin/" +
+                "com/swithun/jsxgraph/debugui/generated/" +
+                "ProductionCorpus.kt"
+        ),
+        "utf8"
+    );
+    const ids = [
+        ...source.matchAll(
+            /ProductionCorpusCase\(\s*id\s*=\s*"([^"]+)"/g
+        )
+    ].map((match) => match[1]);
+    if (ids.length === 0 || new Set(ids).size !== ids.length) {
+        throw new Error("Production corpus must contain unique case IDs");
     }
     return ids;
 }

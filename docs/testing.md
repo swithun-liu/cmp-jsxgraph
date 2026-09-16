@@ -27,11 +27,16 @@ test surface.
 Use JDK 17 or newer.
 
 ```bash
+node tools/stability/generate-production-corpus.mjs
 ./gradlew :jsxgraph-core:allTests
 ./gradlew :jsxgraph-compose:allTests :jsxgraph-compose:assemble
 ./gradlew :jsxgraph-debug-ui:allTests :jsxgraph-debug-ui:assemble
-./gradlew :sample:androidApp:assembleDebug
-./gradlew :sample:webApp:wasmJsBrowserDistribution
+./gradlew verifyPublicationCoordinates
+./gradlew \
+  :sample:androidApp:assembleDebug \
+  :sample:androidApp:assembleRelease \
+  :sample:desktopApp:createDistributable \
+  :sample:webApp:wasmJsBrowserDistribution
 ```
 
 Capture and audit the current Web parity corpus:
@@ -64,8 +69,26 @@ INPUT_DIR=captures/local/web-interaction/current \
 
 The scheduled `Visual Parity` workflow runs the same audit at `1200 x 900` and
 `390 x 844`, requires nontrivial captures, enforces a provisional board SSIM
-floor of `0.90`, repeats `baseline_point_drag`, and uploads the PNG pairs,
-contact sheets, TSV summaries, and JSON reports as workflow artifacts.
+floor of `0.90` for the development corpus, repeats `baseline_point_drag`, and
+uploads the PNG pairs, contact sheets, TSV summaries, and JSON reports as
+workflow artifacts. Its independent production-corpus pass uses the Stable
+floor of `0.93` at both viewports.
+
+Capture and audit the independent production corpus:
+
+```bash
+CORPUS_SOURCE=production \
+BASE_URL=http://127.0.0.1:8093/ \
+OUTPUT_DIR=captures/local/stable-production/desktop \
+VIEWPORT_WIDTH=1200 \
+VIEWPORT_HEIGHT=900 \
+npm --prefix tools/visual-parity run capture
+
+CORPUS_SOURCE=production \
+INPUT_DIR=captures/local/stable-production/desktop \
+MIN_BOARD_SSIM=0.93 \
+npm --prefix tools/visual-parity run audit
+```
 
 Capture the same source as source text, official JSXGraph, and Compose Canvas:
 
@@ -95,12 +118,17 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the source of truth for current slice cases. Its
-documents contain `boundingBox` and ordered
+`JsxGraphParityCorpus` is the source of truth for the eight development parity
+cases. Its documents contain `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI no longer converts a
 separate demo schema into handwritten native geometry. A case is added only
 after the native implementation supports every feature declared by that case.
-This slice corpus is separate from the future full JSXGraph stable corpus.
+
+The independent Stable corpus is defined in
+`tools/stability/production-corpus.mjs`. Its generator validates 24 unique
+sources and 44 declared capability points, then emits separate Kotlin copies
+for core tests and debug/runtime consumers. CI regenerates both copies and
+rejects drift.
 
 The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
@@ -146,6 +174,17 @@ The source-controlled `baseline_point_drag` trace moves the amber Point from
 Native/Official full-board SSIM was `0.984672` on Desktop and `0.973887` on
 Compact; both profiles completed without browser errors.
 
+Latest independent production evidence (2026-09-15):
+
+| Profile | Cases | Lowest SSIM | Stable floor |
+| --- | ---: | ---: | ---: |
+| Desktop `1200 x 900` | 24/24 | 0.967798 | 0.93 |
+| Compact `390 x 844` | 24/24 | 0.950843 | 0.93 |
+
+The lowest case in both profiles is `prod_angle_auto_wedge`. Its geometry and
+content were reviewed in the paged contact sheets linked from
+[`stability-report.md`](stability-report.md).
+
 The matrix script captures these logical window profiles and restores the
 device's previous size, density, and font scale on success or failure:
 
@@ -187,6 +226,16 @@ sample:
 7. Android, iOS Simulator, JVM, and Wasm builds remain green.
 8. Every accepted mismatch is documented; unreviewed visual drift fails the
    gate.
+9. Independent scene and interaction replay is deterministic.
+10. Generated stress and JVM soak tests remain inside their source-controlled
+    element, time, P95, and retained-heap limits.
+11. Android, iOS, Desktop, and Web run the same 24-case load screen to its
+    final case.
+12. Production Maven coordinates, MIT POM metadata, source-safety scans, and
+    debug/release APK permission audits pass.
 
-Current status is pre-stable. The initial case proves the pipeline but is not
-evidence of full JSXGraph parity.
+All gates above pass for the documented Point/Line/Circle/Curve/Polygon/Text/
+Arc/Sector/Angle construction, rendering, and Point-interaction scope. That
+scope is rated **Stable**. Unsupported JSXGraph APIs and element families
+remain outside the rating and fail explicitly where they cross the production
+document boundary.

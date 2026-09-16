@@ -21,16 +21,20 @@ class MainActivity : ComponentActivity() {
         setContent {
             JsxGraphDebugApp(
                 options = JsxGraphDebugOptions(
-                    initialDestination = if (intent.hasExtra(EXTRA_PREVIEW)) {
-                        JsxGraphDebugDestination.Parity
-                    } else {
-                        JsxGraphDebugDestination.Roadmap
+                    initialDestination = when {
+                        intent.getBooleanExtra(EXTRA_STABLE_LOAD, false) ->
+                            JsxGraphDebugDestination.StableLoad
+                        intent.hasExtra(EXTRA_PREVIEW) ->
+                            JsxGraphDebugDestination.Parity
+                        else -> JsxGraphDebugDestination.Roadmap
                     },
                     initialPreview = JsxGraphDebugPreview.from(
                         intent.getStringExtra(EXTRA_PREVIEW),
                     ),
                     parityCaseId = intent.getStringExtra(EXTRA_CASE_ID)
                         ?: JsxGraphParityCorpus.DEFAULT_CASE_ID,
+                    autoRunLoadTest =
+                        intent.getBooleanExtra(EXTRA_STABLE_LOAD, false),
                 ),
             )
         }
@@ -39,5 +43,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_PREVIEW = "preview"
         private const val EXTRA_CASE_ID = "caseId"
+        private const val EXTRA_STABLE_LOAD = "stableLoad"
     }
 }

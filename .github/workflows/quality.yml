@@ -31,6 +31,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Verify generated production corpus
+        run: |
+          node tools/stability/generate-production-corpus.mjs
+          git diff --exit-code -- \
+            jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/generated/ProductionCorpus.kt \
+            jsxgraph-debug-ui/src/commonMain/kotlin/com/swithun/jsxgraph/debugui/generated/ProductionCorpus.kt
+
       - name: Reject internal endpoints and credential material
         shell: bash
         run: |
@@ -54,8 +61,140 @@ jobs:
             :jsxgraph-compose:allTests \
             :jsxgraph-debug-ui:allTests
 
+      - name: Verify Maven publication coordinates
+        run: ./gradlew verifyPublicationCoordinates
+
       - name: Build sample applications
         run: |
           ./gradlew \
             :sample:androidApp:assembleDebug \
-            :sample:webApp:wasmJsBrowserDistribution
+            :sample:androidApp:assembleRelease \
+            :sample:desktopApp:createDistributable \
+            :sample:webApp:wasmJsBrowserDistribution \
+            :jsxgraph-core:compileKotlinIosArm64 \
+            :jsxgraph-core:compileKotlinIosSimulatorArm64 \
+            :jsxgraph-core:compileKotlinIosX64 \
+            :jsxgraph-compose:compileKotlinIosArm64 \
+            :jsxgraph-compose:compileKotlinIosSimulatorArm64 \
+            :jsxgraph-compose:compileKotlinIosX64 \
+            :jsxgraph-debug-ui:compileKotlinIosArm64 \
+            :jsxgraph-debug-ui:compileKotlinIosSimulatorArm64 \
+            :jsxgraph-debug-ui:compileKotlinIosX64
+
+      - name: Build iOS sample
+        run: |
+          xcodebuild \
+            -project sample/iosApp/CMPJsxGraph.xcodeproj \
+            -scheme CMPJsxGraph \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath sample/iosApp/build/xcode \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Reject Internet permission in sample APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          aapt2=""
+          for candidate in "$ANDROID_HOME"/build-tools/*/aapt2; do
+            if [[ -x "$candidate" ]]; then
+              aapt2="$candidate"
+            fi
+          done
+          test -n "$aapt2"
+          for apk in \
+            sample/androidApp/build/outputs/apk/debug/androidApp-debug.apk \
+            sample/androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk
+          do
+            permissions="$("$aapt2" dump permissions "$apk")"
+            printf '%s\n' "$permissions"
+            if grep -q 'android.permission.INTERNET' <<<"$permissions"; then
+              echo "Unexpected android.permission.INTERNET in $apk" >&2
+              exit 1
+            fi
+          done
+
+  stable-visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/visual-parity/package-lock.json
+
+      - name: Install visual audit dependencies
+        run: npm ci --prefix tools/visual-parity
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+
+      - name: Build Web production distribution
+        run: ./gradlew :sample:webApp:wasmJsBrowserDistribution
+
+      - name: Capture independent production corpus
+        run: |
+          python3 -m http.server 8093 \
+            --directory sample/webApp/build/dist/wasmJs/productionExecutable \
+            >/tmp/cmp-jsxgraph-stable-visual.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8093/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/production-desktop \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/web-load \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          npm --prefix tools/visual-parity run test:load
+
+      - name: Enforce independent production parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/production-desktop \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Generate production contact pages
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/production-desktop \
+          OUTPUT_DIR=captures/stable/production-desktop/evidence \
+          npm --prefix tools/visual-parity run contact-pages
+
+      - name: Upload Stable visual evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stable-visual-evidence
+          path: captures/stable
+          retention-days: 14

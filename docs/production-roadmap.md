@@ -12,6 +12,19 @@ The upstream baseline contains 104 JavaScript source files outside
 `src/unused`. Completion is tracked by source symbol and behavior, not by raw
 line count.
 
+## Current Release Decision
+
+CMP JSXGraph `0.1.0` is **Stable for the documented support scope**:
+Point, Line, Circle, Curve, FunctionGraph, Plot, Polygon, Text, Arc, Sector,
+Angle, and free Point interaction through the bounded construction-document
+API. The qualification evidence is recorded in
+[`stability-report.md`](stability-report.md).
+
+This promotion does not close the translation roadmap. Remaining JSXGraph
+element families, mutation APIs, interaction modes, and renderer features stay
+outside the Stable contract until their own source-mapped implementation and
+qualification batches pass.
+
 ## Implementation Order
 
 ### 1. Foundation
@@ -73,6 +86,11 @@ within documented platform tolerances.
 
 Exit gate: no known critical correctness, crash, leak or licensing issue;
 supported and unsupported behavior is published explicitly.
+
+Status: complete for the `0.1.0` documented support scope. The independent
+24-case production corpus, 44-point capability coverage, deterministic replay,
+512 generated stress inputs, JVM soak, Desktop/Compact visual parity, runtime
+load matrix, publication metadata, and public-source safety gates pass.
 
 ## Continuous Loop
 

@@ -124,6 +124,31 @@ jobs:
           PARITY_CASE_IDS=baseline_geometry \
           npm --prefix tools/visual-parity run audit
 
+      - name: Capture independent production corpus
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/production \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce independent production parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/production \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Generate production contact pages
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/production \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/production/evidence \
+          npm --prefix tools/visual-parity run contact-pages
+
       - name: Upload visual parity evidence
         if: always()
         uses: actions/upload-artifact@v4

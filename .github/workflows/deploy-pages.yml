@@ -1,4 +1,4 @@
-name: Deploy Web Progress
+name: Deploy Web Demo
 
 on:
   push:

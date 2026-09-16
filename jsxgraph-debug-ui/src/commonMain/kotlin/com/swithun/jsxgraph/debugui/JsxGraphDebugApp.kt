@@ -71,6 +71,7 @@ enum class JsxGraphDebugPreview {
 enum class JsxGraphDebugDestination {
     Roadmap,
     Parity,
+    StableLoad,
 }
 
 data class JsxGraphDebugOptions(
@@ -79,6 +80,7 @@ data class JsxGraphDebugOptions(
     val parityCaseId: String = JsxGraphParityCorpus.DEFAULT_CASE_ID,
     val sourceOverride: String? = null,
     val boardOnly: Boolean = false,
+    val autoRunLoadTest: Boolean = false,
 )
 
 internal sealed interface OfficialRenderResult {
@@ -122,6 +124,16 @@ fun JsxGraphDebugApp(
             )
             JsxGraphDebugDestination.Parity -> ParityWorkspace(
                 options = options,
+                onBackToRoadmap = if (
+                    options.initialDestination == JsxGraphDebugDestination.Roadmap
+                ) {
+                    { destination = JsxGraphDebugDestination.Roadmap }
+                } else {
+                    null
+                },
+            )
+            JsxGraphDebugDestination.StableLoad -> StableLoadScreen(
+                autoRun = options.autoRunLoadTest,
                 onBackToRoadmap = if (
                     options.initialDestination == JsxGraphDebugDestination.Roadmap
                 ) {

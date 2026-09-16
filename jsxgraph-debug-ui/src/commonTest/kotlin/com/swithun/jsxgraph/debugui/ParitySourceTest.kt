@@ -6,11 +6,27 @@ import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import com.swithun.jsxgraph.core.JsxGraphSession
+import com.swithun.jsxgraph.debugui.generated.productionCorpusCases
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class ParitySourceTest {
+    @Test
+    fun productionCorpusCasesResolveThroughTheWebAuditRegistry() {
+        assertEquals(24, productionCorpusCases.size)
+        productionCorpusCases.forEach { productionCase ->
+            val resolved = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+                JsxGraphParityCorpus.find(productionCase.id),
+            ).value
+            assertEquals(productionCase.source, resolved.source)
+            assertIs<GMResult.Ok<JsxGraphScene>>(
+                parseParitySource(resolved.source),
+                productionCase.id,
+            )
+        }
+    }
+
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases

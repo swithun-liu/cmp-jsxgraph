@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-15",
+  "platform": "iOS Simulator",
+  "caseCount": 24,
+  "finalCaseId": "prod_mixed_operations_board",
+  "finalCaseVisible": true,
+  "observedPeakHostRssBytes": 293322752,
+  "finalHostRssBytes": 205438976,
+  "outcome": "passed"
+}

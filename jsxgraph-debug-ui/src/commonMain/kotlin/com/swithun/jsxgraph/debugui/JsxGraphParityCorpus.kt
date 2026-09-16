@@ -5,6 +5,7 @@
 package com.swithun.jsxgraph.debugui
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.debugui.generated.productionCorpusCases
 
 data class JsxGraphParityCase(
     val id: String,
@@ -124,8 +125,19 @@ object JsxGraphParityCorpus {
         ),
     )
 
+    private val productionCases: List<JsxGraphParityCase> =
+        productionCorpusCases.map { productionCase ->
+            JsxGraphParityCase(
+                id = productionCase.id,
+                title = productionCase.title,
+                source = productionCase.source,
+                features = productionCase.features,
+            )
+        }
+
     fun find(caseId: String): GMResult<JsxGraphParityCase, String> =
-        cases.firstOrNull { parityCase -> parityCase.id == caseId }
+        (cases + productionCases)
+            .firstOrNull { parityCase -> parityCase.id == caseId }
             ?.let { parityCase -> GMResult.Ok(parityCase) }
             ?: GMResult.Err("Unknown parity case: $caseId")
 }

@@ -7,6 +7,20 @@
 - commit: `7c2176d479ae256cb9d38265bce81fa18709d01f`
 - license option: MIT
 
+## Stable Support Scope
+
+Release `0.1.0` is Stable for the translated construction-document and
+Compose rendering subset listed in the source map below: Point, Line, Circle,
+Curve, FunctionGraph, Plot, Polygon, Text, Arc, Sector, Angle, and free Point
+interaction with dependency updates and state restoration.
+
+Rows marked `Partially translated` remain accurate. The Stable rating applies
+only to the explicitly listed symbols and parent/attribute forms, not to the
+complete upstream file or full JSXGraph API. See
+[`stability-report.md`](stability-report.md) for qualification evidence and
+[`translation-deviations.md`](translation-deviations.md) for unsupported
+behavior.
+
 ## Source Mapping
 
 | Upstream source | Upstream symbols | Kotlin target | Status |
