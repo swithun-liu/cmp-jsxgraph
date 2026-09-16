@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -70,7 +70,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				LastUpgradeCheck = 1540;
 				TargetAttributes = {
 					8B62AFECF403B479A2909BC9 = {
 						DevelopmentTeam = "";
@@ -78,6 +78,7 @@
 				};
 			};
 			buildConfigurationList = CC526F348A66E49592554698 /* Build configuration list for PBXProject "CMPJsxGraph" */;
+			compatibilityVersion = "Xcode 15.3";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -86,7 +87,6 @@
 			);
 			mainGroup = 3388E865D3AA9C2FC14B178B;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = 183C4695775AD4618943C320 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
