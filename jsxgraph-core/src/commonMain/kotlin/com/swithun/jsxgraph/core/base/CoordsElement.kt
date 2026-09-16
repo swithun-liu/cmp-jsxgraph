@@ -32,9 +32,9 @@ internal sealed interface CoordinateConstraintError {
  * Initial coordinate-access slice of JXG.CoordsElement.
  *
  * JessieCode coordinate constraints and their update lifecycle are present.
- * Function, slider, single-array, glider, transformation, animation, and
- * renderer behavior remain in the untranslated element model. This class
- * stays internal until those lifecycle contracts are available.
+ * Function, slider, single-array, glider, persistent transformation,
+ * animation, and renderer behavior remain in the untranslated element model.
+ * This class stays internal until those lifecycle contracts are available.
  */
 internal open class CoordsElement(
     board: Board,

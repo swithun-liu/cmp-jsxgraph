@@ -25,6 +25,15 @@ element families, mutation APIs, interaction modes, and renderer features stay
 outside the Stable contract until their own source-mapped implementation and
 qualification batches pass.
 
+## Post-0.1.0 Translation Progress
+
+- Coordinate systems and transforms: the static numeric 2D kernel from
+  `src/base/transformation.js` is translated, including matrix construction,
+  one-time application, cloning, and composition.
+- Still pending in that source slice: dynamic parameters, `bindTo`/`meltTo`,
+  the `CoordsElement` transformation lifecycle, transformed element factories,
+  construction-document exposure, and 3D transformations.
+
 ## Implementation Order
 
 ### 1. Foundation

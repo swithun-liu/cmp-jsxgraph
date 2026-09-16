@@ -36,7 +36,8 @@ internal sealed interface PointError {
  * constraints, board registration, coordinate updates, bounds, and incidence
  * checks against the currently translated point, line, and circle elements.
  * Visual attributes, screen hit testing, traces, non-string constraints,
- * transformations, gliders, and intersections remain untranslated.
+ * transformed-point construction, persistent transformations, gliders, and
+ * intersections remain untranslated.
  */
 internal open class Point internal constructor(
     board: Board,

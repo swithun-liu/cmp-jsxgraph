@@ -13,9 +13,9 @@ import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 /**
  * Initial lifecycle and dependency slice of JXG.GeometryElement.
  *
- * Visual properties, renderer nodes, transformations, labels, traces, and
- * animations remain in the untranslated element model. This class stays
- * internal until those contracts are available.
+ * Visual properties, renderer nodes, persistent transformation ownership,
+ * labels, traces, and animations remain in the untranslated element model.
+ * This class stays internal until those contracts are available.
  */
 internal open class GeometryElement(
     internal val board: Board,

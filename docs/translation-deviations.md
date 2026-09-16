@@ -42,7 +42,8 @@ practical.
   State capture/reset/restore is explicit and a move or restore that produces
   invalid scene geometry is rolled back atomically. Point events, hover
   styling, multi-pointer gestures, keyboard movement, object dragging, pan,
-  zoom, snapping, gliders, groups, and transformations remain pending.
+  zoom, snapping, gliders, groups, and persistent transformations remain
+  pending.
 - The translated Curve subset accepts two numeric arrays for a discrete data
   plot, four number/string terms for an explicit-domain parametric curve, or
   three number/string terms for FunctionGraph/Plot. Continuous curves require
@@ -246,6 +247,17 @@ practical.
 - Numeric vectors and matrices use `DoubleArray` and `Array<DoubleArray>`.
   Malformed dimensions are outside the internal contract and may fail
   differently from malformed JavaScript arrays.
+- `Transformation` currently exposes only the static numeric 2D kernel.
+  Unsupported type names, wrong parameter counts, malformed matrix shapes,
+  and malformed reflection coordinates return `GMResult.Err` instead of
+  throwing or failing while indexing. Dynamic number/string/function
+  parameters, `bindTo`/`meltTo`, coordinate-element transformation lists,
+  transformed element factories, construction-document exposure, and 3D
+  transformations remain pending.
+- JSXGraph `1.13.3` requires four `affine` parameters but calls
+  `Type.createEvalFunction` with a count of nine, which fails while reading the
+  fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
+  from the four entries that the upstream `update` function reads.
 - `EventEmitter` passes the registered context as an explicit callback
   argument because Kotlin has no dynamic JavaScript `this`.
 - `Board.setId` returns `GMResult.Err(DuplicateElementId)` for an explicitly
