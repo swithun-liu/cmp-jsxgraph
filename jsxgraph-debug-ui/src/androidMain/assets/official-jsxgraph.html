@@ -52,6 +52,7 @@
       const errorElement = document.querySelector("#error");
       let board = null;
       let requestId = 0;
+      let resizeFrame = 0;
 
       const notifyParent = (message) => {
         if (window.parent !== window) {
@@ -84,6 +85,37 @@
         }
         throw new Error("Official JSXGraph container has no visible size");
       };
+
+      const resizeBoard = () => {
+        resizeFrame = 0;
+        if (board === null) {
+          return;
+        }
+        const bounds = boardElement.getBoundingClientRect();
+        if (
+          bounds.width <= 0 ||
+          bounds.height <= 0 ||
+          (
+            board.canvasWidth === bounds.width &&
+            board.canvasHeight === bounds.height
+          )
+        ) {
+          return;
+        }
+        // JSXGraph: src/base/board.js -> resizeContainer.
+        board.resizeContainer(bounds.width, bounds.height, true);
+        board.fullUpdate();
+        notifyReady(String(bounds.width), String(bounds.height));
+      };
+
+      if (typeof ResizeObserver === "function") {
+        new ResizeObserver(() => {
+          if (resizeFrame !== 0) {
+            cancelAnimationFrame(resizeFrame);
+          }
+          resizeFrame = requestAnimationFrame(resizeBoard);
+        }).observe(boardElement);
+      }
 
       const showError = (message) => {
         boardElement.style.display = "none";

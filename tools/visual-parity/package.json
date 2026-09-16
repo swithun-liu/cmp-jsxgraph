@@ -6,7 +6,8 @@
     "capture": "node capture-web-parity.mjs",
     "audit": "node audit-web-parity.mjs",
     "contact-pages": "node generate-contact-pages.mjs",
-    "test:load": "node test-web-load.mjs"
+    "test:load": "node test-web-load.mjs",
+    "test:responsive": "node test-responsive-parity.mjs"
   },
   "dependencies": {
     "puppeteer": "25.10.0"

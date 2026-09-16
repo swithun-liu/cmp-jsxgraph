@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -53,6 +54,8 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.JsxGraphEngine
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSession
+
+private const val DEFAULT_PARITY_BOARD_ASPECT_RATIO = 1.2f
 
 enum class JsxGraphDebugPreview {
     Source,
@@ -243,47 +246,42 @@ private fun DebugContent(
             candidate.id == currentCase.id
         }
     }?.takeIf { index -> index >= 0 }
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .padding(contentPadding)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        val compactHeight = maxHeight < 600.dp
         Column(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(
-                if (compactHeight) 8.dp else 12.dp,
-            ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (!compactHeight) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    Column {
-                        Text(
-                            text = "JSXGraph parity",
-                            style = MaterialTheme.typography.titleLarge,
-                            letterSpacing = 0.sp,
-                        )
-                        Text(
-                            text = "Reference 1.13.3",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                            letterSpacing = 0.sp,
-                        )
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Column {
                     Text(
-                        text = caseIndex?.let { index ->
-                            "case ${index + 1} / ${JsxGraphParityCorpus.cases.size}"
-                        } ?: "unknown case",
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.labelMedium,
+                        text = "JSXGraph parity",
+                        style = MaterialTheme.typography.titleLarge,
+                        letterSpacing = 0.sp,
+                    )
+                    Text(
+                        text = "Reference 1.13.3",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
                         letterSpacing = 0.sp,
                     )
                 }
+                Text(
+                    text = caseIndex?.let { index ->
+                        "case ${index + 1} / ${JsxGraphParityCorpus.cases.size}"
+                    } ?: "unknown case",
+                    color = MaterialTheme.colorScheme.secondary,
+                    style = MaterialTheme.typography.labelMedium,
+                    letterSpacing = 0.sp,
+                )
             }
 
             Row(
@@ -314,44 +312,56 @@ private fun DebugContent(
                 }
             }
 
-            val boardModifier = if (compactHeight) {
-                Modifier
+            BoxWithConstraints(
+                modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-            } else {
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1.2f)
-            }
-            Surface(
-                modifier = boardModifier.semantics {
-                    contentDescription = "jsxgraph-parity-board"
-                },
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                color = Color.White,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
             ) {
-                ParityPreview(
-                    parityCase = parityCase,
-                    session = session,
-                    preview = preview,
-                    onOfficialResult = onOfficialResult,
-                )
+                val boardModifier =
+                    if (
+                        maxWidth / DEFAULT_PARITY_BOARD_ASPECT_RATIO <=
+                        maxHeight
+                    ) {
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(DEFAULT_PARITY_BOARD_ASPECT_RATIO)
+                    } else {
+                        Modifier
+                            .fillMaxHeight()
+                            .aspectRatio(
+                                ratio = DEFAULT_PARITY_BOARD_ASPECT_RATIO,
+                                matchHeightConstraintsFirst = true,
+                            )
+                    }
+                Surface(
+                    modifier = boardModifier.semantics {
+                        contentDescription = "jsxgraph-parity-board"
+                    },
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                    color = Color.White,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    ParityPreview(
+                        parityCase = parityCase,
+                        session = session,
+                        preview = preview,
+                        onOfficialResult = onOfficialResult,
+                    )
+                }
             }
 
-            if (!compactHeight) {
-                Text(
-                    text = "${selectedCase?.title ?: "Invalid parity case"} - " + when (preview) {
-                        JsxGraphDebugPreview.Source -> "Parity fixture JSON"
-                        JsxGraphDebugPreview.Official -> "Official JSXGraph 1.13.3"
-                        JsxGraphDebugPreview.Native -> "Compose Canvas"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                    letterSpacing = 0.sp,
-                )
-            }
+            Text(
+                text = "${selectedCase?.title ?: "Invalid parity case"} - " + when (preview) {
+                    JsxGraphDebugPreview.Source -> "Parity fixture JSON"
+                    JsxGraphDebugPreview.Official -> "Official JSXGraph 1.13.3"
+                    JsxGraphDebugPreview.Native -> "Compose Canvas"
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelMedium,
+                letterSpacing = 0.sp,
+            )
         }
     }
 }
