@@ -78,19 +78,24 @@ jobs:
           name: visual-parity-web
           path: build/visual-parity-web
 
-      - name: Capture Native and Official pairs
+      - name: Start Web audit server
         run: |
-          python3 -m http.server 8093 \
+          nohup python3 -m http.server 8093 \
             --directory build/visual-parity-web \
             >/tmp/cmp-jsxgraph-visual-parity.log 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid"' EXIT
+          echo "$server_pid" >/tmp/cmp-jsxgraph-visual-parity.pid
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:8093/ >/dev/null; then
-              break
+              exit 0
             fi
             sleep 1
           done
+          cat /tmp/cmp-jsxgraph-visual-parity.log
+          exit 1
+
+      - name: Capture Native and Official pairs
+        run: |
           BASE_URL=http://127.0.0.1:8093/ \
           OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }} \
           VIEWPORT_WIDTH=${{ matrix.width }} \
@@ -148,6 +153,13 @@ jobs:
           INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/production \
           OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/production/evidence \
           npm --prefix tools/visual-parity run contact-pages
+
+      - name: Stop Web audit server
+        if: always()
+        run: |
+          if [[ -f /tmp/cmp-jsxgraph-visual-parity.pid ]]; then
+            kill "$(cat /tmp/cmp-jsxgraph-visual-parity.pid)" || true
+          fi
 
       - name: Upload visual parity evidence
         if: always()
