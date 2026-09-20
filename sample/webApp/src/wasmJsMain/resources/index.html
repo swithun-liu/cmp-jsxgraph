@@ -120,6 +120,7 @@
             const nativeFetch = window.fetch.bind(window);
             let loadedBytes = 0;
             let totalBytes = 0;
+            let chunkRequestQueue = Promise.resolve();
 
             const setStatus = (message) => {
                 const element = document.querySelector("#loading-status");
@@ -145,6 +146,15 @@
                 }
             };
 
+            const queueChunkRequest = (request) => {
+                const result = chunkRequestQueue.then(request);
+                chunkRequestQueue = result.then(
+                    () => undefined,
+                    () => undefined,
+                );
+                return result;
+            };
+
             const fetchChunkedWasm = async (requestUrl) => {
                 const manifestUrl = new URL(requestUrl);
                 manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;
@@ -164,8 +174,8 @@
                 setProgress();
 
                 const chunkResults = payload.chunks.map(
-                    async (chunkName) => {
-                        try {
+                    (chunkName) =>
+                        queueChunkRequest(async () => {
                             const chunkResponse = await nativeFetch(
                                 new URL(chunkName, manifestUrl),
                             );
@@ -181,11 +191,11 @@
                                 );
                             loadedBytes += chunk.byteLength;
                             setProgress();
-                            return { chunk };
-                        } catch (error) {
-                            return { error };
-                        }
-                    },
+                            return chunk;
+                        }).then(
+                            (chunk) => ({ chunk }),
+                            (error) => ({ error }),
+                        ),
                 );
                 let chunkIndex = 0;
                 let streamedBytes = 0;

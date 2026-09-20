@@ -27,6 +27,8 @@ const maximumRetainedHeapBytes = readPositiveNumber(
 const expectChunkedWasm = process.env.EXPECT_CHUNKED_WASM === "true";
 const pageErrors = [];
 const requestedUrls = [];
+let activeCompressedPartRequests = 0;
+let maximumConcurrentCompressedPartRequests = 0;
 
 mkdirSync(outputDirectory, {recursive: true});
 const browser = await puppeteer.launch(browserLaunchOptions());
@@ -38,7 +40,23 @@ try {
         deviceScaleFactor: 1
     });
     page.on("pageerror", (error) => pageErrors.push(error.message));
-    page.on("request", (request) => requestedUrls.push(request.url()));
+    page.on("request", (request) => {
+        requestedUrls.push(request.url());
+        if (isCompressedPartRequest(request.url())) {
+            activeCompressedPartRequests += 1;
+            maximumConcurrentCompressedPartRequests = Math.max(
+                maximumConcurrentCompressedPartRequests,
+                activeCompressedPartRequests
+            );
+        }
+    });
+    const finishRequest = (request) => {
+        if (isCompressedPartRequest(request.url())) {
+            activeCompressedPartRequests -= 1;
+        }
+    };
+    page.on("requestfinished", finishRequest);
+    page.on("requestfailed", finishRequest);
     page.on("console", (message) => {
         if (message.type() === "error") {
             pageErrors.push(message.text());
@@ -148,6 +166,15 @@ try {
     ) {
         failures.push("Chunked loading did not use compressed Wasm parts");
     }
+    if (
+        expectChunkedWasm &&
+        maximumConcurrentCompressedPartRequests > 1
+    ) {
+        failures.push(
+            "Chunked loading started concurrent compressed payloads: " +
+                maximumConcurrentCompressedPartRequests
+        );
+    }
     const report = {
         schemaVersion: 1,
         caseCount: expectedCaseCount,
@@ -166,6 +193,7 @@ try {
             maximumRetainedHeapBytes
         },
         wasmRequests,
+        maximumConcurrentCompressedPartRequests,
         usesNativeInstantiateStreaming,
         supportsStreamingDecompression,
         browserErrors: pageErrors,
@@ -262,4 +290,8 @@ function summarizeWasmRequests(urls) {
             path.includes(".payload.part-")
         ).length
     };
+}
+
+function isCompressedPartRequest(url) {
+    return new URL(url).pathname.includes(".payload.part-");
 }
