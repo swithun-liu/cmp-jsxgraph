@@ -118,6 +118,8 @@
             }
 
             const nativeFetch = window.fetch.bind(window);
+            const chunkRequestAttempts = 3;
+            const chunkRequestTimeoutMillis = 15_000;
             let loadedBytes = 0;
             let totalBytes = 0;
             let chunkRequestQueue = Promise.resolve();
@@ -155,6 +157,76 @@
                 return result;
             };
 
+            const fetchChunkWithRetry = async (
+                chunkUrl,
+                decodeJsonBase64,
+            ) => {
+                let lastError;
+                for (
+                    let attempt = 0;
+                    attempt < chunkRequestAttempts;
+                    attempt += 1
+                ) {
+                    const controller = new AbortController();
+                    const timeoutId = window.setTimeout(
+                        () => controller.abort(),
+                        chunkRequestTimeoutMillis,
+                    );
+                    const attemptUrl = new URL(chunkUrl);
+                    if (attempt > 0) {
+                        attemptUrl.searchParams.set(
+                            "retry",
+                            attempt.toString(),
+                        );
+                    }
+                    try {
+                        const response = await nativeFetch(
+                            attemptUrl,
+                            {
+                                cache: attempt === 0
+                                    ? "default"
+                                    : "no-store",
+                                signal: controller.signal,
+                            },
+                        );
+                        if (!response.ok) {
+                            throw new Error(
+                                `HTTP ${response.status} for ${chunkUrl}`,
+                            );
+                        }
+                        const chunk = decodeJsonBase64
+                            ? decodeBase64(await response.json())
+                            : new Uint8Array(
+                                await response.arrayBuffer(),
+                            );
+                        if (attempt > 0) {
+                            setStatus(
+                                "Downloading and compiling renderer",
+                            );
+                        }
+                        return chunk;
+                    } catch (error) {
+                        lastError = error;
+                        if (attempt + 1 < chunkRequestAttempts) {
+                            setStatus(
+                                `Retrying renderer download ` +
+                                    `(${attempt + 2}/` +
+                                    `${chunkRequestAttempts})`,
+                            );
+                        }
+                    } finally {
+                        window.clearTimeout(timeoutId);
+                    }
+                }
+                const reason = lastError instanceof Error
+                    ? lastError.message
+                    : String(lastError);
+                throw new Error(
+                    `Failed to load ${chunkUrl} after ` +
+                        `${chunkRequestAttempts} attempts: ${reason}`,
+                );
+            };
+
             const fetchChunkedWasm = async (requestUrl) => {
                 const manifestUrl = new URL(requestUrl);
                 manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;
@@ -163,10 +235,14 @@
                     throw new Error(`Failed to load ${manifestUrl}`);
                 }
                 const manifest = await manifestResponse.json();
+                const compressionFormat = manifest.compression?.format;
                 const useCompression =
                     typeof DecompressionStream === "function" &&
                     typeof TransformStream === "function" &&
-                    manifest.compression?.format === "gzip-base64";
+                    (
+                        compressionFormat === "gzip" ||
+                        compressionFormat === "gzip-base64"
+                    );
                 const payload = useCompression
                     ? manifest.compression
                     : manifest;
@@ -176,19 +252,12 @@
                 const chunkResults = payload.chunks.map(
                     (chunkName) =>
                         queueChunkRequest(async () => {
-                            const chunkResponse = await nativeFetch(
+                            const chunk = await fetchChunkWithRetry(
                                 new URL(chunkName, manifestUrl),
+                                useCompression &&
+                                    compressionFormat ===
+                                        "gzip-base64",
                             );
-                            if (!chunkResponse.ok) {
-                                throw new Error(
-                                    `Failed to load ${chunkName}`,
-                                );
-                            }
-                            const chunk = useCompression
-                                ? decodeBase64(await chunkResponse.json())
-                                : new Uint8Array(
-                                    await chunkResponse.arrayBuffer(),
-                                );
                             loadedBytes += chunk.byteLength;
                             setProgress();
                             return chunk;

@@ -25,15 +25,23 @@ const maximumRetainedHeapBytes = readPositiveNumber(
     96 * 1024 * 1024
 );
 const expectChunkedWasm = process.env.EXPECT_CHUNKED_WASM === "true";
+const simulateCompressedPartRetry =
+    process.env.SIMULATE_COMPRESSED_PART_RETRY === "true";
 const pageErrors = [];
 const requestedUrls = [];
+const simulatedCompressedPartRequests = new WeakSet();
 let activeCompressedPartRequests = 0;
 let maximumConcurrentCompressedPartRequests = 0;
+let simulatedFailedCompressedPartPath = null;
+let ignoredSimulatedConsoleErrorCount = 0;
 
 mkdirSync(outputDirectory, {recursive: true});
 const browser = await puppeteer.launch(browserLaunchOptions());
 try {
     const page = await browser.newPage();
+    if (simulateCompressedPartRetry) {
+        await page.setRequestInterception(true);
+    }
     await page.setViewport({
         width: viewportWidth,
         height: viewportHeight,
@@ -42,16 +50,38 @@ try {
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("request", (request) => {
         requestedUrls.push(request.url());
-        if (isCompressedPartRequest(request.url())) {
+        const isCompressedPart = isCompressedPartRequest(request.url());
+        if (
+            simulateCompressedPartRetry &&
+            simulatedFailedCompressedPartPath === null &&
+            isCompressedPart
+        ) {
+            simulatedFailedCompressedPartPath =
+                new URL(request.url()).pathname;
+            simulatedCompressedPartRequests.add(request);
+            void request.respond({
+                status: 503,
+                contentType: "text/plain",
+                body: "Simulated transient payload failure"
+            });
+            return;
+        }
+        if (isCompressedPart) {
             activeCompressedPartRequests += 1;
             maximumConcurrentCompressedPartRequests = Math.max(
                 maximumConcurrentCompressedPartRequests,
                 activeCompressedPartRequests
             );
         }
+        if (simulateCompressedPartRetry) {
+            void request.continue();
+        }
     });
     const finishRequest = (request) => {
-        if (isCompressedPartRequest(request.url())) {
+        if (
+            isCompressedPartRequest(request.url()) &&
+            !simulatedCompressedPartRequests.has(request)
+        ) {
             activeCompressedPartRequests -= 1;
         }
     };
@@ -59,7 +89,18 @@ try {
     page.on("requestfailed", finishRequest);
     page.on("console", (message) => {
         if (message.type() === "error") {
-            pageErrors.push(message.text());
+            const messageText = message.text();
+            if (
+                simulateCompressedPartRetry &&
+                ignoredSimulatedConsoleErrorCount === 0 &&
+                messageText.includes(
+                    "server responded with a status of 503"
+                )
+            ) {
+                ignoredSimulatedConsoleErrorCount += 1;
+            } else {
+                pageErrors.push(messageText);
+            }
         }
     });
 
@@ -111,6 +152,14 @@ try {
         omitBackground: false
     });
     const wasmRequests = summarizeWasmRequests(requestedUrls);
+    const simulatedRetryRequestCount =
+        simulatedFailedCompressedPartPath === null
+            ? 0
+            : requestedUrls.filter(
+                (requestUrl) =>
+                    new URL(requestUrl).pathname ===
+                        simulatedFailedCompressedPartPath
+            ).length;
     const usesNativeInstantiateStreaming = await page.evaluate(() =>
         Function.prototype.toString
             .call(WebAssembly.instantiateStreaming)
@@ -168,11 +217,28 @@ try {
     }
     if (
         expectChunkedWasm &&
+        supportsStreamingDecompression &&
+        wasmRequests.compressedJsonPartCount > 0
+    ) {
+        failures.push(
+            "Chunked loading used throttled JSON Wasm payloads"
+        );
+    }
+    if (
+        expectChunkedWasm &&
         maximumConcurrentCompressedPartRequests > 1
     ) {
         failures.push(
             "Chunked loading started concurrent compressed payloads: " +
                 maximumConcurrentCompressedPartRequests
+        );
+    }
+    if (
+        simulateCompressedPartRetry &&
+        simulatedRetryRequestCount < 2
+    ) {
+        failures.push(
+            "Chunked loading did not retry the interrupted payload"
         );
     }
     const report = {
@@ -194,6 +260,10 @@ try {
         },
         wasmRequests,
         maximumConcurrentCompressedPartRequests,
+        simulateCompressedPartRetry,
+        simulatedFailedCompressedPartPath,
+        simulatedRetryRequestCount,
+        ignoredSimulatedConsoleErrorCount,
         usesNativeInstantiateStreaming,
         supportsStreamingDecompression,
         browserErrors: pageErrors,
@@ -288,6 +358,9 @@ function summarizeWasmRequests(urls) {
         ).length,
         compressedPartCount: paths.filter((path) =>
             path.includes(".payload.part-")
+        ).length,
+        compressedJsonPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") && path.endsWith(".json")
         ).length
     };
 }

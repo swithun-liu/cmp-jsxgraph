@@ -63,6 +63,7 @@ jobs:
           done
           BASE_URL='http://127.0.0.1:8093/?chunkedWasm=true' \
           EXPECT_CHUNKED_WASM='true' \
+          SIMULATE_COMPRESSED_PART_RETRY='true' \
           npm --prefix tools/visual-parity run test:load
 
       - name: Configure GitHub Pages
