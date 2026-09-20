@@ -759,25 +759,37 @@ practical.
 - Numeric vectors and matrices use `DoubleArray` and `Array<DoubleArray>`.
   Malformed dimensions are outside the internal contract and may fail
   differently from malformed JavaScript arrays.
-- `Transformation` covers the numeric and dynamic 2D kernel. Unsupported type
-  names, wrong parameter counts, malformed matrix shapes, malformed reflection
+- `Transformation` covers the numeric and dynamic 2D kernel and the 4x4
+  `setMatrix3D` kernel. Unsupported type names, wrong parameter counts,
+  malformed matrix shapes or vector dimensions, malformed reflection
   coordinates, JessieCode compile/evaluation failures, nonnumeric expression
   results, and rejected structured function parameters return `GMResult.Err`
   instead of throwing or failing while indexing. `bindTo`, static `meltTo`,
   coordinate-element transformation lists, transformed-position preimages,
-  the dedicated JessieCode Transformation runtime reference, the native
-  `transform` creator, and transformed-Point creation are translated.
+  the dedicated JessieCode Transformation runtime reference, the native and
+  construction-document `transform` creator paths, and transformed-Point
+  creation are translated.
 - JSXGraph `1.13.3` returns `null` from `Transformation.clone()` for dynamic
   matrices, but `meltTo()` still appends that value and fails on the next
   element update. Kotlin returns
   `TransformationError.DynamicMeltUnsupported` without mutating the target.
   Dynamic transforms remain available through `bindTo`, which is the working
-  upstream route. Construction-document exposure, transformed Text/Image
-  rendering, and 3D transformations remain pending.
+  upstream route. Array-backed `affinematrix`/`matrix` transforms and
+  array-centered rotations retain the upstream nonnumeric classification even
+  when all entries are numbers. Transformed Text/Image rendering and
+  View3D/Point3D construction, binding, and `applyOnce` remain pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
   from the four entries that the upstream `update` function reads.
+- JSXGraph `1.13.3` creates six evaluators for the 16-parameter 3D `generic`
+  transform and then reads all 16. Kotlin returns
+  `TransformationError.UpstreamEvaluationDefect` and keeps the previous
+  matrix atomic instead of exposing the upstream partially written matrix.
+- JSXGraph `1.13.3` accepts extra 3D `rotate` and `rotateX/Y/Z` parameters.
+  When the delegated `rotate` parent count is not exactly three, its center
+  branch is skipped. Kotlin preserves that permissive count and ignored-center
+  behavior.
 - `EventEmitter` passes the registered context as an explicit callback
   argument because Kotlin has no dynamic JavaScript `this`.
 - `Board.setId` returns `GMResult.Err(DuplicateElementId)` for an explicitly

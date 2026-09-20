@@ -56,10 +56,26 @@ node tools/upstream-fixtures/transformation-lifecycle.mjs
 The fixture covers number, JessieCode, and function-valued parameters; dynamic
 matrices; Point/Line-backed rotation and reflection; transformed Points;
 `bindTo`; transformed drag preimages; independent static `meltTo` clones; and
-first-match transform removal. Native JessieCode now exposes `transform` and
-transformed Point creation through the focused `transformed_points` same-source
-fixture. This does not change the 30-case Stable evidence count because
-construction-document exposure and production qualification remain pending.
+first-match transform removal. It also records the upstream nonnumeric
+classification of array-centered rotations and array-backed matrices. Native
+JessieCode and construction documents expose `transform` and transformed Point
+creation from one transform or a chain. The focused `transformed_points`
+same-source fixture remains outside the 30-case Stable evidence count pending
+independent production qualification.
+
+Capture every JSXGraph `1.13.3` 4x4 transformation form:
+
+```bash
+node tools/upstream-fixtures/transformation-3d.mjs
+```
+
+The fixture covers translate, three- and four-parameter scale, axis and
+arbitrary-axis rotations, array- and Point-centered rotations, affine and
+matrix forms, scalar/vector/matrix dynamic reevaluation, homogeneous and
+zero-length normals, permissive extra rotation parameters, and the observed
+six-evaluator/16-read `generic` defect. Core tests compare those matrices and
+transformed homogeneous coordinates directly. View3D/Point3D rendering remains
+outside this kernel-only evidence.
 
 Capture the official direct-function Point lifecycle and the observed
 Midpoint function-parent rejection:

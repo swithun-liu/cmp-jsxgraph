@@ -38,11 +38,16 @@ qualification batches pass.
   structured function, live Point/Line, and dynamic matrix parameters;
   one-time application; static cloning/composition; `bindTo`; static
   `meltTo`; transformed-position preimages; the native JessieCode `transform`
-  creator; and transformed-Point creation from one transform or a chain.
-- Still pending in that source slice: construction-document exposure,
-  transformed Text/Image and general element rendering, dynamic `meltTo`
-  beyond the documented JSXGraph `1.13.3` null-clone defect, and all 3D
-  transformations.
+  creator; construction-document transform IDs; and transformed-Point
+  creation from one transform or a chain. The 4x4 `setMatrix3D` kernel covers
+  translate, three- and four-parameter scale, rotate/rotateX/rotateY/rotateZ,
+  affine, affinematrix, generic, and matrix forms with scalar, vector,
+  JessieCode, and structured dynamic evaluation.
+- Still pending around that source slice: transformed Text/Image and general
+  element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
+  null-clone defect, and View3D/Point3D construction, binding, and `applyOnce`
+  integration. The upstream 3D `generic` six-evaluator/16-read defect is
+  preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed
   number/string/function coordinate terms and one function returning a
   numeric coordinate array, with fresh evaluation budgets, persistent Board

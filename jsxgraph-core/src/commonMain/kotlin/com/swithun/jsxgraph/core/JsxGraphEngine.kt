@@ -23,6 +23,7 @@ import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.base.boxPlotPointCount
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
@@ -1696,6 +1697,7 @@ object JsxGraphEngine {
                         ) * CURVE_DOMAIN_PADDING,
         )
         val created = mutableListOf<CreatedSourceElement>()
+        val transformationsById = linkedMapOf<String, Transformation>()
 
         for (sourceObject in document.objects) {
             if (sourceObject.type == "bisectorlines") {
@@ -1715,12 +1717,17 @@ object JsxGraphEngine {
                         type = sourceObject.type,
                     ),
                 )
-            val parents = when (
+            val runtimeParents = when (
                 val result = runtimeArray(sourceObject.parents)
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
+            val parents = documentParents(
+                sourceObject = sourceObject,
+                parents = runtimeParents,
+                transformationsById = transformationsById,
+            )
             val attributes = when (
                 val result = runtimeAttributes(sourceObject)
             ) {
@@ -1744,6 +1751,22 @@ object JsxGraphEngine {
                         reason = result.error.toString(),
                     ),
                 )
+            }
+            if (value is JessieCodeRuntimeValue.TransformationReference) {
+                if (sourceObject.type != "transform") {
+                    return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = sourceObject.index,
+                            id = sourceObject.id,
+                            type = sourceObject.type,
+                            reason =
+                                "non-transform creator returned a " +
+                                    "transformation",
+                        ),
+                    )
+                }
+                transformationsById[sourceObject.id] = value.transformation
+                continue
             }
             val element = (
                 value as? JessieCodeRuntimeValue.ElementReference
@@ -1812,6 +1835,46 @@ object JsxGraphEngine {
                 },
             ),
         )
+    }
+
+    // Construction-document adaptation of
+    // JSXGraph: src/base/transformation.js -> createTransform and
+    // src/base/point.js -> createPoint transformation parent form.
+    private fun documentParents(
+        sourceObject: ParsedObject,
+        parents: List<JessieCodeRuntimeValue>,
+        transformationsById: Map<String, Transformation>,
+    ): List<JessieCodeRuntimeValue> {
+        if (sourceObject.type != "point" || parents.size != 2) {
+            return parents
+        }
+        val transformationParent = when (val parent = parents[1]) {
+            is JessieCodeRuntimeValue.StringValue ->
+                transformationsById[parent.value]?.let {
+                    JessieCodeRuntimeValue.TransformationReference(it)
+                }
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val transformations =
+                    parent.values.map { value ->
+                        val id = (
+                            value as?
+                                JessieCodeRuntimeValue.StringValue
+                            )?.value ?: return parents
+                        transformationsById[id]
+                            ?: return parents
+                    }
+                if (transformations.isEmpty()) {
+                    return parents
+                }
+                JessieCodeRuntimeValue.ArrayValue(
+                    transformations.map {
+                        JessieCodeRuntimeValue.TransformationReference(it)
+                    },
+                )
+            }
+            else -> null
+        } ?: return parents
+        return listOf(parents[0], transformationParent)
     }
 
     private fun snapshotScene(
@@ -4399,6 +4462,7 @@ object JsxGraphEngine {
         when (creatorName) {
             "bisectorlines" -> 2
             "tangentto" -> 3
+            "transform" -> 0
             else -> 1
         }
 

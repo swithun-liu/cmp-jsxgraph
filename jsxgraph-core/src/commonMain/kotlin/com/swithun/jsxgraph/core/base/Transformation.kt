@@ -26,6 +26,10 @@ internal fun interface TransformationDynamicParameter {
     fun evaluate(): GMResult<Double, TransformationDynamicParameterError>
 }
 
+internal fun interface TransformationDynamicVectorParameter {
+    fun evaluate(): GMResult<DoubleArray, TransformationDynamicParameterError>
+}
+
 internal sealed interface TransformationParameter {
     data class Numeric(
         val value: Double,
@@ -38,6 +42,24 @@ internal sealed interface TransformationParameter {
     data class Dynamic(
         val evaluator: TransformationDynamicParameter,
     ) : TransformationParameter
+}
+
+internal sealed interface Transformation3DParameter {
+    data class Scalar(
+        val parameter: TransformationParameter,
+    ) : Transformation3DParameter
+
+    data class Vector(
+        val values: DoubleArray,
+    ) : Transformation3DParameter
+
+    data class VectorExpression(
+        val source: String,
+    ) : Transformation3DParameter
+
+    data class DynamicVector(
+        val evaluator: TransformationDynamicVectorParameter,
+    ) : Transformation3DParameter
 }
 
 internal sealed interface TransformationError {
@@ -96,6 +118,12 @@ internal sealed interface TransformationError {
     data class DynamicMeltUnsupported(
         val transformationType: String,
     ) : TransformationError
+
+    data class UpstreamEvaluationDefect(
+        val transformationType: String,
+        val upstreamVersion: String,
+        val reason: String,
+    ) : TransformationError
 }
 
 internal enum class TransformationType(
@@ -105,6 +133,9 @@ internal enum class TransformationType(
     SCALE("scale"),
     REFLECT("reflect"),
     ROTATE("rotate"),
+    ROTATE_X("rotateX"),
+    ROTATE_Y("rotateY"),
+    ROTATE_Z("rotateZ"),
     SHEAR("shear"),
     AFFINE("affine"),
     AFFINE_MATRIX("affinematrix"),
@@ -113,23 +144,23 @@ internal enum class TransformationType(
 }
 
 /**
- * 2D numerical and dynamic-parameter slice of JXG.Transformation.
+ * Numerical and dynamic-parameter translation of JXG.Transformation.
  *
  * Persistent element bindings are represented by GeometryElement and
- * CoordsElement. The 3D matrix forms remain untranslated.
+ * CoordsElement for 2D. The 3D kernel operates directly on homogeneous
+ * coordinate vectors until View3D and Point3D are translated.
  */
 internal class Transformation private constructor(
     internal val transformationType: TransformationType,
     matrix: Array<DoubleArray>,
     internal val isNumericMatrix: Boolean,
+    internal val is3D: Boolean = false,
     private var matrixEvaluator:
         () -> GMResult<Array<DoubleArray>, TransformationError>,
 ) {
     internal val elementClass: Int = Const.OBJECT_CLASS_OTHER
     internal val type: Int = Const.OBJECT_TYPE_TRANSFORMATION
     internal val elType: String = ""
-    internal val is3D: Boolean = false
-
     internal var matrix: Array<DoubleArray> = matrix
         private set
 
@@ -165,7 +196,7 @@ internal class Transformation private constructor(
     ): DoubleArray =
         when (val result = applyResult(point, self)) {
             is GMResult.Ok -> result.value
-            is GMResult.Err -> DoubleArray(3) { Double.NaN }
+            is GMResult.Err -> DoubleArray(matrix.size) { Double.NaN }
         }
 
     internal fun applyResult(
@@ -274,8 +305,7 @@ internal class Transformation private constructor(
 
     // JSXGraph: src/base/transformation.js -> clone
     internal fun clone(): Transformation? {
-        update()
-        if (!isNumericMatrix) {
+        if (updateResult() is GMResult.Err || !isNumericMatrix) {
             return null
         }
         val clonedMatrix = matrix.deepCopy()
@@ -283,6 +313,7 @@ internal class Transformation private constructor(
             transformationType = transformationType,
             matrix = clonedMatrix,
             isNumericMatrix = true,
+            is3D = is3D,
             matrixEvaluator = {
                 GMResult.Ok(clonedMatrix.deepCopy())
             },
@@ -557,12 +588,327 @@ internal class Transformation private constructor(
             }
 
             val flattened = matrix.flatten()
-            val isNumericMatrix =
-                flattened.all(ResolvedParameter::isNumeric)
             val evaluator = {
                 when (val result = evaluateParameters(flattened)) {
                     is GMResult.Ok -> GMResult.Ok(
                         matrixFromMatrixParameters(
+                            transformationType = transformationType,
+                            parameters = result.value,
+                        ),
+                    )
+                    is GMResult.Err -> result
+                }
+            }
+            /*
+             * The raw upstream parent is one nested array, so
+             * typeof params[0] !== "number" even when every cell is numeric.
+             */
+            return GMResult.Ok(
+                Transformation(
+                    transformationType = transformationType,
+                    matrix = Mat.identity(3),
+                    isNumericMatrix = false,
+                    matrixEvaluator = evaluator,
+                ),
+            )
+        }
+
+        // JSXGraph: src/base/transformation.js -> setMatrix3D
+        internal fun create3D(
+            type: String,
+            parameters: DoubleArray,
+        ): GMResult<Transformation, TransformationError> =
+            create3DResolved(
+                board = null,
+                type = type,
+                parameters = parameters.map { value ->
+                    Transformation3DParameter.Scalar(
+                        TransformationParameter.Numeric(value),
+                    )
+                },
+            )
+
+        // JSXGraph: src/base/transformation.js ->
+        // createTransform3D / setMatrix3D
+        internal fun create3D(
+            board: Board,
+            type: String,
+            parameters: List<Transformation3DParameter>,
+        ): GMResult<Transformation, TransformationError> =
+            create3DResolved(
+                board = board,
+                type = type,
+                parameters = parameters,
+            )
+
+        private fun create3DResolved(
+            board: Board?,
+            type: String,
+            parameters: List<Transformation3DParameter>,
+        ): GMResult<Transformation, TransformationError> {
+            val transformationType =
+                when (val result = parse3DType(type)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            when (
+                val result = validate3DParameterCount(
+                    transformationType = transformationType,
+                    originalType = type,
+                    actualCount = parameters.size,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+
+            return when (transformationType) {
+                TransformationType.TRANSLATE ->
+                    create3DScalarTransformation(
+                        board = board,
+                        transformationType = transformationType,
+                        originalType = type,
+                        parameters = parameters,
+                        usedParameterCount = 3,
+                    )
+                TransformationType.SCALE ->
+                    create3DScalarTransformation(
+                        board = board,
+                        transformationType = transformationType,
+                        originalType = type,
+                        parameters = parameters,
+                        usedParameterCount = 3,
+                    )
+                TransformationType.AFFINE ->
+                    create3DScalarTransformation(
+                        board = board,
+                        transformationType = transformationType,
+                        originalType = type,
+                        parameters = parameters,
+                        usedParameterCount = 9,
+                    )
+                TransformationType.GENERIC ->
+                    createDefective3DGeneric(
+                        board = board,
+                        originalType = type,
+                        parameters = parameters,
+                    )
+                TransformationType.ROTATE ->
+                    create3DRotation(
+                        board = board,
+                        transformationType = transformationType,
+                        originalType = type,
+                        angle = parameters[0],
+                        normal = parameters[1],
+                        center =
+                            if (parameters.size == 3) {
+                                parameters[2]
+                            } else {
+                                null
+                            },
+                        rawParameters = parameters,
+                    )
+                TransformationType.ROTATE_X,
+                TransformationType.ROTATE_Y,
+                TransformationType.ROTATE_Z,
+                -> create3DRotation(
+                    board = board,
+                    transformationType = transformationType,
+                    originalType = type,
+                    angle = parameters[0],
+                    normal = Transformation3DParameter.Vector(
+                        when (transformationType) {
+                            TransformationType.ROTATE_X ->
+                                doubleArrayOf(1.0, 0.0, 0.0)
+                            TransformationType.ROTATE_Y ->
+                                doubleArrayOf(0.0, 1.0, 0.0)
+                            else -> doubleArrayOf(0.0, 0.0, 1.0)
+                        },
+                    ),
+                    center =
+                        if (parameters.size == 2) {
+                            parameters[1]
+                        } else {
+                            null
+                        },
+                    rawParameters =
+                        listOf(
+                            parameters[0],
+                            Transformation3DParameter.Vector(
+                                when (transformationType) {
+                                    TransformationType.ROTATE_X ->
+                                        doubleArrayOf(1.0, 0.0, 0.0)
+                                    TransformationType.ROTATE_Y ->
+                                        doubleArrayOf(0.0, 1.0, 0.0)
+                                    else -> doubleArrayOf(0.0, 0.0, 1.0)
+                                },
+                            ),
+                        ) + parameters.drop(1),
+                )
+                TransformationType.AFFINE_MATRIX,
+                TransformationType.MATRIX,
+                -> GMResult.Err(
+                    TransformationError.InvalidParameterForm(
+                        transformationType = type,
+                        expectedForm = "matrix",
+                    ),
+                )
+                TransformationType.REFLECT,
+                TransformationType.SHEAR,
+                -> GMResult.Err(
+                    TransformationError.UnsupportedType(type),
+                )
+            }
+        }
+
+        // JSXGraph: src/base/transformation.js ->
+        // setMatrix3D("affinematrix" | "matrix")
+        internal fun create3D(
+            type: String,
+            matrix: Array<DoubleArray>,
+        ): GMResult<Transformation, TransformationError> =
+            create3DMatrixResolved(
+                board = null,
+                type = type,
+                matrix = matrix.map { row ->
+                    row.map {
+                        TransformationParameter.Numeric(it)
+                    }
+                },
+            )
+
+        // JSXGraph: src/base/transformation.js ->
+        // setMatrix3D("affinematrix" | "matrix")
+        internal fun create3DMatrix(
+            board: Board,
+            type: String,
+            matrix: List<List<TransformationParameter>>,
+        ): GMResult<Transformation, TransformationError> =
+            create3DMatrixResolved(
+                board = board,
+                type = type,
+                matrix = matrix,
+            )
+
+        private fun create3DMatrixResolved(
+            board: Board?,
+            type: String,
+            matrix: List<List<TransformationParameter>>,
+        ): GMResult<Transformation, TransformationError> {
+            val transformationType =
+                when (val result = parse3DType(type)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            val expectedSize =
+                when (transformationType) {
+                    TransformationType.AFFINE_MATRIX -> 3
+                    TransformationType.MATRIX -> 4
+                    else -> return GMResult.Err(
+                        TransformationError.InvalidParameterForm(
+                            transformationType = type,
+                            expectedForm = "scalar parameters",
+                        ),
+                    )
+                }
+            if (
+                matrix.size != expectedSize ||
+                matrix.any { it.size != expectedSize }
+            ) {
+                return GMResult.Err(
+                    TransformationError.InvalidMatrixShape(
+                        transformationType = type,
+                        expectedRows = expectedSize,
+                        expectedColumns = expectedSize,
+                        actualRowSizes = matrix.map(List<TransformationParameter>::size),
+                    ),
+                )
+            }
+
+            val resolved = mutableListOf<ResolvedParameter>()
+            for ((rowIndex, row) in matrix.withIndex()) {
+                for ((columnIndex, parameter) in row.withIndex()) {
+                    val parameterIndex = rowIndex * expectedSize + columnIndex
+                    val value = when (
+                        val result = resolveParameter(
+                            board = board,
+                            transformationType = transformationType,
+                            parameter = parameter,
+                            parameterIndex = parameterIndex,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    resolved += value
+                }
+            }
+            val evaluator = {
+                when (val result = evaluateParameters(resolved)) {
+                    is GMResult.Ok -> GMResult.Ok(
+                        matrixFrom3DMatrixParameters(
+                            transformationType = transformationType,
+                            parameters = result.value,
+                        ),
+                    )
+                    is GMResult.Err -> result
+                }
+            }
+            /*
+             * The raw upstream parent is one nested array, so
+             * typeof params[0] !== "number" even when every cell is numeric.
+             */
+            return GMResult.Ok(
+                Transformation(
+                    transformationType = transformationType,
+                    matrix = Mat.identity(4),
+                    isNumericMatrix = false,
+                    is3D = true,
+                    matrixEvaluator = evaluator,
+                ),
+            )
+        }
+
+        private fun create3DScalarTransformation(
+            board: Board?,
+            transformationType: TransformationType,
+            originalType: String,
+            parameters: List<Transformation3DParameter>,
+            usedParameterCount: Int,
+        ): GMResult<Transformation, TransformationError> {
+            val resolved = mutableListOf<ResolvedParameter>()
+            for (index in 0 until usedParameterCount) {
+                val scalar = parameters[index] as?
+                    Transformation3DParameter.Scalar
+                    ?: return GMResult.Err(
+                        TransformationError.InvalidParameterForm(
+                            transformationType = originalType,
+                            expectedForm = "scalar parameters",
+                        ),
+                    )
+                val parameter = when (
+                    val result = resolveParameter(
+                        board = board,
+                        transformationType = transformationType,
+                        parameter = scalar.parameter,
+                        parameterIndex = index,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                resolved += parameter
+            }
+            val isNumericMatrix = parameters.all { parameter ->
+                (
+                    parameter as?
+                        Transformation3DParameter.Scalar
+                    )?.parameter is TransformationParameter.Numeric
+            }
+            val evaluator = {
+                when (val result = evaluateParameters(resolved)) {
+                    is GMResult.Ok -> GMResult.Ok(
+                        matrixFrom3DScalarParameters(
                             transformationType = transformationType,
                             parameters = result.value,
                         ),
@@ -577,13 +923,180 @@ internal class Transformation private constructor(
                         is GMResult.Err -> return result
                     }
                 } else {
-                    Mat.identity(3)
+                    Mat.identity(4)
                 }
             return GMResult.Ok(
                 Transformation(
                     transformationType = transformationType,
                     matrix = initialMatrix,
                     isNumericMatrix = isNumericMatrix,
+                    is3D = true,
+                    matrixEvaluator = evaluator,
+                ),
+            )
+        }
+
+        private fun createDefective3DGeneric(
+            board: Board?,
+            originalType: String,
+            parameters: List<Transformation3DParameter>,
+        ): GMResult<Transformation, TransformationError> {
+            for (index in 0 until 6) {
+                val scalar = parameters[index] as?
+                    Transformation3DParameter.Scalar
+                    ?: return GMResult.Err(
+                        TransformationError.InvalidParameterForm(
+                            transformationType = originalType,
+                            expectedForm = "16 scalar parameters",
+                        ),
+                    )
+                if (index < 6) {
+                    when (
+                        val result = resolveParameter(
+                            board = board,
+                            transformationType =
+                                TransformationType.GENERIC,
+                            parameter = scalar.parameter,
+                            parameterIndex = index,
+                        )
+                    ) {
+                        is GMResult.Ok -> Unit
+                        is GMResult.Err -> return result
+                    }
+                }
+            }
+            val isNumericMatrix = parameters.all { parameter ->
+                (
+                    parameter as?
+                        Transformation3DParameter.Scalar
+                    )?.parameter is TransformationParameter.Numeric
+            }
+            return GMResult.Ok(
+                Transformation(
+                    transformationType = TransformationType.GENERIC,
+                    matrix = Mat.identity(4),
+                    isNumericMatrix = isNumericMatrix,
+                    is3D = true,
+                    matrixEvaluator = {
+                        /*
+                         * JSXGraph 1.13.3 creates only six evaluators but
+                         * update() reads sixteen. Preserve the observable
+                         * failure without exposing its partially written
+                         * matrix.
+                         */
+                        GMResult.Err(
+                            TransformationError.UpstreamEvaluationDefect(
+                                transformationType = originalType,
+                                upstreamVersion = "1.13.3",
+                                reason =
+                                    "setMatrix3D generic creates 6 evaluators " +
+                                        "but reads 16",
+                            ),
+                        )
+                    },
+                ),
+            )
+        }
+
+        private fun create3DRotation(
+            board: Board?,
+            transformationType: TransformationType,
+            originalType: String,
+            angle: Transformation3DParameter,
+            normal: Transformation3DParameter,
+            center: Transformation3DParameter?,
+            rawParameters: List<Transformation3DParameter>,
+        ): GMResult<Transformation, TransformationError> {
+            val scalarAngle = angle as?
+                Transformation3DParameter.Scalar
+                ?: return GMResult.Err(
+                    TransformationError.InvalidParameterForm(
+                        transformationType = originalType,
+                        expectedForm = "scalar angle and vector normal",
+                    ),
+                )
+            val resolvedAngle = when (
+                val result = resolveParameter(
+                    board = board,
+                    transformationType = transformationType,
+                    parameter = scalarAngle.parameter,
+                    parameterIndex = 0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val resolvedNormal = when (
+                val result = resolve3DVector(
+                    board = board,
+                    transformationType = transformationType,
+                    parameter = normal,
+                    parameterIndex = 1,
+                    coordinateRole = "rotation normal",
+                    expectedCounts = listOf(3, 4),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val resolvedCenter =
+                if (center == null) {
+                    null
+                } else {
+                    when (
+                        val result = resolve3DVector(
+                            board = board,
+                            transformationType = transformationType,
+                            parameter = center,
+                            parameterIndex = 2,
+                            coordinateRole = "rotation center",
+                            expectedCounts = listOf(3, 4),
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+            val evaluator = evaluator@{
+                val evaluatedAngle = when (
+                    val result = resolvedAngle.evaluate()
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@evaluator result
+                }
+                val evaluatedNormal = when (
+                    val result = resolvedNormal.evaluate()
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@evaluator result
+                }
+                val evaluatedCenter = when (
+                    val result = resolvedCenter?.evaluate()
+                ) {
+                    null -> null
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@evaluator result
+                }
+                GMResult.Ok(
+                    rotation3DMatrix(
+                        angle = evaluatedAngle,
+                        normal = evaluatedNormal,
+                        center = evaluatedCenter,
+                    ),
+                )
+            }
+            val isNumericMatrix = rawParameters.all { parameter ->
+                (
+                    parameter as?
+                        Transformation3DParameter.Scalar
+                    )?.parameter is TransformationParameter.Numeric
+            }
+            return GMResult.Ok(
+                Transformation(
+                    transformationType = transformationType,
+                    matrix = Mat.identity(4),
+                    isNumericMatrix = isNumericMatrix,
+                    is3D = true,
                     matrixEvaluator = evaluator,
                 ),
             )
@@ -695,12 +1208,73 @@ internal class Transformation private constructor(
             )
         }
 
+        // JSXGraph: src/base/transformation.js ->
+        // setMatrix("rotate", [angle, [x, y]])
+        internal fun createRotationAroundCoordinates(
+            board: Board,
+            angle: TransformationParameter,
+            center: DoubleArray,
+        ): GMResult<Transformation, TransformationError> {
+            if (center.size != 2) {
+                return GMResult.Err(
+                    TransformationError.InvalidCoordinateCount(
+                        coordinateRole = "rotation center",
+                        expectedCounts = listOf(2),
+                        actualCount = center.size,
+                    ),
+                )
+            }
+            val resolved = when (
+                val result = resolveParameters(
+                    board = board,
+                    transformationType = TransformationType.ROTATE,
+                    parameters = listOf(angle),
+                )
+            ) {
+                is GMResult.Ok -> result.value.single()
+                is GMResult.Err -> return result
+            }
+            val centerSnapshot = center.copyOf()
+            return GMResult.Ok(
+                dynamicTransformation(
+                    transformationType = TransformationType.ROTATE,
+                ) {
+                    when (val result = resolved.evaluate()) {
+                        is GMResult.Ok -> GMResult.Ok(
+                            rotationMatrix(
+                                angle = result.value,
+                                x = centerSnapshot[0],
+                                y = centerSnapshot[1],
+                            ),
+                        )
+                        is GMResult.Err -> result
+                    }
+                },
+            )
+        }
+
         private fun parseType(
             type: String,
         ): GMResult<TransformationType, TransformationError> {
             val transformationType =
                 TransformationType.entries.firstOrNull {
-                    it.upstreamName == type
+                    it.upstreamName == type &&
+                        it !in THREE_DIMENSIONAL_ONLY_TYPES
+                }
+            return if (transformationType == null) {
+                GMResult.Err(TransformationError.UnsupportedType(type))
+            } else {
+                GMResult.Ok(transformationType)
+            }
+        }
+
+        private fun parse3DType(
+            type: String,
+        ): GMResult<TransformationType, TransformationError> {
+            val transformationType =
+                TransformationType.entries.firstOrNull {
+                    it.upstreamName == type &&
+                        it !in TWO_DIMENSIONAL_ONLY_TYPES
                 }
             return if (transformationType == null) {
                 GMResult.Err(TransformationError.UnsupportedType(type))
@@ -723,6 +1297,12 @@ internal class Transformation private constructor(
                     TransformationType.SHEAR -> listOf(2)
                     TransformationType.AFFINE -> listOf(4)
                     TransformationType.GENERIC -> listOf(9)
+                    TransformationType.ROTATE_X,
+                    TransformationType.ROTATE_Y,
+                    TransformationType.ROTATE_Z,
+                    -> return GMResult.Err(
+                        TransformationError.UnsupportedType(originalType),
+                    )
                     TransformationType.AFFINE_MATRIX,
                     TransformationType.MATRIX,
                     -> return GMResult.Err(
@@ -743,6 +1323,299 @@ internal class Transformation private constructor(
                     ),
                 )
             }
+        }
+
+        private fun validate3DParameterCount(
+            transformationType: TransformationType,
+            originalType: String,
+            actualCount: Int,
+        ): GMResult<Unit, TransformationError> {
+            /*
+             * JSXGraph 1.13.3 only rejects fewer than two parameters for
+             * rotate. With more than three it evaluates the angle and normal
+             * but intentionally skips the center branch.
+             */
+            if (
+                transformationType == TransformationType.ROTATE &&
+                actualCount >= 2
+            ) {
+                return GMResult.Ok(Unit)
+            }
+            /*
+             * rotateX/Y/Z insert their axis and delegate to rotate, so every
+             * non-empty parent list is accepted by the upstream implementation.
+             */
+            if (
+                transformationType in THREE_DIMENSIONAL_ONLY_TYPES &&
+                actualCount >= 1
+            ) {
+                return GMResult.Ok(Unit)
+            }
+            val expectedCounts =
+                when (transformationType) {
+                    TransformationType.TRANSLATE -> listOf(3)
+                    TransformationType.SCALE -> listOf(3, 4)
+                    TransformationType.ROTATE -> listOf(2, 3)
+                    TransformationType.ROTATE_X,
+                    TransformationType.ROTATE_Y,
+                    TransformationType.ROTATE_Z,
+                    -> listOf(1, 2)
+                    TransformationType.AFFINE -> listOf(9)
+                    TransformationType.GENERIC -> listOf(16)
+                    TransformationType.AFFINE_MATRIX,
+                    TransformationType.MATRIX,
+                    -> return GMResult.Err(
+                        TransformationError.InvalidParameterForm(
+                            transformationType = originalType,
+                            expectedForm = "matrix",
+                        ),
+                    )
+                    TransformationType.REFLECT,
+                    TransformationType.SHEAR,
+                    -> return GMResult.Err(
+                        TransformationError.UnsupportedType(originalType),
+                    )
+                }
+            return if (actualCount in expectedCounts) {
+                GMResult.Ok(Unit)
+            } else {
+                GMResult.Err(
+                    TransformationError.InvalidParameterCount(
+                        transformationType = originalType,
+                        expectedCounts = expectedCounts,
+                        actualCount = actualCount,
+                    ),
+                )
+            }
+        }
+
+        private fun resolveParameter(
+            board: Board?,
+            transformationType: TransformationType,
+            parameter: TransformationParameter,
+            parameterIndex: Int,
+        ): GMResult<ResolvedParameter, TransformationError> =
+            when (parameter) {
+                is TransformationParameter.Numeric ->
+                    GMResult.Ok(
+                        ResolvedParameter.numeric(
+                            index = parameterIndex,
+                            value = parameter.value,
+                        ),
+                    )
+                is TransformationParameter.Dynamic ->
+                    GMResult.Ok(
+                        ResolvedParameter(
+                            index = parameterIndex,
+                            isNumeric = false,
+                        ) {
+                            when (val result = parameter.evaluator.evaluate()) {
+                                is GMResult.Ok -> result
+                                is GMResult.Err -> GMResult.Err(
+                                    TransformationError.DynamicParameterEvaluation(
+                                        transformationType =
+                                            transformationType.upstreamName,
+                                        parameterIndex = parameterIndex,
+                                        error = result.error,
+                                    ),
+                                )
+                            }
+                        },
+                    )
+                is TransformationParameter.Expression -> {
+                    if (board == null) {
+                        GMResult.Err(
+                            TransformationError.InvalidParameterForm(
+                                transformationType =
+                                    transformationType.upstreamName,
+                                expectedForm =
+                                    "numeric parameters without a board",
+                            ),
+                        )
+                    } else {
+                        when (
+                            val result =
+                                JessieCodeExpressionFunction.compile(
+                                    source = parameter.source,
+                                    board = board,
+                                )
+                        ) {
+                            is GMResult.Ok -> GMResult.Ok(
+                                expressionParameter(
+                                    transformationType = transformationType,
+                                    parameterIndex = parameterIndex,
+                                    function = result.value,
+                                ),
+                            )
+                            is GMResult.Err -> GMResult.Err(
+                                TransformationError.ParameterExpressionCompile(
+                                    transformationType =
+                                        transformationType.upstreamName,
+                                    parameterIndex = parameterIndex,
+                                    error = result.error,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+        private fun resolve3DVector(
+            board: Board?,
+            transformationType: TransformationType,
+            parameter: Transformation3DParameter,
+            parameterIndex: Int,
+            coordinateRole: String,
+            expectedCounts: List<Int>,
+        ): GMResult<Resolved3DVectorParameter, TransformationError> {
+            val evaluator:
+                () -> GMResult<DoubleArray, TransformationError> =
+                when (parameter) {
+                    is Transformation3DParameter.Vector -> {
+                        val snapshot = parameter.values.copyOf()
+                        val snapshotEvaluator:
+                            () -> GMResult<
+                                DoubleArray,
+                                TransformationError,
+                                > = {
+                            GMResult.Ok(snapshot.copyOf())
+                        }
+                        snapshotEvaluator
+                    }
+                    is Transformation3DParameter.DynamicVector -> {
+                        {
+                            when (
+                                val result = parameter.evaluator.evaluate()
+                            ) {
+                                is GMResult.Ok ->
+                                    GMResult.Ok(result.value.copyOf())
+                                is GMResult.Err -> GMResult.Err(
+                                    TransformationError.DynamicParameterEvaluation(
+                                        transformationType =
+                                            transformationType.upstreamName,
+                                        parameterIndex = parameterIndex,
+                                        error = result.error,
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                    is Transformation3DParameter.VectorExpression -> {
+                        if (board == null) {
+                            return GMResult.Err(
+                                TransformationError.InvalidParameterForm(
+                                    transformationType =
+                                        transformationType.upstreamName,
+                                    expectedForm =
+                                        "numeric vectors without a board",
+                                ),
+                            )
+                        }
+                        val function = when (
+                            val result =
+                                JessieCodeExpressionFunction.compile(
+                                    source = parameter.source,
+                                    board = board,
+                                )
+                        ) {
+                            is GMResult.Ok -> result.value
+                            is GMResult.Err -> return GMResult.Err(
+                                TransformationError.ParameterExpressionCompile(
+                                    transformationType =
+                                        transformationType.upstreamName,
+                                    parameterIndex = parameterIndex,
+                                    error = result.error,
+                                ),
+                            )
+                        }
+                        vectorEvaluator@{
+                            when (val result = function.evaluate()) {
+                                is GMResult.Err -> GMResult.Err(
+                                    TransformationError.ParameterExpressionEvaluation(
+                                        transformationType =
+                                            transformationType.upstreamName,
+                                        parameterIndex = parameterIndex,
+                                        error = result.error,
+                                    ),
+                                )
+                                is GMResult.Ok -> {
+                                    val array = result.value as?
+                                        JessieCodeRuntimeValue.ArrayValue
+                                        ?: return@vectorEvaluator GMResult.Err(
+                                            TransformationError
+                                                .ParameterExpressionResult(
+                                                    transformationType =
+                                                        transformationType
+                                                            .upstreamName,
+                                                    parameterIndex =
+                                                        parameterIndex,
+                                                    actualType =
+                                                        runtimeType(
+                                                            result.value,
+                                                        ),
+                                                ),
+                                        )
+                                    val values = DoubleArray(array.values.size)
+                                    for (
+                                        index in array.values.indices
+                                    ) {
+                                        val number = array.values[index] as?
+                                            JessieCodeRuntimeValue.NumberValue
+                                            ?: return@vectorEvaluator GMResult.Err(
+                                                TransformationError
+                                                    .ParameterExpressionResult(
+                                                        transformationType =
+                                                            transformationType
+                                                                .upstreamName,
+                                                        parameterIndex =
+                                                            parameterIndex,
+                                                        actualType =
+                                                            "array with " +
+                                                                runtimeType(
+                                                                    array
+                                                                        .values[
+                                                                        index
+                                                                    ],
+                                                                ),
+                                                    ),
+                                            )
+                                        values[index] = number.value
+                                    }
+                                    GMResult.Ok(values)
+                                }
+                            }
+                        }
+                    }
+                    is Transformation3DParameter.Scalar ->
+                        return GMResult.Err(
+                            TransformationError.InvalidParameterForm(
+                                transformationType =
+                                    transformationType.upstreamName,
+                                expectedForm =
+                                    "scalar angle and vector coordinates",
+                            ),
+                        )
+                }
+            val checkedEvaluator = checked@{
+                when (val result = evaluator()) {
+                    is GMResult.Err -> result
+                    is GMResult.Ok -> {
+                        if (result.value.size !in expectedCounts) {
+                            return@checked GMResult.Err(
+                                TransformationError.InvalidCoordinateCount(
+                                    coordinateRole = coordinateRole,
+                                    expectedCounts = expectedCounts,
+                                    actualCount = result.value.size,
+                                ),
+                            )
+                        }
+                        GMResult.Ok(result.value)
+                    }
+                }
+            }
+            return GMResult.Ok(
+                Resolved3DVectorParameter(checkedEvaluator),
+            )
         }
 
         private fun setReflectionMatrix(
@@ -799,6 +1672,118 @@ internal class Transformation private constructor(
                     matrix[2][0] = y * (1.0 - cosine) - x * sine
                 }
             }
+        }
+
+        // JSXGraph: src/base/transformation.js -> setMatrix3D
+        private fun matrixFrom3DScalarParameters(
+            transformationType: TransformationType,
+            parameters: DoubleArray,
+        ): Array<DoubleArray> =
+            Mat.identity(4).also { matrix ->
+                when (transformationType) {
+                    TransformationType.TRANSLATE -> {
+                        matrix[1][0] = parameters[0]
+                        matrix[2][0] = parameters[1]
+                        matrix[3][0] = parameters[2]
+                    }
+                    TransformationType.SCALE -> {
+                        matrix[1][1] = parameters[0]
+                        matrix[2][2] = parameters[1]
+                        matrix[3][3] = parameters[2]
+                    }
+                    TransformationType.AFFINE -> {
+                        for (row in 0 until 3) {
+                            for (column in 0 until 3) {
+                                matrix[row + 1][column + 1] =
+                                    parameters[row * 3 + column]
+                            }
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+
+        // JSXGraph: src/base/transformation.js ->
+        // setMatrix3D("affinematrix" | "matrix")
+        private fun matrixFrom3DMatrixParameters(
+            transformationType: TransformationType,
+            parameters: DoubleArray,
+        ): Array<DoubleArray> =
+            if (transformationType == TransformationType.AFFINE_MATRIX) {
+                Mat.identity(4).also { matrix ->
+                    for (row in 0 until 3) {
+                        for (column in 0 until 3) {
+                            matrix[row + 1][column + 1] =
+                                parameters[row * 3 + column]
+                        }
+                    }
+                }
+            } else {
+                Array(4) { row ->
+                    DoubleArray(4) { column ->
+                        parameters[row * 4 + column]
+                    }
+                }
+            }
+
+        // JSXGraph: src/base/transformation.js ->
+        // setMatrix3D("rotate")
+        private fun rotation3DMatrix(
+            angle: Double,
+            normal: DoubleArray,
+            center: DoubleArray?,
+        ): Array<DoubleArray> {
+            val normalLength = Mat.norm(normal)
+            val normalOffset = if (normal.size == 3) 0 else 1
+            val n1 = normal[normalOffset] / normalLength
+            val n2 = normal[normalOffset + 1] / normalLength
+            val n3 = normal[normalOffset + 2] / normalLength
+            val cosine = cos(angle)
+            val sine = sin(angle)
+            val oneMinusCosine = 1.0 - cosine
+            val moveToOrigin = Mat.identity(4)
+            val moveFromOrigin = Mat.identity(4)
+            var matrix = arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+                doubleArrayOf(
+                    0.0,
+                    n1 * n1 * oneMinusCosine + cosine,
+                    n1 * n2 * oneMinusCosine - n3 * sine,
+                    n1 * n3 * oneMinusCosine + n2 * sine,
+                ),
+                doubleArrayOf(
+                    0.0,
+                    n2 * n1 * oneMinusCosine + n3 * sine,
+                    n2 * n2 * oneMinusCosine + cosine,
+                    n2 * n3 * oneMinusCosine - n1 * sine,
+                ),
+                doubleArrayOf(
+                    0.0,
+                    n3 * n1 * oneMinusCosine - n2 * sine,
+                    n3 * n2 * oneMinusCosine + n1 * sine,
+                    n3 * n3 * oneMinusCosine + cosine,
+                ),
+            )
+            if (center != null) {
+                val homogeneousCenter =
+                    if (center.size == 3) {
+                        doubleArrayOf(
+                            1.0,
+                            center[0],
+                            center[1],
+                            center[2],
+                        )
+                    } else {
+                        center
+                    }
+                for (index in 1..3) {
+                    moveToOrigin[index][0] = -homogeneousCenter[index]
+                    moveFromOrigin[index][0] = homogeneousCenter[index]
+                }
+            }
+            matrix = Mat.matMatMult(matrix, moveToOrigin)
+            matrix = Mat.matMatMult(moveFromOrigin, matrix)
+            return matrix
         }
 
         private fun matrixFromParameters(
@@ -860,6 +1845,9 @@ internal class Transformation private constructor(
                 }
                 TransformationType.AFFINE_MATRIX,
                 TransformationType.MATRIX,
+                TransformationType.ROTATE_X,
+                TransformationType.ROTATE_Y,
+                TransformationType.ROTATE_Z,
                 -> Unit
             }
             return matrix
@@ -1057,6 +2045,17 @@ internal class Transformation private constructor(
 
         private fun Array<DoubleArray>.deepCopy(): Array<DoubleArray> =
             Array(size) { index -> this[index].copyOf() }
+
+        private val THREE_DIMENSIONAL_ONLY_TYPES = setOf(
+            TransformationType.ROTATE_X,
+            TransformationType.ROTATE_Y,
+            TransformationType.ROTATE_Z,
+        )
+
+        private val TWO_DIMENSIONAL_ONLY_TYPES = setOf(
+            TransformationType.REFLECT,
+            TransformationType.SHEAR,
+        )
     }
 
     private class ResolvedParameter(
@@ -1079,5 +2078,13 @@ internal class Transformation private constructor(
                     evaluator = { GMResult.Ok(value) },
                 )
         }
+    }
+
+    private class Resolved3DVectorParameter(
+        private val evaluator:
+            () -> GMResult<DoubleArray, TransformationError>,
+    ) {
+        internal fun evaluate():
+            GMResult<DoubleArray, TransformationError> = evaluator()
     }
 }

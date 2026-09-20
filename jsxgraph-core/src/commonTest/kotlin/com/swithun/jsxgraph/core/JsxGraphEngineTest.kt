@@ -7142,6 +7142,122 @@ class JsxGraphEngineTest {
             """.trimIndent(),
         )
 
+    @Test
+    fun constructionDocumentTransformsCreateAndUpdatePointsById() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"base",
+                      "type":"point",
+                      "parents":[-2,1],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "fixed":true
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"driver",
+                      "type":"point",
+                      "parents":[2,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"scale",
+                      "type":"transform",
+                      "parents":[1.5,2],
+                      "attributes":{"type":"scale"}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"shift",
+                      "type":"transform",
+                      "parents":["X(driver) / 2",-1],
+                      "attributes":{"type":"translate"}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"scaled",
+                      "type":"point",
+                      "parents":["base","scale"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "fixed":true
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"chained",
+                      "type":"point",
+                      "parents":["base",["scale","shift"]],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "fixed":true
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        assertEquals(
+            listOf("base", "driver", "scaled", "chained"),
+            session.scene.elements.map(JsxGraphSceneElement::id),
+        )
+        assertPointCoordinates(
+            expected = JsxGraphPoint2D(-3.0, 2.0),
+            actual = scenePoint(session.scene, "scaled").coordinates,
+        )
+        assertPointCoordinates(
+            expected = JsxGraphPoint2D(-2.0, 1.0),
+            actual = scenePoint(session.scene, "chained").coordinates,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "driver",
+                coordinates = JsxGraphPoint2D(4.0, 0.0),
+            ),
+        ).value
+        assertPointCoordinates(
+            expected = JsxGraphPoint2D(-1.0, 1.0),
+            actual = scenePoint(moved, "chained").coordinates,
+        )
+    }
+
+    @Test
+    fun constructionDocumentTransformFailureIsStructured() {
+        val error = assertIs<JsxGraphDocumentError.ElementCreation>(
+            assertError(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"bad",
+                      "type":"transform",
+                      "parents":[1],
+                      "attributes":{"type":"translate"}
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        )
+
+        assertEquals("bad", error.id)
+        assertEquals("transform", error.type)
+        assertTrue("InvalidParameterCount" in error.reason)
+    }
+
     private fun pointDistance(
         first: JsxGraphPoint2D,
         second: JsxGraphPoint2D,

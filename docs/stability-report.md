@@ -142,6 +142,13 @@ The focused transformed-Point fixture scored `0.986656` on Desktop and
 Point from `(2,0)` to `(5,0)`, both renderers updated the translated Point
 chain and scored `0.986523` and `0.972569`, respectively. This evidence
 remains outside the 30-case Stable production corpus.
+The construction-document path now accepts ordered `transform` objects and
+resolves their IDs in subsequent transformed-Point parents without emitting
+scene elements for the transforms. The separate official
+`transformation-3d.mjs` fixture covers every 4x4 matrix form and dynamic
+reevaluation against JSXGraph `1.13.3`; this is numerical kernel evidence, not
+View3D/Point3D rendering evidence, so it does not change the 30/48 visual case
+counts.
 The focused function-coordinate Point fixture scored `0.986724` on Desktop
 and `0.973162` on Compact before movement. After dragging its shared driver
 from `(-3,-2)` to `(-1,1)`, the function-array, scalar-function, and

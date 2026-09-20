@@ -35,6 +35,10 @@ remain pending. The non-Board Composition subset and
 JessieCode-only BisectorLines creator now have source-mapped construction,
 update, removal, nested-attribute, and focused parity evidence; the JSON
 document path continues to reject that compound return explicitly.
+Ordered construction documents now expose 2D `transform` IDs to subsequent
+transformed Points. The source-mapped 4x4 Transformation kernel covers every
+JSXGraph `1.13.3` 3D matrix form with official numerical fixture evidence;
+View3D/Point3D construction and rendering remain outside the qualified scope.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.
 Intersection and OtherIntersection now have source-mapped Line/Segment/Circle,

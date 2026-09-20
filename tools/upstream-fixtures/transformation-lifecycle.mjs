@@ -125,6 +125,16 @@ try {
             ],
             {type: "matrix"}
         );
+        const coordinateCenteredRotate = board.create(
+            "transform",
+            [Math.PI / 2, [2, -1]],
+            {type: "rotate"}
+        );
+        const staticMatrix = board.create(
+            "transform",
+            [[[1, 0, 0], [2, 1, 0], [-1, 0, 1]]],
+            {type: "matrix"}
+        );
 
         const transformed = point(
             [base, [dynamicTranslate, dynamicRotate]],
@@ -189,7 +199,9 @@ try {
                 dynamicTranslate,
                 dynamicRotate,
                 dynamicReflection,
-                dynamicMatrix
+                dynamicMatrix,
+                coordinateCenteredRotate,
+                staticMatrix
             ]) {
                 transform.update();
             }
@@ -202,7 +214,19 @@ try {
                     },
                     rotate: matrix(dynamicRotate),
                     reflect: matrix(dynamicReflection),
-                    matrix: matrix(dynamicMatrix)
+                    matrix: matrix(dynamicMatrix),
+                    coordinateCenteredRotate: {
+                        matrix: matrix(coordinateCenteredRotate),
+                        isNumericMatrix:
+                            coordinateCenteredRotate.isNumericMatrix,
+                        cloneIsNull:
+                            coordinateCenteredRotate.clone() === null
+                    },
+                    staticMatrix: {
+                        matrix: matrix(staticMatrix),
+                        isNumericMatrix: staticMatrix.isNumericMatrix,
+                        cloneIsNull: staticMatrix.clone() === null
+                    }
                 },
                 points: {
                     base: pointState(base),

@@ -81,6 +81,7 @@ private val TrackColor = Color(0xFFE3E8E5)
 private enum class RoadmapStatus(
     val label: String,
 ) {
+    COMPLETE("Complete"),
     ACTIVE("Active"),
     IN_PROGRESS("In progress"),
     PLANNED("Planned"),
@@ -110,16 +111,17 @@ private val roadmapPhases = listOf(
     RoadmapPhase(
         title = "Foundation",
         subtitle = "Core primitives & shared model",
-        status = RoadmapStatus.ACTIVE,
+        status = RoadmapStatus.COMPLETE,
         progress = 1.0f,
         accent = FoundationGreen,
         completedItems = listOf(
             "Event system",
             "Base object model",
             "Common utilities",
+            "2D & 3D transform kernels",
         ),
-        nextTitle = "Coordinate systems & transforms",
-        nextDetail = "Viewport mapping, matrix transforms and shared state",
+        nextTitle = "View3D object lifecycle",
+        nextDetail = "Point3D construction, binding and Compose projection",
         exitGate = "Common behavior tests pass across JVM, iOS Simulator, and Wasm.",
     ),
     RoadmapPhase(
@@ -862,7 +864,7 @@ private fun DashboardFooter() {
             )
         }
         Text(
-            text = "Updated Sep 15",
+            text = "Updated Sep 20",
             color = DashboardMuted,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,
@@ -971,6 +973,11 @@ private fun DashboardHelpDialog(
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                HelpRow(
+                    accent = FoundationGreen,
+                    title = "Complete",
+                    detail = "The phase exit gate has passed.",
+                )
                 HelpRow(
                     accent = FoundationGreen,
                     title = "Active",

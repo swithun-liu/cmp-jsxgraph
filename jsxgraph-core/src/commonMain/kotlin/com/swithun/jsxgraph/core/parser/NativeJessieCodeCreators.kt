@@ -1640,15 +1640,10 @@ internal object NativeJessieCodeCreators {
                     centerCoordinates[1] as
                         JessieCodeRuntimeValue.NumberValue
                     ).value
-                val parameters = listOf(
-                    angle,
-                    TransformationParameter.Numeric(x),
-                    TransformationParameter.Numeric(y),
-                )
-                return Transformation.create(
+                return Transformation.createRotationAroundCoordinates(
                     board = board,
-                    type = "rotate",
-                    parameters = parameters,
+                    angle = angle,
+                    center = doubleArrayOf(x, y),
                 )
             }
         }

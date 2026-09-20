@@ -148,7 +148,7 @@ class TransformationTest {
     }
 
     @Test
-    fun numericMatrixTransformsMatchOfficialReferenceValues() {
+    fun matrixTransformsMatchOfficialReferenceValuesAndArrayClassification() {
         val affineMatrix = transformation(
             type = "affinematrix",
             matrix = arrayOf(
@@ -156,6 +156,8 @@ class TransformationTest {
                 doubleArrayOf(-1.0, 4.0),
             ),
         )
+        assertFalse(affineMatrix.isNumericMatrix)
+        assertNull(affineMatrix.clone())
         assertTransform(
             transformation = affineMatrix,
             expectedMatrix = arrayOf(
@@ -170,10 +172,43 @@ class TransformationTest {
             type = "matrix",
             matrix = PROJECTIVE_MATRIX,
         )
+        assertFalse(projective.isNumericMatrix)
+        assertNull(projective.clone())
         assertTransform(
             transformation = projective,
             expectedMatrix = PROJECTIVE_MATRIX,
             expectedCoordinates = doubleArrayOf(7.0, -11.0, 29.0),
+        )
+
+        val coordinateCenteredRotation = transformation(
+            Transformation.createRotationAroundCoordinates(
+                board = board,
+                angle = TransformationParameter.Numeric(PI / 2.0),
+                center = doubleArrayOf(2.0, -1.0),
+            ),
+        )
+        assertFalse(coordinateCenteredRotation.isNumericMatrix)
+        assertNull(coordinateCenteredRotation.clone())
+        assertTransform(
+            transformation = coordinateCenteredRotation,
+            expectedMatrix = arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0),
+                doubleArrayOf(
+                    0.9999999999999998,
+                    6.123233995736766e-17,
+                    -1.0,
+                ),
+                doubleArrayOf(
+                    -3.0,
+                    1.0,
+                    6.123233995736766e-17,
+                ),
+            ),
+            expectedCoordinates = doubleArrayOf(
+                1.0,
+                3.0,
+                -1.2246467991473532e-16,
+            ),
         )
     }
 
@@ -689,6 +724,7 @@ class TransformationTest {
         expectedMatrix: Array<DoubleArray>,
         expectedCoordinates: DoubleArray,
     ) {
+        assertIs<GMResult.Ok<Transformation>>(transformation.updateResult())
         assertMatrixMatches(expectedMatrix, transformation.matrix)
         assertVectorMatches(expectedCoordinates, transformation.apply(samplePoint()))
     }

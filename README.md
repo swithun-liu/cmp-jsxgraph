@@ -140,9 +140,11 @@ Implemented translation slices:
   Sector, Angle, Semicircle,
   CircumcircleArc, MinorArc, MajorArc,
   CircumcircleSector, MinorSector, MajorSector, NonreflexAngle, ReflexAngle,
-  and 2D Transformation creation, transformed Points from one Transformation
-  or a chain, Point coordinates from scalar JessieCode functions or one
-  function returning a coordinate array, the translated
+  2D Transformation creation through JessieCode or construction documents,
+  transformed Points from one Transformation or a chain, and the 4x4
+  Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; Point
+  coordinates from scalar JessieCode functions or one function returning a
+  coordinate array; the translated
   Point/Line/Circle/Polygon/Text `methodMap` subset, Point `X`/`Y` assignment,
   element names, bounds, child links, immediate movement, coordinate
   constraints, static and `<value>` Text content, regular-update assignment,
