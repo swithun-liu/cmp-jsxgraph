@@ -32,11 +32,38 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/visual-parity/package-lock.json
+
+      - name: Install Pages smoke-test dependencies
+        run: npm ci --prefix tools/visual-parity
+
       - name: Build Kotlin/Wasm site
         run: ./gradlew --no-daemon --no-build-cache --rerun-tasks :sample:webApp:wasmJsBrowserDistribution
 
       - name: Prepare GitHub Pages Wasm assets
         run: node tools/split-wasm-for-pages.mjs sample/webApp/build/dist/wasmJs/productionExecutable
+
+      - name: Verify prepared GitHub Pages site
+        run: |
+          python3 -m http.server 8093 \
+            --directory sample/webApp/build/dist/wasmJs/productionExecutable \
+            >/tmp/cmp-jsxgraph-pages.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8093/ >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          BASE_URL='http://127.0.0.1:8093/?chunkedWasm=true' \
+          EXPECT_CHUNKED_WASM='true' \
+          npm --prefix tools/visual-parity run test:load
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

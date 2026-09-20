@@ -24,7 +24,9 @@ const maximumRetainedHeapBytes = readPositiveNumber(
     "MAX_RETAINED_HEAP_BYTES",
     96 * 1024 * 1024
 );
+const expectChunkedWasm = process.env.EXPECT_CHUNKED_WASM === "true";
 const pageErrors = [];
+const requestedUrls = [];
 
 mkdirSync(outputDirectory, {recursive: true});
 const browser = await puppeteer.launch(browserLaunchOptions());
@@ -36,6 +38,7 @@ try {
         deviceScaleFactor: 1
     });
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    page.on("request", (request) => requestedUrls.push(request.url()));
     page.on("console", (message) => {
         if (message.type() === "error") {
             pageErrors.push(message.text());
@@ -89,6 +92,7 @@ try {
         path: resolve(outputDirectory, "web-load-bottom.png"),
         omitBackground: false
     });
+    const wasmRequests = summarizeWasmRequests(requestedUrls);
     const failures = [];
     if (firstContentMillis > maximumFirstContentMillis) {
         failures.push(
@@ -111,6 +115,19 @@ try {
     if (pageErrors.length > 0) {
         failures.push(`Browser errors: ${pageErrors.join(" | ")}`);
     }
+    if (
+        expectChunkedWasm &&
+        (
+            wasmRequests.manifestCount === 0 ||
+            wasmRequests.partCount === 0 ||
+            wasmRequests.directCount > 0
+        )
+    ) {
+        failures.push(
+            "Expected chunked Wasm requests without direct Wasm downloads, " +
+                `observed ${JSON.stringify(wasmRequests)}`
+        );
+    }
     const report = {
         schemaVersion: 1,
         caseCount: expectedCaseCount,
@@ -128,6 +145,7 @@ try {
             maximumTraversalMillis,
             maximumRetainedHeapBytes
         },
+        wasmRequests,
         browserErrors: pageErrors,
         failures
     };
@@ -206,4 +224,15 @@ function readPositiveNumber(name, fallback) {
         throw new Error(`${name} must be a positive number`);
     }
     return value;
+}
+
+function summarizeWasmRequests(urls) {
+    const paths = urls.map((url) => new URL(url).pathname);
+    return {
+        directCount: paths.filter((path) => path.endsWith(".wasm")).length,
+        manifestCount: paths.filter((path) =>
+            path.endsWith(".wasm.chunks.json")
+        ).length,
+        partCount: paths.filter((path) => path.includes(".wasm.part-")).length
+    };
 }

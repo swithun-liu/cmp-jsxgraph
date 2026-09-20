@@ -109,13 +109,11 @@
     </style>
     <script>
         (() => {
-            const forceChunkLoader = new URLSearchParams(
-                window.location.search,
-            ).get("chunkedWasm") === "true";
-            if (
-                !window.location.hostname.endsWith(".github.io") &&
-                !forceChunkLoader
-            ) {
+            const useChunkLoader =
+                window.location.hostname.endsWith(".github.io") ||
+                new URLSearchParams(window.location.search)
+                    .get("chunkedWasm") === "true";
+            if (!useChunkLoader) {
                 return;
             }
 
@@ -160,21 +158,32 @@
                 setProgress();
 
                 const bytes = new Uint8Array(manifest.byteLength);
+                const chunks = await Promise.all(
+                    manifest.chunks.map(async (chunkName) => {
+                        const chunkResponse = await nativeFetch(
+                            new URL(chunkName, manifestUrl),
+                        );
+                        if (!chunkResponse.ok) {
+                            throw new Error(`Failed to load ${chunkName}`);
+                        }
+                        const chunk = new Uint8Array(
+                            await chunkResponse.arrayBuffer(),
+                        );
+                        loadedBytes += chunk.byteLength;
+                        setProgress();
+                        return chunk;
+                    }),
+                );
                 let offset = 0;
-                for (const chunkName of manifest.chunks) {
-                    const chunkResponse = await nativeFetch(
-                        new URL(chunkName, manifestUrl),
-                    );
-                    if (!chunkResponse.ok) {
-                        throw new Error(`Failed to load ${chunkName}`);
-                    }
-                    const chunk = new Uint8Array(
-                        await chunkResponse.arrayBuffer(),
-                    );
+                for (const chunk of chunks) {
                     bytes.set(chunk, offset);
                     offset += chunk.byteLength;
-                    loadedBytes += chunk.byteLength;
-                    setProgress();
+                }
+                if (offset !== manifest.byteLength) {
+                    throw new Error(
+                        `Chunked Wasm length ${offset} does not match ` +
+                            `${manifest.byteLength}`,
+                    );
                 }
                 return bytes;
             };
@@ -189,29 +198,10 @@
                 }
 
                 setStatus("Downloading Kotlin/Wasm renderer");
-                const controller = new AbortController();
-                const timeout = window.setTimeout(
-                    () => controller.abort(),
-                    10000,
+                return new Response(
+                    await fetchChunkedWasm(requestUrl),
+                    { headers: { "Content-Type": "application/wasm" } },
                 );
-                try {
-                    const response = await nativeFetch(input, {
-                        ...(options ?? {}),
-                        signal: controller.signal,
-                    });
-                    if (!response.ok) {
-                        throw new Error(`Failed to load ${response.url}`);
-                    }
-                    return response;
-                } catch (directFailure) {
-                    setStatus("Continuing with chunked download");
-                    return new Response(
-                        await fetchChunkedWasm(requestUrl),
-                        { headers: { "Content-Type": "application/wasm" } },
-                    );
-                } finally {
-                    window.clearTimeout(timeout);
-                }
             };
 
             WebAssembly.instantiateStreaming = async (source, imports, options) => {
@@ -224,11 +214,13 @@
                 );
             };
 
-            window.addEventListener("error", () => {
+            const showLoadingFailure = () => {
                 document.querySelector("#loading-shell")
                     ?.classList.add("loading-error");
                 setStatus("Loading failed. Refresh to retry.");
-            });
+            };
+            window.addEventListener("error", showLoadingFailure);
+            window.addEventListener("unhandledrejection", showLoadingFailure);
         })();
     </script>
     <script defer type="application/javascript" src="cmp-jsxgraph.js"></script>

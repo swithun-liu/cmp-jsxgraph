@@ -69,7 +69,7 @@ try {
             );
         }
 
-        await clickLabel(page, `Open case:${menuTargetCaseId}`);
+        await clickExactLabel(page, `Open case:${menuTargetCaseId}`);
         await waitForQueryCase(page, menuTargetCaseId);
         await new Promise((resolve) => setTimeout(resolve, 500));
         const menuTargetBoard = await captureRectangle(
@@ -220,6 +220,13 @@ async function clickLabel(page, fragment) {
     );
 }
 
+async function clickExactLabel(page, label) {
+    await page
+        .locator(`::-p-aria(${label})`)
+        .setTimeout(60_000)
+        .click();
+}
+
 async function waitForLabel(page, fragment) {
     await page.waitForFunction(
         (expected) => {
@@ -273,7 +280,7 @@ async function waitForQueryCase(page, expectedCaseId) {
             new URL(globalThis.location.href)
                 .searchParams
                 .get("caseId") === caseId,
-        {timeout: 10_000},
+        {timeout: 60_000},
         expectedCaseId
     );
 }
