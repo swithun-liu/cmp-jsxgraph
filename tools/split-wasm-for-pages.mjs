@@ -22,7 +22,7 @@ for (const wasmFile of wasmFiles) {
   const wasmBytes = await readFile(wasmPath);
   const compressedWasmBytes = gzipSync(wasmBytes, { level: 9 });
   const chunks = await writeChunks(wasmFile, wasmBytes);
-  const compressedChunks = await writeChunks(
+  const compressedChunks = await writeBase64Chunks(
     `${wasmFile}.gz`,
     compressedWasmBytes,
   );
@@ -33,7 +33,7 @@ for (const wasmFile of wasmFiles) {
       byteLength: wasmBytes.length,
       chunks,
       compression: {
-        format: 'gzip',
+        format: 'gzip-base64',
         byteLength: compressedWasmBytes.length,
         chunks: compressedChunks,
       },
@@ -41,7 +41,7 @@ for (const wasmFile of wasmFiles) {
   );
   console.log(
     `Split ${wasmFile} into ${chunks.length} raw and ` +
-      `${compressedChunks.length} gzip chunks.`,
+      `${compressedChunks.length} gzip-base64 chunks.`,
   );
 }
 
@@ -56,6 +56,27 @@ async function writeChunks(fileName, bytes) {
     await writeFile(
       resolve(outputDirectory, chunkName),
       bytes.subarray(offset, offset + CHUNK_SIZE_BYTES),
+    );
+    chunks.push(chunkName);
+  }
+  return chunks;
+}
+
+async function writeBase64Chunks(fileName, bytes) {
+  const chunks = [];
+  for (
+    let offset = 0, index = 0;
+    offset < bytes.length;
+    offset += CHUNK_SIZE_BYTES, index += 1
+  ) {
+    const chunkName =
+      `${fileName}.part-${index.toString().padStart(3, '0')}.json`;
+    const base64 = bytes
+      .subarray(offset, offset + CHUNK_SIZE_BYTES)
+      .toString('base64');
+    await writeFile(
+      resolve(outputDirectory, chunkName),
+      `${JSON.stringify(base64)}\n`,
     );
     chunks.push(chunkName);
   }

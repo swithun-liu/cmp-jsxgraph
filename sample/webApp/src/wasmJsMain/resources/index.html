@@ -156,7 +156,7 @@
                 const useCompression =
                     typeof DecompressionStream === "function" &&
                     typeof TransformStream === "function" &&
-                    manifest.compression?.format === "gzip";
+                    manifest.compression?.format === "gzip-base64";
                 const payload = useCompression
                     ? manifest.compression
                     : manifest;
@@ -174,9 +174,11 @@
                                     `Failed to load ${chunkName}`,
                                 );
                             }
-                            const chunk = new Uint8Array(
-                                await chunkResponse.arrayBuffer(),
-                            );
+                            const chunk = useCompression
+                                ? decodeBase64(await chunkResponse.json())
+                                : new Uint8Array(
+                                    await chunkResponse.arrayBuffer(),
+                                );
                             loadedBytes += chunk.byteLength;
                             setProgress();
                             return { chunk };
@@ -249,6 +251,15 @@
                     body,
                     { headers: { "Content-Type": "application/wasm" } },
                 );
+            };
+
+            const decodeBase64 = (base64) => {
+                const binary = window.atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let index = 0; index < binary.length; index += 1) {
+                    bytes[index] = binary.charCodeAt(index);
+                }
+                return bytes;
             };
 
             window.fetch = async (input, options) => {
