@@ -107,16 +107,30 @@
             to { transform: translateX(455%); }
         }
     </style>
+    <!-- CMP_JSXGRAPH_EMBEDDED_WASM -->
     <script>
         (() => {
+            const searchParams = new URLSearchParams(
+                window.location.search,
+            );
             const useChunkLoader =
                 window.location.hostname.endsWith(".github.io") ||
-                new URLSearchParams(window.location.search)
-                    .get("chunkedWasm") === "true";
+                searchParams.get("chunkedWasm") === "true";
             if (!useChunkLoader) {
                 return;
             }
 
+            const embeddedWasmElement = document.querySelector(
+                "#cmp-jsxgraph-embedded-wasm",
+            );
+            const embeddedWasmPayload = embeddedWasmElement === null
+                ? null
+                : JSON.parse(embeddedWasmElement.textContent);
+            const embeddedWasmAssets =
+                searchParams.get("embeddedWasm") === "false" ||
+                typeof embeddedWasmPayload?.assets !== "object"
+                    ? {}
+                    : embeddedWasmPayload.assets;
             const nativeFetch = window.fetch.bind(window);
             const chunkRequestAttempts = 3;
             const chunkRequestTimeoutMillis = 15_000;
@@ -305,11 +319,17 @@
             const fetchChunkedWasm = async (requestUrl) => {
                 const manifestUrl = new URL(requestUrl);
                 manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;
-                const manifestResponse = await nativeFetch(manifestUrl);
-                if (!manifestResponse.ok) {
-                    throw new Error(`Failed to load ${manifestUrl}`);
+                const assetName = decodeURIComponent(
+                    requestUrl.pathname.split("/").at(-1),
+                );
+                let manifest = embeddedWasmAssets[assetName];
+                if (manifest === undefined) {
+                    const manifestResponse = await nativeFetch(manifestUrl);
+                    if (!manifestResponse.ok) {
+                        throw new Error(`Failed to load ${manifestUrl}`);
+                    }
+                    manifest = await manifestResponse.json();
                 }
-                const manifest = await manifestResponse.json();
                 const compressionFormat = manifest.compression?.format;
                 const useCompression =
                     typeof DecompressionStream === "function" &&
@@ -317,35 +337,44 @@
                     (
                         compressionFormat === "gzip" ||
                         compressionFormat === "gzip-base64" ||
-                        compressionFormat === "gzip-base64-script"
+                        compressionFormat === "gzip-base64-script" ||
+                        compressionFormat === "gzip-base64-embedded"
                     );
                 const payload = useCompression
                     ? manifest.compression
                     : manifest;
+                const useEmbeddedCompression =
+                    useCompression &&
+                    compressionFormat === "gzip-base64-embedded";
+                const useScriptCompression =
+                    useCompression &&
+                    compressionFormat === "gzip-base64-script";
                 totalBytes += payload.byteLength;
                 setProgress();
 
                 const chunkResults = payload.chunks.map(
-                    (chunkName) =>
+                    (chunkEntry) =>
                         queueChunkRequest(async () => {
-                            const chunkUrl = new URL(
-                                chunkName,
-                                manifestUrl,
-                            );
                             const chunk =
-                                useCompression &&
-                                compressionFormat ===
-                                    "gzip-base64-script"
-                                    ? await loadScriptChunkWithRetry(
-                                        chunkUrl,
-                                        chunkName,
-                                    )
-                                    : await fetchChunkWithRetry(
-                                        chunkUrl,
-                                        useCompression &&
-                                            compressionFormat ===
-                                                "gzip-base64",
-                                    );
+                                useEmbeddedCompression
+                                    ? decodeBase64(chunkEntry)
+                                    : useScriptCompression
+                                        ? await loadScriptChunkWithRetry(
+                                            new URL(
+                                                chunkEntry,
+                                                manifestUrl,
+                                            ),
+                                            chunkEntry,
+                                        )
+                                        : await fetchChunkWithRetry(
+                                            new URL(
+                                                chunkEntry,
+                                                manifestUrl,
+                                            ),
+                                            useCompression &&
+                                                compressionFormat ===
+                                                    "gzip-base64",
+                                        );
                             loadedBytes += chunk.byteLength;
                             setProgress();
                             return chunk;
