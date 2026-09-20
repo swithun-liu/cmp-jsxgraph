@@ -92,10 +92,14 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         property: String,
     ): ElementPropertyResult? {
         val curve = element as? Curve ?: return null
-        if (curve.isEllipse || curve.isHyperbola) {
+        if (curve.isEllipse || curve.isHyperbola || curve.isParabola) {
             return when (property) {
                 "majorAxis" ->
-                    numberFunction("majorAxis", curve::majorAxis)
+                    if (curve.isEllipse || curve.isHyperbola) {
+                        numberFunction("majorAxis", curve::majorAxis)
+                    } else {
+                        null
+                    }
                 "center", "midpoint" -> curve.center?.let {
                     GMResult.Ok(
                         JessieCodeRuntimeValue.ElementReference(it),

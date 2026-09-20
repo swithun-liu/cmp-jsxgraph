@@ -80,11 +80,10 @@ PolePoint now has source-mapped Circle/Line construction in either parent
 order, canonical parent metadata, the exact determinant coordinate closure,
 dependency and removal behavior, non-finite degenerate arithmetic, bounded
 JSON/JessieCode paths, structured atomic rollback, and focused static plus
-four-parent-drag Desktop/Compact parity. Ellipse and Hyperbola construction
-are translated, but their Conic/Line PolePoint forms remain explicitly
-unsupported pending
-dedicated interop evidence. The translated subset remains outside the
-independent Stable corpus.
+four-parent-drag Desktop/Compact parity. Ellipse, Hyperbola, and Parabola
+construction are translated, but their Conic/Line PolePoint forms remain
+explicitly unsupported pending dedicated interop evidence. The translated
+subset remains outside the independent Stable corpus.
 The Circle/Point, Line/Point, and Curve/Point branches of Tangent now have
 source-mapped construction, the registered Polar alias, and the Circle-only
 PolarLine wrapper. Circle/Point preserves exact hidden one-function Line
@@ -97,17 +96,17 @@ parametric Curves, nearest-segment projection for data Plots, upstream
 FunctionGraph classification for JessieCode string x-terms, hidden helpers,
 and Point-only ownership. All three branches have bounded JSON/JessieCode
 paths, structured atomic failure handling, and focused static plus parent-drag
-Desktop/Compact parity. Ellipse/Hyperbola Tangent/Polar and PolarLine Conic forms,
-Turtle, and one-parent Glider branches remain explicitly unsupported, and
-this slice remains outside the independent Stable corpus.
+Desktop/Compact parity. Ellipse/Hyperbola/Parabola Tangent/Polar and PolarLine
+Conic forms, Turtle, and one-parent Glider branches remain explicitly
+unsupported, and this slice remains outside the independent Stable corpus.
 TangentTo now has source-mapped Circle-only
 `polar -> intersection -> tangent` composition, numeric truthiness for
 selecting either contact Point, exposed polar/contact identities, nested
 attributes, dependency and removal behavior, non-real/degenerate arithmetic,
 bounded three-object JSON/JessieCode scene expansion, and atomic rollback.
-Focused static and source-Point-drag Desktop/Compact parity passes. Ellipse
-and Hyperbola construction are translated, but their TangentTo Conic branches
-remain explicitly
+Focused static and source-Point-drag Desktop/Compact parity passes. Ellipse,
+Hyperbola, and Parabola construction are translated, but their TangentTo Conic
+branches remain explicitly
 unsupported pending dedicated interop evidence. This slice remains outside
 the independent Stable corpus.
 Ellipse now has source-mapped `src/element/conic.js -> createEllipse`
@@ -136,6 +135,22 @@ independent Stable qualification remain pending. Tangent, Polar, PolarLine,
 PolePoint, TangentTo, Normal, Intersection, and OtherIntersection Conic forms
 remain explicitly unsupported until their own source-mapped translation and
 evidence are complete.
+Parabola now has source-mapped
+`src/element/conic.js -> createParabola` construction from a
+Point/reference/function-returning-Point or coordinate focus and either a
+registered Line or an implicit two-Point directrix. It preserves optional
+numeric domains and the official default domain, constrained
+focus-projection `center`/`midpoint` metadata, quadratic-form and
+focus/directrix updates, helper ownership/removal, and degenerate JavaScript
+`Double` arithmetic. JSON/JessieCode limits, native session updates,
+duplicate-ID rejection, structured failures, atomic rollback, and focused
+static plus focus-drag Desktop/Compact parity pass. The visual fixture uses a
+finite domain around the visible branch; Core and official fixture tests
+retain coverage of the default-domain singularity. Adaptive plotting, richer
+implicit-Line attributes, and independent Stable qualification remain
+pending. Tangent, Polar, PolarLine, PolePoint, TangentTo, Normal,
+Intersection, and OtherIntersection Conic forms remain explicitly unsupported
+until their own source-mapped translation and evidence are complete.
 Derivative now has source-mapped `createDerivative` construction over
 `Numerics.D`, FunctionGraph/parametric/data-Plot coverage, linear array
 interpolation and viewport-padded data domains, infinite-slope preservation,

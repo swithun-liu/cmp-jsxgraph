@@ -729,6 +729,25 @@ jobs:
           PARITY_CASE_IDS=hyperbolas \
           npm --prefix tools/visual-parity run audit
 
+      - name: Capture Parabola focus drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/parabola-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=parabolas \
+          INTERACTION_TRACE=parabola_focus_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Parabola focus drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/parabola-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=parabolas \
+          npm --prefix tools/visual-parity run audit
+
       - name: Capture independent production corpus
         run: |
           CORPUS_SOURCE=production \

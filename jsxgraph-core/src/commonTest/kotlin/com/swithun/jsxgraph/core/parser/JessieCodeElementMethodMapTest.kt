@@ -304,6 +304,47 @@ class JessieCodeElementMethodMapTest {
     }
 
     @Test
+    fun parabolaExposesCenterMetadataWithoutAMajorAxis() {
+        val values = array(
+            evaluate(
+                source =
+                    "F = point(1, 1); " +
+                        "L = line([-1, 4], [-1, -4]); " +
+                        "p = parabola(F, L) << " +
+                        "doAdvancedPlot: false, numberPointsHigh: 8 >>; " +
+                        "[p.center == p.midpoint, " +
+                        "p.subs.center == p.center];",
+                board = board(),
+            ),
+        )
+
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[0],
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[1],
+        )
+
+        val unavailable = evaluateError(
+            source =
+                "F = point(1, 1); " +
+                    "L = line([-1, 4], [-1, -4]); " +
+                    "p = parabola(F, L) << " +
+                    "doAdvancedPlot: false, numberPointsHigh: 8 >>; " +
+                    "p.majorAxis;",
+            board = board("parabola-major-axis"),
+        )
+        assertEquals(
+            "majorAxis",
+            assertIs<JessieCodeRuntimeError.ElementPropertyUnavailable>(
+                unavailable,
+            ).property,
+        )
+    }
+
+    @Test
     fun tangentToExposesItsPublicPointAndPolarReferences() {
         val board = board("tangent-to-properties")
         val values = array(

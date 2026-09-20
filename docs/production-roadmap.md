@@ -101,9 +101,9 @@ qualification batches pass.
   parent removal, non-finite degenerate arithmetic, native JessieCode and
   construction-document entry points, and structured atomic rollback. Core,
   creator, document/session, official fixture, and focused static plus
-  four-parent-drag Desktop/Compact parity gates pass. Ellipse and Hyperbola
-  construction are translated, but their Conic/Line PolePoint forms, an independent production
-  case, and Stable qualification remain pending.
+  four-parent-drag Desktop/Compact parity gates pass. Ellipse, Hyperbola, and
+  Parabola construction are translated, but their Conic/Line PolePoint forms,
+  an independent production case, and Stable qualification remain pending.
 - Tangent/Polar: the Circle/Point, Line/Point, and Curve/Point branches of
   `src/base/line.js -> createTangent` plus its registered `polar` alias are
   translated; `createPolarLine` remains Circle/Point-only. Circle/Point
@@ -117,9 +117,9 @@ qualification batches pass.
   FunctionGraph classification, hidden helpers, and Point-only ownership.
   Native JessieCode, construction-document, core lifecycle, official fixture,
   and focused static plus parent-drag Desktop/Compact parity gates pass.
-  Ellipse/Hyperbola Tangent/Polar and PolarLine Conic forms, Turtle and one-parent
-  Glider branches, an independent production case, and Stable qualification
-  remain pending.
+  Ellipse/Hyperbola/Parabola Tangent/Polar and PolarLine Conic forms, Turtle
+  and one-parent Glider branches, an independent production case, and Stable
+  qualification remain pending.
 - TangentTo: the Circle branch of
   `src/base/line.js -> createTangentTo` now composes the source Point's polar,
   one polar/Circle Intersection selected by upstream numeric truthiness, and
@@ -128,9 +128,9 @@ qualification batches pass.
   non-real and degenerate arithmetic, and three-object scene/resource
   accounting. Native JessieCode, construction-document, Core lifecycle,
   official fixture, and focused static plus source-Point-drag
-  Desktop/Compact parity gates pass. Ellipse and Hyperbola construction are
-  translated, but their TangentTo Conic branches, an independent production case, and Stable
-  qualification remain pending.
+  Desktop/Compact parity gates pass. Ellipse, Hyperbola, and Parabola
+  construction are translated, but their TangentTo Conic branches, an
+  independent production case, and Stable qualification remain pending.
 - Ellipse: `src/element/conic.js -> createEllipse` now covers
   Point/reference/coordinate foci with either a Point on the Ellipse or a
   numeric/function-valued major axis, optional numeric parameter domains,
@@ -157,6 +157,22 @@ qualification batches pass.
   rollback are covered. Core, creator, document/session, method-map, official
   fixture, and focused static plus point-parent-drag Desktop/Compact parity
   gates pass. Adaptive plotting, an independent production case, and Stable
+  qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
+  TangentTo, Normal, Intersection, and OtherIntersection Conic forms remain
+  explicitly unsupported until their dedicated source-mapped numerical,
+  lifecycle, resource, and parity evidence is complete.
+- Parabola: `src/element/conic.js -> createParabola` now covers a
+  Point/reference/function-returning-Point or coordinate focus and either a
+  registered Line or an implicit two-Point directrix. The translation
+  preserves optional numeric parameter domains and official `0..2π` defaults,
+  constrained focus-projection `center`/`midpoint` metadata, directrix/focus
+  dependencies, quadratic-form updates, degenerate and ideal-directrix
+  arithmetic, helper ownership, and removal lifecycle. Bounded JSON/JessieCode
+  entry points, native session updates, duplicate-ID rejection, resource
+  checks, and atomic helper rollback are covered. Core, creator,
+  document/session, method-map, official fixture, and focused static plus
+  focus-drag Desktop/Compact parity gates pass. Adaptive plotting, richer
+  implicit-Line attributes, an independent production case, and Stable
   qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
   TangentTo, Normal, Intersection, and OtherIntersection Conic forms remain
   explicitly unsupported until their dedicated source-mapped numerical,

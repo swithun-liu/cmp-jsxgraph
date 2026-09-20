@@ -38,6 +38,7 @@ import com.swithun.jsxgraph.core.base.ParallelDirectionPoint
 import com.swithun.jsxgraph.core.base.ParallelLine
 import com.swithun.jsxgraph.core.base.ParallelPoint
 import com.swithun.jsxgraph.core.base.ParallelogramError
+import com.swithun.jsxgraph.core.base.ParabolaError
 import com.swithun.jsxgraph.core.base.PerpendicularLine
 import com.swithun.jsxgraph.core.base.PerpendicularSegmentLine
 import com.swithun.jsxgraph.core.base.Point
@@ -3240,6 +3241,136 @@ class NativeJessieCodeCreatorsTest {
             ).error,
         )
         assertEquals(1, duplicateCenterBoard.objects.size)
+    }
+
+    @Test
+    fun parabolaCreatorSupportsPointFunctionAndCoordinateParents() {
+        val pointBoard = board("parabola-point")
+        val pointParabola = curve(
+            evaluate(
+                source =
+                    "A = point(-1, 4) << id: \"a\", name: \"\" >>; " +
+                        "B = point(-1, -4) << id: \"b\", name: \"\" >>; " +
+                        "L = line(A, B) << id: \"directrix\", name: \"\" >>; " +
+                        "F = point(1, 1) << id: \"focus\", name: \"\" >>; " +
+                        "P = parabola(F, L) << " +
+                        "id: \"parabola\", name: \"\", " +
+                        "doAdvancedPlot: false, numberPointsHigh: 32, " +
+                        "center: << id: \"center\", name: \"\", " +
+                        "fixed: true >> >>; P;",
+                board = pointBoard,
+            ),
+        )
+        val focus = assertIs<Point>(pointBoard.select("focus"))
+        val directrix = assertIs<Line>(pointBoard.select("directrix"))
+        val center = assertIs<Point>(pointBoard.select("center"))
+
+        assertTrue("parabola" in NativeJessieCodeCreators.names)
+        assertTrue(pointParabola.isParabola)
+        assertEquals(Const.OBJECT_TYPE_CONIC, pointParabola.type)
+        assertEquals(32, pointParabola.numberPoints)
+        assertEquals(1.0000000000000002, pointParabola.X(0.0))
+        assertEquals(-1.0, pointParabola.Y(0.0))
+        assertEquals(listOf("focus", "directrix"), pointParabola.parents)
+        assertEquals(
+            listOf<GeometryElement>(center, focus),
+            pointParabola.inherits,
+        )
+        assertSame(directrix, pointParabola.parabolaDirectrix)
+        assertTrue(center.isFixed)
+        assertSame(center, pointParabola.subs["center"])
+
+        val functionBoard = board("parabola-function")
+        val functionParabola = curve(
+            evaluate(
+                source =
+                    "F = point(3, 1) << id: \"focus\", name: \"\" >>; " +
+                        "L = line([0, 3], [0, -3]) << " +
+                        "id: \"directrix\", name: \"\" >>; " +
+                        "P = parabola(function () { return F; }, L) << " +
+                        "name: \"\", doAdvancedPlot: false, " +
+                        "numberPointsHigh: 8 >>; P;",
+                board = functionBoard,
+            ),
+        )
+        assertEquals(listOf("directrix"), functionParabola.parents)
+        assertSame(
+            functionBoard.select("focus"),
+            functionParabola.parabolaFocus,
+        )
+
+        val coordinateBoard = board("parabola-coordinate")
+        val coordinateParabola = curve(
+            evaluate(
+                source =
+                    "parabola([3.25, 0], [[0.25, 1], [0.25, 0]], " +
+                        "-1.5707963267948966, 3.141592653589793) << " +
+                        "id: \"coordinate\", name: \"\", " +
+                        "doAdvancedPlot: false, numberPointsHigh: 16, " +
+                        "foci: << fixed: true >>, " +
+                        "center: << id: \"center\", fixed: true >>, " +
+                        "line: << id: \"directrix\", name: \"\" >> >>;",
+                board = coordinateBoard,
+            ),
+        )
+        assertEquals(emptyList(), coordinateParabola.parents)
+        assertEquals(16, coordinateParabola.numberPoints)
+        assertEquals(-1.5707963267948966, coordinateParabola.minX())
+        assertEquals(3.141592653589793, coordinateParabola.maxX())
+        assertEquals(6, coordinateBoard.objects.size)
+        assertTrue(assertIs<Point>(coordinateParabola.parabolaFocus).isFixed)
+        assertEquals("directrix", coordinateParabola.parabolaDirectrix?.id)
+        assertTrue(assertIs<Point>(coordinateParabola.center).isFixed)
+    }
+
+    @Test
+    fun parabolaCreatorFailuresAreStructuredAndAtomic() {
+        val wrongParents = creatorError(
+            source =
+                "A = point(0, 0); B = point(1, 1); " +
+                    "parabola(A, B) << doAdvancedPlot: false >>;",
+            board = board("parabola-wrong-parent"),
+        )
+        assertEquals("parabola", wrongParents.creatorName)
+        assertIs<JessieCodeCreatorError.UnsupportedParents>(
+            wrongParents.error,
+        )
+
+        val duplicateBoard = board("parabola-duplicate")
+        val duplicate = creatorError(
+            source =
+                "point(7, 5) << id: \"taken\", name: \"\" >>; " +
+                    "parabola([3, 0], [[0, 1], [0, -1]]) << " +
+                    "id: \"taken\", doAdvancedPlot: false, " +
+                    "numberPointsHigh: 8 >>;",
+            board = duplicateBoard,
+        )
+        assertEquals(
+            ParabolaError.DuplicateElementId("taken"),
+            assertIs<JessieCodeCreatorError.ParabolaFactory>(
+                duplicate.error,
+            ).error,
+        )
+        assertEquals(1, duplicateBoard.objects.size)
+
+        val duplicateLineBoard = board("parabola-duplicate-line")
+        val duplicateLine = creatorError(
+            source =
+                "point(7, 5) << id: \"taken\", name: \"\" >>; " +
+                    "parabola([3, 0], [[0, 1], [0, -1]]) << " +
+                    "doAdvancedPlot: false, numberPointsHigh: 8, " +
+                    "line: << id: \"taken\" >> >>;",
+            board = duplicateLineBoard,
+        )
+        assertEquals(
+            LineError.Registration(
+                BoardError.DuplicateElementId("taken"),
+            ),
+            assertIs<JessieCodeCreatorError.LineFactory>(
+                duplicateLine.error,
+            ).error,
+        )
+        assertEquals(1, duplicateLineBoard.objects.size)
     }
 
     @Test

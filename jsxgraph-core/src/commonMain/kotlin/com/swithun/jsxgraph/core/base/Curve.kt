@@ -7,7 +7,8 @@
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality,
  * src/element/vectorfield.js -> createVectorField / createSlopeField,
- * src/element/conic.js -> createEllipse / createHyperbola
+ * src/element/conic.js ->
+ * createEllipse / createHyperbola / createParabola
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -508,6 +509,7 @@ internal class Curve private constructor(
     private val vectorFieldDefinition: CurveVectorFieldDefinition? = null,
     private val ellipseDefinition: CurveEllipseDefinition? = null,
     private val hyperbolaDefinition: CurveHyperbolaDefinition? = null,
+    private val parabolaDefinition: CurveParabolaDefinition? = null,
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
@@ -553,8 +555,13 @@ internal class Curve private constructor(
         get() = ellipseDefinition != null
     internal val isHyperbola: Boolean
         get() = hyperbolaDefinition != null
+    internal val isParabola: Boolean
+        get() = parabolaDefinition != null
     internal val center: Point?
-        get() = ellipseDefinition?.center ?: hyperbolaDefinition?.center
+        get() =
+            ellipseDefinition?.center
+                ?: hyperbolaDefinition?.center
+                ?: parabolaDefinition?.center
     internal val midpoint: Point?
         get() = center
     internal val foci: List<Point>
@@ -571,6 +578,10 @@ internal class Curve private constructor(
         get() = ellipseDefinition?.pointOnEllipse
     internal val pointOnHyperbola: Point?
         get() = hyperbolaDefinition?.pointOnHyperbola
+    internal val parabolaFocus: Point?
+        get() = parabolaDefinition?.focus
+    internal val parabolaDirectrix: Line?
+        get() = parabolaDefinition?.directrix
     internal val inherits = mutableListOf<GeometryElement>()
     internal val subs = linkedMapOf<String, GeometryElement>()
 
@@ -1787,6 +1798,9 @@ internal class Curve private constructor(
         hyperbolaDefinition?.let { definition ->
             return GMResult.Ok(definition.minimum)
         }
+        parabolaDefinition?.let { definition ->
+            return GMResult.Ok(definition.minimum)
+        }
         riemannDefinition?.let { definition ->
             return evaluateCoordinateNumber(
                 termName = "riemannsum.minX",
@@ -1815,6 +1829,9 @@ internal class Curve private constructor(
             return GMResult.Ok(definition.maximum)
         }
         hyperbolaDefinition?.let { definition ->
+            return GMResult.Ok(definition.maximum)
+        }
+        parabolaDefinition?.let { definition ->
             return GMResult.Ok(definition.maximum)
         }
         riemannDefinition?.let { definition ->
@@ -1911,6 +1928,20 @@ internal class Curve private constructor(
                     cos(beta + parameter) * radialDistance,
             )
         }
+        parabolaDefinition?.let { definition ->
+            val radialDistance = parabolaRadialDistance(
+                definition = definition,
+                parameter = parameter,
+            )
+            if (!suspendedUpdate) {
+                updateParabolaQuadraticForm(definition)
+            }
+            return GMResult.Ok(
+                definition.focus.X() +
+                    cos(parameter + definition.directrix.getAngle()) *
+                    radialDistance,
+            )
+        }
         splineDefinition?.let {
             return GMResult.Ok(parameter)
         }
@@ -1986,6 +2017,17 @@ internal class Curve private constructor(
             return GMResult.Ok(
                 definition.focus1.Y() +
                     sin(beta + parameter) * radialDistance,
+            )
+        }
+        parabolaDefinition?.let { definition ->
+            val radialDistance = parabolaRadialDistance(
+                definition = definition,
+                parameter = parameter,
+            )
+            return GMResult.Ok(
+                definition.focus.Y() +
+                    sin(parameter + definition.directrix.getAngle()) *
+                    radialDistance,
             )
         }
         splineDefinition?.let { definition ->
@@ -2145,6 +2187,83 @@ internal class Curve private constructor(
             ),
         )
         return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/element/conic.js ->
+    // createParabola.X / createParabola.Y.
+    private fun parabolaRadialDistance(
+        definition: CurveParabolaDefinition,
+        parameter: Double,
+    ): Double {
+        val directrix = definition.directrix
+        var first = directrix.point1.coords.usrCoords
+        var second = directrix.point2.coords.usrCoords
+        if (first[0] == 0.0) {
+            first = doubleArrayOf(
+                1.0,
+                second[1] + directrix.stdform[2],
+                second[2] - directrix.stdform[1],
+            )
+        } else if (second[0] == 0.0) {
+            second = doubleArrayOf(
+                1.0,
+                first[1] + directrix.stdform[2],
+                first[2] - directrix.stdform[1],
+            )
+        }
+        val focus = definition.focus.coords.usrCoords
+        val determinant =
+            if (
+                (
+                    (second[1] - first[1]) *
+                        (focus[2] - first[2]) -
+                        (second[2] - first[2]) *
+                        (focus[1] - first[1])
+                    ) >= 0.0
+            ) {
+                1.0
+            } else {
+                -1.0
+            }
+        val distance = Geometry.distPointLine(
+            point = focus,
+            line = directrix.stdform,
+        )
+        return determinant * distance / (1.0 - sin(parameter))
+    }
+
+    // JSXGraph 1.13.3: src/element/conic.js ->
+    // createParabola.polarForm.
+    private fun updateParabolaQuadraticForm(
+        definition: CurveParabolaDefinition,
+    ) {
+        val directrix = definition.directrix
+        val horizontal = directrix.stdform[1]
+        val vertical = directrix.stdform[2]
+        val constant = directrix.stdform[0]
+        val squaredNorm =
+            horizontal * horizontal + vertical * vertical
+        val focusX = definition.focus.X()
+        val focusY = definition.focus.Y()
+        quadraticform = arrayOf(
+            doubleArrayOf(
+                constant * constant -
+                    squaredNorm *
+                    (focusX * focusX + focusY * focusY),
+                constant * horizontal + squaredNorm * focusX,
+                constant * vertical + squaredNorm * focusY,
+            ),
+            doubleArrayOf(
+                constant * horizontal + squaredNorm * focusX,
+                -vertical * vertical,
+                horizontal * vertical,
+            ),
+            doubleArrayOf(
+                constant * vertical + squaredNorm * focusY,
+                horizontal * vertical,
+                -horizontal * horizontal,
+            ),
+        )
     }
 
     // JSXGraph 1.13.3:
@@ -2374,6 +2493,72 @@ internal class Curve private constructor(
                             definition.focus2,
                             definition.pointOnHyperbola,
                         ).filterNot(parentlessPoints::contains),
+                    )
+                    GMResult.Ok(curve)
+                }
+                is GMResult.Err -> result
+            }
+        }
+
+        // JSXGraph 1.13.3: src/element/conic.js -> createParabola.
+        internal fun createParabola(
+            board: Board,
+            definition: CurveParabolaDefinition,
+            parentlessElements: Set<GeometryElement>,
+            sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
+                return GMResult.Err(
+                    CurveError.InvalidSampleCount(
+                        count = sampleCount,
+                        maximum = MAX_SAMPLE_COUNT,
+                    ),
+                )
+            }
+            return when (
+                val result = register(
+                    curve = Curve(
+                        board = board,
+                        curveType = PARAMETRIC_CURVE_TYPE,
+                        xTerm = null,
+                        yTerm = null,
+                        minimumTerm = null,
+                        maximumTerm = null,
+                        dataX = null,
+                        dataY = null,
+                        sampleCount = sampleCount,
+                        parabolaDefinition = definition,
+                        id = id,
+                        name = name,
+                        needsRegularUpdate = needsRegularUpdate,
+                    ),
+                    expressions = emptyList(),
+                )
+            ) {
+                is GMResult.Ok -> {
+                    val curve = result.value
+                    curve.type = Const.OBJECT_TYPE_CONIC
+                    curve.subs["center"] = definition.center
+                    curve.inherits += listOf(
+                        definition.center,
+                        definition.focus,
+                    )
+                    val dependencies = listOf(
+                        definition.center,
+                        definition.focus,
+                        definition.directrix,
+                    )
+                    for (dependency in dependencies) {
+                        dependency.addChild(curve)
+                    }
+                    curve.setParents(
+                        listOf<GeometryElement>(
+                            definition.focus,
+                            definition.directrix,
+                        ).filterNot(parentlessElements::contains),
                     )
                     GMResult.Ok(curve)
                 }

@@ -602,6 +602,17 @@ function readInteractionTrace() {
                 bottom: -7
             }
         },
+        parabola_focus_drag: {
+            caseId: "parabolas",
+            from: {x: -4, y: 1},
+            to: {x: -3, y: 2},
+            boundingBox: {
+                left: -10,
+                top: 7,
+                right: 10,
+                bottom: -7
+            }
+        },
         curve_boolean_parent_drag: {
             caseId: "curve_boolean_clipping",
             from: {x: 1, y: 2},

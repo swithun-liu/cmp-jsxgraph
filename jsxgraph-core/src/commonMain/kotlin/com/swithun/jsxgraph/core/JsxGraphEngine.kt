@@ -1075,6 +1075,7 @@ object JsxGraphEngine {
                     "curve",
                     "ellipse",
                     "hyperbola",
+                    "parabola",
                     "functiongraph",
                     "plot",
                     "derivative",
@@ -2930,6 +2931,7 @@ object JsxGraphEngine {
                 "slopefield",
                 "ellipse",
                 "hyperbola",
+                "parabola",
             )
         ) {
             return GMResult.Ok(Unit)
@@ -3528,7 +3530,8 @@ object JsxGraphEngine {
                             CURVE_ATTRIBUTES +
                                 if (
                                     element.isEllipse ||
-                                    element.isHyperbola
+                                    element.isHyperbola ||
+                                    element.isParabola
                                 ) {
                                     CONIC_ATTRIBUTES
                                 } else {
@@ -3587,6 +3590,8 @@ object JsxGraphEngine {
                         element.isComb -> listOf("point1", "point2")
                         element.isEllipse || element.isHyperbola ->
                             listOf("foci", "center")
+                        element.isParabola ->
+                            listOf("foci", "center", "line")
                         else -> emptyList()
                     }
                 else -> emptyList()
@@ -3608,13 +3613,18 @@ object JsxGraphEngine {
                                 (
                                     element.isComb ||
                                         element.isEllipse ||
-                                        element.isHyperbola
+                                        element.isHyperbola ||
+                                        element.isParabola
                                     ),
                         supportsFixed =
                             element is Curve &&
                                 (
                                     element.isComb ||
-                                        element.isEllipse
+                                        element.isEllipse ||
+                                        (
+                                            element.isParabola &&
+                                                name != "line"
+                                            )
                                     ),
                     )
                 ) {
@@ -4365,7 +4375,7 @@ object JsxGraphEngine {
         "isarrayofcoordinates",
         "points",
     )
-    private val CONIC_ATTRIBUTES = setOf("foci", "center")
+    private val CONIC_ATTRIBUTES = setOf("foci", "center", "line")
     private val BOX_PLOT_ATTRIBUTES = setOf(
         "dir",
         "smallwidth",

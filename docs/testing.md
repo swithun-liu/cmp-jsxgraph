@@ -239,6 +239,14 @@ arithmetic:
 node tools/upstream-fixtures/hyperbola.mjs
 ```
 
+Capture the official Parabola focus/Line and coordinate-parent forms,
+parameter domains, center/quadratic-form metadata, updates, ownership/removal,
+duplicate IDs, invalid parents, and degenerate or ideal directrix arithmetic:
+
+```bash
+node tools/upstream-fixtures/parabola.mjs
+```
+
 Capture the official Derivative function/parametric/data-Plot sampling,
 central-difference values, updates, parent metadata, source-removal survival,
 and invalid-parent behavior:
@@ -661,6 +669,37 @@ INPUT_DIR=captures/local/hyperbola/interaction/desktop \
   npm --prefix tools/visual-parity run audit
 ```
 
+Capture the focused Parabola branches and replay the registered focus drag:
+
+```bash
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/parabola/static/desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=parabolas \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/parabola/static/desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.93 \
+  PARITY_CASE_IDS=parabolas \
+  npm --prefix tools/visual-parity run audit
+
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/parabola/interaction/desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=parabolas \
+  INTERACTION_TRACE=parabola_focus_drag \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/parabola/interaction/desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.93 \
+  PARITY_CASE_IDS=parabolas \
+  npm --prefix tools/visual-parity run audit
+```
+
 Replay the focused Line/Point Tangent and Polar source-endpoint drag:
 
 ```bash
@@ -983,7 +1022,7 @@ targeted TangentTo static case and source-Point drag, and the shared-endpoint
 Line Tangent/Polar and Curve Tangent/Polar Point drags,
 the two Inequality drags, the VectorField mesh/scale/arrow driver drag, and
 the SlopeField normalization/mesh/scale/arrow driver drag, plus the Ellipse
-and Hyperbola point-parent drags,
+and Hyperbola point-parent drags and the Parabola focus drag,
 and uploads the PNG pairs, contact sheets, TSV summaries, and JSON reports as
 workflow artifacts. Its independent production-corpus pass uses the Stable
 floor of `0.93` at both viewports.
@@ -1032,8 +1071,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 77 cases:
-30 generated production scenarios followed by 47 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 78 cases:
+30 generated production scenarios followed by 48 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1042,7 +1081,7 @@ separate demo schema into handwritten native geometry. The focused
 `intersection_points`, `intersection_paths`, `polygon_path_intersections`,
 `polygonal_chains`, `parallelograms`, `regular_polygons`, `radical_axis`,
 `pole_point`, `tangent_polar_circle`, `tangent_to_circle`, `tangent_line`,
-`tangent_curve`, `ellipses`, `hyperbolas`,
+`tangent_curve`, `ellipses`, `hyperbolas`, `parabolas`,
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
 `circumcircle_creators`,
@@ -1065,7 +1104,7 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest same-source workbench evidence (2026-09-19):
+Latest same-source workbench evidence (2026-09-20):
 
 `Compact` is the scheduled `390 x 844` profile unless a case paragraph records
 a different reviewed viewport; the new BisectorLines evidence uses
@@ -1090,6 +1129,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `tangent_to_circle` | 0.975735 | 0.959045 |
 | `ellipses` | 0.985972 | 0.974127 |
 | `hyperbolas` | 0.986155 | 0.973306 |
+| `parabolas` | 0.986569 | 0.953062 |
 | `tangent_line` | 0.986294 | 0.976234 |
 | `tangent_curve` | 0.986097 | 0.975965 |
 | `derivative_curve` | 0.986226 | 0.976714 |
@@ -1221,6 +1261,21 @@ clipping, overlap, helper leakage, and Native/Official agreement. The default
 `±1.0001π` domain and degenerate forms remain covered by the Core and official
 fixture tests. This evidence remains outside the 30-case Stable production
 corpus and does not change its 30 scenarios or 55 capabilities.
+The Parabola capture verifies a registered Point/Line form and a
+coordinate-focus/two-Point-directrix form with explicit finite parameter
+domains, constrained center metadata, Conic sampling, quadratic-form updates,
+and hidden helper ownership. Static Desktop `1200 x 900` and Compact
+`390 x 844` captures scored `0.986569` and `0.953062`. After dragging the
+registered focus from `(-4,1)` to `(-3,2)`, both renderers updated the
+Point-defined Parabola with scores of `0.986538` and `0.952681`. All four
+contact sheets passed nonblank/browser checks and manual review for
+focus/directrix placement, both Parabola curves, moved-focus propagation,
+clipping, overlap, helper leakage, and Native/Official agreement. The visual
+fixture uses `[-1.2,1.2]` domains so the official SVG renderer does not emit a
+path error at the default-domain `π/2` singularity; the default `0..2π`
+domain and resulting non-finite arithmetic remain covered by Core and
+official fixture tests. This evidence remains outside the 30-case Stable
+production corpus and does not change its 30 scenarios or 55 capabilities.
 The Line/Point Tangent capture verifies direct source-endpoint reuse for
 `tangent` and the `polar` alias in both parent orders, ignored nested helper
 identity, and forward/reverse/finite visible ranges. Static Desktop

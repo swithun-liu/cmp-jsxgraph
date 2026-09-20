@@ -30,7 +30,8 @@
  * src/element/sector.js -> createSector / createAngle /
  * createCircumcircleSector / createMinorSector / createMajorSector /
  * createNonreflexAngle / createReflexAngle,
- * src/element/conic.js -> createEllipse / createHyperbola
+ * src/element/conic.js ->
+ * createEllipse / createHyperbola / createParabola
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -93,6 +94,8 @@ import com.swithun.jsxgraph.core.base.PerpendicularLine
 import com.swithun.jsxgraph.core.base.PerpendicularSegmentLine
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
+import com.swithun.jsxgraph.core.base.Parabola
+import com.swithun.jsxgraph.core.base.ParabolaError
 import com.swithun.jsxgraph.core.base.PointReflectionError
 import com.swithun.jsxgraph.core.base.PointReflections
 import com.swithun.jsxgraph.core.base.PolePoint
@@ -220,6 +223,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class HyperbolaFactory(
         val error: HyperbolaError,
+    ) : JessieCodeCreatorError
+
+    data class ParabolaFactory(
+        val error: ParabolaError,
     ) : JessieCodeCreatorError
 
     data class PolygonFactory(
@@ -632,6 +639,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createHyperbola(board, parents, attributes, location)
+        },
+        "parabola" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createParabola(board, parents, attributes, location)
         },
         "arc" to JessieCodeCreator { board, parents, attributes, location ->
             createArc(board, parents, attributes, location)
@@ -4178,6 +4193,223 @@ internal object NativeJessieCodeCreators {
                 failure(
                     creatorName = creatorName,
                     error = JessieCodeCreatorError.HyperbolaFactory(
+                        result.error,
+                    ),
+                    location = location,
+                )
+            }
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createParabola.
+    private fun createParabola(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "parabola"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size !in 2..4) {
+            return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val centerAttributes = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "center",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val focusAttributes = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "foci",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val lineAttributes = when (
+            val result = nestedCreatorIdentity(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "line",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampleCount = when (
+            val result = curveSampleCount(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val minimum = (
+            parents.getOrNull(2) as?
+                JessieCodeRuntimeValue.NumberValue
+            )?.value ?: if (parents.size > 2) {
+            return unsupported(creatorName, parents, location)
+        } else {
+            0.0
+        }
+        val maximum = (
+            parents.getOrNull(3) as?
+                JessieCodeRuntimeValue.NumberValue
+            )?.value ?: if (parents.size > 3) {
+            return unsupported(creatorName, parents, location)
+        } else {
+            2.0 * kotlin.math.PI
+        }
+
+        val focusParent = when (
+            val result = focalConicPointParent(
+                board = resolvedBoard,
+                value = parents[0],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+                ?: return unsupported(creatorName, parents, location)
+            is GMResult.Err -> return result
+        }
+        val ownedPoints = linkedSetOf<Point>()
+        val parentlessElements = linkedSetOf<GeometryElement>()
+        val focus = when (val parent = focusParent.parent) {
+            is PointParent.Existing -> parent.point
+            is PointParent.Coordinates -> when (
+                val result = createPointFromCoordinates(
+                    board = resolvedBoard,
+                    coordinates = parent.values,
+                    attributes = focusAttributes,
+                    coordinateLocation = location,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    ownedPoints += result.value
+                    result.value
+                }
+                is GMResult.Err -> return failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.PointFactory(
+                        result.error,
+                    ),
+                    location = location,
+                )
+            }
+        }
+        if (focusParent.parentless) {
+            parentlessElements += focus
+        }
+
+        var ownedLine: Line? = null
+        val directrix = (
+            resolveElement(resolvedBoard, parents[1]) as? Line
+            ) ?: run {
+            val lineParentValues = (
+                parents[1] as? JessieCodeRuntimeValue.ArrayValue
+                )?.values
+            if (lineParentValues == null || lineParentValues.size != 2) {
+                resolvedBoard.removeObjects(ownedPoints)
+                return unsupported(creatorName, parents, location)
+            }
+            val materialized = when (
+                val result = materializePointParents(
+                    board = resolvedBoard,
+                    parents = lineParentValues,
+                    creatorName = creatorName,
+                    expectedCount = 2,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    resolvedBoard.removeObjects(ownedPoints)
+                    return result
+                }
+            }
+            ownedPoints += materialized.ownedPoints
+            when (
+                val result = Line.create(
+                    board = resolvedBoard,
+                    point1 = materialized.points[0],
+                    point2 = materialized.points[1],
+                    id = lineAttributes.id,
+                    name = lineAttributes.name,
+                    needsRegularUpdate =
+                        lineAttributes.needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    ownedLine = result.value
+                    parentlessElements += result.value
+                    result.value
+                }
+                is GMResult.Err -> {
+                    resolvedBoard.removeObjects(ownedPoints)
+                    return failure(
+                        creatorName = creatorName,
+                        error = JessieCodeCreatorError.LineFactory(
+                            result.error,
+                        ),
+                        location = location,
+                    )
+                }
+            }
+        }
+
+        return when (
+            val result = Parabola.create(
+                board = resolvedBoard,
+                focus = focus,
+                directrix = directrix,
+                parentlessElements = parentlessElements,
+                minimum = minimum,
+                maximum = maximum,
+                sampleCount = sampleCount,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                centerId = centerAttributes.id,
+                centerName = centerAttributes.name,
+                centerNeedsRegularUpdate =
+                    centerAttributes.needsRegularUpdate,
+                centerFixed = centerAttributes.fixed,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                ownedLine?.let(resolvedBoard::removeObject)
+                resolvedBoard.removeObjects(ownedPoints)
+                failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.ParabolaFactory(
                         result.error,
                     ),
                     location = location,

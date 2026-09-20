@@ -2781,6 +2781,151 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun parabolaDocumentRendersAndTracksMovedFocus() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"A",
+                      "type":"point",
+                      "parents":[-1,4],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"B",
+                      "type":"point",
+                      "parents":[-1,-4],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"directrix",
+                      "type":"line",
+                      "parents":["A","B"],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"focus",
+                      "type":"point",
+                      "parents":[1,1],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"parabola",
+                      "type":"parabola",
+                      "parents":["focus","directrix"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "doAdvancedPlot":false,
+                        "numberPointsHigh":32,
+                        "strokeColor":"#16877A",
+                        "foci":{"visible":false},
+                        "center":{"visible":false},
+                        "line":{"visible":false}
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        assertEquals(
+            listOf("A", "B", "directrix", "focus", "parabola"),
+            session.scene.elements.map { it.id },
+        )
+        val initial = sceneCurve(session.scene, "parabola")
+        assertEquals(32, initial.points.size)
+        assertEquals(JsxGraphColor(22, 135, 122), initial.style.strokeColor)
+        assertPointCoordinates(
+            JsxGraphPoint2D(1.0000000000000002, -1.0),
+            assertIs(initial.points.first()),
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint("focus", JsxGraphPoint2D(3.0, 2.0)),
+        ).value
+        assertPointCoordinates(
+            JsxGraphPoint2D(3.0000000000000004, -2.0),
+            assertIs(sceneCurve(moved, "parabola").points.first()),
+        )
+    }
+
+    @Test
+    fun parabolaDocumentSupportsImplicitDirectrixAndPreflightsLimits() {
+        val source = documentWithObjects(
+            """
+            {
+              "id":"parabola",
+              "type":"parabola",
+              "parents":[[3.25,0],[[0.25,1],[0.25,0]]],
+              "attributes":{
+                "name":"",
+                "withLabel":false,
+                "doAdvancedPlot":false,
+                "numberPointsHigh":32,
+                "foci":{"visible":false,"fixed":true},
+                "center":{"visible":false,"fixed":true},
+                "line":{"id":"directrix","visible":false}
+              }
+            }
+            """.trimIndent(),
+        )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(source),
+        ).value
+        val parabola = sceneCurve(scene, "parabola")
+        assertEquals(32, parabola.points.size)
+        assertPointCoordinates(
+            JsxGraphPoint2D(3.25, -3.0),
+            assertIs(parabola.points.first()),
+        )
+
+        val limit = assertIs<
+            JsxGraphDocumentError.CurvePointLimitExceeded,
+            >(
+            assertError(
+                source = source,
+                limits = JsxGraphEngineLimits(maxCurvePoints = 31),
+            ),
+        )
+        assertEquals("parabola", limit.id)
+        assertEquals(32, limit.actual)
+
+        val visibleLine = assertIs<
+            JsxGraphDocumentError.UnsupportedAttributeValue,
+            >(
+            assertError(
+                source.replace(
+                    "\"line\":{\"id\":\"directrix\",\"visible\":false}",
+                    "\"line\":{\"id\":\"directrix\",\"visible\":true}",
+                ),
+            ),
+        )
+        assertEquals("line.visible", visibleLine.attribute)
+
+        val fixedLine = assertIs<
+            JsxGraphDocumentError.UnsupportedAttribute,
+            >(
+            assertError(
+                source.replace(
+                    "\"line\":{\"id\":\"directrix\",\"visible\":false}",
+                    "\"line\":{\"id\":\"directrix\",\"fixed\":true}",
+                ),
+            ),
+        )
+        assertEquals("line.fixed", fixedLine.attribute)
+    }
+
+    @Test
     fun polygonDocumentsPreserveFillBordersAndImplicitVertices() {
         val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
             JsxGraphEngine.parse(

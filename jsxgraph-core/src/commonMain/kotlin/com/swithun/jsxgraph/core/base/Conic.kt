@@ -1,6 +1,7 @@
 /*
  * Kotlin translation of JSXGraph.
- * Upstream: src/element/conic.js -> createEllipse / createHyperbola
+ * Upstream: src/element/conic.js ->
+ * createEllipse / createHyperbola / createParabola
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Alfred Wassermann, Peter Wilfahrt.
  * Used under the MIT License option.
@@ -8,6 +9,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeNumericCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
@@ -83,6 +85,41 @@ internal data class CurveHyperbolaDefinition(
     val focus2: Point,
     val pointOnHyperbola: Point?,
     val majorAxisTerm: JessieCodeCoordinateFunction?,
+    val center: Point,
+    val minimum: Double,
+    val maximum: Double,
+)
+
+internal sealed interface ParabolaError {
+    data class ParentBoardMismatch(
+        val parentIndex: Int,
+    ) : ParabolaError
+
+    data class ParentNotRegistered(
+        val parentIndex: Int,
+        val id: String,
+    ) : ParabolaError
+
+    data class ImplicitElementNotParent(
+        val id: String,
+    ) : ParabolaError
+
+    data class DuplicateElementId(
+        val id: String,
+    ) : ParabolaError
+
+    data class CenterCreation(
+        val error: PointError,
+    ) : ParabolaError
+
+    data class CurveCreation(
+        val error: CurveError,
+    ) : ParabolaError
+}
+
+internal data class CurveParabolaDefinition(
+    val focus: Point,
+    val directrix: Line,
     val center: Point,
     val minimum: Double,
     val maximum: Double,
@@ -529,6 +566,114 @@ internal object Hyperbola {
     }
 }
 
+internal object Parabola {
+    private const val CENTER_COORDINATE_COUNT = 2
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createParabola
+    internal fun create(
+        board: Board,
+        focus: Point,
+        directrix: Line,
+        parentlessElements: Set<GeometryElement> = emptySet(),
+        minimum: Double = 0.0,
+        maximum: Double = 2.0 * PI,
+        sampleCount: Int = Curve.DEFAULT_SAMPLE_COUNT,
+        id: String = "",
+        name: String? = null,
+        needsRegularUpdate: Boolean = true,
+        centerId: String = "",
+        centerName: String? = "",
+        centerNeedsRegularUpdate: Boolean = true,
+        centerFixed: Boolean = false,
+    ): GMResult<Curve, ParabolaError> {
+        val parents = listOf<GeometryElement>(focus, directrix)
+        for ((index, parent) in parents.withIndex()) {
+            validateParent(board, parent, index)?.let {
+                return GMResult.Err(it)
+            }
+        }
+        parentlessElements.firstOrNull { it !in parents }?.let {
+            return GMResult.Err(
+                ParabolaError.ImplicitElementNotParent(it.id),
+            )
+        }
+        if (id.isNotEmpty() && board.elementById(id) != null) {
+            return GMResult.Err(ParabolaError.DuplicateElementId(id))
+        }
+        if (centerId.isNotEmpty() && board.elementById(centerId) != null) {
+            return GMResult.Err(
+                ParabolaError.DuplicateElementId(centerId),
+            )
+        }
+
+        val center = when (
+            val result = Point.createConstrained(
+                board = board,
+                coordinateFunctions =
+                    List(CENTER_COORDINATE_COUNT) { index ->
+                        ParabolaCenterCoordinateFunction(
+                            focus = focus,
+                            directrix = directrix,
+                            coordinateIndex = index,
+                        )
+                    },
+                id = centerId,
+                name = centerName,
+                needsRegularUpdate = centerNeedsRegularUpdate,
+                fixed = centerFixed,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return GMResult.Err(
+                    ParabolaError.CenterCreation(result.error),
+                )
+            }
+        }
+        val definition = CurveParabolaDefinition(
+            focus = focus,
+            directrix = directrix,
+            center = center,
+            minimum = minimum,
+            maximum = maximum,
+        )
+        return when (
+            val result = Curve.createParabola(
+                board = board,
+                definition = definition,
+                parentlessElements = parentlessElements,
+                sampleCount = sampleCount,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> {
+                board.removeObject(center)
+                GMResult.Err(ParabolaError.CurveCreation(result.error))
+            }
+        }
+    }
+
+    private fun validateParent(
+        board: Board,
+        element: GeometryElement,
+        parentIndex: Int,
+    ): ParabolaError? {
+        if (element.board !== board) {
+            return ParabolaError.ParentBoardMismatch(parentIndex)
+        }
+        if (board.elementById(element.id) !== element) {
+            return ParabolaError.ParentNotRegistered(
+                parentIndex = parentIndex,
+                id = element.id,
+            )
+        }
+        return null
+    }
+}
+
 private class EllipseCenterCoordinateFunction(
     private val focus1: Point,
     private val focus2: Point,
@@ -568,5 +713,31 @@ private class HyperbolaCenterCoordinateFunction(
                 (focus1.Y() + focus2.Y()) * 0.5
             }
         return GMResult.Ok(JessieCodeRuntimeValue.NumberValue(value))
+    }
+}
+
+private class ParabolaCenterCoordinateFunction(
+    private val focus: Point,
+    private val directrix: Line,
+    private val coordinateIndex: Int,
+) : JessieCodeCoordinateFunction {
+    override val origin: String? = null
+    override val dependencies: Map<String, GeometryElement> = emptyMap()
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createParabola M
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
+        val projection = Geometry.projectPointToLine(
+            point = focus.coords.usrCoords,
+            line = directrix.stdform,
+        )
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.NumberValue(
+                projection.getOrElse(coordinateIndex + 1) {
+                    Double.NaN
+                },
+            ),
+        )
     }
 }

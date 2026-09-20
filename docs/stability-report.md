@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **47 development parity scenarios.** These remain focused regression
+3. **48 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -228,6 +228,19 @@ manual review for focus/center placement, branch continuity, moved-parent
 propagation, clipping, overlap, helper leakage, and Native/Official
 agreement. This evidence remains outside the 30-case Stable production corpus
 and does not change its 55 declared capabilities.
+The focused Parabola fixture scored `0.986569` on Desktop and `0.953062` on
+Compact before movement. It covers a registered Point/Line Parabola and a
+coordinate-focus/two-Point-directrix Parabola with explicit finite domains,
+constrained center metadata, Conic sampling, and quadratic-form updates. After
+dragging the registered focus from `(-4,1)` to `(-3,2)`, the dependent
+Parabola updated with scores of `0.986538` and `0.952681`, respectively. All
+four contact sheets passed nonblank/browser checks and manual review for
+focus/directrix placement, complete curve geometry, moved-focus propagation,
+clipping, overlap, helper leakage, and Native/Official agreement. The finite
+visual domains avoid the official SVG path error at the default-domain
+`π/2` singularity; Core and official fixture tests cover that non-finite
+arithmetic separately. This evidence remains outside the 30-case Stable
+production corpus and does not change its 55 declared capabilities.
 The focused Line/Point Tangent fixture scored `0.986294` on Desktop and
 `0.976234` on Compact before movement. It covers `tangent` and the `polar`
 alias in both parent orders, exact source-endpoint reuse, ignored nested

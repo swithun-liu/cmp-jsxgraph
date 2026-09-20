@@ -469,6 +469,24 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "parabolas",
+            title = "Parabolas",
+            scenario = "Point-Line and coordinate-parent Parabolas compare directrix geometry, parameter domains, and focus updates.",
+            source = PARABOLAS_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "point",
+                "line",
+                "curve",
+                "parabola",
+                "conic",
+                "coordinate-parent",
+                "parameter-domain",
+                "dependency-update",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "text",
             title = "Text",
             scenario = "Static and dynamic labels exercise anchors, colors, and type sizing.",
@@ -1604,6 +1622,21 @@ private const val HYPERBOLAS_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nF1 = point(-8, 1) << id: \"F1\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\nF2 = point(-2, 1) << id: \"F2\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\nC = point(0, 3) << id: \"C\", name: \"\", withLabel: false, size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 3, fixed: false, highlight: false >>;\npointLeft = hyperbola(F1, F2, C, -2.2, 2.2) << id: \"pointLeft\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 128, strokeColor: \"#16877A\", strokeWidth: 5, fixed: true, highlight: false >>;\npointRight = hyperbola(F1, F2, C, 2.9, 3.4) << id: \"pointRight\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 128, strokeColor: \"#16877A\", strokeWidth: 5, fixed: true, highlight: false >>;\nN1 = point(2, -2) << id: \"N1\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\nN2 = point(8, -2) << id: \"N2\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\nnumericBranch = hyperbola(N1, N2, 4, -1.2, 1.2) << id: \"numericBranch\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 128, strokeColor: \"#D55E00\", strokeWidth: 4, fixed: true, highlight: false >>;"
+}
+"""
+
+private const val PARABOLAS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-10, 7, 10, -7],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ndirectrixPoint1 = point(-7, 6) << id: \"directrixPoint1\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\ndirectrixPoint2 = point(-7, -6) << id: \"directrixPoint2\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\ndirectrix = line(directrixPoint1, directrixPoint2) << id: \"directrix\", name: \"\", withLabel: false, strokeColor: \"#6F7780\", strokeWidth: 3, dash: 2, fixed: true, highlight: false >>;\nfocus = point(-4, 1) << id: \"focus\", name: \"\", withLabel: false, size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 3, fixed: false, highlight: false >>;\npointParabola = parabola(focus, directrix, -1.2, 1.2) << id: \"pointParabola\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 192, strokeColor: \"#16877A\", strokeWidth: 5, fixed: true, highlight: false >>;\ncoordinateParabola = parabola([4, -1], [[7, -6], [7, 6]], -1.2, 1.2) << id: \"coordinateParabola\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 128, strokeColor: \"#D55E00\", strokeWidth: 4, fixed: true, highlight: false >>;"
 }
 """
 

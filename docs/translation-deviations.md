@@ -27,7 +27,7 @@ practical.
   PolePoint, Circle/Point,
   Line/Point, and
   Curve/Point Tangent, Polar, Circle/Point TangentTo and PolarLine, Ellipse,
-  Hyperbola, Text, Arc,
+  Hyperbola, Parabola, Text, Arc,
   CircumcircleArc, MinorArc, MajorArc, Sector, CircumcircleSector, MinorSector,
   MajorSector, Angle, NonreflexAngle, and ReflexAngle through the translated
   native registry and then snapshots the resulting Board elements into a
@@ -45,7 +45,7 @@ practical.
   StepFunction/Derivative/Spline/CardinalSpline/Polygon/PolygonalChain/
   Parallelogram/RegularPolygon/RadicalAxis/PolePoint/
   Circle-Line-or-Curve-Point Tangent-Polar/
-  Circle-Point TangentTo/PolarLine/Ellipse/Hyperbola/
+  Circle-Point TangentTo/PolarLine/Ellipse/Hyperbola/Parabola/
   Text/Arc/Arc-composition/
   Sector/Sector-composition/
   Angle defaults match the translated JSXGraph `1.13.3` subset; helper Points
@@ -113,8 +113,8 @@ practical.
   Polygon vertex moves, even though a direct `Geometry.meetPathPath` call
   returns the updated coordinate. Kotlin keeps the dependency edge and
   recomputes the Point. Dynamic `alwaysIntersect`/`precision` visual-property
-  forms remain unsupported. Ellipse and Hyperbola construction are translated,
-  but
+  forms remain unsupported. Ellipse, Hyperbola, and Parabola construction are
+  translated, but
   Intersection and OtherIntersection reject an `OBJECT_TYPE_CONIC` parent
   with `UnsupportedConic` until that dispatch has dedicated numerical,
   lifecycle, resource-limit, and parity evidence.
@@ -268,6 +268,30 @@ practical.
   TangentTo, Normal, Intersection, and OtherIntersection continue to reject
   Hyperbola/Conic parents until those interoperation paths receive dedicated
   source-mapped tests and parity evidence.
+- `createParabola` follows
+  `src/element/conic.js -> JXG.createParabola`.
+  The focus accepts a Point/reference, a function returning a Point, or
+  coordinates. The directrix accepts a registered Line or an implicit Line
+  described by exactly two Point/reference/coordinate terms. The output is a
+  parameter Curve with `OBJECT_TYPE_CONIC`; the projection of the focus onto
+  the directrix is exposed as `center`, `midpoint`, and `subs.center`, while
+  the focus and directrix retain update dependencies and the live
+  `quadraticform`. Optional parameter-domain parents are numeric-only, with
+  omitted values preserving the official `0..2π` domain and its `π/2`
+  non-finite singularity. Degenerate and ideal directrices preserve upstream
+  `Double` propagation. Sampling uses the existing fixed right-open naive
+  Curve path with a bounded count; adaptive plotting remains pending.
+  For an implicit directrix, nested `line` attributes currently support only
+  `id`, `name`, and `needsRegularUpdate`; the helper Line is not emitted as a
+  top-level source element, and construction-document `line.visible: true`
+  is rejected. JSXGraph `1.13.3` can overwrite a duplicate Parabola registry
+  ID after materializing coordinate helpers. Kotlin rejects duplicate output,
+  center, or implicit-Line IDs and removes newly created focus, directrix
+  endpoints, directrix, and center helpers atomically on failure. Tangent,
+  Polar, PolarLine, PolePoint, TangentTo, Normal, Intersection, and
+  OtherIntersection continue to reject Parabola/Conic parents until those
+  interoperation paths receive dedicated source-mapped tests and parity
+  evidence.
 - `createPolePoint` follows
   `src/base/point.js -> JXG.createPolePoint` for the translated Circle/Line
   parent combination. Parent input order is accepted in both directions and
@@ -278,9 +302,10 @@ practical.
   parents. Direct output removal detaches those links; removing either parent
   recursively removes the PolePoint. A non-finite Line preserves the official
   NaN Point result. Cross-Board, unregistered, invalid-parent, and duplicate-ID
-  failures return `GMResult.Err` without partial registration. Ellipse
-  construction is translated, but the upstream Conic/Line form remains
-  explicitly unsupported pending dedicated interoperation evidence.
+  failures return `GMResult.Err` without partial registration. Ellipse,
+  Hyperbola, and Parabola construction are translated, but the upstream
+  Conic/Line forms remain explicitly unsupported pending dedicated
+  interoperation evidence.
 - The translated Circle/Point, Line/Point, and Curve/Point branches of
   `createTangent` follow `src/base/line.js -> JXG.createTangent`, including the
   registered `polar` alias; `createPolarLine` remains restricted to
@@ -320,9 +345,9 @@ practical.
   removing the Point removes the Tangent but leaves the helpers. Duplicate
   Plot points preserve zero-helper/NaN-Line arithmetic. A one-point Plot,
   projection failure, cross-Board parent, or duplicate ID returns a structured
-  error with atomic rollback. Ellipse Tangent/Polar and PolarLine Conic forms
-  remain explicitly unsupported pending dedicated evidence, as do Turtle and
-  one-parent Glider branches.
+  error with atomic rollback. Ellipse, Hyperbola, and Parabola Tangent/Polar
+  and PolarLine Conic forms remain explicitly unsupported pending dedicated
+  evidence, as do Turtle and one-parent Glider branches.
 - The Circle branch of `src/base/line.js -> JXG.createTangentTo` is translated
   as the same three-stage construction: create the external Point's polar,
   intersect that Line with the Circle, then create the Tangent at the selected
@@ -336,8 +361,8 @@ practical.
   `tangentto` source object into the polar Line, contact Point, and tangent
   Line, and charges all three against object limits. Kotlin rejects
   cross-Board, unregistered, duplicate-ID, and partial-stage failures with
-  structured atomic rollback. Ellipse and Hyperbola construction are
-  translated, but the upstream TangentTo Conic branch remains explicitly
+  structured atomic rollback. Ellipse, Hyperbola, and Parabola construction
+  are translated, but the upstream TangentTo Conic branch remains explicitly
   unsupported pending dedicated interoperation evidence.
 - `createDerivative` preserves the upstream runtime construction:
   `X(t)` delegates to the source Curve and `Y(t)` divides the central
@@ -451,8 +476,9 @@ practical.
   form as a structured unsupported-parent result. Cross-Board, unregistered,
   one-point Plot, unsupported-degree, projection, and duplicate-ID failures
   are also structured and roll back new helpers atomically. Glider, Turtle,
-  transformed-Curve, degree-three Plot/Bezier, and Ellipse/Hyperbola Conic
-  branches remain unsupported. The Conic branch requires dedicated
+  transformed-Curve, degree-three Plot/Bezier, and
+  Ellipse/Hyperbola/Parabola Conic branches remain unsupported. The Conic
+  branch requires dedicated
   interoperation evidence rather than implicitly entering the generic Curve
   path.
 - The translated Arc and Sector subsets accept three registered Point
@@ -597,7 +623,8 @@ practical.
   the creator's implicit `name` when neither `name` nor `id` is supplied.
   Kotlin exposes custom creators through the explicit `JessieCodeCreator`
   adapter and gives them precedence over the native `point`, `line`, `arrow`,
-  `segment`, `circle`, `ellipse`, `hyperbola`, `circumcenter`, `circumcirclemidpoint`, `circumcircle`, `midpoint`,
+  `segment`, `circle`, `ellipse`, `hyperbola`, `parabola`, `circumcenter`,
+  `circumcirclemidpoint`, `circumcircle`, `midpoint`,
   `reflection`, `mirrorelement`, `mirrorpoint`, `orthogonalprojection`,
   `perpendicularpoint`, `perpendicular`, `perpendicularsegment`,
   `parallelpoint`, `parallel`, `arrowparallel`, `bisectorlines`, `bisector`,
@@ -626,8 +653,11 @@ practical.
   Point styling while likewise forcing generated helpers draggable/non-fixed.
   RadicalAxis consumes nested `point1`/`point2` identity and regular-update
   attributes while retaining hidden constrained helper Points.
-  Ellipse and Hyperbola consume nested `center` identity, fixed state, and
-  regular-update attributes plus their translated Curve sampling/style fields.
+  Ellipse, Hyperbola, and Parabola consume nested `center` identity, fixed
+  state, and regular-update attributes plus their translated Curve
+  sampling/style fields. Parabola additionally consumes nested implicit-Line
+  identity and regular-update attributes; its focus uses the existing nested
+  `foci` Point attributes.
   Circle/Point and Curve/Point Tangent and Polar, plus PolarLine, consume the
   same nested helper identity and regular-update attributes for their hidden
   constrained endpoints. Line/Point Tangent and Polar ignore those nested

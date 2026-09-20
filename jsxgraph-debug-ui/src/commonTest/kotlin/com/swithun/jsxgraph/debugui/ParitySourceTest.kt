@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(77, cases.size)
+        assertEquals(78, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            47,
+            48,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -1205,6 +1205,73 @@ class ParitySourceTest {
         )
         assertNotEquals(pointLeft.points, movedLeft.points)
         assertNotEquals(pointRight.points, movedRight.points)
+    }
+
+    @Test
+    fun parabolasFocusedCaseTracksPointLineAndCoordinateForms() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("parabolas"),
+        ).value
+        val sessionResult = createParitySession(parityCase.source)
+        val paritySession = assertIs<GMResult.Ok<JsxGraphParitySession>>(
+            sessionResult,
+            sessionResult.toString(),
+        ).value
+        val jessieCodeSession =
+            assertIs<JsxGraphParitySession.JessieCode>(paritySession)
+        val pointParabola = curve(
+            jessieCodeSession.scene,
+            "pointParabola",
+        )
+        val coordinateParabola = curve(
+            jessieCodeSession.scene,
+            "coordinateParabola",
+        )
+
+        assertEquals(192, pointParabola.points.size)
+        assertEquals(128, coordinateParabola.points.size)
+        assertEquals(
+            JsxGraphColor(22, 135, 122),
+            pointParabola.style.strokeColor,
+        )
+        assertEquals(
+            JsxGraphColor(213, 94, 0),
+            coordinateParabola.style.strokeColor,
+        )
+        assertPointEquals(
+            JsxGraphPoint2D(
+                -5.447236382643819,
+                0.4373440623817374,
+            ),
+            assertIs(pointParabola.points.first()),
+        )
+        assertPointEquals(
+            JsxGraphPoint2D(
+                5.447236382643819,
+                -0.4373440623817374,
+            ),
+            assertIs(coordinateParabola.points.first()),
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            jessieCodeSession.session.movePoint(
+                id = "focus",
+                coordinates = JsxGraphPoint2D(-3.0, 2.0),
+            ),
+        ).value
+        val movedParabola = curve(moved, "pointParabola")
+        assertPointEquals(
+            JsxGraphPoint2D(
+                -4.929648510191759,
+                1.2497920831756502,
+            ),
+            assertIs(movedParabola.points.first()),
+        )
+        assertNotEquals(pointParabola.points, movedParabola.points)
+        assertEquals(
+            coordinateParabola.points,
+            curve(moved, "coordinateParabola").points,
+        )
     }
 
     @Test

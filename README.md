@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 77 source-controlled cases: 30 independent production scenarios and
-47 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 78 source-controlled cases: 30 independent production scenarios and
+48 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -47,6 +47,7 @@ Focused direct links remain available for cases such as
 [two tangents from one Point](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=tangent_to_circle),
 [Ellipses](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=ellipses),
 [Hyperbolas](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hyperbolas),
+[Parabolas](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=parabolas),
 [Line tangents and polar alias](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=tangent_line),
 [Curve tangents and polar alias](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=tangent_curve),
 [Curve derivative](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=derivative_curve),
@@ -123,7 +124,7 @@ Implemented translation slices:
   discovery, source locations, stable name-to-ID replacement and current-name
   restoration, reusable expression functions, persistent JessieCode sessions,
   assignment-LHS creator naming, native Point, Line, Arrow, Segment, Circle,
-  Ellipse, Hyperbola,
+  Ellipse, Hyperbola, Parabola,
   including three-Point circumcircles, Circumcenter, CircumcircleMidpoint,
   Circumcircle,
   Point Reflection, MirrorElement's Point branch, MirrorPoint, Midpoint,
@@ -157,7 +158,8 @@ Implemented translation slices:
 - a bounded production construction-document path for `boundingBox` and
   ordered `objects[]`, currently creating Point, Line, Arrow, Segment with an
   optional numeric or JessieCode-string fixed-length parent, Circle including
-  the three-Point circumcircle form, Ellipse, Hyperbola, Circumcenter,
+  the three-Point circumcircle form, Ellipse, Hyperbola, Parabola,
+  Circumcenter,
   CircumcircleMidpoint,
   Circumcircle, Point Reflection, MirrorElement's Point branch, MirrorPoint,
   Midpoint from two Points or one Line, OrthogonalProjection,
@@ -272,7 +274,8 @@ The first production source contract maps directly to ordered
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
 types are `point`, `line`, `arrow`, `segment`, `circle`, `curve`,
-`ellipse`, `hyperbola`, `curveintersection`, `curveunion`, `curvedifference`,
+`ellipse`, `hyperbola`, `parabola`, `curveintersection`, `curveunion`,
+`curvedifference`,
 `functiongraph`, `plot`,
 `stepfunction`, `derivative`, `spline`, `cardinalspline`, `riemannsum`,
 `boxplot`, `comb`, `inequality`,
@@ -377,9 +380,10 @@ with Circle, Curve, Arc, Sector, and Polygon paths, including ordered
 crossings, touching and collinear overlap endpoints, reverse parent order,
 ideal/non-real results, index validation, and dependency updates. The APIs
 remain available through construction documents and native JessieCode.
-Ellipse and Hyperbola construction are translated, but Conic Intersection and
-OtherIntersection dispatch remains explicitly unsupported pending its own
-source-mapped numerical, lifecycle, resource-limit, and parity evidence.
+Ellipse, Hyperbola, and Parabola construction are translated, but Conic
+Intersection and OtherIntersection dispatch remains explicitly unsupported
+pending its own source-mapped numerical, lifecycle, resource-limit, and parity
+evidence.
 CurveIntersection, CurveUnion, and CurveDifference translate the complete
 `src/math/clip.js` Greiner-Hormann chain for Curve, Polygon, Circle, Arc, and
 Sector paths, including degenerate intersection classification, entry/exit
@@ -451,9 +455,9 @@ closure on each Board update. The constrained output follows both parent
 dependency graphs, preserves official direct and parent-removal behavior, and
 keeps non-finite degenerate arithmetic. Invalid, cross-Board, unregistered,
 and duplicate-ID inputs return structured errors with atomic rollback.
-Ellipse and Hyperbola construction are translated, but their Conic/Line PolePoint forms
-remain explicitly unsupported pending dedicated source-mapped interop and
-parity evidence. Its
+Ellipse, Hyperbola, and Parabola construction are translated, but their
+Conic/Line PolePoint forms remain explicitly unsupported pending dedicated
+source-mapped interop and parity evidence. Its
 focused static and four-parent-drag Desktop/Compact parity evidence remains
 outside the 30-case Stable corpus.
 
@@ -475,8 +479,9 @@ owns the direct removal edge. `tangent` and `polar` preserve input parent order
 and `elType=tangent`; `polarline` canonicalizes its parents to Circle then
 Point and changes only `elType`. Invalid, cross-Board, unregistered, one-point
 Plot, and duplicate-ID inputs return structured errors with atomic rollback.
-Ellipse and Hyperbola construction are translated, but their Tangent/Polar and PolarLine Conic
-forms remain explicitly unsupported pending dedicated interop evidence.
+Ellipse, Hyperbola, and Parabola construction are translated, but their
+Tangent/Polar and PolarLine Conic forms remain explicitly unsupported pending
+dedicated interop evidence.
 Turtle and one-parent Glider branches also remain unsupported.
 Focused static and parent-drag Desktop/Compact parity evidence remains outside
 the 30-case Stable corpus.
@@ -493,9 +498,9 @@ non-real/degenerate arithmetic, and the official default `dash: 3` polar
 style. Public JessieCode and construction-document scenes expand one
 `tangentto` request into the polar Line, contact Point, and tangent Line, so
 resource limits charge three scene objects. Duplicate IDs and partial-stage
-failures roll back atomically. Ellipse and Hyperbola construction are
-translated, but their TangentTo Conic branches remain explicitly unsupported pending dedicated
-interop evidence. Focused static and source-Point-drag
+failures roll back atomically. Ellipse, Hyperbola, and Parabola construction
+are translated, but their TangentTo Conic branches remain explicitly
+unsupported pending dedicated interop evidence. Focused static and source-Point-drag
 Desktop/Compact parity evidence remains outside the 30-case Stable corpus.
 
 Ellipse translates `src/element/conic.js -> createEllipse`. It supports
@@ -523,6 +528,20 @@ point-parent-drag Desktop/Compact parity passes, but this slice remains
 outside the 30-case Stable corpus. Adaptive plotting and all Conic
 interoperation remain explicitly unsupported pending dedicated translation
 and evidence.
+
+Parabola translates `src/element/conic.js -> createParabola`. It supports a
+Point/reference/function-returning-Point or coordinate focus and either a
+registered Line or an implicit two-Point directrix, plus optional numeric
+parameter domains. The translated Curve preserves Conic type, the constrained
+focus projection exposed as `center`/`midpoint`, focus/directrix dependencies,
+`quadraticform`, parent updates, helper ownership/removal, and JavaScript
+`Double` behavior at the default-domain singularity and degenerate
+directrices. Native JessieCode and construction-document paths enforce
+sample/object limits, unique IDs, and atomic helper rollback; nested implicit
+Line metadata is limited to identity and regular-update fields. Focused static
+and focus-drag Desktop/Compact parity passes, but this slice remains outside
+the 30-case Stable corpus. Adaptive plotting and all Conic interoperation
+remain explicitly unsupported pending dedicated translation and evidence.
 
 Derivative translates `src/base/curve.js -> createDerivative`. It reuses
 `Numerics.D` for the source Curve's `X` and `Y` functions, renders
