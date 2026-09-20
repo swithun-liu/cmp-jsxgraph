@@ -22,8 +22,9 @@ for (const wasmFile of wasmFiles) {
   const wasmBytes = await readFile(wasmPath);
   const compressedWasmBytes = gzipSync(wasmBytes, { level: 9 });
   const chunks = await writeChunks(wasmFile, wasmBytes);
+  const wasmAssetId = wasmFile.slice(0, -'.wasm'.length);
   const compressedChunks = await writeBase64Chunks(
-    `${wasmFile}.gz`,
+    `${wasmAssetId}.payload`,
     compressedWasmBytes,
   );
 

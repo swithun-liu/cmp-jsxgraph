@@ -256,10 +256,10 @@ function summarizeWasmRequests(urls) {
             path.endsWith(".wasm.chunks.json")
         ).length,
         partCount: paths.filter((path) =>
-            /\.wasm(?:\.gz)?\.part-/.test(path)
+            /\.wasm\.part-|\.payload\.part-/.test(path)
         ).length,
         compressedPartCount: paths.filter((path) =>
-            path.includes(".wasm.gz.part-")
+            path.includes(".payload.part-")
         ).length
     };
 }
