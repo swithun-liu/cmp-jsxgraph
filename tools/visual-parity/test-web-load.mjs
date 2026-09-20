@@ -98,6 +98,9 @@ try {
             .call(WebAssembly.instantiateStreaming)
             .includes("[native code]")
     );
+    const supportsStreamingDecompression = await page.evaluate(() =>
+        typeof DecompressionStream === "function"
+    );
     const failures = [];
     if (firstContentMillis > maximumFirstContentMillis) {
         failures.push(
@@ -138,6 +141,13 @@ try {
             "Chunked loading replaced WebAssembly.instantiateStreaming"
         );
     }
+    if (
+        expectChunkedWasm &&
+        supportsStreamingDecompression &&
+        wasmRequests.compressedPartCount === 0
+    ) {
+        failures.push("Chunked loading did not use compressed Wasm parts");
+    }
     const report = {
         schemaVersion: 1,
         caseCount: expectedCaseCount,
@@ -157,6 +167,7 @@ try {
         },
         wasmRequests,
         usesNativeInstantiateStreaming,
+        supportsStreamingDecompression,
         browserErrors: pageErrors,
         failures
     };
@@ -244,6 +255,11 @@ function summarizeWasmRequests(urls) {
         manifestCount: paths.filter((path) =>
             path.endsWith(".wasm.chunks.json")
         ).length,
-        partCount: paths.filter((path) => path.includes(".wasm.part-")).length
+        partCount: paths.filter((path) =>
+            /\.wasm(?:\.gz)?\.part-/.test(path)
+        ).length,
+        compressedPartCount: paths.filter((path) =>
+            path.includes(".wasm.gz.part-")
+        ).length
     };
 }

@@ -153,10 +153,17 @@
                     throw new Error(`Failed to load ${manifestUrl}`);
                 }
                 const manifest = await manifestResponse.json();
-                totalBytes += manifest.byteLength;
+                const useCompression =
+                    typeof DecompressionStream === "function" &&
+                    typeof TransformStream === "function" &&
+                    manifest.compression?.format === "gzip";
+                const payload = useCompression
+                    ? manifest.compression
+                    : manifest;
+                totalBytes += payload.byteLength;
                 setProgress();
 
-                const chunkResults = manifest.chunks.map(
+                const chunkResults = payload.chunks.map(
                     async (chunkName) => {
                         try {
                             const chunkResponse = await nativeFetch(
@@ -183,12 +190,12 @@
                 const body = new ReadableStream({
                     async pull(controller) {
                         if (chunkIndex === chunkResults.length) {
-                            if (streamedBytes !== manifest.byteLength) {
+                            if (streamedBytes !== payload.byteLength) {
                                 controller.error(
                                     new Error(
                                         `Chunked Wasm length ` +
                                             `${streamedBytes} does not match ` +
-                                            `${manifest.byteLength}`,
+                                            `${payload.byteLength}`,
                                     ),
                                 );
                                 return;
@@ -207,6 +214,37 @@
                         streamedBytes += result.chunk.byteLength;
                     },
                 });
+                if (useCompression) {
+                    let decompressedBytes = 0;
+                    const decompressedBody = body
+                        .pipeThrough(new DecompressionStream("gzip"))
+                        .pipeThrough(new TransformStream({
+                            transform(chunk, controller) {
+                                decompressedBytes += chunk.byteLength;
+                                controller.enqueue(chunk);
+                            },
+                            flush() {
+                                if (
+                                    decompressedBytes !==
+                                    manifest.byteLength
+                                ) {
+                                    throw new Error(
+                                        `Decompressed Wasm length ` +
+                                            `${decompressedBytes} does not ` +
+                                            `match ${manifest.byteLength}`,
+                                    );
+                                }
+                            },
+                        }));
+                    return new Response(
+                        decompressedBody,
+                        {
+                            headers: {
+                                "Content-Type": "application/wasm",
+                            },
+                        },
+                    );
+                }
                 return new Response(
                     body,
                     { headers: { "Content-Type": "application/wasm" } },
