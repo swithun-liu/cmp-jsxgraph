@@ -74,8 +74,21 @@ arbitrary-axis rotations, array- and Point-centered rotations, affine and
 matrix forms, scalar/vector/matrix dynamic reevaluation, homogeneous and
 zero-length normals, permissive extra rotation parameters, and the observed
 six-evaluator/16-read `generic` defect. Core tests compare those matrices and
-transformed homogeneous coordinates directly. View3D/Point3D rendering remains
-outside this kernel-only evidence.
+transformed homogeneous coordinates directly.
+
+Capture the JSXGraph `1.13.3` View3D/Point3D lifecycle built on that kernel:
+
+```bash
+node tools/upstream-fixtures/view3d-point3d.mjs
+```
+
+The fixture covers parallel and central camera matrices, forward and inverse
+projection helpers, cube clipping, numeric, homogeneous, array-function, and
+scalar-function Point3D coordinates, transformed Point3D binding and
+`applyOnce`, 2D proxy movement, registration, removal, and malformed parent
+forms. It is the official source of truth for the bounded Kotlin translation;
+axes, planes, camera controls, shaders, depth ordering, gliders, animations,
+and the complete 3D API remain outside this slice.
 
 Capture the official direct-function Point lifecycle and the observed
 Midpoint function-parent rejection:
@@ -376,6 +389,22 @@ npm --prefix tools/visual-parity run capture
 
 INPUT_DIR=captures/local/transformed-points-interaction/desktop \
 PARITY_CASE_IDS=transformed_points \
+npm --prefix tools/visual-parity run audit
+```
+
+Replay the focused Point3D proxy drag:
+
+```bash
+BASE_URL=http://127.0.0.1:8093/ \
+OUTPUT_DIR=captures/local/point3d-projection-drag/desktop \
+VIEWPORT_WIDTH=1200 \
+VIEWPORT_HEIGHT=900 \
+PARITY_CASE_IDS=point3d_projection \
+INTERACTION_TRACE=point3d_proxy_drag \
+npm --prefix tools/visual-parity run capture
+
+INPUT_DIR=captures/local/point3d-projection-drag/desktop \
+PARITY_CASE_IDS=point3d_projection \
 npm --prefix tools/visual-parity run audit
 ```
 
@@ -1087,8 +1116,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 78 cases:
-30 generated production scenarios followed by 48 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 79 cases:
+30 generated production scenarios followed by 49 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1104,6 +1133,9 @@ separate demo schema into handwritten native geometry. The focused
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
 raw JessieCode source.
+The focused `point3d_projection` case uses the same ordered construction
+document on both renderers and projects its Point3D elements through the
+ordinary 2D scene consumed by Compose.
 `arc_compositions` uses the same ordered construction document on both
 renderers because the official combined JessieCode form crashes before
 producing a Board. A focused case is added only after the native
@@ -1168,6 +1200,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `jessiecode_native_source` | 0.987004 | 0.974865 |
 | `function_circle_radius` | 0.987261 | 0.975137 |
 | `transformed_points` | 0.986656 | 0.972766 |
+| `point3d_projection` | 0.986505 | 0.972805 |
 | `function_coordinate_points` | 0.986724 | 0.973162 |
 | `parallel_constructions` | 0.986754 | 0.973271 |
 | `line_arrows` | 0.987817 | 0.981850 |
@@ -1467,6 +1500,15 @@ chain. After dragging its function driver Point from `(2,0)` to `(5,0)`, both
 renderers updated the dependent Points and scored `0.986523` on Desktop and
 `0.972569` on Compact. It remains a focused regression fixture outside the
 production corpus.
+The Point3D capture verifies a source-mapped parallel View3D, numeric and
+homogeneous Point3D coordinates, a translated `transform3d`, transformed
+Point3D binding, and rendering through ordinary 2D proxy Points. Static
+captures scored `0.986505` on Desktop and `0.972805` on Compact. After dragging
+the free source proxy, both renderers projected the movement back onto the
+source Point3D's constant-z plane, updated the transformed Point3D, and scored
+`0.986588` and `0.972885`, respectively. All four contact sheets passed manual
+review for marker position, dependency updates, clipping, overlap, and blank
+output. This remains a focused preview outside the 30-case Stable corpus.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous
 normalization, and non-draggable constrained Points. After dragging the shared

@@ -20,10 +20,12 @@ import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Point3D
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Transformation
+import com.swithun.jsxgraph.core.base.View3D
 import com.swithun.jsxgraph.core.base.boxPlotPointCount
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
@@ -286,11 +288,8 @@ class JsxGraphSession internal constructor(
             is GMResult.Err -> return result
         }
         val previous = captureBoardPointCoordinates()
-        point.setPositionDirectly(
-            method = com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
-            coordinates = doubleArrayOf(coordinates.x, coordinates.y),
-        )
-        board.update(draggedElement = point)
+        point.setPosition(coordinates)
+        board.update(draggedElement = point.element)
         return commitOrRollback(previous)
     }
 
@@ -298,10 +297,7 @@ class JsxGraphSession internal constructor(
         val coordinates = linkedMapOf<String, JsxGraphPoint2D>()
         for ((id, handle) in points) {
             if (handle.draggable) {
-                coordinates[id] = JsxGraphPoint2D(
-                    x = handle.point.X(),
-                    y = handle.point.Y(),
-                )
+                coordinates[id] = handle.coordinates()
             }
         }
         return JsxGraphInteractionState(coordinates)
@@ -334,7 +330,8 @@ class JsxGraphSession internal constructor(
                 ),
             )
         }
-        val resolved = mutableListOf<Pair<Point, JsxGraphPoint2D>>()
+        val resolved =
+            mutableListOf<Pair<SessionPoint, JsxGraphPoint2D>>()
         for ((id, coordinates) in state.pointCoordinates) {
             when (val result = draggablePoint(id, coordinates)) {
                 is GMResult.Ok -> resolved += result.value to coordinates
@@ -343,10 +340,7 @@ class JsxGraphSession internal constructor(
         }
         val previous = captureBoardPointCoordinates()
         for ((point, coordinates) in resolved) {
-            point.setPositionDirectly(
-                method = com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
-                coordinates = doubleArrayOf(coordinates.x, coordinates.y),
-            )
+            point.setPosition(coordinates)
         }
         board.fullUpdate()
         if (settleDirectionSelection) {
@@ -362,7 +356,7 @@ class JsxGraphSession internal constructor(
     private fun draggablePoint(
         id: String,
         coordinates: JsxGraphPoint2D,
-    ): GMResult<Point, JsxGraphInteractionError> {
+    ): GMResult<SessionPoint, JsxGraphInteractionError> {
         val handle = points[id]
             ?: return GMResult.Err(
                 JsxGraphInteractionError.UnknownPoint(id),
@@ -380,16 +374,21 @@ class JsxGraphSession internal constructor(
                 ),
             )
         }
-        return GMResult.Ok(handle.point)
+        return GMResult.Ok(handle)
     }
 
-    private fun captureBoardPointCoordinates(): Map<Point, DoubleArray> =
-        board.objectsList
-            .filterIsInstance<Point>()
-            .associateWith(Point::Coords)
+    private fun captureBoardPointCoordinates(): BoardPointCoordinates =
+        BoardPointCoordinates(
+            points2D = board.objectsList
+                .filterIsInstance<Point>()
+                .associateWith(Point::Coords),
+            points3D = board.objectsList
+                .filterIsInstance<Point3D>()
+                .associateWith { it.coords.copyOf() },
+        )
 
     private fun commitOrRollback(
-        previous: Map<Point, DoubleArray>,
+        previous: BoardPointCoordinates,
     ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
         when (val result = snapshotScene()) {
             is GMResult.Ok -> {
@@ -397,7 +396,10 @@ class JsxGraphSession internal constructor(
                 result
             }
             is GMResult.Err -> {
-                for ((point, coordinates) in previous) {
+                for ((point, coordinates) in previous.points3D) {
+                    point.setPosition(coordinates)
+                }
+                for ((point, coordinates) in previous.points2D) {
                     point.setPositionDirectly(
                         method =
                             com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
@@ -412,9 +414,56 @@ class JsxGraphSession internal constructor(
         }
 }
 
-internal data class SessionPoint(
-    val point: Point,
-    val draggable: Boolean,
+internal sealed interface SessionPoint {
+    val element: GeometryElement
+    val draggable: Boolean
+
+    fun coordinates(): JsxGraphPoint2D
+
+    fun setPosition(coordinates: JsxGraphPoint2D)
+
+    data class TwoDimensional(
+        val point: Point,
+        override val draggable: Boolean,
+    ) : SessionPoint {
+        override val element: GeometryElement
+            get() = point
+
+        override fun coordinates(): JsxGraphPoint2D =
+            JsxGraphPoint2D(point.X(), point.Y())
+
+        override fun setPosition(coordinates: JsxGraphPoint2D) {
+            point.setPositionDirectly(
+                method = Const.COORDS_BY_USER,
+                coordinates =
+                    doubleArrayOf(coordinates.x, coordinates.y),
+            )
+        }
+    }
+
+    data class ThreeDimensional(
+        val point: Point3D,
+        override val draggable: Boolean,
+    ) : SessionPoint {
+        override val element: GeometryElement
+            get() = point
+
+        override fun coordinates(): JsxGraphPoint2D {
+            val projected = point.point2D.coords.usrCoords
+            return JsxGraphPoint2D(projected[1], projected[2])
+        }
+
+        override fun setPosition(coordinates: JsxGraphPoint2D) {
+            point.setPositionFrom2D(
+                doubleArrayOf(coordinates.x, coordinates.y),
+            )
+        }
+    }
+}
+
+private data class BoardPointCoordinates(
+    val points2D: Map<Point, DoubleArray>,
+    val points3D: Map<Point3D, DoubleArray>,
 )
 
 /**
@@ -471,7 +520,8 @@ object JsxGraphEngine {
                     attributes,
                     location,
                 ->
-                val createsSceneElement = creatorName != "transform"
+                val createsSceneElement =
+                    creatorName !in NON_SCENE_CREATORS
                 val createdSceneElementCount =
                     sceneElementCount(creatorName).toLong()
                 val requestedObjectCount =
@@ -543,7 +593,10 @@ object JsxGraphEngine {
                         when (val value = result.value) {
                             is JessieCodeRuntimeValue
                                 .TransformationReference ->
-                                if (creatorName == "transform") {
+                                if (
+                                    creatorName in
+                                    TRANSFORMATION_CREATORS
+                                ) {
                                     result
                                 } else {
                                     GMResult.Err(
@@ -558,14 +611,22 @@ object JsxGraphEngine {
                                 }
                             is JessieCodeRuntimeValue.ElementReference -> {
                                 if (!createsSceneElement) {
-                                    return@JessieCodeCreator GMResult.Err(
-                                        JessieCodeRuntimeError.InvalidAst(
-                                            reason =
-                                                "Native transform creator " +
-                                                    "returned an element.",
-                                            location = location,
-                                        ),
-                                    )
+                                    return@JessieCodeCreator if (
+                                        creatorName == "view3d" &&
+                                        value.element is View3D
+                                    ) {
+                                        result
+                                    } else {
+                                        GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native non-scene creator " +
+                                                        "returned an " +
+                                                        "unexpected element.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
                                 }
                                 val source = ParsedObject(
                                     index =
@@ -797,17 +858,34 @@ object JsxGraphEngine {
                     }
                 },
                 movePointSource = movePoint@ { id, coordinates ->
-                    val point = (
+                    val pointElement = (
                         created.lastOrNull { sourceElement ->
                             sourceElement.element.id == id &&
                                 board.elementById(id) ===
                                 sourceElement.element
                         }
-                    )?.element as? Point
+                    )?.element
                         ?: return@movePoint GMResult.Err(
                             JsxGraphInteractionError.UnknownPoint(id),
                         )
-                    if (!point.isDraggable || point.isFixed) {
+                    val point = when (pointElement) {
+                        is Point -> SessionPoint.TwoDimensional(
+                            point = pointElement,
+                            draggable =
+                                pointElement.isDraggable &&
+                                    !pointElement.isFixed,
+                        )
+                        is Point3D -> SessionPoint.ThreeDimensional(
+                            point = pointElement,
+                            draggable =
+                                pointElement.point2D.isDraggable &&
+                                    !pointElement.isFixed,
+                        )
+                        else -> return@movePoint GMResult.Err(
+                            JsxGraphInteractionError.UnknownPoint(id),
+                        )
+                    }
+                    if (!point.draggable) {
                         return@movePoint GMResult.Err(
                             JsxGraphInteractionError.PointNotDraggable(id),
                         )
@@ -823,20 +901,25 @@ object JsxGraphEngine {
                             ),
                         )
                     }
-                    val previous = board.objectsList
-                        .filterIsInstance<Point>()
-                        .associateWith(Point::Coords)
-                    point.setPositionDirectly(
-                        method =
-                            com.swithun.jsxgraph.core.base.Const.COORDS_BY_USER,
-                        coordinates =
-                            doubleArrayOf(coordinates.x, coordinates.y),
+                    val previous = BoardPointCoordinates(
+                        points2D = board.objectsList
+                            .filterIsInstance<Point>()
+                            .associateWith(Point::Coords),
+                        points3D = board.objectsList
+                            .filterIsInstance<Point3D>()
+                            .associateWith { it.coords.copyOf() },
                     )
-                    board.update(draggedElement = point)
+                    point.setPosition(coordinates)
+                    board.update(draggedElement = point.element)
                     val limitError = dynamicCurveLimitError()
                     if (limitError != null) {
                         for ((previousPoint, previousCoordinates) in
-                            previous
+                            previous.points3D
+                        ) {
+                            previousPoint.setPosition(previousCoordinates)
+                        }
+                        for ((previousPoint, previousCoordinates) in
+                            previous.points2D
                         ) {
                             previousPoint.setPositionDirectly(
                                 method =
@@ -858,7 +941,14 @@ object JsxGraphEngine {
                         is GMResult.Ok -> result
                         is GMResult.Err -> {
                             for ((previousPoint, previousCoordinates) in
-                                previous
+                                previous.points3D
+                            ) {
+                                previousPoint.setPosition(
+                                    previousCoordinates,
+                                )
+                            }
+                            for ((previousPoint, previousCoordinates) in
+                                previous.points2D
                             ) {
                                 previousPoint.setPositionDirectly(
                                     method =
@@ -1753,7 +1843,10 @@ object JsxGraphEngine {
                 )
             }
             if (value is JessieCodeRuntimeValue.TransformationReference) {
-                if (sourceObject.type != "transform") {
+                if (
+                    sourceObject.type !in
+                    TRANSFORMATION_CREATORS
+                ) {
                     return GMResult.Err(
                         JsxGraphDocumentError.ElementCreation(
                             objectIndex = sourceObject.index,
@@ -1778,6 +1871,9 @@ object JsxGraphEngine {
                     reason = "creator did not return a geometry element",
                 ),
             )
+            if (element is View3D) {
+                continue
+            }
             if (sourceObject.type == "tangentto") {
                 val line = element as? Line
                     ?: return GMResult.Err(
@@ -1814,12 +1910,19 @@ object JsxGraphEngine {
             .associateBy(JsxGraphSceneElement.Point::id)
         val sessionPoints = linkedMapOf<String, SessionPoint>()
         for (sourceElement in created) {
-            val point = sourceElement.element as? Point ?: continue
             val scenePoint = scenePoints[sourceElement.source.id] ?: continue
-            sessionPoints[sourceElement.source.id] = SessionPoint(
-                point = point,
-                draggable = scenePoint.draggable,
-            )
+            val handle = when (val element = sourceElement.element) {
+                is Point -> SessionPoint.TwoDimensional(
+                    point = element,
+                    draggable = scenePoint.draggable,
+                )
+                is Point3D -> SessionPoint.ThreeDimensional(
+                    point = element,
+                    draggable = scenePoint.draggable,
+                )
+                else -> continue
+            }
+            sessionPoints[sourceElement.source.id] = handle
         }
         return GMResult.Ok(
             JsxGraphSession(
@@ -1845,10 +1948,17 @@ object JsxGraphEngine {
         parents: List<JessieCodeRuntimeValue>,
         transformationsById: Map<String, Transformation>,
     ): List<JessieCodeRuntimeValue> {
-        if (sourceObject.type != "point" || parents.size != 2) {
+        val transformationIndex = when (sourceObject.type) {
+            "point" -> 1
+            "point3d" -> 2
+            else -> return parents
+        }
+        if (parents.size <= transformationIndex) {
             return parents
         }
-        val transformationParent = when (val parent = parents[1]) {
+        val transformationParent = when (
+            val parent = parents[transformationIndex]
+        ) {
             is JessieCodeRuntimeValue.StringValue ->
                 transformationsById[parent.value]?.let {
                     JessieCodeRuntimeValue.TransformationReference(it)
@@ -1874,7 +1984,9 @@ object JsxGraphEngine {
             }
             else -> null
         } ?: return parents
-        return listOf(parents[0], transformationParent)
+        return parents.toMutableList().also {
+            it[transformationIndex] = transformationParent
+        }
     }
 
     private fun snapshotScene(
@@ -1933,7 +2045,7 @@ object JsxGraphEngine {
             when (
                 val result = attributes.boolean(
                     name = "withlabel",
-                    default = element is Point,
+                    default = element is Point || element is Point3D,
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -1950,6 +2062,17 @@ object JsxGraphEngine {
         }
 
         val sceneElement = when (element) {
+            is Point3D -> when (
+                val result = point3DSceneElement(
+                    element = element,
+                    attributes = attributes,
+                    style = style,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+
             is Point -> when (
                 val result = pointSceneElement(
                     element = element,
@@ -2587,6 +2710,75 @@ object JsxGraphEngine {
             )
         }
         return GMResult.Ok(sceneElement)
+    }
+
+    private fun point3DSceneElement(
+        element: Point3D,
+        attributes: AttributeReader,
+        style: JsxGraphElementStyle,
+    ): GMResult<JsxGraphSceneElement.Point, JsxGraphDocumentError> {
+        element.coordinateEvaluationError?.let { error ->
+            return GMResult.Err(
+                attributes.elementCreation(error.toString()),
+            )
+        }
+        element.transformationEvaluationError?.let { error ->
+            return GMResult.Err(
+                attributes.elementCreation(error.toString()),
+            )
+        }
+        val projected = element.point2D.coords.usrCoords
+        val coordinates = JsxGraphPoint2D(
+            x = projected[1],
+            y = projected[2],
+        )
+        val isReal =
+            element.testIfFinite() &&
+                coordinates.x.isFinite() &&
+                coordinates.y.isFinite()
+        val size = when (
+            val result = attributes.number(
+                name = "size",
+                default = 3.0,
+                minimum = 0.0,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val face = when (
+            val result = attributes.string(
+                name = "face",
+                default = "o",
+            )
+        ) {
+            is GMResult.Ok -> normalizePointFace(result.value)
+            is GMResult.Err -> return result
+        }
+        if (face != "o") {
+            return GMResult.Err(
+                attributes.unsupportedValue(
+                    attribute = "face",
+                    value = face,
+                ),
+            )
+        }
+        return GMResult.Ok(
+            JsxGraphSceneElement.Point(
+                id = element.id,
+                name = element.name,
+                style = style,
+                coordinates = coordinates,
+                size = size,
+                face = face,
+                draggable =
+                    element.point2D.isDraggable &&
+                        !element.isFixed &&
+                        style.visible &&
+                        isReal,
+                isReal = isReal,
+            ),
+        )
     }
 
     private fun pointSceneElement(
@@ -3579,6 +3771,7 @@ object JsxGraphEngine {
             val supported =
                 COMMON_ATTRIBUTES +
                     when (element) {
+                        is Point3D -> POINT_ATTRIBUTES
                         is Point -> POINT_ATTRIBUTES
                         is Line -> LINE_ATTRIBUTES
                         is Circle -> CIRCLE_ATTRIBUTES
@@ -3755,6 +3948,7 @@ object JsxGraphEngine {
             element: GeometryElement,
         ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
             val defaultStroke = when (element) {
+                is Point3D -> DEFAULT_STROKE_COLOR
                 is Point -> DEFAULT_POINT_COLOR
                 is Text -> DEFAULT_TEXT_COLOR
                 is Curve ->
@@ -3772,6 +3966,7 @@ object JsxGraphEngine {
                 else -> DEFAULT_STROKE_COLOR
             }
             val defaultFill = when (element) {
+                is Point3D -> DEFAULT_POINT_3D_COLOR
                 is Point -> DEFAULT_POINT_COLOR
                 is Curve ->
                     when {
@@ -3829,6 +4024,7 @@ object JsxGraphEngine {
                     "strokewidth",
                     default =
                         when {
+                            element is Point3D -> 0.0
                             element is Curve && element.isBoxPlot -> 2.0
                             element is Curve &&
                                 element.isVectorField -> 0.5
@@ -4150,6 +4346,7 @@ object JsxGraphEngine {
         // src/utils/type.js -> copyAttributes.
         private fun defaultLayer(element: GeometryElement): Int =
             when (element) {
+                is Point3D -> DEFAULT_POINT_3D_LAYER
                 is Point -> DEFAULT_POINT_LAYER
                 is Text -> DEFAULT_TEXT_LAYER
                 is Arc -> DEFAULT_ARC_LAYER
@@ -4335,6 +4532,8 @@ object JsxGraphEngine {
         JsxGraphColor(red = 0, green = 114, blue = 178)
     private val DEFAULT_POINT_COLOR =
         JsxGraphColor(red = 213, green = 94, blue = 0)
+    private val DEFAULT_POINT_3D_COLOR =
+        JsxGraphColor(red = 255, green = 255, blue = 0)
     private val DEFAULT_POLYGON_FILL_COLOR =
         JsxGraphColor(red = 240, green = 228, blue = 66)
     private val DEFAULT_TEXT_COLOR =
@@ -4362,6 +4561,7 @@ object JsxGraphEngine {
     private const val DEFAULT_LINE_LAYER = 7
     private const val DEFAULT_ARC_LAYER = 8
     private const val DEFAULT_POINT_LAYER = 9
+    private const val DEFAULT_POINT_3D_LAYER = 13
     private const val DEFAULT_TEXT_LAYER = 9
     // JSXGraph 1.13.3: src/renderer/abstract.js -> dashArray.
     private val DASH_PATTERNS = listOf(
@@ -4457,12 +4657,16 @@ object JsxGraphEngine {
         setOf("scale", "arrowhead")
     private val VECTOR_FIELD_ARROW_HEAD_ATTRIBUTES =
         setOf("enabled", "size", "angle")
+    private val TRANSFORMATION_CREATORS =
+        setOf("transform", "transform3d")
+    private val NON_SCENE_CREATORS =
+        TRANSFORMATION_CREATORS + "view3d"
 
     private fun sceneElementCount(creatorName: String): Int =
         when (creatorName) {
             "bisectorlines" -> 2
             "tangentto" -> 3
-            "transform" -> 0
+            in NON_SCENE_CREATORS -> 0
             else -> 1
         }
 

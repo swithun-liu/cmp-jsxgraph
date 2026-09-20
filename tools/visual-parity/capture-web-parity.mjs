@@ -301,6 +301,20 @@ function readInteractionTrace() {
                 bottom: -5
             }
         },
+        point3d_proxy_drag: {
+            caseId: "point3d_projection",
+            from: {
+                x: -0.7566557074166769,
+                y: -0.7886977433927291
+            },
+            to: {x: 0, y: 0},
+            boundingBox: {
+                left: -6,
+                top: 5,
+                right: 6,
+                bottom: -5
+            }
+        },
         function_coordinate_driver: {
             caseId: "function_coordinate_points",
             from: {x: -3, y: -2},

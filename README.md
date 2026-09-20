@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 78 source-controlled cases: 30 independent production scenarios and
-48 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 79 source-controlled cases: 30 independent production scenarios and
+49 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -32,6 +32,7 @@ Focused direct links remain available for cases such as
 [curves](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curves), and
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
+[Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
 [parallel constructions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=parallel_constructions),
 [Line arrows](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=line_arrows),
 [triangle centers](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=triangle_centers),
@@ -142,10 +143,16 @@ Implemented translation slices:
   CircumcircleSector, MinorSector, MajorSector, NonreflexAngle, ReflexAngle,
   2D Transformation creation through JessieCode or construction documents,
   transformed Points from one Transformation or a chain, and the 4x4
-  Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; Point
-  coordinates from scalar JessieCode functions or one function returning a
-  coordinate array; the translated
-  Point/Line/Circle/Polygon/Text `methodMap` subset, Point `X`/`Y` assignment,
+  Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; the
+  source-mapped `View3D`, `Point3D`, and `transform3d` lifecycle from
+  `src/3d/element3d.js`, `src/3d/view3d.js`, `src/3d/point3d.js`, and
+  `src/base/transformation.js`, including parallel and central projection,
+  numeric, homogeneous, and function-valued coordinates, 2D proxy rendering
+  and drag projection, transformed Point3D updates, `applyOnce`, dependency
+  updates, removal, and structured failures; Point coordinates from scalar
+  JessieCode functions or one function returning a coordinate array; the
+  translated Point/Line/Circle/Polygon/Text `methodMap` subset, Point `X`/`Y`
+  assignment,
   element names, bounds, child links, immediate movement, coordinate
   constraints, static and `<value>` Text content, regular-update assignment,
   and resource limits;
@@ -213,7 +220,9 @@ Stable contract. The remaining JessieCode creator registry, visual-property
 and function-valued element mutation, Slider/Glider-backed built-ins,
 `import`/`$log`/`D`, the complete element `methodMap`, the remaining
 construction-document element types and attributes, and the complete element
-renderer are not yet translated.
+renderer are not yet translated. The current 3D preview does not yet include
+axes, planes, camera controls, shaders, depth ordering, gliders, animations,
+or the complete View3D and Point3D APIs.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -274,8 +283,9 @@ The first production source contract maps directly to ordered
 ```
 
 `JsxGraphEngine.parse(source)` returns
-`GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted element
-types are `point`, `line`, `arrow`, `segment`, `circle`, `curve`,
+`GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted object
+types are `transform`, `view3d`, `transform3d`, `point3d`, `point`, `line`,
+`arrow`, `segment`, `circle`, `curve`,
 `ellipse`, `hyperbola`, `parabola`, `curveintersection`, `curveunion`,
 `curvedifference`,
 `functiongraph`, `plot`,

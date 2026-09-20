@@ -93,6 +93,13 @@ import com.swithun.jsxgraph.core.base.ParallelogramError
 import com.swithun.jsxgraph.core.base.PerpendicularLine
 import com.swithun.jsxgraph.core.base.PerpendicularSegmentLine
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Point3D
+import com.swithun.jsxgraph.core.base.Point3DArrayEvaluator
+import com.swithun.jsxgraph.core.base.Point3DCoordinateSource
+import com.swithun.jsxgraph.core.base.Point3DCoordinateValue
+import com.swithun.jsxgraph.core.base.Point3DDynamicError
+import com.swithun.jsxgraph.core.base.Point3DError
+import com.swithun.jsxgraph.core.base.Point3DScalarEvaluator
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Parabola
 import com.swithun.jsxgraph.core.base.ParabolaError
@@ -118,11 +125,15 @@ import com.swithun.jsxgraph.core.base.TangentToIdentity
 import com.swithun.jsxgraph.core.base.TangentToLineAttributes
 import com.swithun.jsxgraph.core.base.TangentToPointAttributes
 import com.swithun.jsxgraph.core.base.Transformation
+import com.swithun.jsxgraph.core.base.Transformation3DParameter
 import com.swithun.jsxgraph.core.base.TransformationDynamicParameter
 import com.swithun.jsxgraph.core.base.TransformationDynamicParameterError
+import com.swithun.jsxgraph.core.base.TransformationDynamicVectorParameter
 import com.swithun.jsxgraph.core.base.TransformationError
 import com.swithun.jsxgraph.core.base.TransformationParameter
 import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
+import com.swithun.jsxgraph.core.base.View3D
+import com.swithun.jsxgraph.core.base.View3DError
 import com.swithun.jsxgraph.core.math.ClipBooleanOperation
 import com.swithun.jsxgraph.core.math.NumericsPoint2D
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
@@ -147,6 +158,14 @@ internal sealed interface JessieCodeCreatorError {
 
     data class PointFactory(
         val error: PointError,
+    ) : JessieCodeCreatorError
+
+    data class View3DFactory(
+        val error: View3DError,
+    ) : JessieCodeCreatorError
+
+    data class Point3DFactory(
+        val error: Point3DError,
     ) : JessieCodeCreatorError
 
     data class PolePointFactory(
@@ -268,8 +287,32 @@ internal object NativeJessieCodeCreators {
             ->
             createTransform(board, parents, attributes, location)
         },
+        "transform3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createTransform3D(board, parents, attributes, location)
+        },
+        "view3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createView3D(board, parents, attributes, location)
+        },
         "point" to JessieCodeCreator { board, parents, attributes, location ->
             createPoint(board, parents, attributes, location)
+        },
+        "point3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createPoint3D(board, parents, attributes, location)
         },
         "polepoint" to JessieCodeCreator {
                 board,
@@ -1231,6 +1274,445 @@ internal object NativeJessieCodeCreators {
         }
     }
 
+    // JSXGraph: src/3d/view3d.js -> createView3D.
+    private fun createView3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "view3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val lowerLeftCorner = numericArray(parents[0])
+            ?: return unsupported(creatorName, parents, location)
+        val size = numericArray(parents[1])
+            ?: return unsupported(creatorName, parents, location)
+        val boundingBoxValues = (
+            parents[2] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val boundingBox = mutableListOf<DoubleArray>()
+        for (dimension in boundingBoxValues) {
+            boundingBox += numericArray(dimension)
+                ?: return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val projection = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "projection",
+                default = "parallel",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val azimuth = when (
+            val result = view3DAngleAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "az",
+                default = View3D.DEFAULT_AZIMUTH,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val elevation = when (
+            val result = view3DAngleAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "el",
+                default = View3D.DEFAULT_ELEVATION,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val bank = when (
+            val result = view3DAngleAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "bank",
+                default = View3D.DEFAULT_BANK,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fieldOfView = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "fov",
+                default = View3D.DEFAULT_FIELD_OF_VIEW,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val cameraDistance = when (
+            val value = attributes.properties["r"]
+        ) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> null
+            is JessieCodeRuntimeValue.StringValue ->
+                if (value.value == "auto") {
+                    null
+                } else {
+                    return failure(
+                        creatorName = creatorName,
+                        error =
+                            JessieCodeCreatorError
+                                .UnsupportedAttributeValue(
+                                    attribute = "r",
+                                    actual = value.value,
+                                ),
+                        location = location,
+                    )
+                }
+            is JessieCodeRuntimeValue.NumberValue -> value.value
+            else -> return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "r",
+                expected = "number or 'auto'",
+                actual = value,
+                location = location,
+            )
+        }
+        return when (
+            val result = View3D.create(
+                board = resolvedBoard,
+                lowerLeftCorner = lowerLeftCorner,
+                size = size,
+                boundingBox = boundingBox.toTypedArray(),
+                projection = projection,
+                azimuth = azimuth,
+                elevation = elevation,
+                bank = bank,
+                cameraDistance = cameraDistance,
+                fieldOfView = fieldOfView,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.View3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph: src/3d/point3d.js -> createPoint3D.
+    private fun createPoint3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "point3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val pointParents = parents.drop(1)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "fixed",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (pointParents.size == 2) {
+            val basePoint =
+                resolveElement(resolvedBoard, pointParents[0]) as? Point3D
+            val transformations =
+                transformationReferences(pointParents[1])
+            if (basePoint != null && transformations != null) {
+                return point3DResult(
+                    result = Point3D.create(
+                        view = view,
+                        basePoint = basePoint,
+                        transformations = transformations,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate =
+                            identity.needsRegularUpdate,
+                        fixed = fixed,
+                    ),
+                    location = location,
+                )
+            }
+        }
+        if (
+            pointParents.size == 1 &&
+            pointParents[0] is JessieCodeRuntimeValue.FunctionValue
+        ) {
+            val function =
+                pointParents[0] as JessieCodeRuntimeValue.FunctionValue
+            return point3DResult(
+                result = Point3D.create(
+                    view = view,
+                    coordinateSource =
+                        Point3DCoordinateSource.Function(
+                            point3DArrayEvaluator(
+                                function = function,
+                                location = location,
+                            ),
+                        ),
+                    dependencies = function.dependencies.values,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    fixed = fixed,
+                ),
+                location = location,
+            )
+        }
+        val coordinateValues =
+            if (
+                pointParents.size == 1 &&
+                pointParents[0] is JessieCodeRuntimeValue.ArrayValue
+            ) {
+                (
+                    pointParents[0] as JessieCodeRuntimeValue.ArrayValue
+                    ).values
+            } else {
+                pointParents
+            }
+        if (coordinateValues.size !in setOf(3, 4)) {
+            return unsupported(creatorName, parents, location)
+        }
+        val values = mutableListOf<Point3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (value in coordinateValues) {
+            when (
+                val result = point3DCoordinateValue(
+                    value = value,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    values += result.value
+                    if (value is JessieCodeRuntimeValue.FunctionValue) {
+                        dependencies.putAll(value.dependencies)
+                    }
+                }
+                is GMResult.Err -> return result
+            }
+        }
+        return point3DResult(
+            result = Point3D.create(
+                view = view,
+                coordinateSource =
+                    Point3DCoordinateSource.Values(values),
+                dependencies = dependencies.values,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            ),
+            location = location,
+        )
+    }
+
+    private fun view3DAngleAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: Double,
+        location: JessieCodeAstLocation,
+    ): GMResult<Double, JessieCodeRuntimeError> {
+        val angle = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = name,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val slider = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = angle,
+                name = "slider",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return numberAttribute(
+            creatorName = creatorName,
+            attributes = slider,
+            name = "start",
+            default = default,
+            location = location,
+        )
+    }
+
+    private fun point3DCoordinateValue(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Point3DCoordinateValue, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(
+                    Point3DCoordinateValue.Numeric(value.value),
+                )
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(
+                    Point3DCoordinateValue.Dynamic(
+                        Point3DScalarEvaluator {
+                            when (
+                                val result =
+                                    value.externalCallable.call(
+                                        arguments = emptyList(),
+                                        location = location,
+                                    )
+                            ) {
+                                is GMResult.Err -> GMResult.Err(
+                                    Point3DDynamicError.Rejected(
+                                        result.error.toString(),
+                                    ),
+                                )
+                                is GMResult.Ok -> {
+                                    val number = result.value as?
+                                        JessieCodeRuntimeValue.NumberValue
+                                    if (number != null) {
+                                        GMResult.Ok(number.value)
+                                    } else {
+                                        GMResult.Err(
+                                            Point3DDynamicError.Rejected(
+                                                "Expected number, got " +
+                                                    typeName(result.value),
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    ),
+                )
+            else -> invalidAttribute(
+                creatorName = "point3d",
+                attribute = "parents",
+                expected = "numbers or zero-argument functions",
+                actual = value,
+                location = location,
+            )
+        }
+
+    private fun point3DArrayEvaluator(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): Point3DArrayEvaluator =
+        Point3DArrayEvaluator {
+            when (
+                val result = function.externalCallable.call(
+                    arguments = emptyList(),
+                    location = location,
+                )
+            ) {
+                is GMResult.Err -> GMResult.Err(
+                    Point3DDynamicError.Rejected(
+                        result.error.toString(),
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val values = (
+                        result.value as?
+                            JessieCodeRuntimeValue.ArrayValue
+                        )?.values
+                    val coordinates = values?.let(::numericRuntimeArray)
+                    if (coordinates != null) {
+                        GMResult.Ok(coordinates)
+                    } else {
+                        GMResult.Err(
+                            Point3DDynamicError.Rejected(
+                                "Expected numeric coordinate array, got " +
+                                    typeName(result.value),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun point3DResult(
+        result: GMResult<Point3D, Point3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "point3d",
+                error = JessieCodeCreatorError.Point3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
     private fun createPolePoint(
         board: Board?,
         parents: List<JessieCodeRuntimeValue>,
@@ -1491,6 +1973,293 @@ internal object NativeJessieCodeCreators {
             )
         }
     }
+
+    // JSXGraph: src/base/transformation.js -> createTransform3D / setMatrix3D.
+    private fun createTransform3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "transform3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (
+            parents.isEmpty() ||
+            resolveElement(resolvedBoard, parents[0]) !is View3D
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val type = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "type",
+                default = "",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val parameters = parents.drop(1)
+        val transformation =
+            if (type == "matrix" || type == "affinematrix") {
+                createTransform3DMatrix(
+                    board = resolvedBoard,
+                    type = type,
+                    parameters = parameters,
+                    location = location,
+                )
+            } else {
+                val resolved = mutableListOf<Transformation3DParameter>()
+                for ((index, value) in parameters.withIndex()) {
+                    val vector =
+                        type == "rotate" && index in 1..2 ||
+                            type in setOf(
+                                "rotateX",
+                                "rotateY",
+                                "rotateZ",
+                            ) && index == 1
+                    val parameter = when (
+                        val result = transformation3DParameter(
+                            value = value,
+                            vector = vector,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    resolved += parameter
+                }
+                Transformation.create3D(
+                    board = resolvedBoard,
+                    type = type,
+                    parameters = resolved,
+                )
+            }
+        return transformationReference(
+            result = transformation,
+            location = location,
+            creatorName = creatorName,
+        )
+    }
+
+    private fun createTransform3DMatrix(
+        board: Board,
+        type: String,
+        parameters: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<Transformation, TransformationError> {
+        val rows = (
+            parameters.singleOrNull() as?
+                JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return GMResult.Err(
+            TransformationError.InvalidParameterForm(
+                transformationType = type,
+                expectedForm = "one nested scalar matrix",
+            ),
+        )
+        val matrix = mutableListOf<List<TransformationParameter>>()
+        for (row in rows) {
+            val values = (
+                row as? JessieCodeRuntimeValue.ArrayValue
+                )?.values ?: return GMResult.Err(
+                TransformationError.InvalidParameterForm(
+                    transformationType = type,
+                    expectedForm = "one nested scalar matrix",
+                ),
+            )
+            val converted = transformationParameters(
+                parents = values,
+                location = location,
+            ) ?: return GMResult.Err(
+                TransformationError.InvalidParameterForm(
+                    transformationType = type,
+                    expectedForm = "one nested scalar matrix",
+                ),
+            )
+            matrix += converted
+        }
+        return Transformation.create3DMatrix(
+            board = board,
+            type = type,
+            matrix = matrix,
+        )
+    }
+
+    private fun transformation3DParameter(
+        value: JessieCodeRuntimeValue,
+        vector: Boolean,
+        location: JessieCodeAstLocation,
+    ): GMResult<Transformation3DParameter, JessieCodeRuntimeError> {
+        if (!vector) {
+            val scalar = transformationParameter(value, location)
+                ?: return invalidAttribute(
+                    creatorName = "transform3d",
+                    attribute = "parents",
+                    expected = "scalar transformation parameters",
+                    actual = value,
+                    location = location,
+                )
+            return GMResult.Ok(
+                Transformation3DParameter.Scalar(scalar),
+            )
+        }
+        return when (value) {
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val static = numericRuntimeArray(value.values)
+                if (static != null) {
+                    GMResult.Ok(
+                        Transformation3DParameter.Vector(static),
+                    )
+                } else {
+                    GMResult.Ok(
+                        Transformation3DParameter.DynamicVector(
+                            TransformationDynamicVectorParameter {
+                                evaluateDynamicVector(
+                                    values = value.values,
+                                    location = location,
+                                )
+                            },
+                        ),
+                    )
+                }
+            }
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(
+                    Transformation3DParameter.DynamicVector(
+                        TransformationDynamicVectorParameter {
+                            evaluateDynamicVector(
+                                function = value,
+                                location = location,
+                            )
+                        },
+                    ),
+                )
+            is JessieCodeRuntimeValue.ElementReference -> {
+                val point = value.element as? Point3D
+                    ?: return invalidAttribute(
+                        creatorName = "transform3d",
+                        attribute = "parents",
+                        expected = "3D vector or Point3D",
+                        actual = value,
+                        location = location,
+                    )
+                GMResult.Ok(
+                    Transformation3DParameter.DynamicVector(
+                        TransformationDynamicVectorParameter {
+                            GMResult.Ok(point.coords.copyOf())
+                        },
+                    ),
+                )
+            }
+            is JessieCodeRuntimeValue.StringValue ->
+                GMResult.Ok(
+                    Transformation3DParameter.VectorExpression(
+                        value.value,
+                    ),
+                )
+            else -> invalidAttribute(
+                creatorName = "transform3d",
+                attribute = "parents",
+                expected = "3D vector or Point3D",
+                actual = value,
+                location = location,
+            )
+        }
+    }
+
+    private fun numericRuntimeArray(
+        values: List<JessieCodeRuntimeValue>,
+    ): DoubleArray? {
+        val result = DoubleArray(values.size)
+        for ((index, value) in values.withIndex()) {
+            result[index] = (
+                value as? JessieCodeRuntimeValue.NumberValue
+                )?.value ?: return null
+        }
+        return result
+    }
+
+    private fun evaluateDynamicVector(
+        values: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, TransformationDynamicParameterError> {
+        val result = DoubleArray(values.size)
+        for ((index, value) in values.withIndex()) {
+            result[index] = when (value) {
+                is JessieCodeRuntimeValue.NumberValue -> value.value
+                is JessieCodeRuntimeValue.FunctionValue -> when (
+                    val evaluated = value.externalCallable.call(
+                        arguments = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Err -> return GMResult.Err(
+                        TransformationDynamicParameterError.Rejected(
+                            evaluated.error.toString(),
+                        ),
+                    )
+                    is GMResult.Ok -> (
+                        evaluated.value as?
+                            JessieCodeRuntimeValue.NumberValue
+                        )?.value ?: return GMResult.Err(
+                        TransformationDynamicParameterError.Rejected(
+                            "Expected number at vector index $index, got " +
+                                typeName(evaluated.value),
+                        ),
+                    )
+                }
+                else -> return GMResult.Err(
+                    TransformationDynamicParameterError.Rejected(
+                        "Expected number or function at vector index " +
+                            "$index, got ${typeName(value)}",
+                    ),
+                )
+            }
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun evaluateDynamicVector(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, TransformationDynamicParameterError> =
+        when (
+            val result = function.externalCallable.call(
+                arguments = emptyList(),
+                location = location,
+            )
+        ) {
+            is GMResult.Err -> GMResult.Err(
+                TransformationDynamicParameterError.Rejected(
+                    result.error.toString(),
+                ),
+            )
+            is GMResult.Ok -> {
+                val values = (
+                    result.value as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values
+                val vector = values?.let(::numericRuntimeArray)
+                if (vector != null) {
+                    GMResult.Ok(vector)
+                } else {
+                    GMResult.Err(
+                        TransformationDynamicParameterError.Rejected(
+                            "Expected numeric vector, got " +
+                                typeName(result.value),
+                        ),
+                    )
+                }
+            }
+        }
 
     // JSXGraph: src/base/transformation.js -> createTransform / setMatrix
     private fun createTransform(
@@ -1793,6 +2562,7 @@ internal object NativeJessieCodeCreators {
     private fun transformationReference(
         result: GMResult<Transformation, TransformationError>,
         location: JessieCodeAstLocation,
+        creatorName: String = "transform",
     ): CreatorResult =
         when (result) {
             is GMResult.Ok -> GMResult.Ok(
@@ -1801,7 +2571,7 @@ internal object NativeJessieCodeCreators {
                 ),
             )
             is GMResult.Err -> failure(
-                creatorName = "transform",
+                creatorName = creatorName,
                 error = JessieCodeCreatorError.TransformationFactory(
                     result.error,
                 ),

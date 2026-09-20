@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **48 development parity scenarios.** These remain focused regression
+3. **49 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -146,9 +146,16 @@ The construction-document path now accepts ordered `transform` objects and
 resolves their IDs in subsequent transformed-Point parents without emitting
 scene elements for the transforms. The separate official
 `transformation-3d.mjs` fixture covers every 4x4 matrix form and dynamic
-reevaluation against JSXGraph `1.13.3`; this is numerical kernel evidence, not
-View3D/Point3D rendering evidence, so it does not change the 30/48 visual case
-counts.
+reevaluation against JSXGraph `1.13.3`. The
+`view3d-point3d.mjs` fixture then covers the bounded camera, projection,
+Point3D coordinate, transformation, `applyOnce`, proxy, and removal lifecycle.
+The focused `point3d_projection` visual case scored `0.986505` on Desktop and
+`0.972805` on Compact before movement. After dragging the free Point3D proxy,
+both renderers projected the movement to its constant-z plane and updated the
+transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
+All four contact sheets passed manual review. This changes the development
+workbench count to 30/49 but does not change the independently qualified
+30-case, 60-screenshot Stable corpus.
 The focused function-coordinate Point fixture scored `0.986724` on Desktop
 and `0.973162` on Compact before movement. After dragging its shared driver
 from `(-3,-2)` to `(-1,1)`, the function-array, scalar-function, and

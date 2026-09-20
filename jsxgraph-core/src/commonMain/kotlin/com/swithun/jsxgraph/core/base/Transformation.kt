@@ -251,6 +251,35 @@ internal class Transformation private constructor(
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph: src/base/transformation.js -> applyOnce, 3D branch.
+    internal fun applyOnce(
+        point: Point3D,
+    ): GMResult<Unit, TransformationError> = applyOnce3D(listOf(point))
+
+    // JSXGraph: src/base/transformation.js -> applyOnce, 3D branch.
+    internal fun applyOnce3D(
+        points: Iterable<Point3D>,
+    ): GMResult<Unit, TransformationError> {
+        for (point in points) {
+            when (val result = applyResult(point.coords)) {
+                is GMResult.Ok -> {
+                    when (val positioned = point.setPosition(result.value)) {
+                        is GMResult.Ok -> Unit
+                        is GMResult.Err -> return GMResult.Err(
+                            TransformationError.InvalidCoordinateCount(
+                                coordinateRole = "point3d",
+                                expectedCounts = listOf(3, 4),
+                                actualCount = result.value.size,
+                            ),
+                        )
+                    }
+                }
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(Unit)
+    }
+
     // JSXGraph: src/base/transformation.js -> bindTo / bind
     internal fun bindTo(element: GeometryElement) {
         element.transformations += this

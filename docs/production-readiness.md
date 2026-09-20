@@ -38,7 +38,13 @@ document path continues to reject that compound return explicitly.
 Ordered construction documents now expose 2D `transform` IDs to subsequent
 transformed Points. The source-mapped 4x4 Transformation kernel covers every
 JSXGraph `1.13.3` 3D matrix form with official numerical fixture evidence;
-View3D/Point3D construction and rendering remain outside the qualified scope.
+the bounded `View3D`, `Point3D`, and `transform3d` lifecycle now has
+source-mapped construction, projection, 2D proxy rendering and drag,
+transformation binding and `applyOnce`, update/removal, structured-error,
+official-fixture, and focused Desktop/Compact parity evidence. This 3D
+preview remains outside the qualified Stable scope. Axes, planes, camera
+controls, shaders, depth ordering, Point3D gliders and animations, and the
+remaining View3D/Point3D APIs are still pending.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.
 Intersection and OtherIntersection now have source-mapped Line/Segment/Circle,

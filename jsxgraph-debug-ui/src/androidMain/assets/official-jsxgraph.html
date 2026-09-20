@@ -259,6 +259,7 @@
               throw new Error("objects must be an array");
             }
             const ids = new Set();
+            const transformationsById = new Map();
             documentSource.objects.forEach((sourceObject, index) => {
               if (!isObject(sourceObject)) {
                 throw new Error(`objects[${index}] must be an object`);
@@ -297,15 +298,56 @@
                 );
               }
               attributes.id = sourceObject.id;
+              const parents = sourceObject.parents.slice();
+              const elementType = sourceObject.type.toLowerCase();
+              const transformationIndex =
+                elementType === "point"
+                  ? 1
+                  : elementType === "point3d"
+                    ? 2
+                    : -1;
+              if (
+                transformationIndex >= 0 &&
+                transformationIndex < parents.length
+              ) {
+                const transformationParent = parents[transformationIndex];
+                if (typeof transformationParent === "string") {
+                  parents[transformationIndex] =
+                    transformationsById.get(transformationParent) ??
+                    transformationParent;
+                } else if (
+                  Array.isArray(transformationParent) &&
+                  transformationParent.length > 0
+                ) {
+                  const transformations = transformationParent.map(
+                    (id) => transformationsById.get(id),
+                  );
+                  if (
+                    transformations.every(
+                      (transformation) => transformation !== undefined,
+                    )
+                  ) {
+                    parents[transformationIndex] = transformations;
+                  }
+                }
+              }
               const element = board.create(
                 sourceObject.type,
-                sourceObject.parents,
+                parents,
                 attributes,
               );
               if (element === undefined || element === null) {
                 throw new Error(
                   `Could not create objects[${index}] '${sourceObject.id}'`,
                 );
+              }
+              if (
+                elementType === "transform" ||
+                elementType === "transform3d"
+              ) {
+                // Mirrors the construction-document adapter while retaining
+                // JSXGraph's own createPoint/createPoint3D dispatch.
+                transformationsById.set(sourceObject.id, element);
               }
               ids.add(sourceObject.id);
             });

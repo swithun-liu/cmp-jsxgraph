@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(78, cases.size)
+        assertEquals(79, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            48,
+            49,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -1923,6 +1923,64 @@ class ParitySourceTest {
                     element.id == "mirrored"
                 },
             ).coordinates,
+        )
+    }
+
+    @Test
+    fun point3DProjectionFocusedCaseUsesProxyGeometryAndDragLifecycle() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("point3d_projection"),
+        ).value
+        val input = assertIs<GMResult.Ok<JsxGraphParityInput>>(
+            parseParityInput(parityCase.source),
+        ).value
+        assertIs<JsxGraphParityInput.ConstructionDocument>(input)
+
+        val paritySession = assertIs<GMResult.Ok<JsxGraphParitySession>>(
+            createParitySession(parityCase.source),
+        ).value
+        val session = assertIs<
+            JsxGraphParitySession.ConstructionDocument
+            >(paritySession).session
+        assertEquals(
+            listOf("source3d", "homogeneous3d", "transformed3d"),
+            session.scene.elements.map(JsxGraphSceneElement::id),
+        )
+
+        val source = point(session.scene, "source3d")
+        assertEquals(
+            -0.7566557074166769,
+            source.coordinates.x,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            -0.7886977433927291,
+            source.coordinates.y,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(JsxGraphColor.Transparent, source.style.fillColor)
+        assertEquals(JsxGraphColor(217, 85, 63), source.style.strokeColor)
+        assertEquals(3.0, source.style.strokeWidth)
+        assertEquals(
+            setOf("source3d"),
+            session.captureInteractionState().pointCoordinates.keys,
+        )
+
+        val transformedBefore =
+            point(session.scene, "transformed3d").coordinates
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "source3d",
+                coordinates = JsxGraphPoint2D(0.0, 0.0),
+            ),
+        ).value
+        assertPointEquals(
+            JsxGraphPoint2D(0.0, 0.0),
+            point(moved, "source3d").coordinates,
+        )
+        assertNotEquals(
+            transformedBefore,
+            point(moved, "transformed3d").coordinates,
         )
     }
 

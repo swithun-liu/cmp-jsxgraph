@@ -665,6 +665,24 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "point3d_projection",
+            title = "Point3D projection",
+            scenario = "A parallel View3D projects free, homogeneous, and transformed Point3D elements through their 2D proxies.",
+            source = POINT3D_PROJECTION_SOURCE,
+            features = setOf(
+                "construction-document",
+                "view3d",
+                "point3d",
+                "transform3d",
+                "parallel-projection",
+                "homogeneous-coordinate",
+                "transformed-point",
+                "proxy-point",
+                "dependency-update",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "function_coordinate_points",
             title = "Function coordinate points",
             scenario = "Array, scalar, and homogeneous JessieCode functions constrain Points from one draggable driver.",
@@ -2190,6 +2208,90 @@ private const val TRANSFORMED_POINTS_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nbase = point(-2, 1) <<\n  id: \"base\", name: \"\", withLabel: false,\n  size: 5, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\",\n  strokeWidth: 2, fixed: true, highlight: false\n>>;\norigin = point(0, 0) <<\n  id: \"origin\", name: \"\", withLabel: false,\n  visible: false, fixed: true, highlight: false\n>>;\naxisPoint = point(0, 3) <<\n  id: \"axisPoint\", name: \"\", withLabel: false,\n  visible: false, fixed: true, highlight: false\n>>;\ndriver = point(2, 0) <<\n  id: \"driver\", name: \"\", withLabel: false,\n  size: 5, strokeColor: \"#D9553F\", fillColor: \"#F4D44D\",\n  strokeWidth: 2, fixed: false, highlight: false\n>>;\naxis = line(origin, axisPoint) <<\n  id: \"axis\", name: \"\", withLabel: false,\n  strokeColor: \"#6F7780\", strokeWidth: 2,\n  fixed: true, highlight: false\n>>;\nscale = transform(1.4, 0.8) << type: \"scale\" >>;\nrotate = transform(PI / 5, origin) << type: \"rotate\" >>;\nchained = point(base, [scale, rotate]) <<\n  id: \"chained\", name: \"\", withLabel: false,\n  size: 6, strokeColor: \"#246BCE\", fillColor: \"#246BCE\",\n  strokeWidth: 2, fixed: true, highlight: false\n>>;\nshift = transform(\n  function () { return driver.X() / 2; }, -1\n) << type: \"translate\" >>;\nshifted = point(base, shift) <<\n  id: \"shifted\", name: \"\", withLabel: false,\n  size: 6, strokeColor: \"#16877A\", fillColor: \"#16877A\",\n  strokeWidth: 2, fixed: true, highlight: false\n>>;\nreflection = transform(axis) << type: \"reflect\" >>;\nmirrored = point(shifted, reflection) <<\n  id: \"mirrored\", name: \"\", withLabel: false,\n  size: 7, strokeColor: \"#B44335\", fillColor: \"#B44335\",\n  strokeWidth: 3, fixed: true, highlight: false\n>>;"
+}
+"""
+
+private const val POINT3D_PROJECTION_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "view",
+      "type": "view3d",
+      "parents": [
+        [-5, -4],
+        [8, 7],
+        [[-5, 5], [-4, 6], [-3, 7]]
+      ],
+      "attributes": {
+        "name": "",
+        "projection": "parallel",
+        "axesPosition": "none",
+        "xPlaneRear": {"visible": false},
+        "yPlaneRear": {"visible": false},
+        "zPlaneRear": {"visible": false},
+        "depthOrder": {"enabled": false},
+        "az": {"slider": {"visible": false, "start": 1}},
+        "el": {"slider": {"visible": false, "start": 0.3}},
+        "bank": {"slider": {"visible": false, "start": 0}}
+      }
+    },
+    {
+      "id": "source3d",
+      "type": "point3d",
+      "parents": ["view", 1, 2, 2],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 8,
+        "strokeColor": "#D9553F",
+        "fillColor": "none",
+        "strokeWidth": 3,
+        "fixed": false,
+        "highlight": false
+      }
+    },
+    {
+      "id": "homogeneous3d",
+      "type": "point3d",
+      "parents": ["view", 2, 4, 6, 8],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 7,
+        "strokeColor": "#246BCE",
+        "fillColor": "none",
+        "strokeWidth": 3,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "translation3d",
+      "type": "transform3d",
+      "parents": ["view", 2, -3, 4],
+      "attributes": {"type": "translate"}
+    },
+    {
+      "id": "transformed3d",
+      "type": "point3d",
+      "parents": ["view", "source3d", "translation3d"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "size": 9,
+        "strokeColor": "#16877A",
+        "fillColor": "none",
+        "strokeWidth": 3,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
 }
 """
 

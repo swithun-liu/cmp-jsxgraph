@@ -776,8 +776,29 @@ practical.
   Dynamic transforms remain available through `bindTo`, which is the working
   upstream route. Array-backed `affinematrix`/`matrix` transforms and
   array-centered rotations retain the upstream nonnumeric classification even
-  when all entries are numbers. Transformed Text/Image rendering and
-  View3D/Point3D construction, binding, and `applyOnce` remain pending.
+  when all entries are numbers. Transformed Text/Image rendering remains
+  pending.
+- The bounded `GeometryElement3D`/`View3D`/`Point3D` lifecycle follows
+  `src/3d/element3d.js`, `src/3d/view3d.js`, and `src/3d/point3d.js`.
+  Kotlin preserves parallel and central projection, numeric and homogeneous
+  coordinates, function reevaluation, Point3D transformation binding,
+  `applyOnce`, the ordinary 2D interaction proxy, cube clamping,
+  registration, dependency updates, and removal. Malformed View3D dimensions,
+  malformed Point3D parents, duplicate IDs, and coordinate/transformation
+  evaluation failures cross public boundaries as `GMResult.Err` instead of
+  throwing from array indexing or dynamic JavaScript calls.
+- JSXGraph renders and drags Point3D through an ordinary Point proxy. Kotlin
+  keeps the same owner/proxy lifecycle but materializes the proxy coordinates
+  directly into the platform-independent scene, so Compose requires no 3D
+  renderer or platform-specific runtime. Axes, planes, camera controls,
+  shaders, depth ordering, Point3D gliders and animations, and the remaining
+  View3D/Point3D APIs are still pending.
+- JSXGraph `1.13.3` leaves both
+  `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
+  `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
+  registers the upstream `view3d`, `point3d`, and `transform3d` creator route
+  but does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
+  property access that the baseline does not expose.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix

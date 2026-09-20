@@ -43,11 +43,21 @@ qualification batches pass.
   translate, three- and four-parameter scale, rotate/rotateX/rotateY/rotateZ,
   affine, affinematrix, generic, and matrix forms with scalar, vector,
   JessieCode, and structured dynamic evaluation.
-- Still pending around that source slice: transformed Text/Image and general
+- View3D and Point3D: the bounded lifecycle from `src/3d/element3d.js`,
+  `src/3d/view3d.js`, `src/3d/point3d.js`, `src/base/transformation.js`, and
+  `src/options3d.js` is translated. It covers View3D registration and
+  selection, parallel and central camera matrices, forward/inverse projection
+  helpers, cube bounds, numeric, homogeneous, array-function, and
+  scalar-function Point3D coordinates, ordinary 2D render/interaction
+  proxies, `transform3d` binding, updates, `applyOnce`, removal, JSON and
+  JessieCode entry points, resource limits, and structured failures. Official
+  lifecycle fixtures and focused static plus proxy-drag parity pass.
+- Still pending around transforms and 3D: transformed Text/Image and general
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
-  null-clone defect, and View3D/Point3D construction, binding, and `applyOnce`
-  integration. The upstream 3D `generic` six-evaluator/16-read defect is
-  preserved as a structured evaluation error.
+  null-clone defect, View3D axes and planes, camera controls, shaders, depth
+  ordering, Point3D gliders and animations, and the remaining View3D/Point3D
+  APIs. The upstream 3D `generic` six-evaluator/16-read defect is preserved as
+  a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed
   number/string/function coordinate terms and one function returning a
   numeric coordinate array, with fresh evaluation budgets, persistent Board
