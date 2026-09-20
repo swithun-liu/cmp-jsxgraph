@@ -29,8 +29,6 @@ const simulateCompressedPartRetry =
     process.env.SIMULATE_COMPRESSED_PART_RETRY === "true";
 const pageErrors = [];
 const requestedUrls = [];
-const simulatedCompressedPartRequests = new WeakSet();
-let activeCompressedPartRequests = 0;
 let maximumConcurrentCompressedPartRequests = 0;
 let simulatedFailedCompressedPartPath = null;
 let ignoredSimulatedConsoleErrorCount = 0;
@@ -42,6 +40,40 @@ try {
     if (simulateCompressedPartRetry) {
         await page.setRequestInterception(true);
     }
+    await page.evaluateOnNewDocument(() => {
+        const metrics = {
+            active: 0,
+            maximum: 0
+        };
+        globalThis.__cmpJsxGraphScriptChunkMetrics = metrics;
+        new MutationObserver((records) => {
+            for (const record of records) {
+                for (const node of record.addedNodes) {
+                    if (
+                        !(node instanceof HTMLScriptElement) ||
+                        !new URL(node.src, window.location.href)
+                            .pathname.includes(".payload.part-")
+                    ) {
+                        continue;
+                    }
+                    metrics.active += 1;
+                    metrics.maximum = Math.max(
+                        metrics.maximum,
+                        metrics.active
+                    );
+                    let finished = false;
+                    const finish = () => {
+                        if (!finished) {
+                            finished = true;
+                            metrics.active -= 1;
+                        }
+                    };
+                    node.addEventListener("load", finish, {once: true});
+                    node.addEventListener("error", finish, {once: true});
+                }
+            }
+        }).observe(document, {childList: true, subtree: true});
+    });
     await page.setViewport({
         width: viewportWidth,
         height: viewportHeight,
@@ -58,7 +90,6 @@ try {
         ) {
             simulatedFailedCompressedPartPath =
                 new URL(request.url()).pathname;
-            simulatedCompressedPartRequests.add(request);
             void request.respond({
                 status: 503,
                 contentType: "text/plain",
@@ -66,27 +97,10 @@ try {
             });
             return;
         }
-        if (isCompressedPart) {
-            activeCompressedPartRequests += 1;
-            maximumConcurrentCompressedPartRequests = Math.max(
-                maximumConcurrentCompressedPartRequests,
-                activeCompressedPartRequests
-            );
-        }
         if (simulateCompressedPartRetry) {
             void request.continue();
         }
     });
-    const finishRequest = (request) => {
-        if (
-            isCompressedPartRequest(request.url()) &&
-            !simulatedCompressedPartRequests.has(request)
-        ) {
-            activeCompressedPartRequests -= 1;
-        }
-    };
-    page.on("requestfinished", finishRequest);
-    page.on("requestfailed", finishRequest);
     page.on("console", (message) => {
         if (message.type() === "error") {
             const messageText = message.text();
@@ -168,6 +182,9 @@ try {
     const supportsStreamingDecompression = await page.evaluate(() =>
         typeof DecompressionStream === "function"
     );
+    maximumConcurrentCompressedPartRequests = await page.evaluate(() =>
+        globalThis.__cmpJsxGraphScriptChunkMetrics?.maximum ?? 0
+    );
     const failures = [];
     if (firstContentMillis > maximumFirstContentMillis) {
         failures.push(
@@ -211,17 +228,19 @@ try {
     if (
         expectChunkedWasm &&
         supportsStreamingDecompression &&
-        wasmRequests.compressedPartCount === 0
+        wasmRequests.compressedScriptPartCount === 0
     ) {
-        failures.push("Chunked loading did not use compressed Wasm parts");
+        failures.push(
+            "Chunked loading did not use compressed Wasm script parts"
+        );
     }
     if (
         expectChunkedWasm &&
         supportsStreamingDecompression &&
-        wasmRequests.compressedJsonPartCount > 0
+        wasmRequests.compressedNonScriptPartCount > 0
     ) {
         failures.push(
-            "Chunked loading used throttled JSON Wasm payloads"
+            "Chunked loading used fetch-based compressed Wasm payloads"
         );
     }
     if (
@@ -359,8 +378,11 @@ function summarizeWasmRequests(urls) {
         compressedPartCount: paths.filter((path) =>
             path.includes(".payload.part-")
         ).length,
-        compressedJsonPartCount: paths.filter((path) =>
-            path.includes(".payload.part-") && path.endsWith(".json")
+        compressedScriptPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") && path.endsWith(".js")
+        ).length,
+        compressedNonScriptPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") && !path.endsWith(".js")
         ).length
     };
 }
