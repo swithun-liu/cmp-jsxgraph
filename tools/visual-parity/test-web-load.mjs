@@ -228,19 +228,20 @@ try {
     if (
         expectChunkedWasm &&
         supportsStreamingDecompression &&
-        wasmRequests.compressedPngPartCount === 0
+        wasmRequests.compressedPngPartCount +
+            wasmRequests.compressedCdnPartCount === 0
     ) {
         failures.push(
-            "Chunked loading did not use compressed Wasm PNG parts"
+            "Chunked loading did not use supported compressed Wasm parts"
         );
     }
     if (
         expectChunkedWasm &&
         supportsStreamingDecompression &&
-        wasmRequests.compressedNonPngPartCount > 0
+        wasmRequests.compressedUnsupportedPartCount > 0
     ) {
         failures.push(
-            "Chunked loading used non-PNG compressed Wasm payloads"
+            "Chunked loading used unsupported compressed Wasm payloads"
         );
     }
     if (
@@ -385,8 +386,13 @@ function summarizeWasmRequests(urls) {
         compressedPngPartCount: paths.filter((path) =>
             path.includes(".payload.part-") && path.endsWith(".png")
         ).length,
-        compressedNonPngPartCount: paths.filter((path) =>
-            path.includes(".payload.part-") && !path.endsWith(".png")
+        compressedCdnPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") && path.endsWith(".bin")
+        ).length,
+        compressedUnsupportedPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") &&
+            !path.endsWith(".png") &&
+            !path.endsWith(".bin")
         ).length
     };
 }

@@ -112,8 +112,10 @@
             const searchParams = new URLSearchParams(
                 window.location.search,
             );
+            const isPagesHost =
+                window.location.hostname.endsWith(".github.io");
             const useChunkLoader =
-                window.location.hostname.endsWith(".github.io") ||
+                isPagesHost ||
                 searchParams.get("chunkedWasm") === "true";
             if (!useChunkLoader) {
                 return;
@@ -391,7 +393,8 @@
                         compressionFormat === "gzip" ||
                         compressionFormat === "gzip-base64" ||
                         compressionFormat === "gzip-base64-script" ||
-                        compressionFormat === "gzip-rgb-png"
+                        compressionFormat === "gzip-rgb-png" ||
+                        compressionFormat === "gzip-cdn-chunks"
                     );
                 const payload = useCompression
                     ? manifest.compression
@@ -399,6 +402,9 @@
                 const useImageCompression =
                     useCompression &&
                     compressionFormat === "gzip-rgb-png";
+                const useCdnCompression =
+                    useCompression &&
+                    compressionFormat === "gzip-cdn-chunks";
                 const useScriptCompression =
                     useCompression &&
                     compressionFormat === "gzip-base64-script";
@@ -411,6 +417,27 @@
                             new URL(chunkEntry.name, manifestUrl),
                             chunkEntry.byteLength,
                         );
+                    }
+                    if (useCdnCompression) {
+                        const localUrl = new URL(
+                            chunkEntry.name,
+                            manifestUrl,
+                        );
+                        if (
+                            !isPagesHost ||
+                            typeof chunkEntry.cdnUrl !== "string"
+                        ) {
+                            return fetchChunkWithRetry(localUrl, false);
+                        }
+                        return fetchChunkWithRetry(
+                            new URL(chunkEntry.cdnUrl),
+                            false,
+                        ).catch(() => {
+                            setStatus(
+                                "Retrying renderer download from origin",
+                            );
+                            return fetchChunkWithRetry(localUrl, false);
+                        });
                     }
                     return queueChunkRequest(() =>
                         useScriptCompression

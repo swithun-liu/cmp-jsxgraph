@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { copyFile, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { deflateSync, gzipSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
+import { deflateSync, gunzipSync, gzipSync } from 'node:zlib';
 
 const CHUNK_SIZE_BYTES = 512 * 1024;
 const PNG_WIDTH_PIXELS = 1024;
@@ -10,6 +12,21 @@ const PNG_SIGNATURE = Buffer.from([
 ]);
 const CRC_TABLE = createCrcTable();
 const outputDirectory = process.argv[2];
+const repositoryRoot = resolve(
+  fileURLToPath(new URL('..', import.meta.url)),
+);
+const prebuiltAssetDirectory = resolve(
+  repositoryRoot,
+  'tools/pages-wasm-assets',
+);
+const repositoryRevision = execFileSync(
+  'git',
+  ['rev-parse', 'HEAD'],
+  { cwd: repositoryRoot, encoding: 'utf8' },
+).trim();
+const cdnBaseUrl =
+  `https://cdn.jsdelivr.net/gh/swithun-liu/cmp-jsxgraph@` +
+  `${repositoryRevision}/tools/pages-wasm-assets`;
 
 if (!outputDirectory) {
   throw new Error('Expected the Web distribution directory');
@@ -19,7 +36,7 @@ const outputFiles = await readdir(outputDirectory);
 await Promise.all(
   outputFiles
     .filter((fileName) =>
-      /\.wasm\.part-\d+$|\.payload\.part-\d+(?:\.(?:json|js|png))?$/.test(
+      /\.wasm\.part-\d+$|\.payload\.part-\d+(?:\.(?:bin|json|js|png))?$/.test(
         fileName,
       ),
     )
@@ -37,21 +54,27 @@ if (wasmFiles.length === 0) {
 for (const wasmFile of wasmFiles) {
   const wasmPath = resolve(outputDirectory, wasmFile);
   const wasmBytes = await readFile(wasmPath);
-  const compressedWasmBytes = gzipSync(wasmBytes, { level: 9 });
   const chunks = await writeChunks(wasmFile, wasmBytes);
   const wasmAssetId = wasmFile.slice(0, -'.wasm'.length);
-  const compressedChunks = await writePngChunks(
-    `${wasmAssetId}.payload`,
-    compressedWasmBytes,
+  const prebuiltCompression = await preparePrebuiltCompression(
+    wasmFile,
+    wasmBytes,
   );
+  const compressedWasmBytes = prebuiltCompression === null
+    ? gzipSync(wasmBytes, { level: 9 })
+    : null;
+  const compression = prebuiltCompression ?? {
+    format: 'gzip-rgb-png',
+    byteLength: compressedWasmBytes.length,
+    chunks: await writePngChunks(
+      `${wasmAssetId}.payload`,
+      compressedWasmBytes,
+    ),
+  };
   const manifest = {
     byteLength: wasmBytes.length,
     chunks,
-    compression: {
-      format: 'gzip-rgb-png',
-      byteLength: compressedWasmBytes.length,
-      chunks: compressedChunks,
-    },
+    compression,
   };
 
   await writeFile(
@@ -60,7 +83,7 @@ for (const wasmFile of wasmFiles) {
   );
   console.log(
     `Split ${wasmFile} into ${chunks.length} raw and ` +
-      `${compressedChunks.length} gzip PNG chunks.`,
+      `${compression.chunks.length} ${compression.format} chunks.`,
   );
 }
 
@@ -106,6 +129,49 @@ async function writePngChunks(fileName, bytes) {
     });
   }
   return chunks;
+}
+
+async function preparePrebuiltCompression(wasmFile, wasmBytes) {
+  const wasmAssetId = wasmFile.slice(0, -'.wasm'.length);
+  const prefix = `${wasmAssetId}.payload.part-`;
+  const chunkNames = (await readdir(prebuiltAssetDirectory))
+    .filter((fileName) =>
+      fileName.startsWith(prefix) && fileName.endsWith('.bin'),
+    )
+    .sort();
+  if (chunkNames.length === 0) {
+    return null;
+  }
+
+  const chunkBytes = await Promise.all(
+    chunkNames.map((chunkName) =>
+      readFile(resolve(prebuiltAssetDirectory, chunkName)),
+    ),
+  );
+  const compressedBytes = Buffer.concat(chunkBytes);
+  const decodedWasm = gunzipSync(compressedBytes);
+  if (!decodedWasm.equals(wasmBytes)) {
+    throw new Error(
+      `Prebuilt payload for ${wasmFile} does not match the Web build`,
+    );
+  }
+  await Promise.all(
+    chunkNames.map((chunkName) =>
+      copyFile(
+        resolve(prebuiltAssetDirectory, chunkName),
+        resolve(outputDirectory, chunkName),
+      ),
+    ),
+  );
+  return {
+    format: 'gzip-cdn-chunks',
+    byteLength: compressedBytes.length,
+    chunks: chunkNames.map((chunkName, index) => ({
+      name: chunkName,
+      byteLength: chunkBytes[index].length,
+      cdnUrl: `${cdnBaseUrl}/${chunkName}`,
+    })),
+  };
 }
 
 function encodeRgbPng(bytes) {
