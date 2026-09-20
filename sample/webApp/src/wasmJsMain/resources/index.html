@@ -118,7 +118,6 @@
             }
 
             const nativeFetch = window.fetch.bind(window);
-            const nativeInstantiate = WebAssembly.instantiate.bind(WebAssembly);
             let loadedBytes = 0;
             let totalBytes = 0;
 
@@ -157,35 +156,61 @@
                 totalBytes += manifest.byteLength;
                 setProgress();
 
-                const bytes = new Uint8Array(manifest.byteLength);
-                const chunks = await Promise.all(
-                    manifest.chunks.map(async (chunkName) => {
-                        const chunkResponse = await nativeFetch(
-                            new URL(chunkName, manifestUrl),
-                        );
-                        if (!chunkResponse.ok) {
-                            throw new Error(`Failed to load ${chunkName}`);
+                const chunkResults = manifest.chunks.map(
+                    async (chunkName) => {
+                        try {
+                            const chunkResponse = await nativeFetch(
+                                new URL(chunkName, manifestUrl),
+                            );
+                            if (!chunkResponse.ok) {
+                                throw new Error(
+                                    `Failed to load ${chunkName}`,
+                                );
+                            }
+                            const chunk = new Uint8Array(
+                                await chunkResponse.arrayBuffer(),
+                            );
+                            loadedBytes += chunk.byteLength;
+                            setProgress();
+                            return { chunk };
+                        } catch (error) {
+                            return { error };
                         }
-                        const chunk = new Uint8Array(
-                            await chunkResponse.arrayBuffer(),
-                        );
-                        loadedBytes += chunk.byteLength;
-                        setProgress();
-                        return chunk;
-                    }),
+                    },
                 );
-                let offset = 0;
-                for (const chunk of chunks) {
-                    bytes.set(chunk, offset);
-                    offset += chunk.byteLength;
-                }
-                if (offset !== manifest.byteLength) {
-                    throw new Error(
-                        `Chunked Wasm length ${offset} does not match ` +
-                            `${manifest.byteLength}`,
-                    );
-                }
-                return bytes;
+                let chunkIndex = 0;
+                let streamedBytes = 0;
+                const body = new ReadableStream({
+                    async pull(controller) {
+                        if (chunkIndex === chunkResults.length) {
+                            if (streamedBytes !== manifest.byteLength) {
+                                controller.error(
+                                    new Error(
+                                        `Chunked Wasm length ` +
+                                            `${streamedBytes} does not match ` +
+                                            `${manifest.byteLength}`,
+                                    ),
+                                );
+                                return;
+                            }
+                            controller.close();
+                            return;
+                        }
+
+                        const result = await chunkResults[chunkIndex];
+                        chunkIndex += 1;
+                        if (result.error !== undefined) {
+                            controller.error(result.error);
+                            return;
+                        }
+                        controller.enqueue(result.chunk);
+                        streamedBytes += result.chunk.byteLength;
+                    },
+                });
+                return new Response(
+                    body,
+                    { headers: { "Content-Type": "application/wasm" } },
+                );
             };
 
             window.fetch = async (input, options) => {
@@ -197,21 +222,8 @@
                     return nativeFetch(input, options);
                 }
 
-                setStatus("Downloading Kotlin/Wasm renderer");
-                return new Response(
-                    await fetchChunkedWasm(requestUrl),
-                    { headers: { "Content-Type": "application/wasm" } },
-                );
-            };
-
-            WebAssembly.instantiateStreaming = async (source, imports, options) => {
-                setStatus("Compiling renderer");
-                const response = await source;
-                return nativeInstantiate(
-                    await response.arrayBuffer(),
-                    imports,
-                    options,
-                );
+                setStatus("Downloading and compiling renderer");
+                return fetchChunkedWasm(requestUrl);
             };
 
             const showLoadingFailure = () => {

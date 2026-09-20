@@ -93,6 +93,11 @@ try {
         omitBackground: false
     });
     const wasmRequests = summarizeWasmRequests(requestedUrls);
+    const usesNativeInstantiateStreaming = await page.evaluate(() =>
+        Function.prototype.toString
+            .call(WebAssembly.instantiateStreaming)
+            .includes("[native code]")
+    );
     const failures = [];
     if (firstContentMillis > maximumFirstContentMillis) {
         failures.push(
@@ -128,6 +133,11 @@ try {
                 `observed ${JSON.stringify(wasmRequests)}`
         );
     }
+    if (expectChunkedWasm && !usesNativeInstantiateStreaming) {
+        failures.push(
+            "Chunked loading replaced WebAssembly.instantiateStreaming"
+        );
+    }
     const report = {
         schemaVersion: 1,
         caseCount: expectedCaseCount,
@@ -146,6 +156,7 @@ try {
             maximumRetainedHeapBytes
         },
         wasmRequests,
+        usesNativeInstantiateStreaming,
         browserErrors: pageErrors,
         failures
     };
