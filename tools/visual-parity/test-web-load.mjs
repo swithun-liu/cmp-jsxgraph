@@ -25,7 +25,6 @@ const maximumRetainedHeapBytes = readPositiveNumber(
     96 * 1024 * 1024
 );
 const expectChunkedWasm = process.env.EXPECT_CHUNKED_WASM === "true";
-const expectedEmbeddedWasm = process.env.EXPECT_EMBEDDED_WASM;
 const simulateCompressedPartRetry =
     process.env.SIMULATE_COMPRESSED_PART_RETRY === "true";
 const pageErrors = [];
@@ -122,9 +121,6 @@ try {
     const startedAt = performance.now();
     const url = new URL(baseUrl);
     url.searchParams.set("load", "true");
-    if (simulateCompressedPartRetry) {
-        url.searchParams.set("embeddedWasm", "false");
-    }
     await page.goto(url.href, {
         waitUntil: "domcontentloaded",
         timeout: 60_000
@@ -186,11 +182,6 @@ try {
     const supportsStreamingDecompression = await page.evaluate(() =>
         typeof DecompressionStream === "function"
     );
-    const usesEmbeddedWasm = await page.evaluate(() =>
-        document.querySelector("#cmp-jsxgraph-embedded-wasm") !== null &&
-        new URLSearchParams(window.location.search)
-            .get("embeddedWasm") !== "false"
-    );
     maximumConcurrentCompressedPartRequests = await page.evaluate(() =>
         globalThis.__cmpJsxGraphScriptChunkMetrics?.maximum ?? 0
     );
@@ -218,44 +209,16 @@ try {
     }
     if (
         expectChunkedWasm &&
-        wasmRequests.directCount > 0
+        (
+            wasmRequests.manifestCount === 0 ||
+            wasmRequests.partCount === 0 ||
+            wasmRequests.directCount > 0
+        )
     ) {
         failures.push(
             "Expected chunked Wasm requests without direct Wasm downloads, " +
                 `observed ${JSON.stringify(wasmRequests)}`
         );
-    }
-    if (
-        expectChunkedWasm &&
-        usesEmbeddedWasm &&
-        (
-            wasmRequests.manifestCount > 0 ||
-            wasmRequests.partCount > 0
-        )
-    ) {
-        failures.push(
-            "Embedded Wasm loading issued external chunk requests, " +
-                `observed ${JSON.stringify(wasmRequests)}`
-        );
-    }
-    if (
-        expectChunkedWasm &&
-        !usesEmbeddedWasm &&
-        (
-            wasmRequests.manifestCount === 0 ||
-            wasmRequests.partCount === 0
-        )
-    ) {
-        failures.push(
-            "Expected external chunked Wasm requests, " +
-                `observed ${JSON.stringify(wasmRequests)}`
-        );
-    }
-    if (expectedEmbeddedWasm === "true" && !usesEmbeddedWasm) {
-        failures.push("Expected embedded Wasm payloads");
-    }
-    if (expectedEmbeddedWasm === "false" && usesEmbeddedWasm) {
-        failures.push("Expected external Wasm payload fallback");
     }
     if (expectChunkedWasm && !usesNativeInstantiateStreaming) {
         failures.push(
@@ -264,26 +227,25 @@ try {
     }
     if (
         expectChunkedWasm &&
-        !usesEmbeddedWasm &&
         supportsStreamingDecompression &&
-        wasmRequests.compressedScriptPartCount === 0
+        wasmRequests.compressedPngPartCount === 0
     ) {
         failures.push(
-            "Chunked loading did not use compressed Wasm script parts"
+            "Chunked loading did not use compressed Wasm PNG parts"
         );
     }
     if (
         expectChunkedWasm &&
         supportsStreamingDecompression &&
-        wasmRequests.compressedNonScriptPartCount > 0
+        wasmRequests.compressedNonPngPartCount > 0
     ) {
         failures.push(
-            "Chunked loading used fetch-based compressed Wasm payloads"
+            "Chunked loading used non-PNG compressed Wasm payloads"
         );
     }
     if (
         expectChunkedWasm &&
-        !usesEmbeddedWasm &&
+        wasmRequests.compressedScriptPartCount > 0 &&
         maximumConcurrentCompressedPartRequests > 1
     ) {
         failures.push(
@@ -318,8 +280,6 @@ try {
         },
         wasmRequests,
         maximumConcurrentCompressedPartRequests,
-        expectedEmbeddedWasm,
-        usesEmbeddedWasm,
         simulateCompressedPartRetry,
         simulatedFailedCompressedPartPath,
         simulatedRetryRequestCount,
@@ -422,8 +382,11 @@ function summarizeWasmRequests(urls) {
         compressedScriptPartCount: paths.filter((path) =>
             path.includes(".payload.part-") && path.endsWith(".js")
         ).length,
-        compressedNonScriptPartCount: paths.filter((path) =>
-            path.includes(".payload.part-") && !path.endsWith(".js")
+        compressedPngPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") && path.endsWith(".png")
+        ).length,
+        compressedNonPngPartCount: paths.filter((path) =>
+            path.includes(".payload.part-") && !path.endsWith(".png")
         ).length
     };
 }

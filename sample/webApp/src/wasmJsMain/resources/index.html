@@ -107,7 +107,6 @@
             to { transform: translateX(455%); }
         }
     </style>
-    <!-- CMP_JSXGRAPH_EMBEDDED_WASM -->
     <script>
         (() => {
             const searchParams = new URLSearchParams(
@@ -120,20 +119,10 @@
                 return;
             }
 
-            const embeddedWasmElement = document.querySelector(
-                "#cmp-jsxgraph-embedded-wasm",
-            );
-            const embeddedWasmPayload = embeddedWasmElement === null
-                ? null
-                : JSON.parse(embeddedWasmElement.textContent);
-            const embeddedWasmAssets =
-                searchParams.get("embeddedWasm") === "false" ||
-                typeof embeddedWasmPayload?.assets !== "object"
-                    ? {}
-                    : embeddedWasmPayload.assets;
             const nativeFetch = window.fetch.bind(window);
             const chunkRequestAttempts = 3;
             const chunkRequestTimeoutMillis = 15_000;
+            const imageChunkRequestTimeoutMillis = 60_000;
             const scriptChunkPayloads = new Map();
             const activeScriptChunkNames = new Set();
             let loadedBytes = 0;
@@ -316,20 +305,84 @@
                 }),
             );
 
+            const loadImageChunkWithRetry = (
+                chunkUrl,
+                byteLength,
+            ) => retryChunkRequest(
+                chunkUrl,
+                (attemptUrl) => new Promise((resolve, reject) => {
+                    const image = new Image();
+                    let settled = false;
+                    const finish = (error) => {
+                        if (settled) {
+                            return;
+                        }
+                        settled = true;
+                        window.clearTimeout(timeoutId);
+                        if (error !== null) {
+                            reject(error);
+                            return;
+                        }
+                        try {
+                            const canvas = document.createElement("canvas");
+                            canvas.width = image.naturalWidth;
+                            canvas.height = image.naturalHeight;
+                            const context = canvas.getContext(
+                                "2d",
+                                { willReadFrequently: true },
+                            );
+                            if (context === null) {
+                                throw new Error(
+                                    `Could not decode ${chunkUrl}`,
+                                );
+                            }
+                            context.drawImage(image, 0, 0);
+                            const pixels = context.getImageData(
+                                0,
+                                0,
+                                canvas.width,
+                                canvas.height,
+                            ).data;
+                            const bytes = new Uint8Array(byteLength);
+                            for (
+                                let byteIndex = 0;
+                                byteIndex < byteLength;
+                                byteIndex += 1
+                            ) {
+                                const pixelIndex = Math.floor(
+                                    byteIndex / 3,
+                                );
+                                bytes[byteIndex] = pixels[
+                                    pixelIndex * 4 + byteIndex % 3
+                                ];
+                            }
+                            resolve(bytes);
+                        } catch (decodeError) {
+                            reject(decodeError);
+                        }
+                    };
+                    const timeoutId = window.setTimeout(
+                        () => finish(new Error(
+                            `Timed out loading ${chunkUrl}`,
+                        )),
+                        imageChunkRequestTimeoutMillis,
+                    );
+                    image.onload = () => finish(null);
+                    image.onerror = () => finish(new Error(
+                        `Failed to load image ${chunkUrl}`,
+                    ));
+                    image.src = attemptUrl.href;
+                }),
+            );
+
             const fetchChunkedWasm = async (requestUrl) => {
                 const manifestUrl = new URL(requestUrl);
                 manifestUrl.pathname = `${manifestUrl.pathname}.chunks.json`;
-                const assetName = decodeURIComponent(
-                    requestUrl.pathname.split("/").at(-1),
-                );
-                let manifest = embeddedWasmAssets[assetName];
-                if (manifest === undefined) {
-                    const manifestResponse = await nativeFetch(manifestUrl);
-                    if (!manifestResponse.ok) {
-                        throw new Error(`Failed to load ${manifestUrl}`);
-                    }
-                    manifest = await manifestResponse.json();
+                const manifestResponse = await nativeFetch(manifestUrl);
+                if (!manifestResponse.ok) {
+                    throw new Error(`Failed to load ${manifestUrl}`);
                 }
+                const manifest = await manifestResponse.json();
                 const compressionFormat = manifest.compression?.format;
                 const useCompression =
                     typeof DecompressionStream === "function" &&
@@ -338,48 +391,49 @@
                         compressionFormat === "gzip" ||
                         compressionFormat === "gzip-base64" ||
                         compressionFormat === "gzip-base64-script" ||
-                        compressionFormat === "gzip-base64-embedded"
+                        compressionFormat === "gzip-rgb-png"
                     );
                 const payload = useCompression
                     ? manifest.compression
                     : manifest;
-                const useEmbeddedCompression =
+                const useImageCompression =
                     useCompression &&
-                    compressionFormat === "gzip-base64-embedded";
+                    compressionFormat === "gzip-rgb-png";
                 const useScriptCompression =
                     useCompression &&
                     compressionFormat === "gzip-base64-script";
                 totalBytes += payload.byteLength;
                 setProgress();
 
+                const loadChunk = (chunkEntry) => {
+                    if (useImageCompression) {
+                        return loadImageChunkWithRetry(
+                            new URL(chunkEntry.name, manifestUrl),
+                            chunkEntry.byteLength,
+                        );
+                    }
+                    return queueChunkRequest(() =>
+                        useScriptCompression
+                            ? loadScriptChunkWithRetry(
+                                new URL(chunkEntry, manifestUrl),
+                                chunkEntry,
+                            )
+                            : fetchChunkWithRetry(
+                                new URL(chunkEntry, manifestUrl),
+                                useCompression &&
+                                    compressionFormat ===
+                                        "gzip-base64",
+                            ),
+                    );
+                };
                 const chunkResults = payload.chunks.map(
                     (chunkEntry) =>
-                        queueChunkRequest(async () => {
-                            const chunk =
-                                useEmbeddedCompression
-                                    ? decodeBase64(chunkEntry)
-                                    : useScriptCompression
-                                        ? await loadScriptChunkWithRetry(
-                                            new URL(
-                                                chunkEntry,
-                                                manifestUrl,
-                                            ),
-                                            chunkEntry,
-                                        )
-                                        : await fetchChunkWithRetry(
-                                            new URL(
-                                                chunkEntry,
-                                                manifestUrl,
-                                            ),
-                                            useCompression &&
-                                                compressionFormat ===
-                                                    "gzip-base64",
-                                        );
-                            loadedBytes += chunk.byteLength;
-                            setProgress();
-                            return chunk;
-                        }).then(
-                            (chunk) => ({ chunk }),
+                        loadChunk(chunkEntry).then(
+                            (chunk) => {
+                                loadedBytes += chunk.byteLength;
+                                setProgress();
+                                return { chunk };
+                            },
                             (error) => ({ error }),
                         ),
                 );

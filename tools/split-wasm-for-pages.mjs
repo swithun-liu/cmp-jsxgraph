@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { gzipSync } from 'node:zlib';
+import { deflateSync, gzipSync } from 'node:zlib';
 
 const CHUNK_SIZE_BYTES = 512 * 1024;
-const EMBEDDED_WASM_MARKER = '<!-- CMP_JSXGRAPH_EMBEDDED_WASM -->';
+const PNG_WIDTH_PIXELS = 1024;
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
+const CRC_TABLE = createCrcTable();
 const outputDirectory = process.argv[2];
 
 if (!outputDirectory) {
@@ -15,7 +19,9 @@ const outputFiles = await readdir(outputDirectory);
 await Promise.all(
   outputFiles
     .filter((fileName) =>
-      /\.wasm\.part-\d+$|\.payload\.part-\d+(?:\.json|\.js)?$/.test(fileName),
+      /\.wasm\.part-\d+$|\.payload\.part-\d+(?:\.(?:json|js|png))?$/.test(
+        fileName,
+      ),
     )
     .map((fileName) => rm(resolve(outputDirectory, fileName))),
 );
@@ -28,23 +34,21 @@ if (wasmFiles.length === 0) {
   throw new Error(`No Wasm files found in ${outputDirectory}`);
 }
 
-const embeddedAssets = {};
 for (const wasmFile of wasmFiles) {
   const wasmPath = resolve(outputDirectory, wasmFile);
   const wasmBytes = await readFile(wasmPath);
   const compressedWasmBytes = gzipSync(wasmBytes, { level: 9 });
-  const compressedBase64Chunks = encodeChunks(compressedWasmBytes);
   const chunks = await writeChunks(wasmFile, wasmBytes);
   const wasmAssetId = wasmFile.slice(0, -'.wasm'.length);
-  const compressedChunks = await writeScriptChunks(
+  const compressedChunks = await writePngChunks(
     `${wasmAssetId}.payload`,
-    compressedBase64Chunks,
+    compressedWasmBytes,
   );
   const manifest = {
     byteLength: wasmBytes.length,
     chunks,
     compression: {
-      format: 'gzip-base64-script',
+      format: 'gzip-rgb-png',
       byteLength: compressedWasmBytes.length,
       chunks: compressedChunks,
     },
@@ -54,24 +58,12 @@ for (const wasmFile of wasmFiles) {
     `${wasmPath}.chunks.json`,
     `${JSON.stringify(manifest)}\n`,
   );
-  embeddedAssets[wasmFile] = {
-    ...manifest,
-    compression: {
-      format: 'gzip-base64-embedded',
-      byteLength: compressedWasmBytes.length,
-      chunks: compressedBase64Chunks,
-    },
-  };
   console.log(
     `Split ${wasmFile} into ${chunks.length} raw and ` +
-      `${compressedChunks.length} gzip script chunks.`,
+      `${compressedChunks.length} gzip PNG chunks.`,
   );
 }
 
-await embedWasmAssets({
-  schemaVersion: 1,
-  assets: embeddedAssets,
-});
 await versionEntryScript();
 
 async function writeChunks(fileName, bytes) {
@@ -91,60 +83,93 @@ async function writeChunks(fileName, bytes) {
   return chunks;
 }
 
-function encodeChunks(bytes) {
+async function writePngChunks(fileName, bytes) {
   const chunks = [];
   for (
-    let offset = 0;
+    let offset = 0, index = 0;
     offset < bytes.length;
-    offset += CHUNK_SIZE_BYTES
+    offset += CHUNK_SIZE_BYTES, index += 1
   ) {
-    chunks.push(
-      Buffer.from(
-        bytes.subarray(offset, offset + CHUNK_SIZE_BYTES),
-      ).toString('base64'),
+    const chunkBytes = bytes.subarray(
+      offset,
+      offset + CHUNK_SIZE_BYTES,
+    );
+    const chunkName =
+      `${fileName}.part-${index.toString().padStart(3, '0')}.png`;
+    await writeFile(
+      resolve(outputDirectory, chunkName),
+      encodeRgbPng(chunkBytes),
+    );
+    chunks.push({
+      name: chunkName,
+      byteLength: chunkBytes.length,
+    });
+  }
+  return chunks;
+}
+
+function encodeRgbPng(bytes) {
+  const pixelCount = Math.ceil(bytes.length / 3);
+  const height = Math.ceil(pixelCount / PNG_WIDTH_PIXELS);
+  const rowByteLength = PNG_WIDTH_PIXELS * 3;
+  const scanlines = Buffer.alloc((rowByteLength + 1) * height);
+  for (let row = 0; row < height; row += 1) {
+    const sourceOffset = row * rowByteLength;
+    const sourceEnd = Math.min(sourceOffset + rowByteLength, bytes.length);
+    bytes.copy(
+      scanlines,
+      row * (rowByteLength + 1) + 1,
+      sourceOffset,
+      sourceEnd,
     );
   }
-  return chunks;
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(PNG_WIDTH_PIXELS, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 2;
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    createPngChunk('IHDR', header),
+    createPngChunk(
+      'IDAT',
+      deflateSync(scanlines, { level: 9 }),
+    ),
+    createPngChunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
-async function writeScriptChunks(fileName, base64Chunks) {
-  const chunks = [];
-  for (const [index, base64] of base64Chunks.entries()) {
-    const chunkName =
-      `${fileName}.part-${index.toString().padStart(3, '0')}.js`;
-    const source =
-      `globalThis.__cmpJsxGraphRegisterWasmChunk(` +
-      `${JSON.stringify(chunkName)},${JSON.stringify(base64)});\n`;
-    await writeFile(resolve(outputDirectory, chunkName), source);
-    chunks.push(chunkName);
-  }
-  return chunks;
+function createPngChunk(type, data) {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const chunk = Buffer.alloc(data.length + 12);
+  chunk.writeUInt32BE(data.length, 0);
+  typeBytes.copy(chunk, 4);
+  data.copy(chunk, 8);
+  chunk.writeUInt32BE(
+    crc32(Buffer.concat([typeBytes, data])),
+    data.length + 8,
+  );
+  return chunk;
 }
 
-async function embedWasmAssets(payload) {
-  const indexPath = resolve(outputDirectory, 'index.html');
-  const indexHtml = await readFile(indexPath, 'utf8');
-  const embeddedScript =
-    /<script id="cmp-jsxgraph-embedded-wasm" type="application\/json">[^<]*<\/script>/;
-  const target = indexHtml.includes(EMBEDDED_WASM_MARKER)
-    ? EMBEDDED_WASM_MARKER
-    : embeddedScript;
-  if (
-    typeof target !== 'string' &&
-    !target.test(indexHtml)
-  ) {
-    throw new Error(`Could not find Wasm marker in ${indexPath}`);
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
   }
-  const embeddedPayload =
-    `    <script id="cmp-jsxgraph-embedded-wasm" ` +
-    `type="application/json">${JSON.stringify(payload)}</script>`;
-  await writeFile(
-    indexPath,
-    indexHtml.replace(target, embeddedPayload),
-  );
-  console.log(
-    `Embedded ${Object.keys(payload.assets).length} Wasm assets in index.html.`,
-  );
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function createCrcTable() {
+  return Array.from({ length: 256 }, (_, index) => {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) === 1
+        ? 0xedb88320 ^ (value >>> 1)
+        : value >>> 1;
+    }
+    return value >>> 0;
+  });
 }
 
 async function versionEntryScript() {
