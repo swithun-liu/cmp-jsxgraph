@@ -7,6 +7,11 @@ plugins {
     id("maven-publish")
 }
 
+val normalizedKlibCompilerArguments = listOf(
+    "-Xklib-normalize-absolute-path",
+    "-Xklib-relative-path-base=${rootProject.projectDir.absolutePath}",
+)
+
 @OptIn(ExperimentalWasmDsl::class)
 kotlin {
     android {
@@ -21,10 +26,25 @@ kotlin {
     jvm()
     wasmJs {
         browser()
+        compilerOptions {
+            freeCompilerArgs.addAll(normalizedKlibCompilerArguments)
+        }
     }
-    iosX64()
-    iosArm64()
-    iosSimulatorArm64()
+    iosX64 {
+        compilerOptions {
+            freeCompilerArgs.addAll(normalizedKlibCompilerArguments)
+        }
+    }
+    iosArm64 {
+        compilerOptions {
+            freeCompilerArgs.addAll(normalizedKlibCompilerArguments)
+        }
+    }
+    iosSimulatorArm64 {
+        compilerOptions {
+            freeCompilerArgs.addAll(normalizedKlibCompilerArguments)
+        }
+    }
 
     sourceSets {
         commonMain.dependencies {

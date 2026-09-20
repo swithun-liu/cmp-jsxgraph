@@ -1,5 +1,6 @@
 package com.swithun.jsxgraph.core.base
 
+import com.swithun.jsxgraph.core.GMResult
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -138,6 +139,113 @@ class CoordsElementTest {
         assertContentEquals(doubleArrayOf(1.0, 450.0, 280.0), element.coords.scrCoords)
         assertContentEquals(doubleArrayOf(1.0, 4.0, -2.0), element.actualCoords.usrCoords)
     }
+
+    @Test
+    fun nonPointTransformLifecycleUsesActualCoordsAndStableBaseElement() {
+        val base = CoordsElement(
+            board = board,
+            coordinates = doubleArrayOf(3.0, 2.0),
+            id = "base",
+        )
+        val element = CoordsElement(
+            board = board,
+            coordinates = doubleArrayOf(0.0, 0.0),
+            id = "transformed",
+        )
+        val translate = transformation("translate", 2.0, 3.0)
+        val scale = transformation("scale", 2.0, -1.0)
+
+        element.addTransform(base, listOf(translate, scale))
+        element.updateTransform(fromParent = true)
+
+        assertSame(base, element.baseElement)
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 0.0),
+            element.coords.usrCoords,
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 10.0, -5.0),
+            element.actualCoords.usrCoords,
+        )
+        assertNull(element.transformationEvaluationError)
+
+        val otherBase = CoordsElement(
+            board = board,
+            coordinates = doubleArrayOf(100.0, 100.0),
+        )
+        element.addTransform(
+            otherBase,
+            transformation("translate", -1.0, 4.0),
+        )
+        element.updateTransform(fromParent = false)
+
+        assertSame(base, element.baseElement)
+        assertContentEquals(
+            doubleArrayOf(1.0, 9.0, -1.0),
+            element.actualCoords.usrCoords,
+        )
+    }
+
+    @Test
+    fun removeTransformDeletesFirstMatchAndClearResetsBase() {
+        val element = CoordsElement(
+            board = board,
+            coordinates = doubleArrayOf(2.0, -2.0),
+            id = "element",
+        )
+        val translate = transformation("translate", 1.0, 2.0)
+        val scale = transformation("scale", 3.0, 4.0)
+        element.addTransform(
+            element,
+            listOf(translate, scale, translate),
+        )
+
+        element.removeTransform(translate)
+
+        assertEquals(listOf(scale, translate), element.transformations)
+        assertSame(element, element.baseElement)
+
+        element.clearTransforms()
+
+        assertTrue(element.transformations.isEmpty())
+        assertNull(element.baseElement)
+        assertNull(element.transformationEvaluationError)
+    }
+
+    @Test
+    fun singularTransformPreimageReturnsStructuredPositionError() {
+        val point = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(2.0, 3.0),
+            ),
+        ).value
+        val singular = transformation("scale", 0.0, 1.0)
+        singular.bindTo(point)
+        board.update()
+
+        val failure = assertIs<
+            GMResult.Err<
+                CoordinateTransformationError.NonInvertibleCompositeMatrix
+                >
+            >(
+            point.setPositionDirectlyResult(
+                method = Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(4.0, 5.0),
+            ),
+        )
+
+        assertEquals(1, failure.error.transformationCount)
+        assertEquals(failure.error, point.transformationEvaluationError)
+    }
+
+    private fun transformation(
+        type: String,
+        vararg parameters: Double,
+    ): Transformation =
+        assertIs<GMResult.Ok<Transformation>>(
+            Transformation.create(type, parameters),
+        ).value
 
     private class RecordingCoordsElement(
         board: Board,

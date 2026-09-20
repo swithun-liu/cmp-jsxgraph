@@ -3,6 +3,8 @@ package com.swithun.jsxgraph.core.parser
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Const
+import com.swithun.jsxgraph.core.base.IntersectionPoint
+import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -178,6 +180,220 @@ class JessieCodeElementMethodMapTest {
             assertIs<JessieCodeRuntimeError.InvalidArgumentType>(
                 constraintType,
             ).actual,
+        )
+    }
+
+    @Test
+    fun arcAndSectorMethodsExposeTranslatedMeasurementsAndPoints() {
+        val values = array(
+            evaluate(
+                source =
+                    "A = point(-4, -1); B = point(1, 4); " +
+                        "C = point(5, -2); " +
+                        "a = arc(B, A, C); " +
+                        "n = nonreflexangle(A, B, C) << radius: 2 >>; " +
+                        "r = reflexangle(A, B, C) << radius: 2 >>; " +
+                        "[a.Value(\"radians\"), n.Value(), " +
+                        "r.Value(\"degrees\"), n.Radius(), V(n), " +
+                        "n.center == B, n.point2 == A, " +
+                        "n.Value(\"turn\")];",
+                board = board(),
+            ),
+        )
+
+        assertEquals(
+            1.3734007669450157,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[0],
+            ).value,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            1.3734007669450157,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[1],
+            ).value,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            281.30993247402023,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[2],
+            ).value,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(2.0),
+            values.values[3],
+        )
+        assertEquals(values.values[1], values.values[4])
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[5],
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[6],
+        )
+        assertSame(
+            JessieCodeRuntimeValue.UndefinedValue,
+            values.values[7],
+        )
+    }
+
+    @Test
+    fun ellipseExposesItsMajorAxisAndCenterMetadata() {
+        val values = array(
+            evaluate(
+                source =
+                    "F1 = point(-3, 0); F2 = point(3, 0); C = point(0, 5); " +
+                        "e = ellipse(F1, F2, C) << " +
+                        "doAdvancedPlot: false, numberPointsHigh: 8 >>; " +
+                        "[e.majorAxis(), e.center == e.midpoint, " +
+                        "e.subs.center == e.center];",
+                board = board(),
+            ),
+        )
+
+        assertEquals(
+            11.661903789690601,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[0],
+            ).value,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[1],
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[2],
+        )
+    }
+
+    @Test
+    fun hyperbolaExposesItsMajorAxisAndCenterMetadata() {
+        val values = array(
+            evaluate(
+                source =
+                    "F1 = point(-3, 0); F2 = point(3, 0); C = point(5, 2); " +
+                        "h = hyperbola(F1, F2, C) << " +
+                        "doAdvancedPlot: false, numberPointsHigh: 8 >>; " +
+                        "[h.majorAxis(), h.center == h.midpoint, " +
+                        "h.subs.center == h.center];",
+                board = board(),
+            ),
+        )
+
+        assertEquals(
+            5.417784126489131,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[0],
+            ).value,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[1],
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.BooleanValue(true),
+            values.values[2],
+        )
+    }
+
+    @Test
+    fun tangentToExposesItsPublicPointAndPolarReferences() {
+        val board = board("tangent-to-properties")
+        val values = array(
+            evaluate(
+                source =
+                    """
+                    O = point(0, 0);
+                    R = point(3, 0);
+                    C = circle(O, R);
+                    P = point(5, 1);
+                    T = tangentto(C, P) <<
+                        id: "tangent",
+                        name: "",
+                        point1: << id: "tangentPoint1", name: "" >>,
+                        point2: << id: "tangentPoint2", name: "" >>,
+                        polar: <<
+                            id: "polar",
+                            name: "",
+                            point1: << id: "polarPoint1", name: "" >>,
+                            point2: << id: "polarPoint2", name: "" >>
+                        >>,
+                        point: << id: "intersection", name: "" >>
+                    >>;
+                    [T.point, T.polar, T.point1, T.point2];
+                    """.trimIndent(),
+                board = board,
+            ),
+        )
+        val tangent = assertIs<Line>(board.select("tangent"))
+        val intersection = assertIs<IntersectionPoint>(
+            element(values.values[0]),
+        )
+        val polar = assertIs<Line>(element(values.values[1]))
+
+        assertSame(tangent.tangentToPoint, intersection)
+        assertSame(tangent.tangentToPolar, polar)
+        assertSame(tangent.point1, element(values.values[2]))
+        assertSame(tangent.point2, element(values.values[3]))
+
+        val plainLinePoint = evaluateError(
+            source =
+                "A = point(0, 0); B = point(1, 1); " +
+                    "L = line(A, B); L.point;",
+            board = board("plain-line-point"),
+        )
+        assertEquals(
+            "point",
+            assertIs<JessieCodeRuntimeError.ElementPropertyUnavailable>(
+                plainLinePoint,
+            ).property,
+        )
+        val plainLinePolar = evaluateError(
+            source =
+                "A = point(0, 0); B = point(1, 1); " +
+                    "L = line(A, B); L.polar;",
+            board = board("plain-line-polar"),
+        )
+        assertEquals(
+            "polar",
+            assertIs<JessieCodeRuntimeError.ElementPropertyUnavailable>(
+                plainLinePolar,
+            ).property,
+        )
+    }
+
+    @Test
+    fun riemannSumValueMethodAndValueBuiltinExposeCachedArea() {
+        val values = array(
+            evaluate(
+                source =
+                    """
+                    f = function (x) { return x * x + 1; };
+                    r = riemannsum(f, 3, "left", -1, 2);
+                    [r.Value(), V(r)];
+                    """.trimIndent(),
+                board = board(),
+            ),
+        )
+
+        assertEquals(
+            5.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[0],
+            ).value,
+        )
+        assertEquals(
+            5.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[1],
+            ).value,
         )
     }
 

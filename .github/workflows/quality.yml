@@ -64,6 +64,13 @@ jobs:
       - name: Verify Maven publication coordinates
         run: ./gradlew verifyPublicationCoordinates
 
+      - name: Verify Maven publication archives
+        run: |
+          ./gradlew \
+            :jsxgraph-core:publishAllPublicationsToBuildRepository \
+            :jsxgraph-compose:publishAllPublicationsToBuildRepository
+          bash tools/verify-publication-archives.sh
+
       - name: Build sample applications
         run: |
           ./gradlew \
@@ -170,6 +177,148 @@ jobs:
           VIEWPORT_HEIGHT=900 \
           MIN_CAPTURE_BYTES=8000 \
           npm --prefix tools/visual-parity run capture
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/arc-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_arc_direction_route \
+          INTERACTION_TRACE=direction_point_arc_flip \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/arc-composition-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=arc_compositions \
+          INTERACTION_TRACE=arc_composition_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/sector-composition-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=sector_compositions \
+          INTERACTION_TRACE=sector_composition_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/circumcircle-creator-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=circumcircle_creators \
+          INTERACTION_TRACE=circumcircle_creator_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/point-reflection-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=point_reflections \
+          INTERACTION_TRACE=point_reflection_source_drag \
+          npm --prefix tools/visual-parity run capture
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/circumcircle-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_circumcircle \
+          INTERACTION_TRACE=circumcircle_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/midpoint-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_midpoints \
+          INTERACTION_TRACE=midpoint_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/orthogonal-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_orthogonal_constructions \
+          INTERACTION_TRACE=orthogonal_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/dynamic-circle-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_interaction_dynamic_circle_radius \
+          INTERACTION_TRACE=dynamic_circle_radius_clamp \
+          npm --prefix tools/visual-parity run capture
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/dynamic-segment-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_fixed_length_segment \
+          INTERACTION_TRACE=dynamic_segment_length \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/curve-boolean-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=curve_boolean_clipping \
+          INTERACTION_TRACE=curve_boolean_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/inequality-line-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=inequalities \
+          INTERACTION_TRACE=inequality_line_parent_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/inequality-function-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=inequalities \
+          INTERACTION_TRACE=inequality_function_driver_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/vector-field-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=vector_fields \
+          INTERACTION_TRACE=vector_field_driver_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/slope-field-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=slope_fields \
+          INTERACTION_TRACE=slope_field_driver_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/ellipse-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=ellipses \
+          INTERACTION_TRACE=ellipse_point_drag \
+          npm --prefix tools/visual-parity run capture
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/stable/hyperbola-interaction \
+          VIEWPORT_WIDTH=1200 \
+          VIEWPORT_HEIGHT=900 \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=hyperbolas \
+          INTERACTION_TRACE=hyperbola_point_drag \
+          npm --prefix tools/visual-parity run capture
           BASE_URL=http://127.0.0.1:8093/ \
           OUTPUT_DIR=captures/stable/web-load \
           VIEWPORT_WIDTH=1200 \
@@ -177,6 +326,8 @@ jobs:
           npm --prefix tools/visual-parity run test:load
           BASE_URL=http://127.0.0.1:8093/ \
           npm --prefix tools/visual-parity run test:responsive
+          BASE_URL=http://127.0.0.1:8093/ \
+          npm --prefix tools/visual-parity run test:workbench
 
       - name: Enforce independent production parity
         run: |
@@ -184,6 +335,97 @@ jobs:
           INPUT_DIR=captures/stable/production-desktop \
           MIN_CAPTURE_BYTES=8000 \
           MIN_BOARD_SSIM=0.93 \
+          npm --prefix tools/visual-parity run audit
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/arc-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_arc_direction_route \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/arc-composition-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=arc_compositions \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/sector-composition-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=sector_compositions \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/circumcircle-creator-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=circumcircle_creators \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/point-reflection-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=point_reflections \
+          npm --prefix tools/visual-parity run audit
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/circumcircle-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_circumcircle \
+          npm --prefix tools/visual-parity run audit
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/midpoint-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_midpoints \
+          npm --prefix tools/visual-parity run audit
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/orthogonal-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_orthogonal_constructions \
+          npm --prefix tools/visual-parity run audit
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/dynamic-circle-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_interaction_dynamic_circle_radius \
+          npm --prefix tools/visual-parity run audit
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/stable/dynamic-segment-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_fixed_length_segment \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/curve-boolean-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=curve_boolean_clipping \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/inequality-line-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=inequalities \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/inequality-function-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=inequalities \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/vector-field-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=vector_fields \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/slope-field-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=slope_fields \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/ellipse-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=ellipses \
+          npm --prefix tools/visual-parity run audit
+          INPUT_DIR=captures/stable/hyperbola-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=hyperbolas \
           npm --prefix tools/visual-parity run audit
 
       - name: Generate production contact pages

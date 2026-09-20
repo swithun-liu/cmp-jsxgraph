@@ -184,6 +184,10 @@ sealed interface GeometryError {
         val cause: NumericsError,
     ) : GeometryError
 
+    data class NumericalIntersectionFailure(
+        val cause: NumericsError,
+    ) : GeometryError
+
     data object PolygonProjectionUnavailable : GeometryError
 }
 
@@ -321,8 +325,9 @@ object Geometry {
         lineSecond: DoubleArray,
         point: DoubleArray,
         pointRole: PerpendicularPointRole = PerpendicularPointRole.OTHER,
+        lineStandardForm: DoubleArray? = null,
     ): PerpendicularResult {
-        val line = normalizedLine(lineFirst, lineSecond)
+        val line = lineStandardForm ?: normalizedLine(lineFirst, lineSecond)
         var horizontal: Double
         var vertical: Double
         var homogeneous: Double
@@ -1756,6 +1761,422 @@ object Geometry {
         return doubleArrayOf(0.0, Double.NaN, Double.NaN)
     }
 
+    // JSXGraph: src/math/geometry.js -> meetCurveCurveDiscrete
+    internal fun meetCurveCurveDiscrete(
+        first: DiscreteCurve2D,
+        second: DiscreteCurve2D,
+        intersectionIndex: Double,
+    ): GMResult<DoubleArray, GeometryError> {
+        validateDiscreteIntersectionCurve(first)?.let {
+            return GMResult.Err(it)
+        }
+        validateDiscreteIntersectionCurve(second)?.let {
+            return GMResult.Err(it)
+        }
+        if (!intersectionIndex.isNonnegativeIntegerIndex()) {
+            return GMResult.Ok(nonRealIntersection())
+        }
+
+        val index = intersectionIndex.toInt()
+        return if (
+            first.bezierDegree == 3 ||
+            second.bezierDegree == 3
+        ) {
+            meetBezierCurveRedBlueSegments(first, second, index)
+        } else {
+            GMResult.Ok(
+                meetCurveRedBlueSegments(
+                    red = first.points,
+                    blue = second.points,
+                    intersectionIndex = index,
+                ),
+            )
+        }
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetCurveCurveNewton /
+    // _meetCurveCurveIterative / meetCurveCurve
+    internal fun meetCurveCurveContinuous(
+        first: ContinuousCurve2D,
+        second: ContinuousCurve2D,
+        intersectionIndex: Double,
+        secondInitialParameter: Double,
+        testSegment: Boolean = false,
+    ): GMResult<DoubleArray, GeometryError> {
+        validateContinuousIntersectionCurve(first)?.let {
+            return GMResult.Err(it)
+        }
+        validateContinuousIntersectionCurve(second)?.let {
+            return GMResult.Err(it)
+        }
+
+        if (floor(intersectionIndex) != intersectionIndex) {
+            val intersection = when (
+                val result = Numerics.generalizedNewton(
+                    firstCurve = first.curve,
+                    secondCurve = second.curve,
+                    firstInitialParameter = intersectionIndex,
+                    secondInitialParameter = secondInitialParameter,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return GMResult.Err(
+                        GeometryError.NumericalIntersectionFailure(
+                            result.error,
+                        ),
+                    )
+                }
+            }
+            return GMResult.Ok(
+                doubleArrayOf(
+                    1.0,
+                    intersection.valueOrNaN(0),
+                    intersection.valueOrNaN(1),
+                ),
+            )
+        }
+        if (!intersectionIndex.isNonnegativeIntegerIndex()) {
+            return GMResult.Ok(nonRealIntersection())
+        }
+
+        val requestedIndex = intersectionIndex.toInt()
+        val firstMinimum = first.minimumParameter
+        val firstMaximum = first.maximumParameter
+        val secondMinimum = second.minimumParameter
+        val secondMaximum = second.maximumParameter
+        val steps = 20
+        val firstStep = (firstMaximum - firstMinimum) / steps
+        val secondStep = (secondMaximum - secondMinimum) / steps
+        val uniqueTolerance = Mat.eps * 100.0
+        val zeros = mutableListOf<Double>()
+
+        for (firstIndex in 0 until steps) {
+            val firstRange = doubleArrayOf(
+                firstMinimum + firstIndex * firstStep,
+                firstMinimum + (firstIndex + 1) * firstStep,
+            )
+            for (secondIndex in 0 until steps) {
+                val secondRange = doubleArrayOf(
+                    secondMinimum + secondIndex * secondStep,
+                    secondMinimum + (secondIndex + 1) * secondStep,
+                )
+                val result = meetCurveCurveNewton(
+                    first = first,
+                    second = second,
+                    firstRange = firstRange,
+                    secondRange = secondRange,
+                    testSegment = testSegment,
+                ) ?: continue
+                if (result.squaredResidual < Mat.eps) {
+                    zeros += result.firstParameter
+                    zeros.sort()
+                    var index = zeros.lastIndex
+                    while (index > 0) {
+                        if (
+                            abs(zeros[index] - zeros[index - 1]) <
+                            uniqueTolerance
+                        ) {
+                            zeros.removeAt(index)
+                        }
+                        index -= 1
+                    }
+                    if (zeros.size > requestedIndex) {
+                        return GMResult.Ok(
+                            first.curve.pointAt(zeros[requestedIndex]),
+                        )
+                    }
+                }
+            }
+        }
+
+        return GMResult.Ok(
+            if (zeros.size > requestedIndex) {
+                first.curve.pointAt(zeros[requestedIndex])
+            } else {
+                nonRealIntersection()
+            },
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetCurveLineDiscrete
+    internal fun meetCurveLineDiscrete(
+        curve: DiscreteCurve2D,
+        lineFirst: DoubleArray,
+        lineSecond: DoubleArray,
+        lineStandardForm: DoubleArray,
+        straightFirst: Boolean,
+        straightLast: Boolean,
+        intersectionIndex: Double,
+        testSegment: Boolean,
+    ): GMResult<DoubleArray, GeometryError> {
+        validateDiscreteIntersectionCurve(curve)?.let {
+            return GMResult.Err(it)
+        }
+        if (
+            !intersectionIndex.isNonnegativeIntegerIndex() ||
+            curve.points.isEmpty()
+        ) {
+            return GMResult.Ok(nonRealIntersection())
+        }
+
+        var effectiveLineFirst = lineFirst.copyOf()
+        var effectiveLineSecond = lineSecond.copyOf()
+        if (effectiveLineFirst.valueOrNaN(0) == 0.0) {
+            effectiveLineFirst = doubleArrayOf(
+                1.0,
+                effectiveLineSecond.valueOrNaN(1) +
+                    lineStandardForm.valueOrNaN(2),
+                effectiveLineSecond.valueOrNaN(2) -
+                    lineStandardForm.valueOrNaN(1),
+            )
+        } else if (effectiveLineSecond.valueOrNaN(0) == 0.0) {
+            effectiveLineSecond = doubleArrayOf(
+                1.0,
+                effectiveLineFirst.valueOrNaN(1) +
+                    lineStandardForm.valueOrNaN(2),
+                effectiveLineFirst.valueOrNaN(2) -
+                    lineStandardForm.valueOrNaN(1),
+            )
+        }
+
+        var foundCount = 0
+        var previousCurvePoint = curve.points[0]
+        var curveIndex = 1
+        while (curveIndex < curve.points.size) {
+            val firstCurvePoint = previousCurvePoint.copyOf()
+            val secondCurvePoint = curve.points[curveIndex]
+            previousCurvePoint = secondCurvePoint
+            if (distance(firstCurvePoint, secondCurvePoint) > Mat.eps) {
+                val intersections =
+                    if (curve.bezierDegree == 3) {
+                        meetBeziersegmentBeziersegment(
+                            red = listOf(
+                                curve.points[curveIndex - 1]
+                                    .sliceArray(1..2),
+                                curve.points[curveIndex]
+                                    .sliceArray(1..2),
+                                curve.points[curveIndex + 1]
+                                    .sliceArray(1..2),
+                                curve.points[curveIndex + 2]
+                                    .sliceArray(1..2),
+                            ),
+                            blue = listOf(
+                                effectiveLineFirst.sliceArray(1..2),
+                                effectiveLineSecond.sliceArray(1..2),
+                            ),
+                            testSegment = testSegment,
+                        )
+                    } else {
+                        listOf(
+                            meetSegmentSegment(
+                                firstStart = firstCurvePoint,
+                                firstEnd = secondCurvePoint,
+                                secondStart = effectiveLineFirst,
+                                secondEnd = effectiveLineSecond,
+                            ),
+                        )
+                    }
+
+                for (intersection in intersections) {
+                    if (
+                        intersection.firstParameter >= 0.0 &&
+                        intersection.firstParameter <= 1.0
+                    ) {
+                        if (
+                            foundCount.toDouble() == intersectionIndex
+                        ) {
+                            if (
+                                testSegment &&
+                                (
+                                    (
+                                        !straightFirst &&
+                                            intersection.secondParameter < 0.0
+                                        ) ||
+                                        (
+                                            !straightLast &&
+                                                intersection.secondParameter > 1.0
+                                            )
+                                    )
+                            ) {
+                                return GMResult.Ok(nonRealIntersection())
+                            }
+                            return GMResult.Ok(intersection.point)
+                        }
+                        foundCount += 1
+                    }
+                }
+            }
+            curveIndex += curve.bezierDegree
+        }
+        return GMResult.Ok(nonRealIntersection())
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetCurveLineContinuous
+    internal fun meetCurveLineContinuous(
+        curve: ContinuousCurve2D,
+        discreteCurve: DiscreteCurve2D,
+        lineFirst: DoubleArray,
+        lineSecond: DoubleArray,
+        lineStandardForm: DoubleArray,
+        straightFirst: Boolean,
+        straightLast: Boolean,
+        intersectionIndex: Double,
+        testSegment: Boolean,
+    ): GMResult<DoubleArray, GeometryError> {
+        validateContinuousIntersectionCurve(curve)?.let {
+            return GMResult.Err(it)
+        }
+        val approximation = when (
+            val result = meetCurveLineDiscrete(
+                curve = discreteCurve,
+                lineFirst = lineFirst,
+                lineSecond = lineSecond,
+                lineStandardForm = lineStandardForm,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                intersectionIndex = intersectionIndex,
+                testSegment = testSegment,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val approximateX = approximation.valueOrNaN(1)
+        val approximateY = approximation.valueOrNaN(2)
+        val minimum = curve.minimumParameter
+        val maximum = curve.maximumParameter
+        val distanceSquared = { parameter: Double ->
+            if (parameter > maximum || parameter < minimum) {
+                Double.POSITIVE_INFINITY
+            } else {
+                val horizontal =
+                    curve.curve.x(parameter) - approximateX
+                val vertical =
+                    curve.curve.y(parameter) - approximateY
+                horizontal * horizontal + vertical * vertical
+            }
+        }
+        val lineValueSquared = { parameter: Double ->
+            val value =
+                lineStandardForm.valueOrNaN(0) +
+                    lineStandardForm.valueOrNaN(1) *
+                    curve.curve.x(parameter) +
+                    lineStandardForm.valueOrNaN(2) *
+                    curve.curve.y(parameter)
+            value * value
+        }
+
+        val steps = 50
+        val delta = (maximum - minimum) / steps
+        var next = minimum
+        var minimumValue = 0.0001
+        var minimumParameter = Double.NaN
+        for (stepIndex in 0 until steps) {
+            val parameter = when (
+                val result = Numerics.root(
+                    function = distanceSquared,
+                    interval = doubleArrayOf(
+                        maxOf(next, minimum),
+                        minOf(next + delta, maximum),
+                    ),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return GMResult.Err(
+                        GeometryError.NumericalIntersectionFailure(
+                            result.error,
+                        ),
+                    )
+                }
+            }
+            val value = abs(distanceSquared(parameter))
+            if (value <= minimumValue) {
+                minimumValue = value
+                minimumParameter = parameter
+                if (minimumValue < Mat.eps) {
+                    break
+                }
+            }
+            next += delta
+        }
+
+        val parameter = when (
+            val result = Numerics.root(
+                function = lineValueSquared,
+                interval = doubleArrayOf(
+                    maxOf(minimumParameter - delta, minimum),
+                    minOf(minimumParameter + delta, maximum),
+                ),
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return GMResult.Err(
+                    GeometryError.NumericalIntersectionFailure(
+                        result.error,
+                    ),
+                )
+            }
+        }
+        val lineValue = lineValueSquared(parameter)
+        val weight = if (
+            lineValue.isNaN() ||
+            abs(lineValue) > Mat.eps
+        ) {
+            0.0
+        } else {
+            1.0
+        }
+        return GMResult.Ok(
+            doubleArrayOf(
+                weight,
+                curve.curve.x(parameter),
+                curve.curve.y(parameter),
+            ),
+        )
+    }
+
+    // JSXGraph: src/math/geometry.js -> meetPolygonLine
+    internal fun meetPolygonLine(
+        borders: List<Pair<DoubleArray, DoubleArray>>,
+        lineFirst: DoubleArray,
+        lineSecond: DoubleArray,
+        intersectionIndex: Double,
+        testLineSegment: Boolean,
+    ): DoubleArray {
+        if (!intersectionIndex.isNonnegativeIntegerIndex()) {
+            return doubleArrayOf(0.0, 0.0, 0.0)
+        }
+
+        val intersections = mutableListOf<DoubleArray>()
+        for ((borderFirst, borderSecond) in borders) {
+            val result = meetSegmentSegment(
+                firstStart = borderFirst,
+                firstEnd = borderSecond,
+                secondStart = lineFirst,
+                secondEnd = lineSecond,
+            )
+            if (
+                (
+                    !testLineSegment ||
+                        (
+                            result.secondParameter >= 0.0 &&
+                                result.secondParameter < 1.0
+                            )
+                    ) &&
+                result.firstParameter >= 0.0 &&
+                result.firstParameter < 1.0
+            ) {
+                intersections += result.point
+            }
+        }
+        val index = intersectionIndex.toInt()
+        return intersections.getOrNull(index)?.copyOf()
+            ?: doubleArrayOf(0.0, 0.0, 0.0)
+    }
+
     // JSXGraph: src/math/geometry.js -> projectCoordsToPolygon
     internal fun projectCoordsToPolygon(
         point: DoubleArray,
@@ -2686,6 +3107,120 @@ object Geometry {
         }
         return coordinates
     }
+
+    private fun validateDiscreteIntersectionCurve(
+        curve: DiscreteCurve2D,
+    ): GeometryError? {
+        if (curve.bezierDegree !in setOf(1, 3)) {
+            return GeometryError.InvalidDiscreteCurveDegree(
+                curve.bezierDegree,
+            )
+        }
+        return if (
+            curve.bezierDegree == 3 &&
+            curve.points.size > 1 &&
+            (curve.points.size - 1) % curve.bezierDegree != 0
+        ) {
+            GeometryError.InvalidDiscreteCurvePointCount(
+                pointCount = curve.points.size,
+                degree = curve.bezierDegree,
+            )
+        } else {
+            null
+        }
+    }
+
+    private fun validateContinuousIntersectionCurve(
+        curve: ContinuousCurve2D,
+    ): GeometryError? =
+        if (
+            !curve.minimumParameter.isFinite() ||
+            !curve.maximumParameter.isFinite() ||
+            curve.minimumParameter > curve.maximumParameter
+        ) {
+            GeometryError.InvalidContinuousCurveDomain(
+                minimum = curve.minimumParameter,
+                maximum = curve.maximumParameter,
+            )
+        } else {
+            null
+        }
+
+    private data class CurveCurveNewtonResult(
+        val firstParameter: Double,
+        val squaredResidual: Double,
+    )
+
+    private fun meetCurveCurveNewton(
+        first: ContinuousCurve2D,
+        second: ContinuousCurve2D,
+        firstRange: DoubleArray,
+        secondRange: DoubleArray,
+        testSegment: Boolean,
+    ): CurveCurveNewtonResult? {
+        val inverseGoldenRatio = (sqrt(5.0) - 1.0) * 0.5
+        val firstInitial =
+            firstRange[0] +
+                (firstRange[1] - firstRange[0]) *
+                (1.0 - inverseGoldenRatio)
+        val secondInitial =
+            secondRange[0] +
+                (secondRange[1] - secondRange[0]) *
+                (1.0 - inverseGoldenRatio)
+        val result = when (
+            val computation = Numerics.generalizedDampedNewtonCurves(
+                firstCurve = first.curve,
+                secondCurve = second.curve,
+                firstInitialParameter = firstInitial,
+                secondInitialParameter = secondInitial,
+                damping = 0.85,
+                epsilon = Mat.eps * Mat.eps * Mat.eps,
+            )
+        ) {
+            is GMResult.Ok -> computation.value
+            is GMResult.Err -> return null
+        }
+        val firstParameter = result.parameters[0]
+        val secondParameter = result.parameters[1]
+        val epsilonSquared = Mat.eps * Mat.eps
+        val outsideRange =
+            firstParameter < firstRange[0] - Mat.eps ||
+                firstParameter > firstRange[1] + Mat.eps ||
+                secondParameter < secondRange[0] - Mat.eps ||
+                secondParameter > secondRange[1] + Mat.eps ||
+                (
+                    testSegment &&
+                        (
+                            firstParameter <
+                                first.minimumParameter - epsilonSquared ||
+                                firstParameter >
+                                first.maximumParameter + epsilonSquared ||
+                                secondParameter <
+                                second.minimumParameter - epsilonSquared ||
+                                secondParameter >
+                                second.maximumParameter + epsilonSquared
+                            )
+                    )
+        return CurveCurveNewtonResult(
+            firstParameter = firstParameter,
+            squaredResidual =
+                if (outsideRange) 10_000.0 else result.squaredResidual,
+        )
+    }
+
+    private fun ParametricCurve2D.pointAt(
+        parameter: Double,
+    ): DoubleArray =
+        doubleArrayOf(1.0, x(parameter), y(parameter))
+
+    private fun Double.isNonnegativeIntegerIndex(): Boolean =
+        isFinite() &&
+            this >= 0.0 &&
+            floor(this) == this &&
+            this <= Int.MAX_VALUE.toDouble()
+
+    private fun nonRealIntersection(): DoubleArray =
+        doubleArrayOf(0.0, Double.NaN, Double.NaN)
 
     private fun DoubleArray.valueOrNaN(index: Int): Double =
         if (index in indices) this[index] else Double.NaN

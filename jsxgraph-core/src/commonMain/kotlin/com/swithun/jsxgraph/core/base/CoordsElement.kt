@@ -8,7 +8,9 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
-import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.NumericsPoint2D
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 
@@ -26,13 +28,32 @@ internal sealed interface CoordinateConstraintError {
         val coordinateIndex: Int,
         val actualType: String,
     ) : CoordinateConstraintError
+
+    data class CoordinateArrayResultExpected(
+        val actualType: String,
+    ) : CoordinateConstraintError
+}
+
+internal sealed interface CoordinateTransformationError {
+    data class InvalidBaseElement(
+        val baseElementId: String?,
+    ) : CoordinateTransformationError
+
+    data class Evaluation(
+        val transformationIndex: Int,
+        val error: TransformationError,
+    ) : CoordinateTransformationError
+
+    data class NonInvertibleCompositeMatrix(
+        val transformationCount: Int,
+    ) : CoordinateTransformationError
 }
 
 /**
  * Initial coordinate-access slice of JXG.CoordsElement.
  *
- * JessieCode coordinate constraints and their update lifecycle are present.
- * Function, slider, single-array, glider, persistent transformation,
+ * JessieCode string and function coordinate constraints and the persistent
+ * 2D transformation lifecycle are present. Slider, Coords-object, glider,
  * animation, and renderer behavior remain in the untranslated element model.
  * This class stays internal until those lifecycle contracts are available.
  */
@@ -44,7 +65,7 @@ internal open class CoordsElement(
     type: Int = 0,
     elementClass: Int = Const.OBJECT_CLASS_OTHER,
     needsRegularUpdate: Boolean = true,
-    coordinateFunctions: List<JessieCodeExpressionFunction> = emptyList(),
+    coordinateFunctions: List<JessieCodeCoordinateFunction> = emptyList(),
 ) : GeometryElement(
     board = board,
     id = id,
@@ -52,9 +73,10 @@ internal open class CoordsElement(
     type = type,
     elementClass = elementClass,
     needsRegularUpdate = needsRegularUpdate,
-) {
+),
+    NumericsPoint2D {
     internal var coordinateFunctions:
-        List<JessieCodeExpressionFunction> = coordinateFunctions
+        List<JessieCodeCoordinateFunction> = coordinateFunctions
         private set
 
     // JSXGraph: src/base/coordselement.js -> CoordsElement constructor.
@@ -86,19 +108,32 @@ internal open class CoordsElement(
     internal var Yjc: String? = null
     internal var coordinateEvaluationError: CoordinateConstraintError? = null
         private set
+    internal var transformationEvaluationError:
+        CoordinateTransformationError? = null
+        private set
+
+    protected fun setTransformationEvaluationError(
+        error: CoordinateTransformationError,
+    ) {
+        transformationEvaluationError = error
+    }
+
+    protected fun clearTransformationEvaluationError() {
+        transformationEvaluationError = null
+    }
 
     init {
         isDraggable = coordinateFunctions.isEmpty()
     }
 
-    internal val isReal: Boolean
+    internal open val isReal: Boolean
         get() = coords.isReal()
 
     // JSXGraph: src/base/coordselement.js -> X.
-    internal fun X(): Double = coords.usrCoords[1]
+    override fun X(): Double = coords.usrCoords[1]
 
     // JSXGraph: src/base/coordselement.js -> Y.
-    internal fun Y(): Double = coords.usrCoords[2]
+    override fun Y(): Double = coords.usrCoords[2]
 
     // JSXGraph: src/base/coordselement.js -> Z.
     internal fun Z(): Double = coords.usrCoords[0]
@@ -133,10 +168,44 @@ internal open class CoordsElement(
         > = coordinateConstraintResult(coordinateFunctions)
 
     internal fun coordinateConstraintResult(
-        functions: List<JessieCodeExpressionFunction>,
+        functions: List<JessieCodeCoordinateFunction>,
     ): GMResult<DoubleArray, CoordinateConstraintError> {
         if (functions.isEmpty()) {
             return GMResult.Ok(coords.usrCoords.copyOf())
+        }
+        if (
+            functions.size == 1 &&
+            functions[0].returnsCoordinateArray
+        ) {
+            val value = when (val result = functions[0].evaluate()) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    CoordinateConstraintError.Evaluation(
+                        coordinateIndex = 0,
+                        error = result.error,
+                    ),
+                )
+            }
+            val array = value as? JessieCodeRuntimeValue.ArrayValue
+                ?: return GMResult.Err(
+                    CoordinateConstraintError
+                        .CoordinateArrayResultExpected(
+                            actualType = runtimeType(value),
+                        ),
+                )
+            val coordinates = DoubleArray(array.values.size)
+            for ((index, coordinate) in array.values.withIndex()) {
+                val number = coordinate as?
+                    JessieCodeRuntimeValue.NumberValue
+                    ?: return GMResult.Err(
+                        CoordinateConstraintError.NonNumericResult(
+                            coordinateIndex = index,
+                            actualType = runtimeType(coordinate),
+                        ),
+                    )
+                coordinates[index] = number.value
+            }
+            return GMResult.Ok(coordinates)
         }
         if (functions.size < 2) {
             return GMResult.Err(
@@ -176,7 +245,7 @@ internal open class CoordsElement(
 
     // JSXGraph: src/base/coordselement.js -> addConstraint
     internal fun replaceCoordinateFunctions(
-        functions: List<JessieCodeExpressionFunction>,
+        functions: List<JessieCodeCoordinateFunction>,
     ): CoordsElement {
         val oldDependencies = coordinateFunctions
             .flatMap { it.dependencies.values }
@@ -230,7 +299,105 @@ internal open class CoordsElement(
     }
 
     // JSXGraph: src/base/coordselement.js -> updateTransform
-    internal open fun updateTransform(fromParent: Boolean): CoordsElement = this
+    internal open fun updateTransform(fromParent: Boolean): CoordsElement {
+        if (transformations.isEmpty()) {
+            transformationEvaluationError = null
+            return this
+        }
+        if (baseElement == null) {
+            baseElement = this
+        }
+
+        when (val result = transformedCoordinatesResult()) {
+            is GMResult.Ok -> {
+                actualCoords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = result.value,
+                )
+                transformationEvaluationError = null
+            }
+            is GMResult.Err -> {
+                actualCoords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = DoubleArray(3) { Double.NaN },
+                )
+                transformationEvaluationError = result.error
+            }
+        }
+        return this
+    }
+
+    internal fun transformedCoordinatesResult(): GMResult<
+        DoubleArray,
+        CoordinateTransformationError,
+        > {
+        val source = baseElement as? CoordsElement
+            ?: return GMResult.Err(
+                CoordinateTransformationError.InvalidBaseElement(
+                    baseElementId = baseElement?.id,
+                ),
+            )
+        var coordinates =
+            if (source === this) {
+                initialCoords.usrCoords.copyOf()
+            } else {
+                source.coords.usrCoords.copyOf()
+            }
+        for ((index, transformation) in transformations.withIndex()) {
+            when (val result = transformation.applyResult(coordinates)) {
+                is GMResult.Ok -> coordinates = result.value
+                is GMResult.Err -> return GMResult.Err(
+                    CoordinateTransformationError.Evaluation(
+                        transformationIndex = index,
+                        error = result.error,
+                    ),
+                )
+            }
+        }
+        return GMResult.Ok(coordinates)
+    }
+
+    // JSXGraph: src/base/coordselement.js -> addTransform
+    internal fun addTransform(
+        element: GeometryElement,
+        transformation: Transformation,
+    ): CoordsElement = addTransform(element, listOf(transformation))
+
+    internal fun addTransform(
+        element: GeometryElement,
+        newTransformations: Iterable<Transformation>,
+    ): CoordsElement {
+        if (transformations.isEmpty()) {
+            baseElement = element
+        }
+        transformations += newTransformations
+        return this
+    }
+
+    // JSXGraph: src/base/coordselement.js -> removeTransform
+    internal fun removeTransform(
+        transformation: Transformation,
+    ): CoordsElement = removeTransform(listOf(transformation))
+
+    internal fun removeTransform(
+        removedTransformations: Iterable<Transformation>,
+    ): CoordsElement {
+        for (transformation in removedTransformations) {
+            transformations.remove(transformation)
+        }
+        if (transformations.isEmpty()) {
+            baseElement = null
+        }
+        return this
+    }
+
+    // JSXGraph: src/base/coordselement.js -> clearTransforms
+    internal fun clearTransforms(): CoordsElement {
+        transformations.clear()
+        baseElement = null
+        transformationEvaluationError = null
+        return this
+    }
 
     // JSXGraph: src/base/coordselement.js -> updateCoords
     internal fun updateCoords(fromParent: Boolean = false): CoordsElement {
@@ -239,8 +406,8 @@ internal open class CoordsElement(
         }
 
         /*
-         * This is the free-element path. Frozen visual properties, glider
-         * projection, and transformations are added with their owner models.
+         * This is the free-element path. Frozen visual properties and glider
+         * projection are added with their owner models.
          */
         updateConstraint()
         updateTransform(fromParent)
@@ -263,6 +430,14 @@ internal open class CoordsElement(
         method: Int,
         coordinates: DoubleArray,
     ): CoordsElement {
+        setPositionDirectlyResult(method, coordinates)
+        return this
+    }
+
+    internal fun setPositionDirectlyResult(
+        method: Int,
+        coordinates: DoubleArray,
+    ): GMResult<CoordsElement, CoordinateTransformationError> {
         coords.setCoordinates(method, coordinates)
         handleSnapToGrid()
         handleSnapToPoints()
@@ -273,13 +448,51 @@ internal open class CoordsElement(
             coordinates = coords.usrCoords,
         )
 
-        /*
-         * relativeCoords and transformation preimages are intentionally not
-         * represented until their owner models are translated.
-         */
+        var preimageError: CoordinateTransformationError? = null
+        // JSXGraph: src/base/coordselement.js -> setPositionDirectly
+        // Determine the preimage before all persistent transformations.
+        if (transformations.isNotEmpty()) {
+            var composite = Mat.identity(3)
+            for (transformation in transformations) {
+                composite = Mat.matMatMult(
+                    transformation.matrix,
+                    composite,
+                )
+            }
+            val inverse = Mat.inverse(composite)
+            if (inverse.isEmpty()) {
+                preimageError =
+                    CoordinateTransformationError
+                        .NonInvertibleCompositeMatrix(
+                            transformationCount = transformations.size,
+                        )
+                transformationEvaluationError = preimageError
+            } else {
+                val preimage = Mat.matVecMult(
+                    inverse,
+                    coords.usrCoords,
+                )
+                initialCoords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = preimage,
+                )
+                if (elementClass != Const.OBJECT_CLASS_POINT) {
+                    coords.setCoordinates(
+                        coordType = Const.COORDS_BY_USER,
+                        coordinates = preimage,
+                    )
+                }
+                transformationEvaluationError = null
+            }
+        }
         prepareUpdate()
         update()
-        return this
+        return if (preimageError == null) {
+            GMResult.Ok(this)
+        } else {
+            transformationEvaluationError = preimageError
+            GMResult.Err(preimageError)
+        }
     }
 
     // JSXGraph: src/base/coordselement.js -> setPosition
@@ -301,6 +514,10 @@ internal open class CoordsElement(
             is JessieCodeRuntimeValue.ObjectValue -> "object"
             is JessieCodeRuntimeValue.FunctionValue -> "function"
             is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.TransformationReference ->
+                "transformation"
+            is JessieCodeRuntimeValue.CompositionReference ->
+                "composition"
             is JessieCodeRuntimeValue.ElementReference -> "element"
         }
 }

@@ -53,6 +53,59 @@ class ArcSectorTest {
     }
 
     @Test
+    fun directionPointArcSelectsItsPathWithoutLinkingFourthParent() {
+        val board = board()
+        val center = point(board, 0.0, 0.0)
+        val first = point(board, 2.0, 0.0)
+        val third = point(board, 0.0, 2.0)
+        val direction = point(board, 0.0, -2.0)
+
+        val arc = assertIs<GMResult.Ok<Arc>>(
+            Arc.create(
+                board = board,
+                center = center,
+                radiuspoint = first,
+                anglepoint = third,
+                directionpoint = direction,
+                useDirection = true,
+                name = "",
+            ),
+        ).value
+
+        assertTrue(arc.useDirection)
+        assertSame(direction, arc.directionpoint)
+        assertSame(third, arc.radiuspoint)
+        assertSame(first, arc.anglepoint)
+        assertPoint(arc.points.first(), 0.0, 2.0)
+        assertPoint(arc.points.last(), 2.0, 0.0)
+        assertEquals(1.5 * PI, arc.Value("radians"), 1.0e-12)
+        assertEquals(
+            listOf(center.id, first.id, third.id, direction.id),
+            arc.parents,
+        )
+        assertTrue(arc.id !in direction.childElements)
+        assertTrue(arc.id !in direction.descendants)
+
+        direction.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(0.0, 3.0),
+        )
+        board.update()
+
+        assertSame(first, arc.radiuspoint)
+        assertSame(third, arc.anglepoint)
+        assertPoint(arc.points.first(), 0.0, 2.0)
+        assertPoint(arc.points.last(), 2.0, 0.0)
+        assertEquals(0.5 * PI, arc.Value("radians"), 1.0e-12)
+
+        board.update()
+
+        assertPoint(arc.points.first(), 2.0, 0.0)
+        assertPoint(arc.points.last(), 0.0, 2.0)
+        assertEquals(0.5 * PI, arc.Value("radians"), 1.0e-12)
+    }
+
+    @Test
     fun sectorIncludesCubicRadialLegsAndSupportsClockwiseSelection() {
         val board = board()
         val center = point(board, 0.0, 0.0)
@@ -135,6 +188,36 @@ class ArcSectorTest {
                 anglepoint = anglepoint,
                 selection = "nearest",
             ),
+        )
+        assertEquals(
+            ArcError.InvalidDirectionPoint(
+                useDirection = true,
+                hasDirectionPoint = false,
+            ),
+            assertIs<GMResult.Err<ArcError>>(
+                Arc.create(
+                    board = board,
+                    center = center,
+                    radiuspoint = radiuspoint,
+                    anglepoint = anglepoint,
+                    useDirection = true,
+                ),
+            ).error,
+        )
+        assertEquals(
+            ArcError.InvalidDirectionPoint(
+                useDirection = false,
+                hasDirectionPoint = true,
+            ),
+            assertIs<GMResult.Err<ArcError>>(
+                Arc.create(
+                    board = board,
+                    center = center,
+                    radiuspoint = radiuspoint,
+                    anglepoint = anglepoint,
+                    directionpoint = center,
+                ),
+            ).error,
         )
         assertIs<GMResult.Err<SectorError.InvalidOrientation>>(
             Sector.create(

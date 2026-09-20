@@ -1,7 +1,7 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/base/polygon.js -> Polygon, Area, Perimeter, boundingBox,
- * createPolygon
+ * createPolygon, createPolygonalChain
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -57,6 +57,9 @@ internal class Polygon private constructor(
 ) {
     internal val vertices = vertices.toMutableList()
     internal val borders = mutableListOf<Line>()
+    internal var implicitVertices: List<Point> = ownedVertices.toList()
+    // JSXGraph: src/base/polygon.js -> createParallelogram.parallelPoint
+    internal var parallelPoint: ParallelPoint? = null
 
     init {
         if (
@@ -130,6 +133,7 @@ internal class Polygon private constructor(
     internal companion object {
         private const val POLYGON_ID_PREFIX = "Py"
         private const val POLYGON_ELEMENT_TYPE = "polygon"
+        private const val POLYGONAL_CHAIN_ELEMENT_TYPE = "polygonalchain"
 
         // JSXGraph: src/base/polygon.js -> createPolygon / Polygon constructor
         internal fun create(
@@ -165,6 +169,9 @@ internal class Polygon private constructor(
             )
             if (withLines) {
                 val borderCount = polygon.vertices.size - 1
+                val createdBorders = mutableListOf<Line>()
+                val orderedBorders =
+                    MutableList<Line?>(borderCount.coerceAtLeast(0)) { null }
                 for (borderIndex in 0 until borderCount) {
                     val firstIndex = (borderIndex + 1) % borderCount
                     val border = when (
@@ -176,7 +183,7 @@ internal class Polygon private constructor(
                     ) {
                         is GMResult.Ok -> result.value
                         is GMResult.Err -> {
-                            board.removeObjects(polygon.borders)
+                            board.removeObjects(createdBorders)
                             return GMResult.Err(
                                 PolygonError.BorderCreation(
                                     borderIndex = borderIndex,
@@ -185,8 +192,10 @@ internal class Polygon private constructor(
                             )
                         }
                     }
-                    polygon.borders += border
+                    createdBorders += border
+                    orderedBorders[firstIndex] = border
                 }
+                polygon.borders += orderedBorders.filterNotNull()
             }
 
             when (val registration = board.setId(polygon, POLYGON_ID_PREFIX)) {
@@ -210,6 +219,45 @@ internal class Polygon private constructor(
             }
             return GMResult.Ok(polygon)
         }
+
+        // JSXGraph: src/base/polygon.js -> createPolygonalChain
+        internal fun createPolygonalChain(
+            board: Board,
+            vertices: List<Point>,
+            ownedVertices: Set<Point> = emptySet(),
+            withLines: Boolean = true,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Polygon, PolygonError> =
+            when (
+                val result = create(
+                    board = board,
+                    vertices = vertices,
+                    ownedVertices = ownedVertices,
+                    withLines = withLines,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Err -> result
+                is GMResult.Ok -> {
+                    val chain = result.value
+                    chain.elType = POLYGONAL_CHAIN_ELEMENT_TYPE
+
+                    // Array.pop() is a no-op for empty arrays in the upstream
+                    // wrapper, as is removing an absent closing border.
+                    if (chain.vertices.isNotEmpty()) {
+                        chain.vertices.removeAt(chain.vertices.lastIndex)
+                    }
+                    chain.borders.lastOrNull()?.let { closingBorder ->
+                        board.removeObject(closingBorder)
+                        chain.borders.removeAt(chain.borders.lastIndex)
+                    }
+                    GMResult.Ok(chain)
+                }
+            }
 
         private fun validateParent(
             board: Board,

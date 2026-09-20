@@ -342,7 +342,7 @@ private fun DashboardTopBar(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Parity lab",
+                            text = "Case workbench",
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.sp,
                         )
@@ -369,7 +369,7 @@ private fun DashboardTopBar(
                         onDismissRequest = { onShowMenuChange(false) },
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Open parity lab", letterSpacing = 0.sp) },
+                            text = { Text("Open case workbench", letterSpacing = 0.sp) },
                             leadingIcon = {
                                 Icon(Icons.Outlined.Science, contentDescription = null)
                             },
@@ -409,7 +409,7 @@ private fun RoadmapSummary(
             verticalAlignment = Alignment.Bottom,
         ) {
             RoadmapHeading(modifier = Modifier.weight(1f))
-            OverallProgress(
+            ValidatedCorpus(
                 modifier = Modifier.widthIn(min = 280.dp, max = 360.dp),
             )
         }
@@ -419,7 +419,7 @@ private fun RoadmapSummary(
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             RoadmapHeading()
-            OverallProgress(modifier = Modifier.fillMaxWidth())
+            ValidatedCorpus(modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -440,7 +440,7 @@ private fun RoadmapHeading(
             letterSpacing = 0.sp,
         )
         Text(
-            text = "From translated primitives to a production-ready Compose runtime.",
+            text = "Faithful JSXGraph 1.13.3 translation promoted through explicit parity gates.",
             color = DashboardMuted,
             style = MaterialTheme.typography.bodyMedium,
             letterSpacing = 0.sp,
@@ -449,13 +449,18 @@ private fun RoadmapHeading(
 }
 
 @Composable
-private fun OverallProgress(
+private fun ValidatedCorpus(
     modifier: Modifier,
 ) {
     Column(
         modifier = modifier
-            .semantics { contentDescription = "overall-progress:82" },
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .semantics {
+                contentDescription =
+                    "validated-corpus:" +
+                        "${JsxGraphParityCorpus.productionCaseCount}-production:" +
+                        "${JsxGraphParityCorpus.focusedCaseCount}-focused"
+            },
+        verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -463,7 +468,7 @@ private fun OverallProgress(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "OVERALL PROGRESS",
+                text = "VALIDATED WEB CORPUS",
                 color = DashboardMuted,
                 style = MaterialTheme.typography.labelMedium,
                 fontFamily = FontFamily.Monospace,
@@ -471,14 +476,22 @@ private fun OverallProgress(
                 letterSpacing = 0.sp,
             )
             Text(
-                text = "82%",
+                text = "${JsxGraphParityCorpus.cases.size} cases",
                 color = DashboardInk,
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Black,
                 letterSpacing = 0.sp,
             )
         }
-        ProgressTrack(progress = 0.82f, accent = FoundationGreen)
+        Text(
+            text =
+                "${JsxGraphParityCorpus.productionCaseCount} production scenarios + " +
+                    "${JsxGraphParityCorpus.focusedCaseCount} focused fixtures. " +
+                    "This is a bounded Stable subset, not total JSXGraph completion.",
+            color = DashboardMuted,
+            style = MaterialTheme.typography.bodySmall,
+            letterSpacing = 0.sp,
+        )
     }
 }
 
@@ -925,7 +938,7 @@ private fun PhaseDetailDialog(
                         modifier = Modifier.size(18.dp),
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text("Open parity lab", letterSpacing = 0.sp)
+                    Text("Open case workbench", letterSpacing = 0.sp)
                 }
             }
         } else {

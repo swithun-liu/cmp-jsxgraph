@@ -10,7 +10,7 @@ const outputDirectory = resolve(
 );
 const viewportWidth = readPositiveNumber("VIEWPORT_WIDTH", 1200);
 const viewportHeight = readPositiveNumber("VIEWPORT_HEIGHT", 900);
-const expectedCaseCount = 24;
+const expectedCaseCount = 30;
 const finalCaseId = "prod_mixed_operations_board";
 const maximumFirstContentMillis = readPositiveNumber(
     "MAX_FIRST_CONTENT_MS",

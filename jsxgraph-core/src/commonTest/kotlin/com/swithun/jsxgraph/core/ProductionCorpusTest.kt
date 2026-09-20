@@ -18,6 +18,10 @@ class ProductionCorpusTest {
     fun rendersEveryIndependentProductionCaseWithFiniteGeometry() {
         assertEquals(EXPECTED_CASE_COUNT, productionCorpusCases.size)
         assertEquals(
+            EXPECTED_FEATURE_COUNT,
+            requiredProductionFeatures.size,
+        )
+        assertEquals(
             productionCorpusCases.size,
             productionCorpusCases.map(ProductionCorpusCase::id).toSet().size,
         )
@@ -66,7 +70,7 @@ class ProductionCorpusTest {
         val interactionCases = productionCorpusCases.filter { case ->
             case.interactionPointId != null
         }
-        assertEquals(2, interactionCases.size)
+        assertEquals(8, interactionCases.size)
 
         for (case in interactionCases) {
             val initialSession = createSession(case)
@@ -229,6 +233,7 @@ class ProductionCorpusTest {
     }
 
     private companion object {
-        const val EXPECTED_CASE_COUNT = 24
+        const val EXPECTED_CASE_COUNT = 30
+        const val EXPECTED_FEATURE_COUNT = 55
     }
 }

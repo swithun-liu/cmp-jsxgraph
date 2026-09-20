@@ -124,10 +124,109 @@
         notifyError(message);
       };
 
+      const isObject = (value) =>
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value);
+
+      const rejectUnknownFields = (value, allowed, label) => {
+        const unknown = Object.keys(value).find((field) => !allowed.has(field));
+        if (unknown !== undefined) {
+          throw new Error(`Unsupported ${label} field: ${unknown}`);
+        }
+      };
+
+      const parseJessieCodeInput = (documentSource) => {
+        rejectUnknownFields(
+          documentSource,
+          new Set(["schemaVersion", "inputKind", "boardOptions", "source"]),
+          "JessieCode parity",
+        );
+        if (documentSource.schemaVersion !== 1) {
+          throw new Error(
+            `Unsupported JessieCode parity schemaVersion: ${documentSource.schemaVersion}`,
+          );
+        }
+        if (documentSource.inputKind !== "jessiecode") {
+          throw new Error(
+            `Unsupported parity inputKind: ${documentSource.inputKind}`,
+          );
+        }
+        if (!isObject(documentSource.boardOptions)) {
+          throw new Error("JessieCode parity boardOptions must be an object");
+        }
+        const boardOptions = documentSource.boardOptions;
+        rejectUnknownFields(
+          boardOptions,
+          new Set([
+            "containerId",
+            "boundingBox",
+            "axis",
+            "grid",
+            "keepAspectRatio",
+          ]),
+          "JessieCode boardOptions",
+        );
+        if (boardOptions.containerId !== "jxgbox") {
+          throw new Error(
+            "JessieCode parity boardOptions.containerId must be jxgbox",
+          );
+        }
+        if (
+          !Array.isArray(boardOptions.boundingBox) ||
+          boardOptions.boundingBox.length !== 4 ||
+          !boardOptions.boundingBox.every(
+            (value) => typeof value === "number" && Number.isFinite(value),
+          ) ||
+          boardOptions.boundingBox[0] >= boardOptions.boundingBox[2] ||
+          boardOptions.boundingBox[3] >= boardOptions.boundingBox[1]
+        ) {
+          throw new Error(
+            "JessieCode parity boardOptions.boundingBox must contain " +
+              "four finite numbers with positive size",
+          );
+        }
+        ["axis", "grid", "keepAspectRatio"].forEach((field) => {
+          if (typeof boardOptions[field] !== "boolean") {
+            throw new Error(
+              `JessieCode parity boardOptions.${field} must be a boolean`,
+            );
+          }
+        });
+        if (typeof documentSource.source !== "string") {
+          throw new Error("JessieCode parity source must be a string");
+        }
+        return {
+          inputKind: "jessiecode",
+          boardOptions,
+          source: documentSource.source,
+        };
+      };
+
+      const parseRenderInput = (source) => {
+        const documentSource = JSON.parse(source);
+        if (!isObject(documentSource)) {
+          throw new Error("Parity source must be a JSON object");
+        }
+        if (documentSource.inputKind !== undefined) {
+          return parseJessieCodeInput(documentSource);
+        }
+        return {
+          inputKind: "construction-document",
+          boardOptions: {
+            boundingBox: documentSource.boundingBox,
+            axis: documentSource.axis ?? false,
+            grid: documentSource.grid ?? false,
+            keepAspectRatio: documentSource.keepAspectRatio ?? false,
+          },
+          documentSource,
+        };
+      };
+
       window.renderDiagram = async (source) => {
         const currentRequest = ++requestId;
         try {
-          const documentSource = JSON.parse(source);
+          const renderInput = parseRenderInput(source);
           await waitForContainerSize();
           if (currentRequest !== requestId) {
             return;
@@ -141,70 +240,76 @@
           boardElement.replaceChildren();
 
           board = JXG.JSXGraph.initBoard("jxgbox", {
-            boundingbox: documentSource.boundingBox,
-            axis: documentSource.axis ?? false,
-            grid: documentSource.grid ?? false,
-            keepaspectratio: documentSource.keepAspectRatio ?? false,
+            boundingbox: renderInput.boardOptions.boundingBox,
+            axis: renderInput.boardOptions.axis,
+            grid: renderInput.boardOptions.grid,
+            keepaspectratio: renderInput.boardOptions.keepAspectRatio,
             showCopyright: false,
             showNavigation: false,
             pan: { enabled: false },
             zoom: { enabled: false },
           });
 
-          if (!Array.isArray(documentSource.objects)) {
-            throw new Error("objects must be an array");
+          if (renderInput.inputKind === "jessiecode") {
+            // JSXGraph: src/parser/jessiecode.js -> parse.
+            board.jc.parse(renderInput.source);
+          } else {
+            const documentSource = renderInput.documentSource;
+            if (!Array.isArray(documentSource.objects)) {
+              throw new Error("objects must be an array");
+            }
+            const ids = new Set();
+            documentSource.objects.forEach((sourceObject, index) => {
+              if (!isObject(sourceObject)) {
+                throw new Error(`objects[${index}] must be an object`);
+              }
+              if (
+                typeof sourceObject.id !== "string" ||
+                sourceObject.id.length === 0
+              ) {
+                throw new Error(
+                  `objects[${index}].id must be a non-empty string`,
+                );
+              }
+              if (ids.has(sourceObject.id)) {
+                throw new Error(`Duplicate object id: ${sourceObject.id}`);
+              }
+              if (
+                typeof sourceObject.type !== "string" ||
+                sourceObject.type.length === 0
+              ) {
+                throw new Error(
+                  `objects[${index}].type must be a non-empty string`,
+                );
+              }
+              if (!Array.isArray(sourceObject.parents)) {
+                throw new Error(`objects[${index}].parents must be an array`);
+              }
+              const attributes = {
+                ...(sourceObject.attributes ?? {}),
+              };
+              if (
+                attributes.id !== undefined &&
+                attributes.id !== sourceObject.id
+              ) {
+                throw new Error(
+                  `objects[${index}].attributes.id must match object id`,
+                );
+              }
+              attributes.id = sourceObject.id;
+              const element = board.create(
+                sourceObject.type,
+                sourceObject.parents,
+                attributes,
+              );
+              if (element === undefined || element === null) {
+                throw new Error(
+                  `Could not create objects[${index}] '${sourceObject.id}'`,
+                );
+              }
+              ids.add(sourceObject.id);
+            });
           }
-          const ids = new Set();
-          documentSource.objects.forEach((sourceObject, index) => {
-            if (
-              sourceObject === null ||
-              typeof sourceObject !== "object" ||
-              Array.isArray(sourceObject)
-            ) {
-              throw new Error(`objects[${index}] must be an object`);
-            }
-            if (
-              typeof sourceObject.id !== "string" ||
-              sourceObject.id.length === 0
-            ) {
-              throw new Error(`objects[${index}].id must be a non-empty string`);
-            }
-            if (ids.has(sourceObject.id)) {
-              throw new Error(`Duplicate object id: ${sourceObject.id}`);
-            }
-            if (
-              typeof sourceObject.type !== "string" ||
-              sourceObject.type.length === 0
-            ) {
-              throw new Error(`objects[${index}].type must be a non-empty string`);
-            }
-            if (!Array.isArray(sourceObject.parents)) {
-              throw new Error(`objects[${index}].parents must be an array`);
-            }
-            const attributes = {
-              ...(sourceObject.attributes ?? {}),
-            };
-            if (
-              attributes.id !== undefined &&
-              attributes.id !== sourceObject.id
-            ) {
-              throw new Error(
-                `objects[${index}].attributes.id must match object id`,
-              );
-            }
-            attributes.id = sourceObject.id;
-            const element = board.create(
-              sourceObject.type,
-              sourceObject.parents,
-              attributes,
-            );
-            if (element === undefined || element === null) {
-              throw new Error(
-                `Could not create objects[${index}] '${sourceObject.id}'`,
-              );
-            }
-            ids.add(sourceObject.id);
-          });
 
           board.fullUpdate();
           await waitForLayout();

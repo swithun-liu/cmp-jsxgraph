@@ -601,6 +601,24 @@ class JessieCodeEvaluatorTest {
         assertEquals(false, function.isMap)
         assertSame(element, function.dependencies["P1"])
 
+        val capturedLocal =
+            assertIs<JessieCodeRuntimeValue.FunctionValue>(
+                evaluate(
+                    source =
+                        "f = function () { return localPoint; }; f;",
+                    environment = JessieCodeRuntimeEnvironment(
+                        board = board,
+                        variables = mapOf(
+                            "localPoint" to
+                                JessieCodeRuntimeValue.ElementReference(
+                                    element,
+                                ),
+                        ),
+                    ),
+                ),
+            )
+        assertSame(element, capturedLocal.dependencies["P1"])
+
         val shadowing = assertIs<JessieCodeRuntimeValue.FunctionValue>(
             evaluate(
                 "f = function (A) { return A; }; f;",
@@ -623,6 +641,36 @@ class JessieCodeEvaluatorTest {
         )
         assertEquals(listOf("x"), map.parameterNames)
         assertTrue(map.isMap)
+    }
+
+    @Test
+    fun externallyInvokedUserFunctionsReceiveFreshEvaluationBudget() {
+        val ast = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeExpressionParser().parse(
+                "function () { return 1 + 2 + 3; };",
+            ),
+        ).value
+        val function = assertIs<JessieCodeRuntimeValue.FunctionValue>(
+            assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+                JessieCodeEvaluator(
+                    JessieCodeEvaluatorLimits(
+                        maxEvaluationSteps = 16,
+                    ),
+                ).evaluate(ast),
+            ).value,
+        )
+
+        repeat(50) {
+            assertEquals(
+                JessieCodeRuntimeValue.NumberValue(6.0),
+                assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+                    function.externalCallable.call(
+                        arguments = emptyList(),
+                        location = ast.location,
+                    ),
+                ).value,
+            )
+        }
     }
 
     @Test
@@ -1072,6 +1120,10 @@ class JessieCodeEvaluatorTest {
             is JessieCodeRuntimeValue.FunctionValue ->
                 "function:${value.name}"
             is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.TransformationReference ->
+                "transformation"
+            is JessieCodeRuntimeValue.CompositionReference ->
+                "composition:${value.composition.elType}"
             is JessieCodeRuntimeValue.ElementReference ->
                 "element:${value.element.id}"
         }

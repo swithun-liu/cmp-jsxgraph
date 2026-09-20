@@ -356,6 +356,125 @@ class PointTest {
     }
 
     @Test
+    fun transformedPointFactoryMatchesOfficialDynamicChainLifecycle() {
+        val board = board()
+        val driver = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(2.0, 3.0),
+                id = "driver",
+                name = "driver",
+            ),
+        )
+        val center = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, -1.0),
+                id = "center",
+            ),
+        )
+        val base = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(3.0, 2.0),
+                id = "base",
+            ),
+        )
+        val translate = transformation(
+            Transformation.create(
+                board = board,
+                type = "translate",
+                parameters = listOf(
+                    TransformationParameter.Expression("X(driver)"),
+                    TransformationParameter.Expression("Y(driver)"),
+                ),
+            ),
+        )
+        val rotate = transformation(
+            Transformation.createRotation(
+                board = board,
+                angle = TransformationParameter.Expression("Y(driver)"),
+                center = center,
+            ),
+        )
+        val transformed = point(
+            Point.create(
+                board = board,
+                basePoint = base,
+                transformations = listOf(translate, rotate),
+                id = "transformed",
+            ),
+        )
+
+        board.update()
+
+        assertSame(base, transformed.baseElement)
+        assertEquals(listOf(base.id), transformed.parents)
+        assertEquals(listOf(translate, rotate), transformed.transformations)
+        assertFalse(transformed.isDraggable)
+        assertContentEquals(
+            doubleArrayOf(
+                1.0,
+                -3.806690034760985,
+                -6.3754749473632035,
+            ),
+            transformed.coords.usrCoords,
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 0.0),
+            transformed.initialCoords.usrCoords,
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 0.0),
+            transformed.actualCoords.usrCoords,
+        )
+        assertNull(transformed.transformationEvaluationError)
+
+        driver.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-1.0, 0.5),
+        )
+        center.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(2.0, 2.0),
+        )
+        base.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-2.0, 4.0),
+        )
+        board.update()
+
+        assertEquals(
+            -3.5864766559623713,
+            transformed.X(),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            1.7968287117049169,
+            transformed.Y(),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertNull(transformed.transformationEvaluationError)
+    }
+
+    @Test
+    fun transformedPointFactoryRejectsAnEmptyTransformationList() {
+        val board = board()
+        val base = point(Point.create(board, doubleArrayOf(1.0, 2.0)))
+
+        assertEquals(
+            PointError.InvalidTransformationCount(0),
+            assertIs<GMResult.Err<PointError.InvalidTransformationCount>>(
+                Point.create(
+                    board = board,
+                    basePoint = base,
+                    transformations = emptyList(),
+                ),
+            ).error,
+        )
+    }
+
+    @Test
     fun pointBoundsRepeatTheAffineCoordinates() {
         val point = Point(
             board = board(),
@@ -457,6 +576,11 @@ class PointTest {
     private fun circle(
         result: GMResult<Circle, CircleError>,
     ): Circle = assertIs<GMResult.Ok<Circle>>(result).value
+
+    private fun transformation(
+        result: GMResult<Transformation, TransformationError>,
+    ): Transformation =
+        assertIs<GMResult.Ok<Transformation>>(result).value
 
     private class RecordingPoint(
         board: Board,

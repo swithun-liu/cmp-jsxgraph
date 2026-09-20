@@ -9,8 +9,10 @@ package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.Composition
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.PointError
+import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.math.RandomSource
 import kotlin.random.Random
 
@@ -56,6 +58,19 @@ internal sealed interface JessieCodeRuntimeError {
     data class CollectionSizeLimitExceeded(
         val limit: Int,
         val requestedSize: Long,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class ResourceLimitExceeded(
+        val resource: String,
+        val limit: Int,
+        val requestedSize: Long,
+        val location: JessieCodeAstLocation,
+    ) : JessieCodeRuntimeError
+
+    data class UnsupportedSceneAttribute(
+        val path: String,
+        val valueType: String,
         val location: JessieCodeAstLocation,
     ) : JessieCodeRuntimeError
 
@@ -186,8 +201,9 @@ internal fun interface JessieCodeCreator {
 /**
  * Values visible to the translated JessieCode interpreter.
  *
- * Arrays, objects, functions, boards, and elements intentionally retain
- * identity equality, matching JavaScript object equality.
+ * Arrays, objects, functions, boards, transformations, and elements
+ * intentionally retain identity equality, matching JavaScript object
+ * equality.
  */
 internal sealed interface JessieCodeRuntimeValue {
     data class NumberValue(
@@ -225,6 +241,7 @@ internal sealed interface JessieCodeRuntimeValue {
     class FunctionValue(
         val name: String,
         val callable: JessieCodeCallable,
+        val externalCallable: JessieCodeCallable = callable,
         val parameterNames: List<String> = emptyList(),
         val isMap: Boolean = false,
         val dependencies: Map<String, GeometryElement> = emptyMap(),
@@ -233,6 +250,14 @@ internal sealed interface JessieCodeRuntimeValue {
 
     class BoardReference(
         val board: Board,
+    ) : JessieCodeRuntimeValue
+
+    class TransformationReference(
+        val transformation: Transformation,
+    ) : JessieCodeRuntimeValue
+
+    class CompositionReference(
+        val composition: Composition,
     ) : JessieCodeRuntimeValue
 
     class ElementReference(

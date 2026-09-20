@@ -8,9 +8,11 @@ import com.swithun.jsxgraph.core.GMResult
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.math.sqrt
 
 class PolygonTest {
     @Test
@@ -35,20 +37,20 @@ class PolygonTest {
         assertEquals(4, polygon.vertices.size)
         assertSame(first, polygon.vertices.last())
         assertEquals(3, polygon.borders.size)
-        assertSame(second, polygon.borders[0].point1)
-        assertSame(third, polygon.borders[0].point2)
-        assertSame(third, polygon.borders[1].point1)
-        assertSame(first, polygon.borders[1].point2)
-        assertSame(first, polygon.borders[2].point1)
-        assertSame(second, polygon.borders[2].point2)
+        assertSame(first, polygon.borders[0].point1)
+        assertSame(second, polygon.borders[0].point2)
+        assertSame(second, polygon.borders[1].point1)
+        assertSame(third, polygon.borders[1].point2)
+        assertSame(third, polygon.borders[2].point1)
+        assertSame(first, polygon.borders[2].point2)
         assertEquals(
             listOf(
                 first,
                 second,
                 third,
-                polygon.borders[0],
                 polygon.borders[1],
                 polygon.borders[2],
+                polygon.borders[0],
                 polygon,
             ),
             board.objectsList,
@@ -68,6 +70,78 @@ class PolygonTest {
                 polygon.childElements[it.id] === it
             },
         )
+    }
+
+    @Test
+    fun polygonalChainRemovesOnlyTheClosingVertexAndBorder() {
+        val board = board()
+        val first = point(board, 0.0, 0.0)
+        val second = point(board, 4.0, 0.0)
+        val third = point(board, 4.0, 3.0)
+        val fourth = point(board, -1.0, 2.0)
+        val chain = polygon(
+            Polygon.createPolygonalChain(
+                board = board,
+                vertices = listOf(first, second, third, fourth),
+            ),
+        )
+
+        assertEquals("polygonalchain", chain.elType)
+        assertEquals(
+            listOf(first, second, third, fourth),
+            chain.vertices,
+        )
+        assertEquals(3, chain.borders.size)
+        assertSame(first, chain.borders[0].point1)
+        assertSame(second, chain.borders[0].point2)
+        assertSame(second, chain.borders[1].point1)
+        assertSame(third, chain.borders[1].point2)
+        assertSame(third, chain.borders[2].point1)
+        assertSame(fourth, chain.borders[2].point2)
+        assertEquals(11.5, chain.Area())
+        assertEquals(7.0 + sqrt(26.0), chain.Perimeter())
+        assertEquals(chain.Perimeter(), chain.L())
+        assertContentEquals(
+            doubleArrayOf(0.0, 3.0, 4.0, 0.0),
+            chain.bounds(),
+        )
+        assertEquals(8, board.objectsList.size)
+        assertTrue(chain.borders.all { it.id in chain.childElements })
+
+        board.removeObject(chain)
+
+        assertEquals(
+            listOf(first, second, third, fourth).map(Point::id),
+            board.objectsList.map(GeometryElement::id),
+        )
+        assertTrue(
+            listOf(first, second, third, fourth).all {
+                chain.id !in it.childElements
+            },
+        )
+    }
+
+    @Test
+    fun borderlessPolygonalChainKeepsItsOpenVertices() {
+        val board = board()
+        val vertices = listOf(
+            point(board, 0.0, 0.0),
+            point(board, 2.0, 0.0),
+            point(board, 0.0, 2.0),
+        )
+        val chain = polygon(
+            Polygon.createPolygonalChain(
+                board = board,
+                vertices = vertices,
+                withLines = false,
+                name = "",
+            ),
+        )
+
+        assertEquals(vertices, chain.vertices)
+        assertTrue(chain.borders.isEmpty())
+        assertFalse(chain.vertices.first() === chain.vertices.last())
+        assertEquals(4, board.numObjects)
     }
 
     @Test

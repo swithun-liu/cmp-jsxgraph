@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "caseCount": 24,
+  "caseCount": 30,
   "finalCaseId": "prod_mixed_operations_board",
-  "firstContentMillis": 352,
-  "traversalMillis": 1662,
-  "retainedJsHeapBytes": 7978584,
-  "jsHeapTotalBytes": 25493504,
+  "firstContentMillis": 542,
+  "traversalMillis": 2110,
+  "retainedJsHeapBytes": 8129096,
+  "jsHeapTotalBytes": 26017792,
   "viewport": {
     "width": 1200,
     "height": 900

@@ -309,7 +309,7 @@ private enum class SplineCoordinate {
 }
 
 internal class CardinalSplineInterpolation internal constructor(
-    private val points: List<CoordsElement>,
+    private val points: List<NumericsPoint2D>,
     private val tension: () -> Double,
     private val type: String,
 ) {
@@ -455,7 +455,7 @@ internal class CardinalSplineInterpolation internal constructor(
     }
 
     private fun coordinate(
-        point: CoordsElement,
+        point: NumericsPoint2D,
         coordinate: SplineCoordinate,
     ): Double = when (coordinate) {
         SplineCoordinate.X -> point.X()
@@ -470,7 +470,12 @@ internal class CardinalSplineInterpolation internal constructor(
             firstExtendedIndex in 1..points.size &&
             secondExtendedIndex in 1..points.size
         ) {
-            return points[firstExtendedIndex - 1].Dist(points[secondExtendedIndex - 1])
+            val first = points[firstExtendedIndex - 1]
+            val second = points[secondExtendedIndex - 1]
+            return Mat.hypot(
+                first.X() - second.X(),
+                first.Y() - second.Y(),
+            )
         }
         return Mat.hypot(
             coordinate(firstExtendedIndex, SplineCoordinate.X) -
@@ -1793,7 +1798,7 @@ object Numerics {
     // JSXGraph: src/math/numerics.js -> CardinalSpline
     @Suppress("FunctionName")
     internal fun CardinalSpline(
-        points: List<CoordsElement>,
+        points: List<NumericsPoint2D>,
         tension: Double,
         type: String? = null,
     ): CardinalSplineInterpolation =
@@ -1806,7 +1811,7 @@ object Numerics {
     // JSXGraph: src/math/numerics.js -> CardinalSpline
     @Suppress("FunctionName")
     internal fun CardinalSpline(
-        points: List<CoordsElement>,
+        points: List<NumericsPoint2D>,
         tension: () -> Double,
         type: String? = null,
     ): CardinalSplineInterpolation = CardinalSplineInterpolation(
@@ -1818,7 +1823,7 @@ object Numerics {
     // JSXGraph: src/math/numerics.js -> CatmullRomSpline
     @Suppress("FunctionName")
     internal fun CatmullRomSpline(
-        points: List<CoordsElement>,
+        points: List<NumericsPoint2D>,
         type: String? = null,
     ): CardinalSplineInterpolation = CardinalSpline(
         points = points,

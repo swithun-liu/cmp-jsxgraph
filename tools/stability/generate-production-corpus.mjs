@@ -32,8 +32,8 @@ for (const output of outputs) {
 }
 
 function validateCorpus() {
-    if (cases.length !== 24) {
-        throw new Error(`Expected 24 production cases, found ${cases.length}`);
+    if (cases.length !== 30) {
+        throw new Error(`Expected 30 production cases, found ${cases.length}`);
     }
     if (new Set(requiredFeatures).size !== requiredFeatures.length) {
         throw new Error("Required production features must be unique");

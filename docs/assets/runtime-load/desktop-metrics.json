@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "date": "2026-09-15",
+  "date": "2026-09-17",
   "platform": "Desktop JVM",
-  "caseCount": 24,
+  "caseCount": 30,
   "autoTraversalConfigured": true,
-  "processSurvivedSeconds": 35,
-  "finalRssBytes": 244301824,
+  "processSurvivedSeconds": 30,
+  "finalRssBytes": 224116736,
   "screenshotAvailable": false,
   "screenshotNote": "macOS screen-recording permission prevented window capture",
   "outcome": "passed"

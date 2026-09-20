@@ -8,13 +8,13 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.math.Mat
-import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 
 /**
  * Initial lifecycle and dependency slice of JXG.GeometryElement.
  *
- * Visual properties, renderer nodes, persistent transformation ownership,
- * labels, traces, and animations remain in the untranslated element model.
+ * Visual properties, renderer nodes, labels, traces, and animations remain
+ * in the untranslated element model.
  * This class stays internal until those contracts are available.
  */
 internal open class GeometryElement(
@@ -28,6 +28,9 @@ internal open class GeometryElement(
     // JSXGraph: src/base/element.js -> elType / _org_type
     internal var elType: String = ""
     internal val originalType: Int = type
+
+    // JSXGraph: src/base/element.js -> transformations / baseElement
+    internal val transformations = mutableListOf<Transformation>()
     internal var baseElement: GeometryElement? = null
 
     // JSXGraph: src/base/element.js -> name / getName
@@ -38,6 +41,8 @@ internal open class GeometryElement(
     internal var needsUpdate: Boolean = true
     internal var positionInBoard: Int = -1
     internal var isDraggable: Boolean = false
+    // JSXGraph: src/base/element.js -> dump
+    internal var dump: Boolean = true
 
     // JSXGraph: src/base/element.js -> stdform
     internal var stdform = doubleArrayOf(1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0)
@@ -125,7 +130,7 @@ internal open class GeometryElement(
 
     // JSXGraph: src/base/element.js -> addParentsFromJCFunctions
     internal fun addParentsFromJCFunctions(
-        functions: Iterable<JessieCodeExpressionFunction>,
+        functions: Iterable<JessieCodeCoordinateFunction>,
     ): GeometryElement {
         for (function in functions) {
             for (dependency in function.dependencies.values) {

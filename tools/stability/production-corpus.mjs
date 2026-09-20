@@ -34,11 +34,67 @@ function line(id, first, second, attributes = {}) {
     };
 }
 
+function segment(
+    id,
+    first,
+    second,
+    attributes = {},
+    fixedLength = undefined
+) {
+    return {
+        id,
+        type: "segment",
+        parents: fixedLength === undefined
+            ? [first, second]
+            : [first, second, fixedLength],
+        attributes: {
+            ...fixedAttributes,
+            ...attributes
+        }
+    };
+}
+
 function circle(id, center, radius, attributes = {}) {
     return {
         id,
         type: "circle",
         parents: [center, radius],
+        attributes: {
+            ...fixedAttributes,
+            ...attributes
+        }
+    };
+}
+
+function circumcircle(id, first, second, third, attributes = {}) {
+    return {
+        id,
+        type: "circle",
+        parents: [first, second, third],
+        attributes: {
+            ...fixedAttributes,
+            ...attributes
+        }
+    };
+}
+
+function midpoint(id, parents, attributes = {}) {
+    return {
+        id,
+        type: "midpoint",
+        parents,
+        attributes: {
+            ...fixedAttributes,
+            ...attributes
+        }
+    };
+}
+
+function orthogonal(id, type, first, second, attributes = {}) {
+    return {
+        id,
+        type,
+        parents: [first, second],
         attributes: {
             ...fixedAttributes,
             ...attributes
@@ -150,16 +206,21 @@ export const requiredFeatures = [
     "auto-angle-radius",
     "circle",
     "circle-fill",
+    "nonnegative-circle-radius",
     "clockwise-orientation",
     "concave-polygon",
     "coordinate-parents",
+    "circumcircle",
     "cubic-bezier",
     "data-plot",
     "dependent-update",
+    "direction-point-arc",
+    "dynamic-segment-length",
     "dynamic-text",
     "element-parents",
     "fill-opacity",
     "fixed-angle-radius",
+    "fixed-length-segment",
     "fixed-point",
     "free-point",
     "functiongraph",
@@ -172,8 +233,14 @@ export const requiredFeatures = [
     "line",
     "major-arc",
     "mixed-scene",
+    "midpoint",
+    "line-parent-midpoint",
     "numeric-text",
+    "orthogonal-projection",
     "parametric-curve",
+    "perpendicular-line",
+    "perpendicular-point",
+    "perpendicular-segment",
     "point",
     "point-style",
     "polygon",
@@ -215,21 +282,15 @@ export const cases = [
                 fillColor: "#F4D44D",
                 strokeWidth: 2.5
             }),
-            line("edgeAB", "surveyA", "surveyB", {
-                straightFirst: false,
-                straightLast: false,
+            segment("edgeAB", "surveyA", "surveyB", {
                 strokeColor: "#314652",
                 strokeWidth: 2.5
             }),
-            line("edgeBC", "surveyB", "surveyC", {
-                straightFirst: false,
-                straightLast: false,
+            segment("edgeBC", "surveyB", "surveyC", {
                 strokeColor: "#314652",
                 strokeWidth: 2.5
             }),
-            line("edgeCA", "surveyC", "surveyA", {
-                straightFirst: false,
-                straightLast: false,
+            segment("edgeCA", "surveyC", "surveyA", {
                 strokeColor: "#314652",
                 strokeWidth: 2.5
             })
@@ -246,7 +307,6 @@ export const cases = [
             "point",
             "point-style",
             "fixed-point",
-            "line",
             "segment",
             "element-parents",
             "style-colors",
@@ -254,6 +314,67 @@ export const cases = [
             "grid",
             "keep-aspect-ratio"
         ]
+    }),
+    productionCase({
+        id: "prod_geometry_fixed_length_segment",
+        title: "Dynamic constrained survey arm",
+        scenario: "A free driver controls the exact length of a segment with a fixed anchor.",
+        objects: [
+            point("lengthDriver", 3, -2.5, {
+                name: "LengthDriver",
+                size: 5,
+                strokeColor: "#6C3FA0",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            point("fixedAnchor", -3, -1, {
+                size: 6,
+                strokeColor: "#314652",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            point("movableEndpoint", -1, -1, {
+                size: 6,
+                strokeColor: "#B44335",
+                fillColor: "#F4D44D",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            segment(
+                "constrainedArm",
+                "fixedAnchor",
+                "movableEndpoint",
+                {
+                    strokeColor: "#167C73",
+                    strokeWidth: 4
+                },
+                "LengthDriver.X() + 1"
+            )
+        ],
+        expectedElementIds: [
+            "lengthDriver",
+            "fixedAnchor",
+            "movableEndpoint",
+            "constrainedArm"
+        ],
+        features: [
+            "point",
+            "fixed-point",
+            "free-point",
+            "segment",
+            "fixed-length-segment",
+            "dynamic-segment-length",
+            "dependent-update",
+            "interaction-state",
+            "element-parents",
+            "style-colors",
+            "stroke-width"
+        ],
+        interaction: {
+            pointId: "lengthDriver",
+            target: [5, -2.5]
+        }
     }),
     productionCase({
         id: "prod_geometry_infinite_crosshair",
@@ -302,9 +423,7 @@ export const cases = [
                 fillColor: "#F4D44D",
                 strokeWidth: 2
             }),
-            line("mapVector", "mapOrigin", "mapTarget", {
-                straightFirst: false,
-                straightLast: false,
+            segment("mapVector", "mapOrigin", "mapTarget", {
                 strokeColor: "#1F5A94",
                 strokeWidth: 3
             }),
@@ -326,6 +445,7 @@ export const cases = [
             "stretched-viewport",
             "hidden-point",
             "element-parents",
+            "segment",
             "circle-fill",
             "fill-opacity"
         ],
@@ -367,6 +487,263 @@ export const cases = [
             "stroke-width",
             "style-colors"
         ]
+    }),
+    productionCase({
+        id: "prod_geometry_circumcircle",
+        title: "Three-point survey circle",
+        scenario: "Three survey Points define a circumcircle whose implicit center follows a moved parent.",
+        objects: [
+            point("circumA", -3, -2, {
+                size: 5,
+                strokeColor: "#1F5A94",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            point("circumB", 3, -1, {
+                size: 6,
+                strokeColor: "#B44335",
+                fillColor: "#F4D44D",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            point("circumC", 0, 3, {
+                size: 5,
+                strokeColor: "#167C73",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            circumcircle(
+                "surveyCircumcircle",
+                "circumA",
+                "circumB",
+                "circumC",
+                {
+                    strokeColor: "#167C73",
+                    fillColor: "#7BC8B8",
+                    fillOpacity: 0.12,
+                    strokeWidth: 2.5
+                }
+            )
+        ],
+        expectedElementIds: [
+            "circumA",
+            "circumB",
+            "circumC",
+            "surveyCircumcircle"
+        ],
+        features: [
+            "circle",
+            "circumcircle",
+            "dependent-update",
+            "element-parents",
+            "free-point",
+            "interaction-state"
+        ],
+        interaction: {
+            pointId: "circumB",
+            target: [4, -2]
+        }
+    }),
+    productionCase({
+        id: "prod_geometry_midpoints",
+        title: "Dependent route midpoints",
+        scenario: "Point-pair and Line-parent midpoints follow their defining geometry.",
+        objects: [
+            point("midpointA", -4, -2, {
+                size: 5,
+                strokeColor: "#1F5A94",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            point("midpointB", 4, 2, {
+                size: 6,
+                strokeColor: "#B44335",
+                fillColor: "#F4D44D",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            segment("midpointRoute", "midpointA", "midpointB", {
+                strokeColor: "#49545D",
+                strokeWidth: 2
+            }),
+            midpoint(
+                "routeMidpoint",
+                ["midpointA", "midpointB"],
+                {
+                    size: 7,
+                    strokeColor: "#167C73",
+                    fillColor: "#7BC8B8",
+                    strokeWidth: 2
+                }
+            ),
+            point("lineMidpointA", -4, 3.2, {
+                visible: false
+            }),
+            point("lineMidpointB", 2, 3.2, {
+                visible: false
+            }),
+            segment(
+                "lineMidpointSource",
+                "lineMidpointA",
+                "lineMidpointB",
+                {
+                    strokeColor: "#9A4E1F",
+                    strokeWidth: 2.5
+                }
+            ),
+            midpoint(
+                "lineMidpoint",
+                ["lineMidpointSource"],
+                {
+                    size: 6,
+                    strokeColor: "#9A4E1F",
+                    fillColor: "#FFFFFF",
+                    strokeWidth: 2
+                }
+            )
+        ],
+        expectedElementIds: [
+            "midpointA",
+            "midpointB",
+            "midpointRoute",
+            "routeMidpoint",
+            "lineMidpointA",
+            "lineMidpointB",
+            "lineMidpointSource",
+            "lineMidpoint"
+        ],
+        features: [
+            "midpoint",
+            "line-parent-midpoint",
+            "dependent-update",
+            "element-parents",
+            "free-point",
+            "hidden-point",
+            "interaction-state",
+            "segment",
+            "point-style"
+        ],
+        interaction: {
+            pointId: "midpointB",
+            target: [2, 4]
+        }
+    }),
+    productionCase({
+        id: "prod_geometry_orthogonal_constructions",
+        title: "Orthogonal survey constructions",
+        scenario: "Projection Points, an infinite perpendicular, and a finite drop follow movable survey controls.",
+        objects: [
+            point("orthogonalA", -4, -1, {
+                visible: false
+            }),
+            point("orthogonalB", 2, 3, {
+                visible: false
+            }),
+            line(
+                "orthogonalBase",
+                "orthogonalA",
+                "orthogonalB",
+                {
+                    strokeColor: "#49545D",
+                    strokeWidth: 2.5
+                }
+            ),
+            point("orthogonalDriver", 3, -3, {
+                size: 7,
+                strokeColor: "#B44335",
+                fillColor: "#F4D44D",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            point("footDriver", -3.5, 3.8, {
+                size: 5,
+                strokeColor: "#1F5A94",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            point("dropDriver", 4, 3.5, {
+                size: 6,
+                strokeColor: "#6C3FA0",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            orthogonal(
+                "projection",
+                "orthogonalprojection",
+                "orthogonalDriver",
+                "orthogonalBase",
+                {
+                    size: 6,
+                    strokeColor: "#167C73",
+                    fillColor: "#7BC8B8",
+                    strokeWidth: 2
+                }
+            ),
+            orthogonal(
+                "perpendicularFoot",
+                "perpendicularpoint",
+                "orthogonalBase",
+                "footDriver",
+                {
+                    size: 6,
+                    strokeColor: "#1F5A94",
+                    fillColor: "#7BB7E8",
+                    strokeWidth: 2
+                }
+            ),
+            orthogonal(
+                "normal",
+                "perpendicular",
+                "orthogonalDriver",
+                "orthogonalBase",
+                {
+                    strokeColor: "#B44335",
+                    strokeWidth: 2
+                }
+            ),
+            orthogonal(
+                "drop",
+                "perpendicularsegment",
+                "orthogonalBase",
+                "dropDriver",
+                {
+                    strokeColor: "#167C73",
+                    strokeWidth: 4
+                }
+            )
+        ],
+        expectedElementIds: [
+            "orthogonalA",
+            "orthogonalB",
+            "orthogonalBase",
+            "orthogonalDriver",
+            "footDriver",
+            "dropDriver",
+            "projection",
+            "perpendicularFoot",
+            "normal",
+            "drop"
+        ],
+        features: [
+            "orthogonal-projection",
+            "perpendicular-point",
+            "perpendicular-line",
+            "perpendicular-segment",
+            "dependent-update",
+            "element-parents",
+            "free-point",
+            "hidden-point",
+            "interaction-state",
+            "infinite-line",
+            "segment",
+            "point-style",
+            "style-colors",
+            "stroke-width"
+        ],
+        interaction: {
+            pointId: "orthogonalDriver",
+            target: [0, 4]
+        }
     }),
     productionCase({
         id: "prod_curve_quadratic_trend",
@@ -813,6 +1190,71 @@ export const cases = [
         ]
     }),
     productionCase({
+        id: "prod_arc_direction_route",
+        title: "Direction-selected route arc",
+        scenario: "A movable fourth Point selects which circular path connects two fixed Arc endpoints.",
+        objects: [
+            point("directionCenter", 0, 0, hiddenPointAttributes),
+            point("directionStart", 3, 0, {
+                size: 6,
+                strokeColor: "#1F5A94",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            point("directionEnd", 0, 3, {
+                size: 6,
+                strokeColor: "#B44335",
+                fillColor: "#FFFFFF",
+                strokeWidth: 2
+            }),
+            point("directionSelector", 0, -2.2, {
+                size: 6,
+                strokeColor: "#9A4E1F",
+                fillColor: "#F4D44D",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            circular(
+                "directionRoute",
+                "arc",
+                [
+                    "directionCenter",
+                    "directionStart",
+                    "directionEnd",
+                    "directionSelector"
+                ],
+                {
+                    useDirection: true,
+                    selection: "auto",
+                    strokeColor: "#167C73",
+                    fillColor: "none",
+                    strokeWidth: 3
+                }
+            )
+        ],
+        expectedElementIds: [
+            "directionCenter",
+            "directionStart",
+            "directionEnd",
+            "directionSelector",
+            "directionRoute"
+        ],
+        features: [
+            "arc",
+            "direction-point-arc",
+            "cubic-bezier",
+            "element-parents",
+            "fixed-point",
+            "free-point",
+            "interaction-state",
+            "dependent-update"
+        ],
+        interaction: {
+            pointId: "directionSelector",
+            target: [0, 3.8]
+        }
+    }),
+    productionCase({
         id: "prod_sector_capacity",
         title: "Capacity sector",
         scenario: "A filled sector highlights a bounded radial capacity range.",
@@ -934,9 +1376,7 @@ export const cases = [
                 fillColor: "#FFFFFF",
                 strokeWidth: 2
             }),
-            line("routeSegment", "routeStart", "routeEnd", {
-                straightFirst: false,
-                straightLast: false,
+            segment("routeSegment", "routeStart", "routeEnd", {
                 strokeColor: "#B44335",
                 strokeWidth: 3
             })
@@ -989,6 +1429,47 @@ export const cases = [
         }
     }),
     productionCase({
+        id: "prod_interaction_dynamic_circle_radius",
+        title: "Nonnegative dynamic radius",
+        scenario: "A free driver Point controls a string radius that clamps at zero before and after interaction.",
+        objects: [
+            point("radiusDriver", 3.0, 0.0, {
+                name: "RadiusDriver",
+                size: 6,
+                strokeColor: "#B44335",
+                fillColor: "#F4D44D",
+                strokeWidth: 2,
+                fixed: false
+            }),
+            circle(
+                "dynamicRadius",
+                [0, 0],
+                "RadiusDriver.X() - 1",
+                {
+                    nonnegativeOnly: true,
+                    strokeColor: "#167C73",
+                    fillColor: "#167C73",
+                    fillOpacity: 0.14,
+                    strokeWidth: 3
+                }
+            )
+        ],
+        expectedElementIds: ["radiusDriver", "dynamicRadius"],
+        features: [
+            "circle",
+            "circle-fill",
+            "coordinate-parents",
+            "dependent-update",
+            "free-point",
+            "interaction-state",
+            "nonnegative-circle-radius"
+        ],
+        interaction: {
+            pointId: "radiusDriver",
+            target: [-2, 1.5]
+        }
+    }),
+    productionCase({
         id: "prod_mixed_operations_board",
         title: "Mixed operations board",
         scenario: "A compact board combines geometry, a sampled trend, a polygon zone, and a status label.",
@@ -1005,9 +1486,7 @@ export const cases = [
                 fillColor: "#F4D44D",
                 strokeWidth: 2
             }),
-            line("operationLink", "operationA", "operationB", {
-                straightFirst: false,
-                straightLast: false,
+            segment("operationLink", "operationA", "operationB", {
                 strokeColor: "#314652",
                 strokeWidth: 2
             }),
@@ -1058,8 +1537,8 @@ export const cases = [
         expectedTexts: ["Operations overview"],
         features: [
             "mixed-scene",
+            "segment",
             "point",
-            "line",
             "circle",
             "polygon",
             "data-plot",

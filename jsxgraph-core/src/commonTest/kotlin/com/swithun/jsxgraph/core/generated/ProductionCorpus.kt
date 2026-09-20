@@ -21,16 +21,21 @@ internal val requiredProductionFeatures: Set<String> = setOf(
     "auto-angle-radius",
     "circle",
     "circle-fill",
+    "nonnegative-circle-radius",
     "clockwise-orientation",
     "concave-polygon",
     "coordinate-parents",
+    "circumcircle",
     "cubic-bezier",
     "data-plot",
     "dependent-update",
+    "direction-point-arc",
+    "dynamic-segment-length",
     "dynamic-text",
     "element-parents",
     "fill-opacity",
     "fixed-angle-radius",
+    "fixed-length-segment",
     "fixed-point",
     "free-point",
     "functiongraph",
@@ -43,8 +48,14 @@ internal val requiredProductionFeatures: Set<String> = setOf(
     "line",
     "major-arc",
     "mixed-scene",
+    "midpoint",
+    "line-parent-midpoint",
     "numeric-text",
+    "orthogonal-projection",
     "parametric-curve",
+    "perpendicular-line",
+    "perpendicular-point",
+    "perpendicular-segment",
     "point",
     "point-style",
     "polygon",
@@ -136,7 +147,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                 },
                 {
                   "id": "edgeAB",
-                  "type": "line",
+                  "type": "segment",
                   "parents": [
                     "surveyA",
                     "surveyB"
@@ -146,15 +157,13 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                     "withLabel": false,
                     "fixed": true,
                     "highlight": false,
-                    "straightFirst": false,
-                    "straightLast": false,
                     "strokeColor": "#314652",
                     "strokeWidth": 2.5
                   }
                 },
                 {
                   "id": "edgeBC",
-                  "type": "line",
+                  "type": "segment",
                   "parents": [
                     "surveyB",
                     "surveyC"
@@ -164,15 +173,13 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                     "withLabel": false,
                     "fixed": true,
                     "highlight": false,
-                    "straightFirst": false,
-                    "straightLast": false,
                     "strokeColor": "#314652",
                     "strokeWidth": 2.5
                   }
                 },
                 {
                   "id": "edgeCA",
-                  "type": "line",
+                  "type": "segment",
                   "parents": [
                     "surveyC",
                     "surveyA"
@@ -182,8 +189,6 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                     "withLabel": false,
                     "fixed": true,
                     "highlight": false,
-                    "straightFirst": false,
-                    "straightLast": false,
                     "strokeColor": "#314652",
                     "strokeWidth": 2.5
                   }
@@ -204,7 +209,6 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
             "point",
             "point-style",
             "fixed-point",
-            "line",
             "segment",
             "element-parents",
             "style-colors",
@@ -215,6 +219,121 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
         interactionPointId = null,
         interactionTargetX = null,
         interactionTargetY = null,
+    ),
+    ProductionCorpusCase(
+        id = "prod_geometry_fixed_length_segment",
+        title = "Dynamic constrained survey arm",
+        scenario = "A free driver controls the exact length of a segment with a fixed anchor.",
+        source = """
+            {
+              "schemaVersion": 1,
+              "boundingBox": [
+                -6,
+                5,
+                6,
+                -5
+              ],
+              "axis": true,
+              "grid": true,
+              "keepAspectRatio": true,
+              "objects": [
+                {
+                  "id": "lengthDriver",
+                  "type": "point",
+                  "parents": [
+                    3,
+                    -2.5
+                  ],
+                  "attributes": {
+                    "name": "LengthDriver",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 5,
+                    "strokeColor": "#6C3FA0",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "fixedAnchor",
+                  "type": "point",
+                  "parents": [
+                    -3,
+                    -1
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#314652",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "movableEndpoint",
+                  "type": "point",
+                  "parents": [
+                    -1,
+                    -1
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#B44335",
+                    "fillColor": "#F4D44D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "constrainedArm",
+                  "type": "segment",
+                  "parents": [
+                    "fixedAnchor",
+                    "movableEndpoint",
+                    "LengthDriver.X() + 1"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#167C73",
+                    "strokeWidth": 4
+                  }
+                }
+              ]
+            }
+        """.trimIndent(),
+        expectedElementIds = setOf(
+            "lengthDriver",
+            "fixedAnchor",
+            "movableEndpoint",
+            "constrainedArm",
+        ),
+        expectedTexts = emptyList(),
+        features = setOf(
+            "point",
+            "fixed-point",
+            "free-point",
+            "segment",
+            "fixed-length-segment",
+            "dynamic-segment-length",
+            "dependent-update",
+            "interaction-state",
+            "element-parents",
+            "style-colors",
+            "stroke-width",
+        ),
+        interactionPointId = "lengthDriver",
+        interactionTargetX = 5.0,
+        interactionTargetY = -2.5,
     ),
     ProductionCorpusCase(
         id = "prod_geometry_infinite_crosshair",
@@ -370,7 +489,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                 },
                 {
                   "id": "mapVector",
-                  "type": "line",
+                  "type": "segment",
                   "parents": [
                     "mapOrigin",
                     "mapTarget"
@@ -380,8 +499,6 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                     "withLabel": false,
                     "fixed": true,
                     "highlight": false,
-                    "straightFirst": false,
-                    "straightLast": false,
                     "strokeColor": "#1F5A94",
                     "strokeWidth": 3
                   }
@@ -419,6 +536,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
             "stretched-viewport",
             "hidden-point",
             "element-parents",
+            "segment",
             "circle-fill",
             "fill-opacity",
         ),
@@ -526,6 +644,518 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
         interactionPointId = null,
         interactionTargetX = null,
         interactionTargetY = null,
+    ),
+    ProductionCorpusCase(
+        id = "prod_geometry_circumcircle",
+        title = "Three-point survey circle",
+        scenario = "Three survey Points define a circumcircle whose implicit center follows a moved parent.",
+        source = """
+            {
+              "schemaVersion": 1,
+              "boundingBox": [
+                -6,
+                5,
+                6,
+                -5
+              ],
+              "axis": true,
+              "grid": true,
+              "keepAspectRatio": true,
+              "objects": [
+                {
+                  "id": "circumA",
+                  "type": "point",
+                  "parents": [
+                    -3,
+                    -2
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 5,
+                    "strokeColor": "#1F5A94",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "circumB",
+                  "type": "point",
+                  "parents": [
+                    3,
+                    -1
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#B44335",
+                    "fillColor": "#F4D44D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "circumC",
+                  "type": "point",
+                  "parents": [
+                    0,
+                    3
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 5,
+                    "strokeColor": "#167C73",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "surveyCircumcircle",
+                  "type": "circle",
+                  "parents": [
+                    "circumA",
+                    "circumB",
+                    "circumC"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#167C73",
+                    "fillColor": "#7BC8B8",
+                    "fillOpacity": 0.12,
+                    "strokeWidth": 2.5
+                  }
+                }
+              ]
+            }
+        """.trimIndent(),
+        expectedElementIds = setOf(
+            "circumA",
+            "circumB",
+            "circumC",
+            "surveyCircumcircle",
+        ),
+        expectedTexts = emptyList(),
+        features = setOf(
+            "circle",
+            "circumcircle",
+            "dependent-update",
+            "element-parents",
+            "free-point",
+            "interaction-state",
+        ),
+        interactionPointId = "circumB",
+        interactionTargetX = 4.0,
+        interactionTargetY = -2.0,
+    ),
+    ProductionCorpusCase(
+        id = "prod_geometry_midpoints",
+        title = "Dependent route midpoints",
+        scenario = "Point-pair and Line-parent midpoints follow their defining geometry.",
+        source = """
+            {
+              "schemaVersion": 1,
+              "boundingBox": [
+                -6,
+                5,
+                6,
+                -5
+              ],
+              "axis": true,
+              "grid": true,
+              "keepAspectRatio": true,
+              "objects": [
+                {
+                  "id": "midpointA",
+                  "type": "point",
+                  "parents": [
+                    -4,
+                    -2
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 5,
+                    "strokeColor": "#1F5A94",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "midpointB",
+                  "type": "point",
+                  "parents": [
+                    4,
+                    2
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#B44335",
+                    "fillColor": "#F4D44D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "midpointRoute",
+                  "type": "segment",
+                  "parents": [
+                    "midpointA",
+                    "midpointB"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#49545D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "routeMidpoint",
+                  "type": "midpoint",
+                  "parents": [
+                    "midpointA",
+                    "midpointB"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 7,
+                    "strokeColor": "#167C73",
+                    "fillColor": "#7BC8B8",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "lineMidpointA",
+                  "type": "point",
+                  "parents": [
+                    -4,
+                    3.2
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "visible": false
+                  }
+                },
+                {
+                  "id": "lineMidpointB",
+                  "type": "point",
+                  "parents": [
+                    2,
+                    3.2
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "visible": false
+                  }
+                },
+                {
+                  "id": "lineMidpointSource",
+                  "type": "segment",
+                  "parents": [
+                    "lineMidpointA",
+                    "lineMidpointB"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#9A4E1F",
+                    "strokeWidth": 2.5
+                  }
+                },
+                {
+                  "id": "lineMidpoint",
+                  "type": "midpoint",
+                  "parents": [
+                    "lineMidpointSource"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#9A4E1F",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                }
+              ]
+            }
+        """.trimIndent(),
+        expectedElementIds = setOf(
+            "midpointA",
+            "midpointB",
+            "midpointRoute",
+            "routeMidpoint",
+            "lineMidpointA",
+            "lineMidpointB",
+            "lineMidpointSource",
+            "lineMidpoint",
+        ),
+        expectedTexts = emptyList(),
+        features = setOf(
+            "midpoint",
+            "line-parent-midpoint",
+            "dependent-update",
+            "element-parents",
+            "free-point",
+            "hidden-point",
+            "interaction-state",
+            "segment",
+            "point-style",
+        ),
+        interactionPointId = "midpointB",
+        interactionTargetX = 2.0,
+        interactionTargetY = 4.0,
+    ),
+    ProductionCorpusCase(
+        id = "prod_geometry_orthogonal_constructions",
+        title = "Orthogonal survey constructions",
+        scenario = "Projection Points, an infinite perpendicular, and a finite drop follow movable survey controls.",
+        source = """
+            {
+              "schemaVersion": 1,
+              "boundingBox": [
+                -6,
+                5,
+                6,
+                -5
+              ],
+              "axis": true,
+              "grid": true,
+              "keepAspectRatio": true,
+              "objects": [
+                {
+                  "id": "orthogonalA",
+                  "type": "point",
+                  "parents": [
+                    -4,
+                    -1
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "visible": false
+                  }
+                },
+                {
+                  "id": "orthogonalB",
+                  "type": "point",
+                  "parents": [
+                    2,
+                    3
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "visible": false
+                  }
+                },
+                {
+                  "id": "orthogonalBase",
+                  "type": "line",
+                  "parents": [
+                    "orthogonalA",
+                    "orthogonalB"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#49545D",
+                    "strokeWidth": 2.5
+                  }
+                },
+                {
+                  "id": "orthogonalDriver",
+                  "type": "point",
+                  "parents": [
+                    3,
+                    -3
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 7,
+                    "strokeColor": "#B44335",
+                    "fillColor": "#F4D44D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "footDriver",
+                  "type": "point",
+                  "parents": [
+                    -3.5,
+                    3.8
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 5,
+                    "strokeColor": "#1F5A94",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "dropDriver",
+                  "type": "point",
+                  "parents": [
+                    4,
+                    3.5
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#6C3FA0",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "projection",
+                  "type": "orthogonalprojection",
+                  "parents": [
+                    "orthogonalDriver",
+                    "orthogonalBase"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#167C73",
+                    "fillColor": "#7BC8B8",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "perpendicularFoot",
+                  "type": "perpendicularpoint",
+                  "parents": [
+                    "orthogonalBase",
+                    "footDriver"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#1F5A94",
+                    "fillColor": "#7BB7E8",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "normal",
+                  "type": "perpendicular",
+                  "parents": [
+                    "orthogonalDriver",
+                    "orthogonalBase"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#B44335",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "drop",
+                  "type": "perpendicularsegment",
+                  "parents": [
+                    "orthogonalBase",
+                    "dropDriver"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "strokeColor": "#167C73",
+                    "strokeWidth": 4
+                  }
+                }
+              ]
+            }
+        """.trimIndent(),
+        expectedElementIds = setOf(
+            "orthogonalA",
+            "orthogonalB",
+            "orthogonalBase",
+            "orthogonalDriver",
+            "footDriver",
+            "dropDriver",
+            "projection",
+            "perpendicularFoot",
+            "normal",
+            "drop",
+        ),
+        expectedTexts = emptyList(),
+        features = setOf(
+            "orthogonal-projection",
+            "perpendicular-point",
+            "perpendicular-line",
+            "perpendicular-segment",
+            "dependent-update",
+            "element-parents",
+            "free-point",
+            "hidden-point",
+            "interaction-state",
+            "infinite-line",
+            "segment",
+            "point-style",
+            "style-colors",
+            "stroke-width",
+        ),
+        interactionPointId = "orthogonalDriver",
+        interactionTargetX = 0.0,
+        interactionTargetY = 4.0,
     ),
     ProductionCorpusCase(
         id = "prod_curve_quadratic_trend",
@@ -1725,6 +2355,139 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
         interactionTargetY = null,
     ),
     ProductionCorpusCase(
+        id = "prod_arc_direction_route",
+        title = "Direction-selected route arc",
+        scenario = "A movable fourth Point selects which circular path connects two fixed Arc endpoints.",
+        source = """
+            {
+              "schemaVersion": 1,
+              "boundingBox": [
+                -6,
+                5,
+                6,
+                -5
+              ],
+              "axis": true,
+              "grid": true,
+              "keepAspectRatio": true,
+              "objects": [
+                {
+                  "id": "directionCenter",
+                  "type": "point",
+                  "parents": [
+                    0,
+                    0
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "visible": false
+                  }
+                },
+                {
+                  "id": "directionStart",
+                  "type": "point",
+                  "parents": [
+                    3,
+                    0
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#1F5A94",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "directionEnd",
+                  "type": "point",
+                  "parents": [
+                    0,
+                    3
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#B44335",
+                    "fillColor": "#FFFFFF",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "directionSelector",
+                  "type": "point",
+                  "parents": [
+                    0,
+                    -2.2
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#9A4E1F",
+                    "fillColor": "#F4D44D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "directionRoute",
+                  "type": "arc",
+                  "parents": [
+                    "directionCenter",
+                    "directionStart",
+                    "directionEnd",
+                    "directionSelector"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "selection": "auto",
+                    "orientation": "counterclockwise",
+                    "useDirection": true,
+                    "strokeColor": "#167C73",
+                    "fillColor": "none",
+                    "strokeWidth": 3
+                  }
+                }
+              ]
+            }
+        """.trimIndent(),
+        expectedElementIds = setOf(
+            "directionCenter",
+            "directionStart",
+            "directionEnd",
+            "directionSelector",
+            "directionRoute",
+        ),
+        expectedTexts = emptyList(),
+        features = setOf(
+            "arc",
+            "direction-point-arc",
+            "cubic-bezier",
+            "element-parents",
+            "fixed-point",
+            "free-point",
+            "interaction-state",
+            "dependent-update",
+        ),
+        interactionPointId = "directionSelector",
+        interactionTargetX = 0.0,
+        interactionTargetY = 3.8,
+    ),
+    ProductionCorpusCase(
         id = "prod_sector_capacity",
         title = "Capacity sector",
         scenario = "A filled sector highlights a bounded radial capacity range.",
@@ -2093,7 +2856,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                 },
                 {
                   "id": "routeSegment",
-                  "type": "line",
+                  "type": "segment",
                   "parents": [
                     "routeStart",
                     "routeEnd"
@@ -2103,8 +2866,6 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                     "withLabel": false,
                     "fixed": true,
                     "highlight": false,
-                    "straightFirst": false,
-                    "straightLast": false,
                     "strokeColor": "#B44335",
                     "strokeWidth": 3
                   }
@@ -2204,6 +2965,84 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
         interactionTargetY = -1.75,
     ),
     ProductionCorpusCase(
+        id = "prod_interaction_dynamic_circle_radius",
+        title = "Nonnegative dynamic radius",
+        scenario = "A free driver Point controls a string radius that clamps at zero before and after interaction.",
+        source = """
+            {
+              "schemaVersion": 1,
+              "boundingBox": [
+                -6,
+                5,
+                6,
+                -5
+              ],
+              "axis": true,
+              "grid": true,
+              "keepAspectRatio": true,
+              "objects": [
+                {
+                  "id": "radiusDriver",
+                  "type": "point",
+                  "parents": [
+                    3,
+                    0
+                  ],
+                  "attributes": {
+                    "name": "RadiusDriver",
+                    "withLabel": false,
+                    "fixed": false,
+                    "highlight": false,
+                    "size": 6,
+                    "strokeColor": "#B44335",
+                    "fillColor": "#F4D44D",
+                    "strokeWidth": 2
+                  }
+                },
+                {
+                  "id": "dynamicRadius",
+                  "type": "circle",
+                  "parents": [
+                    [
+                      0,
+                      0
+                    ],
+                    "RadiusDriver.X() - 1"
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "withLabel": false,
+                    "fixed": true,
+                    "highlight": false,
+                    "nonnegativeOnly": true,
+                    "strokeColor": "#167C73",
+                    "fillColor": "#167C73",
+                    "fillOpacity": 0.14,
+                    "strokeWidth": 3
+                  }
+                }
+              ]
+            }
+        """.trimIndent(),
+        expectedElementIds = setOf(
+            "radiusDriver",
+            "dynamicRadius",
+        ),
+        expectedTexts = emptyList(),
+        features = setOf(
+            "circle",
+            "circle-fill",
+            "coordinate-parents",
+            "dependent-update",
+            "free-point",
+            "interaction-state",
+            "nonnegative-circle-radius",
+        ),
+        interactionPointId = "radiusDriver",
+        interactionTargetX = -2.0,
+        interactionTargetY = 1.5,
+    ),
+    ProductionCorpusCase(
         id = "prod_mixed_operations_board",
         title = "Mixed operations board",
         scenario = "A compact board combines geometry, a sampled trend, a polygon zone, and a status label.",
@@ -2258,7 +3097,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                 },
                 {
                   "id": "operationLink",
-                  "type": "line",
+                  "type": "segment",
                   "parents": [
                     "operationA",
                     "operationB"
@@ -2268,8 +3107,6 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
                     "withLabel": false,
                     "fixed": true,
                     "highlight": false,
-                    "straightFirst": false,
-                    "straightLast": false,
                     "strokeColor": "#314652",
                     "strokeWidth": 2
                   }
@@ -2401,8 +3238,8 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
         ),
         features = setOf(
             "mixed-scene",
+            "segment",
             "point",
-            "line",
             "circle",
             "polygon",
             "data-plot",

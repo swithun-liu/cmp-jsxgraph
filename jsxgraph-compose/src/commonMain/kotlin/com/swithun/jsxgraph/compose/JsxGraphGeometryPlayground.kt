@@ -47,6 +47,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -66,6 +67,7 @@ import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.JsxGraphColor
 import com.swithun.jsxgraph.core.JsxGraphInteractionError
 import com.swithun.jsxgraph.core.JsxGraphInteractionState
+import com.swithun.jsxgraph.core.JsxGraphJessieCodeSession
 import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
@@ -74,7 +76,6 @@ import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import kotlin.math.abs
 import kotlin.math.floor
-import kotlin.math.hypot
 import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
@@ -322,44 +323,68 @@ fun JsxGraphScenePreview(
             pixelsPerUnit = metrics.scaleY,
         )
 
-        if (scene.grid) {
-            drawGrid(
-                metrics = metrics,
-                horizontalMajorStep = horizontalMajorStep,
-                verticalMajorStep = verticalMajorStep,
-            )
-        }
-        if (scene.axis) {
-            drawAxes(
-                metrics = metrics,
-                horizontalMajorStep = horizontalMajorStep,
-                verticalMajorStep = verticalMajorStep,
-                textMeasurer = textMeasurer,
-                fontFamily = axisFontFamily,
-            )
-        }
-        for (element in scene.elements) {
-            if (!element.style.visible) {
-                continue
-            }
-            when (element) {
-                is JsxGraphSceneElement.Point ->
-                    drawScenePoint(element, metrics)
-                is JsxGraphSceneElement.Line ->
-                    drawSceneLine(element, metrics)
-                is JsxGraphSceneElement.Circle ->
-                    drawSceneCircle(element, metrics)
-                is JsxGraphSceneElement.Curve ->
-                    drawSceneCurve(element, metrics)
-                is JsxGraphSceneElement.Polygon ->
-                    drawScenePolygon(element, metrics)
-                is JsxGraphSceneElement.Text ->
-                    drawSceneText(
-                        text = element,
+        for (item in scene.renderOrderedItems()) {
+            when (item) {
+                is JsxGraphSceneRenderItem.Grid ->
+                    drawGrid(
                         metrics = metrics,
+                        horizontalMajorStep = horizontalMajorStep,
+                        verticalMajorStep = verticalMajorStep,
+                    )
+                is JsxGraphSceneRenderItem.Axis ->
+                    drawAxes(
+                        metrics = metrics,
+                        horizontalMajorStep = horizontalMajorStep,
+                        verticalMajorStep = verticalMajorStep,
                         textMeasurer = textMeasurer,
                         fontFamily = axisFontFamily,
                     )
+                is JsxGraphSceneRenderItem.Element -> {
+                    val element = item.element
+                    if (
+                        !element.style.visible ||
+                        element is JsxGraphSceneElement.Point &&
+                        !element.isReal
+                    ) {
+                        continue
+                    }
+                    when (element) {
+                        is JsxGraphSceneElement.Point ->
+                            drawScenePoint(element, metrics)
+                        is JsxGraphSceneElement.Line ->
+                            drawSceneLine(element, metrics)
+                        is JsxGraphSceneElement.Circle ->
+                            drawSceneCircle(element, metrics)
+                        is JsxGraphSceneElement.Curve ->
+                            drawSceneCurve(element, metrics)
+                        is JsxGraphSceneElement.Polygon -> Unit
+                        is JsxGraphSceneElement.Text ->
+                            drawSceneText(
+                                text = element,
+                                metrics = metrics,
+                                textMeasurer = textMeasurer,
+                                fontFamily = axisFontFamily,
+                            )
+                    }
+                }
+                is JsxGraphSceneRenderItem.PolygonFill ->
+                    if (item.polygon.style.visible) {
+                        drawScenePolygonFill(item.polygon, metrics)
+                    }
+                is JsxGraphSceneRenderItem.PolygonBorder ->
+                    if (
+                        item.polygon.style.visible &&
+                        item.polygon.borderStyle.visible
+                    ) {
+                        drawScenePolygonBorder(item.polygon, metrics)
+                    }
+                is JsxGraphSceneRenderItem.PolygonVertex ->
+                    if (
+                        item.polygon.style.visible &&
+                        item.vertex.style.visible
+                    ) {
+                        drawScenePoint(item.vertex, metrics)
+                    }
             }
         }
     }
@@ -393,6 +418,30 @@ fun JsxGraphBoard(
     )
 }
 
+@Composable
+fun JsxGraphBoard(
+    session: JsxGraphJessieCodeSession,
+    modifier: Modifier = Modifier,
+    onInteractionError: (JsxGraphInteractionError) -> Unit = {},
+) {
+    var scene by remember(session) {
+        mutableStateOf(session.scene)
+    }
+    val currentOnError by rememberUpdatedState(onInteractionError)
+    JsxGraphScenePreview(
+        scene = scene,
+        modifier = modifier,
+        onPointDrag = { id, coordinates ->
+            when (val result = session.movePoint(id, coordinates)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok ->
+                    scene = result.value
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+    )
+}
+
 internal fun draggablePointAt(
     scene: JsxGraphScene,
     position: Offset,
@@ -401,11 +450,15 @@ internal fun draggablePointAt(
     density: Float,
 ): JsxGraphSceneElement.Point? {
     val metrics = scene.boardMetrics(width, height)
-    return scene.elements
+    return scene.renderOrderedElements()
         .asReversed()
         .filterIsInstance<JsxGraphSceneElement.Point>()
         .firstOrNull { point ->
-            if (!point.style.visible || !point.draggable) {
+            if (
+                !point.style.visible ||
+                !point.isReal ||
+                !point.draggable
+            ) {
                 return@firstOrNull false
             }
             val center = metrics.toScreen(point.coordinates.toOffset())
@@ -418,6 +471,113 @@ internal fun draggablePointAt(
             abs(center.x - position.x) < radius &&
                 abs(center.y - position.y) < radius
         }
+}
+
+// JSXGraph 1.13.3: src/base/board.js -> updateRendererCanvas / _compareDepth.
+// Elements in a higher layer are drawn later. Creation order breaks ties.
+internal fun JsxGraphScene.renderOrderedElements(): List<JsxGraphSceneElement> =
+    elements
+        .withIndex()
+        .sortedWith(
+            compareBy<IndexedValue<JsxGraphSceneElement>>(
+                { indexed -> indexed.value.style.layer },
+                { indexed -> indexed.index },
+            ),
+        )
+        .map(IndexedValue<JsxGraphSceneElement>::value)
+
+internal sealed interface JsxGraphSceneRenderItem {
+    val layer: Int
+    val position: Long
+
+    data class Grid(
+        override val position: Long,
+    ) : JsxGraphSceneRenderItem {
+        override val layer: Int = 1
+    }
+
+    data class Axis(
+        override val position: Long,
+    ) : JsxGraphSceneRenderItem {
+        override val layer: Int = 2
+    }
+
+    data class Element(
+        val element: JsxGraphSceneElement,
+        override val position: Long,
+    ) : JsxGraphSceneRenderItem {
+        override val layer: Int = element.style.layer
+    }
+
+    data class PolygonFill(
+        val polygon: JsxGraphSceneElement.Polygon,
+        override val position: Long,
+    ) : JsxGraphSceneRenderItem {
+        override val layer: Int = polygon.style.layer
+    }
+
+    data class PolygonBorder(
+        val polygon: JsxGraphSceneElement.Polygon,
+        override val position: Long,
+    ) : JsxGraphSceneRenderItem {
+        override val layer: Int = polygon.borderStyle.layer
+    }
+
+    data class PolygonVertex(
+        val polygon: JsxGraphSceneElement.Polygon,
+        val vertex: JsxGraphSceneElement.Point,
+        override val position: Long,
+    ) : JsxGraphSceneRenderItem {
+        override val layer: Int = vertex.style.layer
+    }
+}
+
+// JSXGraph 1.13.3: src/base/board.js -> updateRendererCanvas / _compareDepth;
+// src/base/polygon.js -> Polygon constructor.
+// Polygon-owned Points and borders are Board objects created before the
+// Polygon itself, so they participate independently in layer ordering.
+internal fun JsxGraphScene.renderOrderedItems():
+    List<JsxGraphSceneRenderItem> {
+    val items = mutableListOf<JsxGraphSceneRenderItem>()
+    var position = 0L
+    if (grid) {
+        items += JsxGraphSceneRenderItem.Grid(position++)
+    }
+    if (axis) {
+        items += JsxGraphSceneRenderItem.Axis(position++)
+    }
+    for (element in elements) {
+        if (element is JsxGraphSceneElement.Polygon) {
+            for (vertex in element.implicitVertices) {
+                items += JsxGraphSceneRenderItem.PolygonVertex(
+                    polygon = element,
+                    vertex = vertex,
+                    position = position++,
+                )
+            }
+            if (element.withLines) {
+                items += JsxGraphSceneRenderItem.PolygonBorder(
+                    polygon = element,
+                    position = position++,
+                )
+            }
+            items += JsxGraphSceneRenderItem.PolygonFill(
+                polygon = element,
+                position = position++,
+            )
+        } else {
+            items += JsxGraphSceneRenderItem.Element(
+                element = element,
+                position = position++,
+            )
+        }
+    }
+    return items.sortedWith(
+        compareBy<JsxGraphSceneRenderItem>(
+            JsxGraphSceneRenderItem::layer,
+            JsxGraphSceneRenderItem::position,
+        ),
+    )
 }
 
 private fun JsxGraphScene.boardMetrics(
@@ -522,7 +682,10 @@ private fun DrawScope.drawScenePoint(
             color = stroke,
             radius = radius,
             center = center,
-            style = Stroke(width = point.style.strokeWidth.dp.toPx()),
+            style = Stroke(
+                width = point.style.strokeWidth.dp.toPx(),
+                pathEffect = strokeDashPathEffect(point.style),
+            ),
         )
     }
 }
@@ -533,27 +696,91 @@ private fun DrawScope.drawSceneLine(
 ) {
     val point1 = metrics.toScreen(line.point1.toOffset())
     val point2 = metrics.toScreen(line.point2.toOffset())
-    val delta = point2 - point1
-    val length = hypot(delta.x, delta.y)
-    if (length == 0.0f || !length.isFinite()) {
-        return
-    }
-    val extension = Offset(
-        x = delta.x / length * hypot(size.width, size.height) * 2.0f,
-        y = delta.y / length * hypot(size.width, size.height) * 2.0f,
-    )
-    val start = if (line.straightFirst) point1 - extension else point1
-    val end = if (line.straightLast) point2 + extension else point2
     val color = line.style.strokeColor.toComposeColor(
         opacity = line.style.strokeOpacity,
     )
-    if (color.alpha > 0.0f && line.style.strokeWidth > 0.0) {
+    val strokeWidth = line.style.strokeWidth.dp.toPx()
+    val geometry = lineRenderGeometry(
+        point1 = point1,
+        point2 = point2,
+        straightFirst = line.straightFirst,
+        straightLast = line.straightLast,
+        viewportSize = size,
+        strokeWidth = strokeWidth,
+        firstArrow = line.firstArrow,
+        lastArrow = line.lastArrow,
+    ) ?: return
+    if (color.alpha > 0.0f && strokeWidth > 0.0f) {
         drawLine(
             color = color,
-            start = start,
-            end = end,
-            strokeWidth = line.style.strokeWidth.dp.toPx(),
+            start = geometry.strokeStart,
+            end = geometry.strokeEnd,
+            strokeWidth = strokeWidth,
             cap = StrokeCap.Butt,
+            pathEffect = strokeDashPathEffect(line.style),
+        )
+        geometry.firstArrow?.let { arrow ->
+            drawArrowHead(
+                arrow = arrow,
+                color = color,
+                strokeWidth = strokeWidth,
+            )
+        }
+        geometry.lastArrow?.let { arrow ->
+            drawArrowHead(
+                arrow = arrow,
+                color = color,
+                strokeWidth = strokeWidth,
+            )
+        }
+    }
+}
+
+// JSXGraph 1.13.3: src/renderer/canvas.js -> _drawPolygon.
+private fun DrawScope.drawArrowHead(
+    arrow: ArrowHeadGeometry,
+    color: Color,
+    strokeWidth: Float,
+) {
+    val first = arrow.points.firstOrNull() ?: return
+    val path = Path().apply {
+        fillType = PathFillType.EvenOdd
+        moveTo(first.x, first.y)
+        if (arrow.bezierDegree == 1) {
+            for (point in arrow.points.drop(1)) {
+                lineTo(point.x, point.y)
+            }
+        } else {
+            var index = 1
+            while (index + 2 < arrow.points.size) {
+                val control1 = arrow.points[index]
+                val control2 = arrow.points[index + 1]
+                val end = arrow.points[index + 2]
+                cubicTo(
+                    control1.x,
+                    control1.y,
+                    control2.x,
+                    control2.y,
+                    end.x,
+                    end.y,
+                )
+                index += 3
+            }
+        }
+        if (arrow.filled) {
+            close()
+        }
+    }
+    if (arrow.filled) {
+        drawPath(path = path, color = color)
+    } else {
+        drawPath(
+            path = path,
+            color = color,
+            style = Stroke(
+                width = strokeWidth,
+                cap = StrokeCap.Butt,
+            ),
         )
     }
 }
@@ -585,7 +812,10 @@ private fun DrawScope.drawSceneCircle(
             color = stroke,
             topLeft = topLeft,
             size = ellipseSize,
-            style = Stroke(width = circle.style.strokeWidth.dp.toPx()),
+            style = Stroke(
+                width = circle.style.strokeWidth.dp.toPx(),
+                pathEffect = strokeDashPathEffect(circle.style),
+            ),
         )
     }
 }
@@ -596,13 +826,11 @@ private fun DrawScope.drawSceneCurve(
     metrics: BoardMetrics,
 ) {
     val commands = curvePathCommands(
-        points = curve.points.map { point ->
-            point?.let {
-                metrics.toScreen(it.toOffset())
-            }?.takeIf { screen ->
-                screen.x.isFinite() && screen.y.isFinite()
-            }
-        },
+        points = curveScreenPoints(
+            curve = curve,
+            metrics = metrics,
+            density = density,
+        ),
         bezierDegree = curve.bezierDegree,
     )
     val path = Path()
@@ -651,10 +879,28 @@ private fun DrawScope.drawSceneCurve(
             style = Stroke(
                 width = curve.style.strokeWidth.dp.toPx(),
                 cap = StrokeCap.Round,
+                pathEffect = strokeDashPathEffect(curve.style),
             ),
         )
     }
 }
+
+internal fun curveScreenPoints(
+    curve: JsxGraphSceneElement.Curve,
+    metrics: BoardMetrics,
+    density: Float,
+): List<Offset?> =
+    curve.resolvePoints(
+        // JSXGraph board units are CSS pixels, which correspond to Compose dp.
+        cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
+        cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
+    ).map { point ->
+        point?.let {
+            metrics.toScreen(it.toOffset())
+        }?.takeIf { screen ->
+            screen.x.isFinite() && screen.y.isFinite()
+        }
+    }
 
 internal sealed interface CurvePathCommand {
     data class MoveTo(
@@ -716,55 +962,94 @@ internal fun curvePathCommands(
 }
 
 // JSXGraph: src/renderer/abstract.js -> drawPolygon / updatePolygon.
-private fun DrawScope.drawScenePolygon(
+private fun DrawScope.drawScenePolygonFill(
     polygon: JsxGraphSceneElement.Polygon,
     metrics: BoardMetrics,
 ) {
+    // JSXGraph: src/renderer/canvas.js -> updatePolygonPrim. PolygonalChain
+    // keeps a closed fill primitive even though its separately rendered
+    // Segment border remains open.
+    val path = polygonPath(
+        polygon = polygon,
+        metrics = metrics,
+        close = true,
+    ) ?: return
+    val fill = polygon.style.fillColor.toComposeColor(
+        opacity = polygon.style.fillOpacity,
+    )
+    if (polygon.vertices.size >= 3 && fill.alpha > 0.0f) {
+        drawPath(path = path, color = fill)
+    }
+}
+
+private fun DrawScope.drawScenePolygonBorder(
+    polygon: JsxGraphSceneElement.Polygon,
+    metrics: BoardMetrics,
+) {
+    val path = polygonPath(
+        polygon = polygon,
+        metrics = metrics,
+        close = polygon.isClosed,
+    ) ?: return
+    val stroke = polygon.borderStyle.strokeColor.toComposeColor(
+        opacity = polygon.borderStyle.strokeOpacity,
+    )
+    if (
+        polygon.vertices.size >= 2 &&
+        stroke.alpha > 0.0f &&
+        polygon.borderStyle.strokeWidth > 0.0
+    ) {
+        drawPath(
+            path = path,
+            color = stroke,
+            style = Stroke(
+                width = polygon.borderStyle.strokeWidth.dp.toPx(),
+                cap = StrokeCap.Butt,
+                join = StrokeJoin.Miter,
+                pathEffect = strokeDashPathEffect(polygon.borderStyle),
+            ),
+        )
+    }
+}
+
+// JSXGraph 1.13.3: src/renderer/canvas.js -> _stroke. Scene dash
+// intervals are CSS pixels, which correspond to Compose dp.
+private fun DrawScope.strokeDashPathEffect(
+    style: com.swithun.jsxgraph.core.JsxGraphElementStyle,
+): PathEffect? {
+    if (style.strokeDashPattern.isEmpty()) {
+        return null
+    }
+    val intervals = style.strokeDashPattern.map { length ->
+        // Skia requires positive intervals; preserve JSXGraph's zero-length
+        // dotted segment with the smallest practical positive value.
+        max(length.dp.toPx(), 0.001f)
+    }.toFloatArray()
+    return PathEffect.dashPathEffect(intervals)
+}
+
+private fun polygonPath(
+    polygon: JsxGraphSceneElement.Polygon,
+    metrics: BoardMetrics,
+    close: Boolean,
+): Path? {
     val screenVertices = polygon.vertices.map { vertex ->
         metrics.toScreen(vertex.toOffset())
     }
-    if (screenVertices.isNotEmpty()) {
-        val path = Path().apply {
-            fillType = PathFillType.EvenOdd
-            moveTo(screenVertices[0].x, screenVertices[0].y)
-            for (index in 1 until screenVertices.size) {
-                lineTo(
-                    screenVertices[index].x,
-                    screenVertices[index].y,
-                )
-            }
-            close()
-        }
-        val fill = polygon.style.fillColor.toComposeColor(
-            opacity = polygon.style.fillOpacity,
-        )
-        if (screenVertices.size >= 3 && fill.alpha > 0.0f) {
-            drawPath(path = path, color = fill)
-        }
-
-        val stroke = polygon.borderStyle.strokeColor.toComposeColor(
-            opacity = polygon.borderStyle.strokeOpacity,
-        )
-        if (
-            polygon.withLines &&
-            screenVertices.size >= 2 &&
-            stroke.alpha > 0.0f &&
-            polygon.borderStyle.strokeWidth > 0.0
-        ) {
-            drawPath(
-                path = path,
-                color = stroke,
-                style = Stroke(
-                    width = polygon.borderStyle.strokeWidth.dp.toPx(),
-                    cap = StrokeCap.Butt,
-                    join = StrokeJoin.Miter,
-                ),
+    if (screenVertices.isEmpty()) {
+        return null
+    }
+    return Path().apply {
+        fillType = PathFillType.EvenOdd
+        moveTo(screenVertices[0].x, screenVertices[0].y)
+        for (index in 1 until screenVertices.size) {
+            lineTo(
+                screenVertices[index].x,
+                screenVertices[index].y,
             )
         }
-    }
-    for (vertex in polygon.implicitVertices) {
-        if (vertex.style.visible) {
-            drawScenePoint(vertex, metrics)
+        if (close) {
+            close()
         }
     }
 }

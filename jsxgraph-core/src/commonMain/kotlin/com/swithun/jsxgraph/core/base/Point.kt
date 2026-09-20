@@ -10,6 +10,7 @@ package com.swithun.jsxgraph.core.base
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 import kotlin.math.abs
@@ -26,6 +27,10 @@ internal sealed interface PointError {
         val error: CoordinateConstraintError,
     ) : PointError
 
+    data class InvalidTransformationCount(
+        val count: Int,
+    ) : PointError
+
     data class Registration(val error: BoardError) : PointError
 }
 
@@ -34,10 +39,12 @@ internal sealed interface PointError {
  *
  * This slice covers numeric free points, JessieCode string coordinate
  * constraints, board registration, coordinate updates, bounds, and incidence
- * checks against the currently translated point, line, and circle elements.
- * Visual attributes, screen hit testing, traces, non-string constraints,
- * transformed-point construction, persistent transformations, gliders, and
- * intersections remain untranslated.
+ * checks against the currently translated point, line, and circle elements,
+ * plus transformed-point construction, persistent 2D transformations, and
+ * the Line/Segment/Circle Intersection wrappers in [IntersectionPoint] and
+ * [OtherIntersectionPoint]. Visual attributes, screen hit testing, traces,
+ * slider/Coords-object constraints, gliders, and the remaining intersection
+ * parent families remain untranslated.
  */
 internal open class Point internal constructor(
     board: Board,
@@ -45,7 +52,8 @@ internal open class Point internal constructor(
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
-    coordinateFunctions: List<JessieCodeExpressionFunction> = emptyList(),
+    fixed: Boolean = false,
+    coordinateFunctions: List<JessieCodeCoordinateFunction> = emptyList(),
 ) : CoordsElement(
     board = board,
     coordinates = coordinates,
@@ -56,6 +64,9 @@ internal open class Point internal constructor(
     needsRegularUpdate = needsRegularUpdate,
     coordinateFunctions = coordinateFunctions,
 ) {
+    // JSXGraph: src/options.js -> GeometryElement.fixed
+    internal var isFixed: Boolean = fixed
+
     init {
         elType = POINT_ELEMENT_TYPE
     }
@@ -66,6 +77,31 @@ internal open class Point internal constructor(
             return this
         }
         updateCoords(fromParent)
+        return this
+    }
+
+    // JSXGraph: src/base/point.js -> updateTransform
+    override fun updateTransform(fromParent: Boolean): CoordsElement {
+        if (transformations.isEmpty() || baseElement == null) {
+            return this
+        }
+
+        when (val result = transformedCoordinatesResult()) {
+            is GMResult.Ok -> {
+                coords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = result.value,
+                )
+                clearTransformationEvaluationError()
+            }
+            is GMResult.Err -> {
+                coords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = DoubleArray(3) { Double.NaN },
+                )
+                setTransformationEvaluationError(result.error)
+            }
+        }
         return this
     }
 
@@ -151,6 +187,7 @@ internal open class Point internal constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
+            fixed: Boolean = false,
         ): GMResult<Point, PointError> {
             if (coordinates.size < 2) {
                 return GMResult.Err(
@@ -164,6 +201,7 @@ internal open class Point internal constructor(
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
+                fixed = fixed,
             )
             point.baseElement = point
             return when (val registration = board.setId(point, POINT_ID_PREFIX)) {
@@ -187,6 +225,7 @@ internal open class Point internal constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
+            fixed: Boolean = false,
         ): GMResult<Point, PointError> {
             if (coordinateExpressions.size < 2) {
                 return GMResult.Err(
@@ -206,10 +245,43 @@ internal open class Point internal constructor(
                 is GMResult.Err -> return result
             }
 
+            return createConstrained(
+                board = board,
+                coordinateFunctions = functions,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                fixed = fixed,
+                xjc = coordinateExpressions
+                    .takeIf { it.size == 2 }
+                    ?.get(0),
+                yjc = coordinateExpressions
+                    .takeIf { it.size == 2 }
+                    ?.get(1),
+            )
+        }
+
+        // JSXGraph: src/base/coordselement.js -> create / addConstraint
+        fun createConstrained(
+            board: Board,
+            coordinateFunctions: List<JessieCodeCoordinateFunction>,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            fixed: Boolean = false,
+            xjc: String? = null,
+            yjc: String? = null,
+        ): GMResult<Point, PointError> {
+            if (coordinateFunctions.isEmpty()) {
+                return GMResult.Err(
+                    PointError.InvalidCoordinateCount(0),
+                )
+            }
+
             val point = Point(
                 board = board,
                 coordinates =
-                    if (functions.size == 2) {
+                    if (coordinateFunctions.size == 2) {
                         doubleArrayOf(0.0, 0.0)
                     } else {
                         doubleArrayOf(1.0, 0.0, 0.0)
@@ -217,7 +289,8 @@ internal open class Point internal constructor(
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
-                coordinateFunctions = functions,
+                fixed = fixed,
+                coordinateFunctions = coordinateFunctions,
             )
             val initialCoordinates = when (
                 val result = point.coordinateConstraintResult()
@@ -238,12 +311,51 @@ internal open class Point internal constructor(
             ) {
                 is GMResult.Ok -> {
                     point.type = Const.OBJECT_TYPE_CAS
-                    if (coordinateExpressions.size == 2) {
-                        point.Xjc = coordinateExpressions[0]
-                        point.Yjc = coordinateExpressions[1]
-                    }
+                    point.Xjc = xjc
+                    point.Yjc = yjc
                     point.applyCoordinateConstraint(initialCoordinates)
-                    point.addParentsFromJCFunctions(functions)
+                    point.addParentsFromJCFunctions(coordinateFunctions)
+                    point.handleSnapToGrid()
+                    point.handleSnapToPoints()
+                    point.handleAttractors()
+                    GMResult.Ok(point)
+                }
+                is GMResult.Err -> GMResult.Err(
+                    PointError.Registration(registration.error),
+                )
+            }
+        }
+
+        // JSXGraph: src/base/point.js -> createPoint;
+        // src/base/coordselement.js -> CoordsElement.create transformation form
+        fun create(
+            board: Board,
+            basePoint: CoordsElement,
+            transformations: List<Transformation>,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            fixed: Boolean = false,
+        ): GMResult<Point, PointError> {
+            if (transformations.isEmpty()) {
+                return GMResult.Err(
+                    PointError.InvalidTransformationCount(0),
+                )
+            }
+
+            val point = Point(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 0.0),
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                fixed = fixed,
+            )
+            point.addTransform(basePoint, transformations)
+            point.isDraggable = false
+            return when (val registration = board.setId(point, POINT_ID_PREFIX)) {
+                is GMResult.Ok -> {
+                    point.addParents(listOf(basePoint))
                     point.handleSnapToGrid()
                     point.handleSnapToPoints()
                     point.handleAttractors()

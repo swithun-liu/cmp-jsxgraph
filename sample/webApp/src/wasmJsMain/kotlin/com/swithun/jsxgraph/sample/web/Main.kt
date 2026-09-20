@@ -21,19 +21,17 @@ fun main() {
     val body = document.body ?: return
     val auditMode = queryParameter("audit") == "true"
     val loadMode = queryParameter("load") == "true"
+    val roadmapMode = queryParameter("roadmap") == "true"
     ComposeViewport(body) {
         JsxGraphDebugApp(
             options = JsxGraphDebugOptions(
                 initialDestination =
                     if (loadMode) {
                         JsxGraphDebugDestination.StableLoad
-                    } else if (
-                        auditMode ||
-                        queryParameter("openParity") == "true"
-                    ) {
-                        JsxGraphDebugDestination.Parity
-                    } else {
+                    } else if (roadmapMode && !auditMode) {
                         JsxGraphDebugDestination.Roadmap
+                    } else {
+                        JsxGraphDebugDestination.Parity
                     },
                 initialPreview = JsxGraphDebugPreview.from(
                     queryParameter("preview"),
@@ -43,9 +41,20 @@ fun main() {
                 sourceOverride = queryParameter("source"),
                 boardOnly = auditMode,
             ),
+            onParityCaseChange = ::replaceParityCaseQuery,
         )
     }
 }
 
 @JsFun("(name) => new URLSearchParams(globalThis.location.search).get(name)")
 private external fun queryParameter(name: String): String?
+
+@JsFun(
+    """(caseId) => {
+        const url = new URL(globalThis.location.href);
+        url.searchParams.set("caseId", caseId);
+        url.searchParams.delete("source");
+        globalThis.history.replaceState(null, "", url);
+    }""",
+)
+private external fun replaceParityCaseQuery(caseId: String)

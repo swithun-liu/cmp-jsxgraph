@@ -482,6 +482,10 @@ internal class Text private constructor(
                 is JessieCodeRuntimeValue.ObjectValue -> "object"
                 is JessieCodeRuntimeValue.FunctionValue -> "function"
                 is JessieCodeRuntimeValue.BoardReference -> "board"
+                is JessieCodeRuntimeValue.TransformationReference ->
+                    "transformation"
+                is JessieCodeRuntimeValue.CompositionReference ->
+                    "composition"
                 is JessieCodeRuntimeValue.ElementReference -> "element"
             }
 

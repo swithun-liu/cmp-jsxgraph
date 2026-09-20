@@ -432,16 +432,16 @@ private class EvaluationState(
             is GMResult.Err -> return result
         }
         val local = localScope(name)
-        val element = if (local != null) {
-            (
-                local.locals.getValue(name) as?
-                    JessieCodeRuntimeValue.ElementReference
-                )?.element
+        if (local != null) {
+            when (val value = local.locals.getValue(name)) {
+                is JessieCodeRuntimeValue.ElementReference ->
+                    currentBoard?.removeObject(value.element)
+                is JessieCodeRuntimeValue.CompositionReference ->
+                    currentBoard?.removeObject(value.composition)
+                else -> Unit
+            }
         } else {
-            currentBoard?.select(name)
-        }
-        if (element != null) {
-            currentBoard?.removeObject(element)
+            currentBoard?.select(name)?.let { currentBoard?.removeObject(it) }
         }
         return GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
     }
@@ -486,6 +486,7 @@ private class EvaluationState(
                     node = body,
                     parameterNames = parameters.toSet(),
                     localNames = visibleLocalNames(),
+                    localElements = visibleLocalElements(),
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -509,10 +510,22 @@ private class EvaluationState(
                 location = location,
             )
         }
+        val externalCallable = JessieCodeCallable { arguments, location ->
+            callWithFreshBudget {
+                callFunction(
+                    scope = functionScope,
+                    parameters = parameters,
+                    body = body,
+                    arguments = arguments,
+                    location = location,
+                )
+            }
+        }
         return GMResult.Ok(
             JessieCodeRuntimeValue.FunctionValue(
                 name = if (isMap) "map" else "function",
                 callable = callable,
+                externalCallable = externalCallable,
                 parameterNames = parameters.toList(),
                 isMap = isMap,
                 dependencies = dependencies.toMap(),
@@ -548,6 +561,21 @@ private class EvaluationState(
         functionCallDepth -= 1
         currentScope = previousScope
         return result
+    }
+
+    private fun callWithFreshBudget(
+        call: () -> EvaluationResult,
+    ): EvaluationResult {
+        val previousEvaluationSteps = evaluationSteps
+        val previousFunctionCallDepth = functionCallDepth
+        evaluationSteps = 0
+        functionCallDepth = 0
+        return try {
+            call()
+        } finally {
+            evaluationSteps = previousEvaluationSteps
+            functionCallDepth = previousFunctionCallDepth
+        }
     }
 
     private fun evaluateArray(
@@ -1293,6 +1321,8 @@ private class EvaluationState(
                 GMResult.Ok(
                     JessieCodeRuntimeValue.StringValue(value.element.id),
                 )
+            is JessieCodeRuntimeValue.CompositionReference ->
+                GMResult.Ok(value)
             else -> GMResult.Ok(value)
         }
     }
@@ -1518,6 +1548,30 @@ private class EvaluationState(
             scope = scope.previous
         }
         return names
+    }
+
+    private fun visibleLocalElements(): Map<String, GeometryElement> {
+        val elements = linkedMapOf<String, GeometryElement>()
+        val resolvedNames = linkedSetOf<String>()
+        var scope: RuntimeScope? = currentScope
+        while (scope != null) {
+            for ((name, value) in scope.locals) {
+                if (
+                    value !== JessieCodeRuntimeValue.NullValue &&
+                    value !== JessieCodeRuntimeValue.UndefinedValue &&
+                    resolvedNames.add(name)
+                ) {
+                    val element = (
+                        value as? JessieCodeRuntimeValue.ElementReference
+                    )?.element
+                    if (element != null) {
+                        elements[name] = element
+                    }
+                }
+            }
+            scope = scope.previous
+        }
+        return elements
     }
 
     private fun evaluateConstant(
@@ -1883,6 +1937,12 @@ private class EvaluationState(
                     property = property,
                     location = location,
                 )
+            is JessieCodeRuntimeValue.CompositionReference ->
+                resolveCompositionProperty(
+                    receiver = receiver,
+                    property = property,
+                    location = location,
+                )
             is JessieCodeRuntimeValue.FunctionValue -> GMResult.Err(
                 JessieCodeRuntimeError.FunctionPropertyAccess(
                     property = property,
@@ -1891,6 +1951,128 @@ private class EvaluationState(
             )
             else -> unknownProperty(receiver, property, location)
         }
+
+    // JSXGraph: src/base/composition.js -> member properties and methodMap
+    private fun resolveCompositionProperty(
+        receiver: JessieCodeRuntimeValue.CompositionReference,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val composition = receiver.composition
+        composition.member(property)?.let { member ->
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ElementReference(member),
+            )
+        }
+        return when (property) {
+            "elType" -> string(composition.elType)
+            "dump" -> GMResult.Ok(
+                JessieCodeRuntimeValue.BooleanValue(composition.dump),
+            )
+            "parents" -> GMResult.Ok(
+                JessieCodeRuntimeValue.UndefinedValue,
+            )
+            "elements", "objects" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    composition.elements.mapValues { (_, element) ->
+                        JessieCodeRuntimeValue.ElementReference(element)
+                    },
+                ),
+            )
+            "elementsByName" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    composition.elementsByName.mapValues { (_, element) ->
+                        JessieCodeRuntimeValue.ElementReference(element)
+                    },
+                ),
+            )
+            "objectsList" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    composition.objectsList.map(
+                        JessieCodeRuntimeValue::ElementReference,
+                    ),
+                ),
+            )
+            "subs" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    composition.subs.mapValues { (_, element) ->
+                        JessieCodeRuntimeValue.ElementReference(element)
+                    },
+                ),
+            )
+            "getParents" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "getParents",
+                    callable = JessieCodeCallable { _, _ ->
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.UndefinedValue,
+                        )
+                    },
+                ),
+            )
+            "getType" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "getType",
+                    callable = JessieCodeCallable { _, _ ->
+                        string(composition.getType())
+                    },
+                ),
+            )
+            "remove" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "remove",
+                    callable = JessieCodeCallable {
+                            arguments,
+                            callLocation,
+                        ->
+                        val role = (
+                            arguments.firstOrNull() as?
+                                JessieCodeRuntimeValue.StringValue
+                            )?.value ?: return@JessieCodeCallable invalidArgumentType(
+                                functionName = "remove",
+                                argumentIndex = 0,
+                                expected = "string",
+                                actual = arguments.firstOrNull()
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                                location = callLocation,
+                            )
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.BooleanValue(
+                                composition.remove(role),
+                            ),
+                        )
+                    },
+                ),
+            )
+            "select" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "select",
+                    callable = JessieCodeCallable {
+                            arguments,
+                            callLocation,
+                        ->
+                        val reference = (
+                            arguments.firstOrNull() as?
+                                JessieCodeRuntimeValue.StringValue
+                            )?.value ?: return@JessieCodeCallable invalidArgumentType(
+                                functionName = "select",
+                                argumentIndex = 0,
+                                expected = "string",
+                                actual = arguments.firstOrNull()
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                                location = callLocation,
+                            )
+                        GMResult.Ok(
+                            composition.select(reference)?.let {
+                                JessieCodeRuntimeValue.ElementReference(it)
+                            } ?: JessieCodeRuntimeValue.UndefinedValue,
+                        )
+                    },
+                ),
+            )
+            else -> unknownProperty(receiver, property, location)
+        }
+    }
 
     private fun index(
         receiver: JessieCodeRuntimeValue,
@@ -2113,12 +2295,12 @@ private class EvaluationState(
                 )
             }
             "remove" -> JessieCodeCallable { arguments, _ ->
-                val element = (
-                    arguments.firstOrNull() as?
-                        JessieCodeRuntimeValue.ElementReference
-                    )?.element
-                if (element != null) {
-                    currentBoard?.removeObject(element)
+                when (val value = arguments.firstOrNull()) {
+                    is JessieCodeRuntimeValue.ElementReference ->
+                        currentBoard?.removeObject(value.element)
+                    is JessieCodeRuntimeValue.CompositionReference ->
+                        currentBoard?.removeObject(value.composition)
+                    else -> Unit
                 }
                 GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
             }
@@ -2756,6 +2938,8 @@ private class EvaluationState(
             is JessieCodeRuntimeValue.ObjectValue,
             is JessieCodeRuntimeValue.FunctionValue,
             is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.TransformationReference,
+            is JessieCodeRuntimeValue.CompositionReference,
             is JessieCodeRuntimeValue.ElementReference,
             -> true
         }
@@ -2783,6 +2967,13 @@ private class EvaluationState(
                 left is JessieCodeRuntimeValue.BoardReference &&
                     right is JessieCodeRuntimeValue.BoardReference ->
                     left.board === right.board
+                left is JessieCodeRuntimeValue.TransformationReference &&
+                    right is
+                        JessieCodeRuntimeValue.TransformationReference ->
+                    left.transformation === right.transformation
+                left is JessieCodeRuntimeValue.CompositionReference &&
+                    right is JessieCodeRuntimeValue.CompositionReference ->
+                    left.composition === right.composition
                 else -> left === right
             }
         }
@@ -2873,6 +3064,8 @@ private class EvaluationState(
                 )
             is JessieCodeRuntimeValue.ObjectValue,
             is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.TransformationReference,
+            is JessieCodeRuntimeValue.CompositionReference,
             is JessieCodeRuntimeValue.ElementReference,
             -> JessieCodeRuntimeValue.StringValue("[object Object]")
             is JessieCodeRuntimeValue.FunctionValue ->
@@ -2905,6 +3098,8 @@ private class EvaluationState(
                 arrayToString(value)
             is JessieCodeRuntimeValue.ObjectValue,
             is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.TransformationReference,
+            is JessieCodeRuntimeValue.CompositionReference,
             is JessieCodeRuntimeValue.ElementReference,
             -> "[object Object]"
             is JessieCodeRuntimeValue.FunctionValue ->
@@ -2967,6 +3162,10 @@ private class EvaluationState(
             is JessieCodeRuntimeValue.ObjectValue -> "object"
             is JessieCodeRuntimeValue.FunctionValue -> "function"
             is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.TransformationReference ->
+                "transformation"
+            is JessieCodeRuntimeValue.CompositionReference ->
+                value.composition.elType.ifEmpty { "composition" }
             is JessieCodeRuntimeValue.ElementReference -> "element"
         }
 

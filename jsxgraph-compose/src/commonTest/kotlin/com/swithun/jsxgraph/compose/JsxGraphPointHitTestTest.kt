@@ -45,10 +45,11 @@ class JsxGraphPointHitTestTest {
     }
 
     @Test
-    fun hiddenAndFixedPointsAreNotInteractive() {
+    fun hiddenFixedAndNonRealPointsAreNotInteractive() {
         val scene = scene(
             point(id = "fixed", draggable = false),
             point(id = "hidden", visible = false),
+            point(id = "non-real", isReal = false),
         )
 
         assertNull(
@@ -82,6 +83,7 @@ class JsxGraphPointHitTestTest {
         id: String,
         draggable: Boolean = true,
         visible: Boolean = true,
+        isReal: Boolean = true,
     ): JsxGraphSceneElement.Point =
         JsxGraphSceneElement.Point(
             id = id,
@@ -98,5 +100,6 @@ class JsxGraphPointHitTestTest {
             size = 3.0,
             face = "o",
             draggable = draggable,
+            isReal = isReal,
         )
 }

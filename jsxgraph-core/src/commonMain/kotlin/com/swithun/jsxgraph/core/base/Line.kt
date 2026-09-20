@@ -9,9 +9,16 @@ package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.RandomSource
+import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.random.Random
 
 internal sealed interface LineError {
     data class UnsupportedAngleUnit(val unit: String) : LineError
@@ -23,16 +30,43 @@ internal sealed interface LineError {
         val id: String,
     ) : LineError
 
+    data class FixedLengthExpressionCompile(
+        val error: JessieCodeExpressionCompileError,
+    ) : LineError
+
+    data class FixedLengthExpressionEvaluation(
+        val error: JessieCodeRuntimeError,
+    ) : LineError
+
+    data class NonNumericFixedLengthExpression(
+        val actualType: String,
+    ) : LineError
+
+    data class FixedLengthFunctionEvaluation(
+        val error: JessieCodeRuntimeError,
+    ) : LineError
+
+    data class NonNumericFixedLengthFunction(
+        val actualType: String,
+    ) : LineError
+
     data class Registration(val error: BoardError) : LineError
 }
+
+internal data class LineFixedLengthFunction(
+    val function: JessieCodeRuntimeValue.FunctionValue,
+    val location: JessieCodeAstLocation,
+)
 
 /**
  * Initial translated slice of JXG.Line.
  *
- * This slice covers lines defined by two registered points, their dependency
- * links, standard form, coordinate-derived numeric queries, and parametric
- * coordinates. Coordinate parents, constrained lines, rendering, ticks,
- * arrows, and hit testing remain untranslated.
+ * This slice covers two-Point lines, dependency links, standard form,
+ * coordinate-derived numeric queries, parametric coordinates, and the dynamic
+ * fixed-length Segment lifecycle. The native creator registry supplies
+ * coordinate, coefficient, Arrow, and construction wrappers around this
+ * class. Ticks, dynamic visual mutation, and hit testing remain untranslated;
+ * Compose owns the translated static Line-arrow rendering.
  */
 internal open class Line internal constructor(
     board: Board,
@@ -49,6 +83,39 @@ internal open class Line internal constructor(
     elementClass = Const.OBJECT_CLASS_LINE,
     needsRegularUpdate = needsRegularUpdate,
 ) {
+    // JSXGraph: src/options.js -> line.straightFirst / straightLast;
+    // src/base/line.js -> createSegment / createArrow.
+    internal var straightFirst: Boolean = true
+        private set
+    internal var straightLast: Boolean = true
+        private set
+    // JSXGraph: src/base/line.js -> Line constructor / createLine.
+    internal var constrained: Boolean = false
+    // JSXGraph: src/base/line.js -> createTangent.
+    internal var glider: Point? = null
+    internal val inherits = mutableListOf<GeometryElement>()
+    // JSXGraph: src/base/line.js -> createNormal Line/Point branch.
+    internal var normalPoint: Point? = null
+    // JSXGraph: src/base/line.js -> createTangentTo.
+    internal var tangentToPoint: IntersectionPoint? = null
+    internal var tangentToPolar: Line? = null
+    internal val subs = linkedMapOf<String, GeometryElement>()
+
+    internal var hasFixedLength: Boolean = false
+        private set
+    internal var nonnegativeOnly: Boolean = false
+        private set
+    internal var fixedLengthEvaluationError: LineError? = null
+        private set
+
+    private var fixedLengthValue: Double? = null
+    private var updateFixedLength: JessieCodeExpressionFunction? = null
+    private var fixedLengthFunction: LineFixedLengthFunction? = null
+    private var fixedLengthOldCoords: Array<Coords>? = null
+    private var fixedLengthRandomSource: RandomSource = DEFAULT_RANDOM_SOURCE
+    private var pendingFixedLengthValue: Double? = null
+    private var useExternalFixedLengthFunction = false
+
     init {
         elType = LINE_ELEMENT_TYPE
     }
@@ -58,9 +125,248 @@ internal open class Line internal constructor(
         if (!needsUpdate) {
             return this
         }
+        updateSegmentFixedLength()
         updateStdform()
         return this
     }
+
+    // JSXGraph: src/base/line.js -> updateSegmentFixedLength
+    internal fun updateSegmentFixedLength(): Line {
+        val oldCoords = fixedLengthOldCoords ?: return this
+        if (!hasFixedLength) {
+            return this
+        }
+
+        var distance = point1.Dist(point2)
+        val newDistance = when (val result = fixedLengthResult()) {
+            is GMResult.Ok -> {
+                fixedLengthEvaluationError = null
+                normalizeFixedLength(result.value)
+            }
+            is GMResult.Err -> {
+                fixedLengthEvaluationError = result.error
+                return this
+            }
+        }
+        val distance1 = oldCoords[0].distance(
+            Const.COORDS_BY_USER,
+            point1.coords,
+        )
+        val distance2 = oldCoords[1].distance(
+            Const.COORDS_BY_USER,
+            point2.coords,
+        )
+
+        if (
+            distance1 > Mat.eps ||
+            distance2 > Mat.eps ||
+            distance != newDistance
+        ) {
+            val drag1 =
+                point1.isDraggable &&
+                    point1.type != Const.OBJECT_TYPE_GLIDER &&
+                    !point1.isFixed
+            val drag2 =
+                point2.isDraggable &&
+                    point2.type != Const.OBJECT_TYPE_GLIDER &&
+                    !point2.isFixed
+
+            if (distance > Mat.eps) {
+                if (
+                    (distance1 > distance2 && drag2) ||
+                    (distance1 <= distance2 && drag2 && !drag1)
+                ) {
+                    point2.setPositionDirectly(
+                        Const.COORDS_BY_USER,
+                        doubleArrayOf(
+                            point1.X() +
+                                (point2.X() - point1.X()) *
+                                newDistance / distance,
+                            point1.Y() +
+                                (point2.Y() - point1.Y()) *
+                                newDistance / distance,
+                        ),
+                    )
+                    point2.fullUpdate()
+                } else if (
+                    (distance1 <= distance2 && drag1) ||
+                    (distance1 > distance2 && drag1 && !drag2)
+                ) {
+                    point1.setPositionDirectly(
+                        Const.COORDS_BY_USER,
+                        doubleArrayOf(
+                            point2.X() +
+                                (point1.X() - point2.X()) *
+                                newDistance / distance,
+                            point2.Y() +
+                                (point1.Y() - point2.Y()) *
+                                newDistance / distance,
+                        ),
+                    )
+                    point1.fullUpdate()
+                }
+            } else {
+                val x = fixedLengthRandomSource.nextDouble() - 0.5
+                val y = fixedLengthRandomSource.nextDouble() - 0.5
+                distance = Mat.hypot(x, y)
+
+                if (drag2) {
+                    point2.setPositionDirectly(
+                        Const.COORDS_BY_USER,
+                        doubleArrayOf(
+                            point1.X() + x * newDistance / distance,
+                            point1.Y() + y * newDistance / distance,
+                        ),
+                    )
+                    point2.fullUpdate()
+                } else if (drag1) {
+                    point1.setPositionDirectly(
+                        Const.COORDS_BY_USER,
+                        doubleArrayOf(
+                            point2.X() + x * newDistance / distance,
+                            point2.Y() + y * newDistance / distance,
+                        ),
+                    )
+                    point1.fullUpdate()
+                }
+            }
+
+            oldCoords[0].setCoordinates(
+                Const.COORDS_BY_USER,
+                point1.coords.usrCoords,
+            )
+            oldCoords[1].setCoordinates(
+                Const.COORDS_BY_USER,
+                point2.coords.usrCoords,
+            )
+        }
+        return this
+    }
+
+    // JSXGraph: src/base/line.js -> setFixedLength
+    internal fun setFixedLength(length: Double): Line {
+        if (!hasFixedLength) {
+            return this
+        }
+        configureFixedLength(
+            value = length,
+            initialValue = length,
+        )
+        board.update()
+        return this
+    }
+
+    // JSXGraph: src/base/line.js -> setFixedLength / Type.createFunction
+    internal fun setFixedLength(
+        lengthExpression: String,
+    ): GMResult<Line, LineError> {
+        if (!hasFixedLength) {
+            return GMResult.Ok(this)
+        }
+        val expression = when (
+            val result = JessieCodeExpressionFunction.compile(
+                source = lengthExpression,
+                board = board,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                LineError.FixedLengthExpressionCompile(result.error),
+            )
+        }
+        val initialValue = when (
+            val result = evaluateFixedLengthExpression(expression)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        configureFixedLength(
+            expression = expression,
+            initialValue = initialValue,
+        )
+        addParentsFromJCFunctions(listOf(expression))
+        board.update()
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph: src/base/line.js -> setFixedLength / Type.createFunction
+    internal fun setFixedLength(
+        lengthFunction: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Line, LineError> {
+        if (!hasFixedLength) {
+            return GMResult.Ok(this)
+        }
+        for (dependency in lengthFunction.dependencies.values) {
+            validateParent(board, dependency, parentIndex = 2)?.let {
+                return GMResult.Err(it)
+            }
+        }
+        val source = LineFixedLengthFunction(
+            function = lengthFunction,
+            location = location,
+        )
+        val initialValue = when (
+            val result = evaluateFixedLengthFunction(
+                fixedLengthFunction = source,
+                external = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        configureFixedLength(
+            function = source,
+            initialValue = initialValue,
+            useExternalFunction = true,
+        )
+        for (dependency in lengthFunction.dependencies.values) {
+            dependency.addChild(this)
+        }
+        board.update()
+        return GMResult.Ok(this)
+    }
+
+    private fun configureFixedLength(
+        value: Double? = null,
+        expression: JessieCodeExpressionFunction? = null,
+        function: LineFixedLengthFunction? = null,
+        initialValue: Double,
+        useExternalFunction: Boolean = false,
+    ) {
+        fixedLengthValue = value
+        updateFixedLength = expression
+        fixedLengthFunction = function
+        pendingFixedLengthValue = initialValue
+        useExternalFixedLengthFunction = useExternalFunction
+        fixedLengthEvaluationError = null
+    }
+
+    private fun fixedLengthResult(): GMResult<Double, LineError> {
+        pendingFixedLengthValue?.let {
+            pendingFixedLengthValue = null
+            return GMResult.Ok(it)
+        }
+        updateFixedLength?.let {
+            return evaluateFixedLengthExpression(it)
+        }
+        fixedLengthFunction?.let {
+            return evaluateFixedLengthFunction(
+                fixedLengthFunction = it,
+                external = useExternalFixedLengthFunction,
+            )
+        }
+        return GMResult.Ok(fixedLengthValue ?: Double.NaN)
+    }
+
+    private fun normalizeFixedLength(value: Double): Double =
+        if (nonnegativeOnly) {
+            maxOf(0.0, value)
+        } else {
+            abs(value)
+        }
 
     // JSXGraph: src/base/line.js -> updateStdform
     internal fun updateStdform(): Line {
@@ -73,6 +379,15 @@ internal open class Line internal constructor(
         stdform[2] = value[2]
         stdform[3] = 0.0
         normalize()
+        return this
+    }
+
+    internal fun configureVisibleRange(
+        straightFirst: Boolean,
+        straightLast: Boolean,
+    ): Line {
+        this.straightFirst = straightFirst
+        this.straightLast = straightLast
         return this
     }
 
@@ -230,6 +545,9 @@ internal open class Line internal constructor(
         private const val IDEAL_POINT_SCALE = 1.0e5
         private const val LINE_ID_PREFIX = "L"
         private const val LINE_ELEMENT_TYPE = "line"
+        private const val SEGMENT_ELEMENT_TYPE = "segment"
+        private val DEFAULT_RANDOM_SOURCE =
+            RandomSource { Random.nextDouble() }
 
         // JSXGraph: src/base/line.js -> createLine / Line constructor
         fun create(
@@ -259,6 +577,8 @@ internal open class Line internal constructor(
                 is GMResult.Ok -> {
                     point1.addChild(line)
                     point2.addChild(line)
+                    line.inherits += point1
+                    line.inherits += point2
                     line.setParents(listOf(point1, point2))
                     line.isDraggable = true
                     line.updateStdform()
@@ -271,18 +591,301 @@ internal open class Line internal constructor(
             }
         }
 
+        // JSXGraph: src/base/line.js -> createSegment
+        fun createSegment(
+            board: Board,
+            point1: Point,
+            point2: Point,
+            fixedLength: Double? = null,
+            nonnegativeOnly: Boolean = false,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            randomSource: RandomSource = DEFAULT_RANDOM_SOURCE,
+        ): GMResult<Line, LineError> =
+            when (
+                val result = create(
+                    board = board,
+                    point1 = point1,
+                    point2 = point2,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Err -> result
+                is GMResult.Ok -> {
+                    val segment = result.value
+                    segment.configureSegment(
+                        fixedLength = fixedLength,
+                        nonnegativeOnly = nonnegativeOnly,
+                        randomSource = randomSource,
+                    )
+                    if (fixedLength != null) {
+                        segment.setFixedLength(fixedLength)
+                    }
+                    GMResult.Ok(segment)
+                }
+            }
+
+        // JSXGraph: src/base/line.js -> createSegment / setFixedLength
+        fun createSegment(
+            board: Board,
+            point1: Point,
+            point2: Point,
+            fixedLengthExpression: String,
+            nonnegativeOnly: Boolean = false,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            randomSource: RandomSource = DEFAULT_RANDOM_SOURCE,
+        ): GMResult<Line, LineError> {
+            validateParent(board, point1, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+            validateParent(board, point2, parentIndex = 1)?.let {
+                return GMResult.Err(it)
+            }
+            val expression = when (
+                val result = JessieCodeExpressionFunction.compile(
+                    source = fixedLengthExpression,
+                    board = board,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    LineError.FixedLengthExpressionCompile(result.error),
+                )
+            }
+            val initialValue = when (
+                val result = evaluateFixedLengthExpression(expression)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            return when (
+                val result = create(
+                    board = board,
+                    point1 = point1,
+                    point2 = point2,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Err -> result
+                is GMResult.Ok -> {
+                    val segment = result.value
+                    segment.configureSegment(
+                        fixedLength = initialValue,
+                        nonnegativeOnly = nonnegativeOnly,
+                        randomSource = randomSource,
+                    )
+                    segment.configureFixedLength(
+                        expression = expression,
+                        initialValue = initialValue,
+                    )
+                    segment.addParentsFromJCFunctions(listOf(expression))
+                    board.update()
+                    GMResult.Ok(segment)
+                }
+            }
+        }
+
+        // JSXGraph: src/base/line.js -> createSegment / setFixedLength
+        fun createSegment(
+            board: Board,
+            point1: Point,
+            point2: Point,
+            fixedLengthFunction: JessieCodeRuntimeValue.FunctionValue,
+            fixedLengthFunctionLocation: JessieCodeAstLocation,
+            nonnegativeOnly: Boolean = false,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            randomSource: RandomSource = DEFAULT_RANDOM_SOURCE,
+        ): GMResult<Line, LineError> {
+            validateParent(board, point1, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+            validateParent(board, point2, parentIndex = 1)?.let {
+                return GMResult.Err(it)
+            }
+            for (dependency in fixedLengthFunction.dependencies.values) {
+                validateParent(board, dependency, parentIndex = 2)?.let {
+                    return GMResult.Err(it)
+                }
+            }
+            val source = LineFixedLengthFunction(
+                function = fixedLengthFunction,
+                location = fixedLengthFunctionLocation,
+            )
+            val initialValue = when (
+                val result = evaluateFixedLengthFunction(
+                    fixedLengthFunction = source,
+                    external = false,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            return when (
+                val result = create(
+                    board = board,
+                    point1 = point1,
+                    point2 = point2,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Err -> result
+                is GMResult.Ok -> {
+                    val segment = result.value
+                    segment.configureSegment(
+                        fixedLength = initialValue,
+                        nonnegativeOnly = nonnegativeOnly,
+                        randomSource = randomSource,
+                    )
+                    segment.configureFixedLength(
+                        function = source,
+                        initialValue = initialValue,
+                        useExternalFunction = true,
+                    )
+                    for (
+                        dependency in
+                        fixedLengthFunction.dependencies.values
+                    ) {
+                        dependency.addChild(segment)
+                    }
+                    board.update()
+                    GMResult.Ok(segment)
+                }
+            }
+        }
+
+        private fun Line.configureSegment(
+            fixedLength: Double?,
+            nonnegativeOnly: Boolean,
+            randomSource: RandomSource,
+        ) {
+            elType = SEGMENT_ELEMENT_TYPE
+            configureVisibleRange(
+                straightFirst = false,
+                straightLast = false,
+            )
+            if (fixedLength == null) {
+                return
+            }
+            hasFixedLength = true
+            this.nonnegativeOnly = nonnegativeOnly
+            fixedLengthRandomSource = randomSource
+            fixedLengthOldCoords = arrayOf(
+                Coords(
+                    method = Const.COORDS_BY_USER,
+                    coordinates = point1.Coords(),
+                    board = board,
+                ),
+                Coords(
+                    method = Const.COORDS_BY_USER,
+                    coordinates = point2.Coords(),
+                    board = board,
+                ),
+            )
+        }
+
         private fun validateParent(
             board: Board,
-            point: Point,
+            element: GeometryElement,
             parentIndex: Int,
         ): LineError? {
-            if (point.board !== board) {
+            if (element.board !== board) {
                 return LineError.ParentBoardMismatch(parentIndex)
             }
-            if (board.elementById(point.id) !== point) {
-                return LineError.ParentNotRegistered(parentIndex, point.id)
+            if (board.elementById(element.id) !== element) {
+                return LineError.ParentNotRegistered(
+                    parentIndex,
+                    element.id,
+                )
             }
             return null
         }
+
+        private fun evaluateFixedLengthExpression(
+            expression: JessieCodeExpressionFunction,
+        ): GMResult<Double, LineError> =
+            when (val result = expression.evaluate()) {
+                is GMResult.Err -> GMResult.Err(
+                    LineError.FixedLengthExpressionEvaluation(
+                        result.error,
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val value = result.value
+                    if (value is JessieCodeRuntimeValue.NumberValue) {
+                        GMResult.Ok(value.value)
+                    } else {
+                        GMResult.Err(
+                            LineError.NonNumericFixedLengthExpression(
+                                actualType = runtimeType(value),
+                            ),
+                        )
+                    }
+                }
+            }
+
+        private fun evaluateFixedLengthFunction(
+            fixedLengthFunction: LineFixedLengthFunction,
+            external: Boolean,
+        ): GMResult<Double, LineError> {
+            val callable =
+                if (external) {
+                    fixedLengthFunction.function.externalCallable
+                } else {
+                    fixedLengthFunction.function.callable
+                }
+            return when (
+                val result = callable.call(
+                    arguments = emptyList(),
+                    location = fixedLengthFunction.location,
+                )
+            ) {
+                is GMResult.Err -> GMResult.Err(
+                    LineError.FixedLengthFunctionEvaluation(result.error),
+                )
+                is GMResult.Ok -> {
+                    val value = result.value
+                    if (value is JessieCodeRuntimeValue.NumberValue) {
+                        GMResult.Ok(value.value)
+                    } else {
+                        GMResult.Err(
+                            LineError.NonNumericFixedLengthFunction(
+                                actualType = runtimeType(value),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+        private fun runtimeType(
+            value: JessieCodeRuntimeValue,
+        ): String =
+            when (value) {
+                JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+                JessieCodeRuntimeValue.NullValue -> "null"
+                is JessieCodeRuntimeValue.NumberValue -> "number"
+                is JessieCodeRuntimeValue.BooleanValue -> "boolean"
+                is JessieCodeRuntimeValue.StringValue -> "string"
+                is JessieCodeRuntimeValue.ArrayValue -> "array"
+                is JessieCodeRuntimeValue.ObjectValue -> "object"
+                is JessieCodeRuntimeValue.FunctionValue -> "function"
+                is JessieCodeRuntimeValue.BoardReference -> "board"
+                is JessieCodeRuntimeValue.TransformationReference ->
+                    "transformation"
+                is JessieCodeRuntimeValue.CompositionReference ->
+                    "composition"
+                is JessieCodeRuntimeValue.ElementReference -> "element"
+            }
     }
 }

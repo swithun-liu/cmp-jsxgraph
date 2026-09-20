@@ -29,6 +29,20 @@ internal class Board(
     internal var zoomY: Double = 1.0,
     internal val id: String = "jxgBoard1",
     internal val maxNameLength: Int = 1,
+    boundingBox: DoubleArray = doubleArrayOf(
+        -originX / (unitX * zoomX),
+        originY / (unitY * zoomY),
+        (DEFAULT_CANVAS_WIDTH - originX) / (unitX * zoomX),
+        (originY - DEFAULT_CANVAS_HEIGHT) / (unitY * zoomY),
+    ),
+    internal val defaultCurveMinimum: Double =
+        (-DEFAULT_CANVAS_WIDTH * CURVE_DOMAIN_PADDING - originX) /
+            (unitX * zoomX),
+    internal val defaultCurveMaximum: Double =
+        (
+            DEFAULT_CANVAS_WIDTH * (1.0 + CURVE_DOMAIN_PADDING) -
+                originX
+            ) / (unitX * zoomX),
 ) {
     internal class Origin(
         val usrCoords: DoubleArray,
@@ -44,6 +58,8 @@ internal class Board(
     // JSXGraph: src/base/board.js -> Board constructor unitX / unitY
     internal var unitX: Double = unitX * zoomX
     internal var unitY: Double = unitY * zoomY
+
+    private val boundingBox = boundingBox.copyOf()
 
     internal val objects = linkedMapOf<String, GeometryElement>()
     internal val objectsList = mutableListOf<GeometryElement>()
@@ -99,6 +115,9 @@ internal class Board(
 
     internal fun elementByName(name: String): GeometryElement? =
         elementsByName[name]
+
+    // JSXGraph: src/base/board.js -> getBoundingBox
+    internal fun getBoundingBox(): DoubleArray = boundingBox.copyOf()
 
     // JSXGraph: src/base/board.js -> generateName
     internal fun generateName(element: GeometryElement): String {
@@ -228,6 +247,18 @@ internal class Board(
         saveMethod: Boolean = false,
     ): Board = removeObject(select(elementReference), saveMethod)
 
+    // JSXGraph: src/base/board.js -> _removeObj object.objects branch
+    internal fun removeObject(
+        composition: Composition,
+        saveMethod: Boolean = false,
+    ): Board {
+        for (element in composition.objects.values.toList()) {
+            removeElement(element, saveMethod)
+        }
+        update()
+        return this
+    }
+
     // JSXGraph: src/base/board.js -> removeObject
     internal fun removeObjects(
         elements: Iterable<GeometryElement>,
@@ -327,6 +358,10 @@ internal class Board(
     }
 
     private companion object {
+        const val DEFAULT_CANVAS_WIDTH = 500.0
+        const val DEFAULT_CANVAS_HEIGHT = 500.0
+        const val CURVE_DOMAIN_PADDING = 0.1
+
         val CAPITAL_NAMES = listOf(
             "",
             "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",

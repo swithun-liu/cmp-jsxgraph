@@ -49,6 +49,7 @@ internal class JessieCodeDependencyCollector(
         node: JessieCodeAstNode,
         parameterNames: Set<String> = emptySet(),
         localNames: Set<String> = emptySet(),
+        localElements: Map<String, GeometryElement> = emptyMap(),
     ): GMResult<
         Map<String, GeometryElement>,
         JessieCodeDependencyError,
@@ -68,7 +69,10 @@ internal class JessieCodeDependencyCollector(
         val state = DependencyState(
             board = board,
             limits = limits,
-            excludedNames = parameterNames + localNames + CONSTANT_NAMES,
+            parameterNames = parameterNames,
+            localNames = localNames,
+            localElements = localElements,
+            constantNames = CONSTANT_NAMES,
         )
         return when (val result = state.visit(node)) {
             is GMResult.Ok -> GMResult.Ok(state.dependencies)
@@ -84,7 +88,10 @@ internal class JessieCodeDependencyCollector(
 private class DependencyState(
     private val board: Board,
     private val limits: JessieCodeDependencyLimits,
-    private val excludedNames: Set<String>,
+    private val parameterNames: Set<String>,
+    private val localNames: Set<String>,
+    private val localElements: Map<String, GeometryElement>,
+    private val constantNames: Set<String>,
 ) {
     val dependencies = linkedMapOf<String, GeometryElement>()
     private var visitedNodes = 0
@@ -153,7 +160,12 @@ private class DependencyState(
         }
         val name = (node.value as? JessieCodeAstValue.Text)?.value
             ?: return
-        if (name in excludedNames) {
+        if (name in parameterNames || name in constantNames) {
+            return
+        }
+        if (name in localNames) {
+            val element = localElements[name] ?: return
+            dependencies[element.id] = element
             return
         }
         val element = board.select(name) ?: return

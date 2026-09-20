@@ -1,8 +1,8 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> resolveProperty and the methodMap
- * declarations in src/base/coordselement.js, line.js, circle.js, polygon.js,
- * and text.js
+ * declarations in src/base/coordselement.js, line.js, circle.js, curve.js,
+ * polygon.js, and text.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -10,13 +10,16 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
+import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
@@ -30,12 +33,27 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         element: GeometryElement,
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
-        GMResult.Err(
-            JessieCodeRuntimeError.ElementValueUnavailable(
-                elementId = element.id,
-                location = location,
-            ),
-        )
+        when (element) {
+            is Arc -> number(element.Value())
+            is Sector -> number(element.Value())
+            is Curve ->
+                if (element.isRiemannSum) {
+                    number(element.Value())
+                } else {
+                    GMResult.Err(
+                        JessieCodeRuntimeError.ElementValueUnavailable(
+                            elementId = element.id,
+                            location = location,
+                        ),
+                    )
+                }
+            else -> GMResult.Err(
+                JessieCodeRuntimeError.ElementValueUnavailable(
+                    elementId = element.id,
+                    location = location,
+                ),
+            )
+        }
 
     override fun resolveProperty(
         element: GeometryElement,
@@ -45,7 +63,13 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         resolveGeometryProperty(element, property)?.let {
             return it
         }
+        resolveCurveProperty(element, property)?.let {
+            return it
+        }
         resolvePolygonProperty(element, property, location)?.let {
+            return it
+        }
+        resolveArcSectorProperty(element, property, location)?.let {
             return it
         }
         resolveCircleProperty(element, property, location)?.let {
@@ -61,6 +85,133 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             return it
         }
         return unavailable(element, property, location)
+    }
+
+    private fun resolveCurveProperty(
+        element: GeometryElement,
+        property: String,
+    ): ElementPropertyResult? {
+        val curve = element as? Curve ?: return null
+        if (curve.isEllipse || curve.isHyperbola) {
+            return when (property) {
+                "majorAxis" ->
+                    numberFunction("majorAxis", curve::majorAxis)
+                "center", "midpoint" -> curve.center?.let {
+                    GMResult.Ok(
+                        JessieCodeRuntimeValue.ElementReference(it),
+                    )
+                }
+                "subs" -> GMResult.Ok(
+                    JessieCodeRuntimeValue.ObjectValue(
+                        curve.subs.mapValues { (_, child) ->
+                            JessieCodeRuntimeValue.ElementReference(child)
+                        },
+                    ),
+                )
+                else -> null
+            }
+        }
+        if (!curve.isRiemannSum) {
+            return null
+        }
+        return when (property) {
+            "V", "Value" -> numberFunction("Value", curve::Value)
+            else -> null
+        }
+    }
+
+    private fun resolveArcSectorProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val radius = when (element) {
+            is Arc -> element::Radius
+            is Sector -> element::Radius
+            else -> return null
+        }
+        return when (property) {
+            "radius", "Radius", "getRadius" ->
+                numberFunction("Radius", radius)
+            "V", "Value" -> function("Value") {
+                    arguments,
+                    callLocation,
+                ->
+                val unit = when (
+                    val value = arguments.firstOrNull()
+                ) {
+                    null,
+                    JessieCodeRuntimeValue.UndefinedValue,
+                    -> null
+                    is JessieCodeRuntimeValue.StringValue -> value.value
+                    else -> return@function GMResult.Err(
+                        JessieCodeRuntimeError.InvalidArgumentType(
+                            functionName = "Value",
+                            argumentIndex = 0,
+                            expected = "string",
+                            actual = typeName(value),
+                            location = callLocation,
+                        ),
+                    )
+                }
+                if (unit != null && !isArcValueUnit(unit)) {
+                    GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+                } else {
+                    number(
+                        when (element) {
+                            is Arc -> element.Value(unit ?: "length")
+                            is Sector -> element.Value(unit)
+                            else -> Double.NaN
+                        },
+                    )
+                }
+            }
+            "center", "point1" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ElementReference(
+                    when (element) {
+                        is Arc -> element.center
+                        is Sector -> element.center
+                        else -> return null
+                    },
+                ),
+            )
+            "radiuspoint", "point2" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ElementReference(
+                    when (element) {
+                        is Arc -> element.radiuspoint
+                        is Sector -> element.radiuspoint
+                        else -> return null
+                    },
+                ),
+            )
+            "anglepoint", "point3" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ElementReference(
+                    when (element) {
+                        is Arc -> element.anglepoint
+                        is Sector -> element.anglepoint
+                        else -> return null
+                    },
+                ),
+            )
+            "point4" -> when (element) {
+                is Arc -> element.directionpoint
+                is Sector -> element.directionpoint
+                else -> null
+            }?.let {
+                GMResult.Ok(JessieCodeRuntimeValue.ElementReference(it))
+            } ?: GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+            else -> unavailable(element, property, location)
+        }
+    }
+
+    private fun isArcValueUnit(unit: String): Boolean {
+        val normalized = unit.lowercase()
+        return normalized.isEmpty() ||
+            normalized.startsWith("len") ||
+            normalized.startsWith("rad") ||
+            normalized.startsWith("deg") ||
+            normalized.startsWith("sem") ||
+            normalized.startsWith("cir")
     }
 
     override fun assignProperty(
@@ -183,6 +334,11 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         return when (property) {
             "vertices" -> GMResult.Ok(elements(polygon.vertices))
             "borders" -> GMResult.Ok(elements(polygon.borders))
+            "parallelPoint" -> polygon.parallelPoint?.let {
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.ElementReference(it),
+                )
+            } ?: unavailable(polygon, property, location)
             "A", "Area" -> numberFunction("Area") {
                 polygon.Area()
             }
@@ -242,11 +398,28 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
     ): ElementPropertyResult? {
         val line = element as? Line ?: return null
         return when (property) {
+            "point" -> (line.tangentToPoint ?: line.normalPoint)?.let {
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.ElementReference(it),
+                )
+            } ?: unavailable(line, property, location)
+            "polar" -> line.tangentToPolar?.let {
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.ElementReference(it),
+                )
+            } ?: unavailable(line, property, location)
             "point1" -> GMResult.Ok(
                 JessieCodeRuntimeValue.ElementReference(line.point1),
             )
             "point2" -> GMResult.Ok(
                 JessieCodeRuntimeValue.ElementReference(line.point2),
+            )
+            "subs" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    line.subs.mapValues { (_, child) ->
+                        JessieCodeRuntimeValue.ElementReference(child)
+                    },
+                ),
             )
             "getSlope", "Slope" -> numberFunction("Slope") {
                 line.Slope()
@@ -795,6 +968,10 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             is JessieCodeRuntimeValue.ObjectValue -> "object"
             is JessieCodeRuntimeValue.FunctionValue -> "function"
             is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.TransformationReference ->
+                "transformation"
+            is JessieCodeRuntimeValue.CompositionReference ->
+                "composition"
             is JessieCodeRuntimeValue.ElementReference -> "element"
         }
 }

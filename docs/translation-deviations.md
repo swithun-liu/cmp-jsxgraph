@@ -18,22 +18,64 @@ practical.
   `boundingBox`, Board flags, and ordered
   `objects[{id,type,parents,attributes}]`. This is a serialization of
   `Board.create(type, parents, attributes)`, not an upstream JSXGraph file
-  reader format. The current production subset creates Point, Line, Circle,
-  Curve, FunctionGraph, Plot, Polygon, Text, Arc, Sector, and Angle through the
-  translated native registry and then snapshots the resulting Board elements
-  into a platform-independent scene. Unsupported element types, fields,
-  attributes, point faces, labels, arrows, dash styles, and plotting modes
+  reader format. The current production subset creates Point, Line, Arrow,
+  Segment with an optional numeric or JessieCode-string fixed-length parent,
+  Circle, Midpoint, OrthogonalProjection, PerpendicularPoint, Perpendicular,
+  PerpendicularSegment, ParallelPoint, Parallel, ArrowParallel, Curve,
+  FunctionGraph, Plot, StepFunction, Derivative, Spline, CardinalSpline,
+  Polygon, PolygonalChain, Parallelogram, RegularPolygon, RadicalAxis,
+  PolePoint, Circle/Point,
+  Line/Point, and
+  Curve/Point Tangent, Polar, Circle/Point TangentTo and PolarLine, Ellipse,
+  Hyperbola, Text, Arc,
+  CircumcircleArc, MinorArc, MajorArc, Sector, CircumcircleSector, MinorSector,
+  MajorSector, Angle, NonreflexAngle, and ReflexAngle through the translated
+  native registry and then snapshots the resulting Board elements into a
+  platform-independent scene. Unsupported element types, fields, attributes,
+  point faces, labels, Curve/Arc/Sector arrows, and plotting modes
   return `JsxGraphDocumentError` instead of being ignored.
 - Construction documents are limited by source length, JSON depth, JSON value
   count, object count, points per Curve, vertices per Polygon, and characters
   per Text. JSON and factory failures are converted to `GMResult.Err`; object
   IDs are required and duplicate IDs are rejected. Colors currently accept CSS
   hex forms plus a small named-color subset. Top-level
-  Point/Line/Circle/Curve/Polygon/Text/Arc/Sector/Angle defaults match the
-  translated JSXGraph `1.13.3` subset; helper Points created from
+  Point/Line/Arrow/Segment/Circle/Midpoint/OrthogonalProjection/
+  PerpendicularPoint/Perpendicular/PerpendicularSegment/ParallelPoint/Parallel/
+  ArrowParallel/Curve/CurveIntersection/CurveUnion/CurveDifference/
+  StepFunction/Derivative/Spline/CardinalSpline/Polygon/PolygonalChain/
+  Parallelogram/RegularPolygon/RadicalAxis/PolePoint/
+  Circle-Line-or-Curve-Point Tangent-Polar/
+  Circle-Point TangentTo/PolarLine/Ellipse/Hyperbola/
+  Text/Arc/Arc-composition/
+  Sector/Sector-composition/
+  Angle defaults match the translated JSXGraph `1.13.3` subset; helper Points
+  created from
   coordinate-array parents remain in the internal Board. Polygon-owned helper
   Points are represented as Polygon scene sub-elements; other helpers are not
   emitted as top-level source elements.
+- `bisectorlines` is exposed through native JessieCode but rejected explicitly
+  by the JSON construction-document path. The current document contract maps
+  each requested object to one registered geometry element and one scene
+  identity, while JSXGraph returns a non-Board `Composition` containing two
+  independently registered Lines. Kotlin does not silently flatten that
+  compound result or invent a document serialization for it.
+- Supported construction-document and scene elements accept a finite
+  non-negative integer `layer`, defaulted from `Options.layer`. Compose Canvas
+  sorts supported render items by `(layer, creation position)`, including Grid
+  at layer `1`, Axis at layer `2`, ordinary top-level elements, and independent
+  Polygon fill, border, and implicit-vertex items. This preserves the observed
+  Point-over-Arc and Polygon sub-element order. Nested Polygon
+  `vertices`/`borders` visual attributes, runtime layer mutation, custom
+  Grid/Axis/Ticks layers, traces, images, and untranslated renderer objects
+  remain pending; this is not a claim of complete renderer-layer parity.
+- Supported Point, Line, Circle, Curve, and Polygon-border strokes accept the
+  integer `dash` values `0..7` from
+  `src/renderer/abstract.js -> dashArray`. `dashScale: true` scales every
+  interval by `strokeWidth / 2`; the platform-independent scene stores the
+  resolved CSS-pixel lengths. Compose maps those lengths to dp and replaces
+  only the zero-length segment in pattern 7 with Skia's minimum positive
+  `0.001` pixel interval. Dynamic dash mutation and untranslated renderer
+  objects remain pending.
 - `JsxGraphEngine.createSession` retains the translated Board for production
   interaction while `parse` remains the immutable one-shot API. The current
   interaction subset moves visible, free, non-fixed top-level Points with
@@ -44,38 +86,433 @@ practical.
   styling, multi-pointer gestures, keyboard movement, object dragging, pan,
   zoom, snapping, gliders, groups, and persistent transformations remain
   pending.
+- `Intersection` currently translates
+  `src/base/point.js -> createIntersectionPoint` and
+  `src/math/geometry.js -> intersectionFunction` for Line/Segment/Circle,
+  discrete and continuous Curve, Arc, Sector, Polygon/Line, and Polygon/path
+  pairs.
+  Curve/Curve and Curve/Circle use the translated segment or cubic-Bezier
+  traversal; continuous Curve/Curve uses the upstream 20-by-20 damped-Newton
+  search, and continuous Curve/Line uses discrete selection followed by
+  scalar-root refinement. Polygon intersections with Circle, Curve, Arc,
+  Sector, and Polygon use the translated `src/math/clip.js -> _getPath`,
+  `findIntersections`, and phase-one sorting path. Crossing, touching,
+  collinear-overlap endpoints, reverse parent order, and out-of-range results
+  follow the upstream ordering. Numeric or JessieCode-function branch indices,
+  `alwaysIntersect` Segment/ray clipping, the upstream first-parent-only Arc
+  clipping rule, ideal/non-real results, and dependency updates are preserved.
+  `OtherIntersection` covers the translated Curve/Circle/Line
+  combinations, one Point or an array of excluded Points, and numeric
+  `precision`; excluded Points remain parent metadata without owning child
+  links. A non-real intersection remains in `JsxGraphScene` with
+  `isReal: false` and is suppressed by Compose drawing and hit testing.
+  For Polygon/path input, JSXGraph `1.13.3` throws a property-access error for
+  an in-range fractional index; Kotlin returns
+  `GMResult.Err(InvalidIntersectionIndex)` instead. The same upstream release
+  leaves an existing Polygon/path Intersection Point stale after a defining
+  Polygon vertex moves, even though a direct `Geometry.meetPathPath` call
+  returns the updated coordinate. Kotlin keeps the dependency edge and
+  recomputes the Point. Dynamic `alwaysIntersect`/`precision` visual-property
+  forms remain unsupported. Ellipse and Hyperbola construction are translated,
+  but
+  Intersection and OtherIntersection reject an `OBJECT_TYPE_CONIC` parent
+  with `UnsupportedConic` until that dispatch has dedicated numerical,
+  lifecycle, resource-limit, and parity evidence.
+- CurveIntersection, CurveUnion, and CurveDifference translate
+  `src/base/curve.js` creator wrappers and the complete GeometryElement path
+  form of `src/math/clip.js -> greinerHormann`. The mutable linked topology is
+  isolated from the immutable `Clip.findIntersections` ordering used by
+  Intersection Points. Degenerate touching/bouncing chains, fully degenerate
+  paths, entry/exit marking, empty and containment cases, multi-component
+  separators, and tracing follow the upstream algorithm; invalid topology and
+  bounded traversal failures return `GMResult.Err` instead of propagating a
+  JavaScript exception or looping indefinitely. The output Curve has no
+  explicit parents or source-child links, matching JSXGraph `1.13.3`, and
+  recomputes through the regular Board update pass. Supported operands are
+  Circle, Curve, Arc, Sector, and Polygon GeometryElements. The upstream raw
+  Point/Coords/coordinate-array `_getPath` forms remain unsupported.
+- `JsxGraphJessieCode.parse` and `createSession` expose only the translated
+  JessieCode grammar and native creator subset. They do not evaluate arbitrary
+  JavaScript, load modules, expose a DOM, or return internal AST/runtime
+  values. The stateful session retains globals, functions, closures, selected
+  Board state, created elements, and bounded source history, then returns
+  portable scene snapshots. Parse, runtime, resource, and scene failures are
+  mapped to public `JsxGraphJessieCodeError` values with source ranges where
+  available. This preview API is outside the current Stable
+  construction-document contract.
 - The translated Curve subset accepts two numeric arrays for a discrete data
-  plot, four number/string terms for an explicit-domain parametric curve, or
-  three number/string terms for FunctionGraph/Plot. Continuous curves require
-  `doAdvancedPlot: false` and use
+  plot, four number/string terms for an explicit-domain parametric curve,
+  three number/string terms for FunctionGraph/Plot, or two retained terms for
+  StepFunction. Matching `src/base/curve.js -> generateTerm`, a JessieCode
+  string x-term retains `curveType=functiongraph` even in the four-parent
+  `curve(xTerm,yTerm,min,max)` form; direct function-valued x-terms retain
+  `curveType=parameter`. StepFunction follows
+  `src/base/curve.js -> createStepfunction.updateDataArray`: each regular Board
+  update rebuilds its data arrays from the current X-term length and emits
+  zero points for empty input or `2n - 1` points otherwise. Missing Y entries
+  become non-finite scene path breaks. JSON input accepts numeric arrays;
+  native JessieCode also preserves mutable array identity and JavaScript
+  function `length`/indexed-property behavior without invoking the functions.
+  Its expanded point count is bounded before construction. Continuous curves
+  require `doAdvancedPlot: false` and use
   `src/math/plot.js -> updateParametricCurveNaive`, including its right-open
   sampling interval. The default and maximum translated sample counts are
   1,600 and 10,000. Non-finite sampled points become explicit scene path
-  breaks. Adaptive plot versions, omitted domains, function-valued and
-  mixed-array terms, transformations, polar curves, cubic Bezier paths,
-  fills, non-round caps, arrows, labels, and hit testing return structured
-  unsupported or creation errors until their upstream slices are translated.
+  breaks. Boolean-composition Curves accept fill styling because their
+  Greiner-Hormann output is a closed path. Adaptive plot versions, omitted
+  domains, function-valued and mixed-array terms, transformations, polar
+  curves, cubic Bezier paths, ordinary Curve fills, non-round caps, arrows,
+  labels, and hit testing return structured unsupported or creation errors
+  until their upstream slices are translated.
 - The translated Polygon subset accepts registered Point references or
   coordinate arrays, closes the vertex list, creates Segment borders in the
-  upstream order, and preserves existing-versus-owned Point dependencies.
-  Compose renders even-odd fills, default border styling, and owned helper
-  Points. Top-level Polygon stroke properties are retained on the Polygon
-  scene but do not override its Segment borders, matching JSXGraph's separate
-  `polygon.borders` options. Nested `vertices`/`borders` attributes,
-  transformations, mutable vertex lists, clipping/intersections,
-  `polygonalchain`, labels, and hit testing remain pending. Construction
-  failures roll back materialized helper Points and borders instead of
-  leaving partially registered elements.
+  upstream storage and Board-creation orders, and preserves
+  existing-versus-owned Point dependencies. `createPolygonalChain` follows
+  the upstream wrapper: it removes the duplicate closing vertex and final
+  closing Segment, keeps `Area`'s implicit closure, makes `Perimeter`/`L`
+  measure only adjacent vertices, and preserves the upstream bounds behavior
+  that omits the final chain vertex. Compose renders even-odd fills, default
+  border styling, owned helper Points, and an open chain border; a
+  PolygonalChain fill still closes geometrically when explicitly enabled,
+  matching the official Canvas renderer. Top-level Polygon stroke properties
+  are retained on the Polygon scene but do not override its Segment borders,
+  matching JSXGraph's separate `polygon.borders` options. Nested
+  `vertices`/`borders` attributes, transformations, mutable vertex lists,
+  labels, and hit testing remain pending. Polygons can be inputs to translated
+  CurveIntersection/CurveUnion/CurveDifference creators. Construction failures
+  roll back materialized helper Points and borders instead of leaving
+  partially registered elements.
+- `createParallelogram` follows
+  `src/base/polygon.js -> JXG.createParallelogram`: three
+  Point/reference/coordinate parents create a constrained ParallelPoint and
+  then a Polygon with vertices
+  `[point1, point2, parallelPoint, point3, point1]`. The helper is exposed as
+  `parallelPoint`, both output and helper are draggable, and helper `fixed` is
+  forced to `false` after nested `parallelpoint` attributes are applied.
+  Segment borders retain the official storage order while Board registration
+  retains helper-before-borders-before-Polygon creation order. Removing the
+  Parallelogram removes the Polygon and borders but leaves the helper
+  registered; coordinate-created source Points are owned by that helper and
+  are removed only when it is removed. JSXGraph `1.13.3` materializes and
+  retains temporary Points when final arity or a later parent is invalid.
+  Kotlin validates arity first and atomically removes any temporary Points or
+  helper created before a structured factory failure.
+- `createRegularPolygon` follows
+  `src/base/polygon.js -> JXG.createRegularPolygon`. The numeric form applies
+  the upstream angle
+  `PI * (2 - (n - 2) / n)` around each preceding vertex and transforms the
+  vertex two positions back; JavaScript's `i < n` loop is preserved as
+  `ceil(n)` output vertices for finite non-integer `n`. Generated Points keep
+  `OBJECT_TYPE_CAS`, a complete nested `vertices.ids` list, and forced
+  draggable/non-fixed state. The existing-Point form appends the same
+  transforms directly to supplied Points without changing their type,
+  parent list, or post-removal transform binding. Coordinate-created starting
+  Points remain Polygon-owned, while generated helpers survive Polygon
+  removal. Kotlin rejects non-finite numeric counts to prevent the upstream
+  positive-infinity loop, rejects duplicate IDs instead of overwriting the
+  Board map, and atomically restores existing transforms or removes temporary
+  Points on failure. Generated Point labels and complete nested
+  `vertices`/`borders` visual semantics remain pending.
+- `createRadicalAxis` follows
+  `src/base/line.js -> JXG.createRadicalAxis`. Two registered Circles feed the
+  exact transposed standard-form matrix product, followed by the upstream
+  one-function Line formulas for two constrained homogeneous helper Points.
+  The Line is non-draggable, replaces its public parents with the Circle IDs,
+  and keeps both helper and Circle dependency links. Helpers survive successful
+  Line or Circle removal, matching JSXGraph. Repeated, concentric, and
+  identical Circles preserve zero helper coordinates and NaN Line standard
+  forms. JSXGraph `1.13.3` overwrites the Board registry for a duplicate output
+  ID and leaves duplicate objects; Kotlin preserves the project-wide unique-ID
+  invariant, returns `GMResult.Err`, and removes both newly created helpers
+  atomically. Nested helper styling and labels remain unsupported in the
+  public scene bridge; `id`, `name`, `needsRegularUpdate`, and
+  `withLabel: false` are accepted.
+- `createEllipse` follows `src/element/conic.js -> JXG.createEllipse`.
+  Point/reference/coordinate foci are accepted with either a Point on the
+  Ellipse or a numeric/function-valued major-axis parent. The output remains a
+  parameter Curve with `OBJECT_TYPE_CONIC`, a constrained midpoint/center,
+  foci, `majorAxis`, `subs`, `inherits`, and a live `quadraticform`; optional
+  parameter-domain parents are currently numeric-only in native JessieCode.
+  The point-on-Ellipse and major-axis forms preserve parent updates,
+  coordinate-helper ownership, center/output removal behavior, and upstream
+  `Double` propagation for short, zero, negative, non-finite, and coincident
+  inputs. Sampling deliberately uses the existing fixed right-open naive
+  Curve path with an explicit bounded count; adaptive plotting remains
+  pending.
+  JSXGraph `1.13.3` may overwrite a Board registry entry for a duplicate
+  Ellipse or nested center ID and can retain helpers after a later creator
+  failure. Kotlin rejects duplicate IDs and removes newly materialized focus,
+  point-on-Ellipse, and center helpers atomically. Invalid function results,
+  unsupported parent forms, sample overflow, and scene limits are structured
+  failures. Tangent, Polar, PolarLine, PolePoint, TangentTo, Normal,
+  Intersection, and OtherIntersection explicitly reject Conic parents until
+  those interoperation paths receive their own source-mapped tests and parity
+  evidence.
+- `createHyperbola` follows
+  `src/element/conic.js -> JXG.createHyperbola`.
+  Point/reference/coordinate foci are accepted with either a Point on the
+  Hyperbola or a numeric/function-valued major-axis parent. The output remains
+  a parameter Curve with `OBJECT_TYPE_CONIC`, a constrained midpoint/center,
+  foci, `majorAxis`, `subs`, `inherits`, and a live `quadraticform`; optional
+  parameter-domain parents are currently numeric-only in native JessieCode,
+  and omitted domains preserve the official `±1.0001π` values. Point and
+  major-axis forms preserve parent updates, coordinate-helper ownership,
+  center/output removal behavior, and upstream `Double` propagation for
+  short, equal-focal-distance, zero, negative, non-finite, and coincident
+  inputs. Sampling uses the existing fixed right-open naive Curve path with a
+  bounded count; adaptive plotting remains pending.
+  Kotlin rejects duplicate output or nested center IDs and atomically removes
+  newly materialized focus, point-on-Hyperbola, and center helpers. Invalid
+  function results, unsupported parent forms, sample overflow, and scene
+  limits are structured failures. Tangent, Polar, PolarLine, PolePoint,
+  TangentTo, Normal, Intersection, and OtherIntersection continue to reject
+  Hyperbola/Conic parents until those interoperation paths receive dedicated
+  source-mapped tests and parity evidence.
+- `createPolePoint` follows
+  `src/base/point.js -> JXG.createPolePoint` for the translated Circle/Line
+  parent combination. Parent input order is accepted in both directions and
+  canonicalized to Circle then Line, matching the upstream element metadata.
+  The output Point evaluates
+  `Numerics.det(circle.quadraticform, line.stdform)` through one constrained
+  homogeneous coordinate function and keeps direct child links from both
+  parents. Direct output removal detaches those links; removing either parent
+  recursively removes the PolePoint. A non-finite Line preserves the official
+  NaN Point result. Cross-Board, unregistered, invalid-parent, and duplicate-ID
+  failures return `GMResult.Err` without partial registration. Ellipse
+  construction is translated, but the upstream Conic/Line form remains
+  explicitly unsupported pending dedicated interoperation evidence.
+- The translated Circle/Point, Line/Point, and Curve/Point branches of
+  `createTangent` follow `src/base/line.js -> JXG.createTangent`, including the
+  registered `polar` alias; `createPolarLine` remains restricted to
+  Circle/Point. The exact
+  `Mat.matVecMult(circle.quadraticform, point.coords.usrCoords)` closure feeds
+  the upstream one-function Line formulas for two constrained homogeneous
+  helper Points. `tangent` and `polar` keep the supplied parent order and
+  `elType=tangent`; `polarline` canonicalizes metadata to Circle then Point
+  and changes only `elType`. Matching JSXGraph, only the Point directly owns
+  the output child link: removing the Point removes the Line, while removing
+  the Circle leaves it registered. Direct Line removal leaves both implicit
+  helper Points registered. Center and zero-radius inputs preserve upstream
+  zero/NaN or finite degenerate arithmetic. Cross-Board and unregistered
+  parents return `GMResult.Err`; unlike JSXGraph's permissive cross-Board
+  closure and duplicate-registry overwrite, Kotlin enforces Board ownership
+  and unique IDs and atomically removes temporary helpers on failure.
+- The Line/Point Tangent branch calls the translated two-Point Line factory
+  with the source Line's existing endpoints. The output is therefore
+  unconstrained and draggable, shares both endpoint objects and their
+  `inherits`/ancestor links, ignores nested `point1`/`point2` identity, and
+  changes geometry only when those endpoints move. Matching upstream, neither
+  the source Line nor parameter Point receives a direct child link even though
+  both remain in the public `parents` metadata. Removing either leaves the
+  Tangent registered; removing either shared endpoint removes both source and
+  Tangent Lines. Official cross-Board construction with a foreign parameter
+  Point succeeds while a foreign source Line fails with a `TypeError`; Kotlin
+  deliberately rejects both as `ParentBoardMismatch`.
+- The Curve/Point Tangent branch follows all three translated Curve modes.
+  FunctionGraph evaluates numerical derivatives at `point.X()`. A direct
+  function-valued parametric Curve first projects the Point through
+  `Geometry.projectCoordsToCurve` and differentiates at the nearest
+  parameter. A data Plot projects to the nearest degree-one segment and uses
+  that segment's homogeneous cross product. The output uses two hidden
+  constrained helper Points and preserves the supplied parent order, while
+  only the parameter Point owns the direct Tangent child edge. Removing the
+  Tangent or Curve leaves the helpers and the remaining objects registered;
+  removing the Point removes the Tangent but leaves the helpers. Duplicate
+  Plot points preserve zero-helper/NaN-Line arithmetic. A one-point Plot,
+  projection failure, cross-Board parent, or duplicate ID returns a structured
+  error with atomic rollback. Ellipse Tangent/Polar and PolarLine Conic forms
+  remain explicitly unsupported pending dedicated evidence, as do Turtle and
+  one-parent Glider branches.
+- The Circle branch of `src/base/line.js -> JXG.createTangentTo` is translated
+  as the same three-stage construction: create the external Point's polar,
+  intersect that Line with the Circle, then create the Tangent at the selected
+  contact Point. An omitted, zero, or `NaN` numeric third parent selects branch
+  zero; every other `Double`, including either infinity, selects branch one,
+  matching the upstream truthiness test. The returned Line exposes the
+  registered polar and contact Point and preserves the observed dependency,
+  update, removal, non-real, and degenerate behavior. Nested tangent/polar
+  helper identities and contact
+  Point identity/fixed state are retained. Public scene generation expands one
+  `tangentto` source object into the polar Line, contact Point, and tangent
+  Line, and charges all three against object limits. Kotlin rejects
+  cross-Board, unregistered, duplicate-ID, and partial-stage failures with
+  structured atomic rollback. Ellipse and Hyperbola construction are
+  translated, but the upstream TangentTo Conic branch remains explicitly
+  unsupported pending dedicated interoperation evidence.
+- `createDerivative` preserves the upstream runtime construction:
+  `X(t)` delegates to the source Curve and `Y(t)` divides the central
+  `Numerics.D` result for `Y` by that for `X`. The output remains
+  `curveType=parameter`, captures the source domain, and records only public
+  parent metadata; it intentionally does not add a source child edge, so
+  removing the source leaves the Derivative registered with its retained
+  source reference. Data Plots use the translated
+  `interpolationFunctionFromArray` behavior and a viewport-padded default
+  domain. Kotlin accepts exactly one registered Curve parent and returns a
+  structured error for all invalid forms; JSXGraph `1.13.3` instead exposes
+  inconsistent `TypeError`/generic `Error` paths because its guard combines
+  `parents.length !== 1` with `parents[0].class`. Adaptive plotting remains
+  unsupported, so public sources must continue to request
+  `doAdvancedPlot: false`.
+- `createSpline` and `createCardinalSpline` preserve the upstream natural and
+  cardinal interpolation functions, dynamic Point/tension updates, and
+  distinct parent lifecycles. Spline's Point parents are metadata only;
+  existing CardinalSpline Points own the Curve, while coordinate-generated
+  Points are Curve children. The Spline coordinate-pair parent branch
+  deliberately retains the upstream nested-loop behavior that replays the
+  complete parent list for every pair, including its duplicated points and
+  resulting non-finite interpolation. Fewer than two interpolation points are
+  rejected as `InvalidInterpolationPointCount` before registration instead of
+  allowing a later invalid Curve. Coordinate functions, dynamic tension,
+  `createPoints`, `isArrayOfCoordinates`, uniform/centripetal/chordal
+  parameterization, and bounded sample counts are translated; adaptive
+  plotting remains unsupported.
+- `createRiemannsum` accepts one numeric function or an ordered lower/upper
+  pair, evaluates dynamic rectangle count/type/interval terms on every regular
+  update, and exposes the cached signed area through `Value()` and `V()`.
+  Construction-document function expressions are strings as required by the
+  repository's serialization contract; native JessieCode uses actual function
+  values. Output is bounded using the exact ordinary/Simpson point counts
+  (`5n`, `34n`, or `63n`). A nonnumeric/throwing function or an oversized
+  dynamic count returns a structured error and does not retain a partially
+  registered Curve; JSXGraph `1.13.3` can leave that Curve registered after
+  throwing during its first `updateDataArray`. Numeric approximation types
+  retain the upstream unknown-type fallback. Ordinary Curve fills remain
+  unsupported; fill is enabled only for Boolean-composition, RiemannSum,
+  BoxPlot, and Inequality Curves.
+- `createBoxPlot` accepts at least five numeric/string/function quantile terms,
+  dynamic numeric/string/function axis and width terms, and an optional sixth
+  array-valued outlier term. It preserves the upstream 19-point body/whisker
+  path, vertical-versus-other-direction transposition, `smallWidth`, all
+  documented outlier face aliases, unknown-face circle fallback, blue fill
+  defaults, and JessieCode dependency/removal behavior. The public scene keeps
+  BoxPlot source geometry so Compose can convert `outlier.size` from CSS pixels
+  using the actual viewport `unitX`/`unitY`, rather than freezing the size at
+  construction time. Output growth is bounded as `19`, `20 + 3n`, `20 + 6n`,
+  or `20 + 19n` according to face and outlier count. JSXGraph `1.13.3` can
+  register a partial Curve before failing on non-array quantiles, object terms,
+  or initial evaluation; Kotlin validates and evaluates first, then returns a
+  structured error atomically. Function-valued visual attributes remain
+  outside the current public source contract.
+- `createComb` accepts two existing Point references/names or coordinate
+  arrays and preserves the upstream tooth loop, including cumulative
+  floating-point stepping, final-tooth clipping, and `NaN` path breaks.
+  `frequency`, `width`, and `angle` accept numbers or native JessieCode
+  functions; `reverse` accepts a Boolean or function. Function-returning
+  Point/coordinate parents remain unsupported. Coordinate parents create
+  hidden, non-fixed helpers with nested `point1`/`point2` identity and fixed
+  settings; successful helpers survive Curve removal as upstream does.
+  JSXGraph `1.13.3` leaks the first helper when the second parent is invalid,
+  while Kotlin validates both parents first and cleans all helpers after any
+  later failure. Non-positive/non-finite frequency returns
+  `InvalidCombFrequency` instead of entering the upstream unbounded loop, and
+  static/dynamic tooth growth is capped before allocation.
+- `createInequality` accepts the first registered Line or FunctionGraph parent
+  and ignores extra parents, matching JSXGraph `1.13.3`. Line inputs preserve
+  the five-point expanded half-plane polygon derived from the current Board
+  bounds. FunctionGraph inputs preserve each finite run, its original
+  `minX`/`maxX` closure, and `NaN` separators. `inverse` accepts a Boolean or
+  native JessieCode function and is reevaluated during regular updates.
+  Parents are metadata only and do not own a child edge, so source removal
+  leaves the Inequality registered. Unsupported source types, non-Boolean
+  `inverse`, and output above the configured point limit return structured
+  errors. The Kotlin intrinsic cap additionally prevents an unbounded dynamic
+  allocation before the public engine applies its configured limit.
+- `createVectorField` accepts the upstream component-function and
+  array-returning-function forms, including JessieCode strings, dynamic
+  three-term meshes, scale, and nested arrow enable/size/angle. Inclusive
+  fractional, zero, and negative step behavior, `NaN` path breaks, and
+  arrowheads only for nonzero vectors follow JSXGraph `1.13.3`. Direct
+  function references do not create geometry child edges, so removing a Point
+  referenced only by a closure leaves the VectorField registered. Static and
+  dynamic output growth is capped before allocation. Because the public scene
+  is viewport-independent, it retains the resolved vectors and arrow settings;
+  Compose applies the upstream CSS-pixel arrow size using its actual
+  `unitX`/`unitY`. Unsupported nested arrow fields remain visible to the
+  structured scene-attribute validator.
+- `createSlopeField` accepts one scalar JessieCode string or native function
+  and wraps the VectorField path with the exact upstream
+  `[1 / sqrt(1 + z * z), z / sqrt(1 + z * z)]` normalization. This preserves
+  `NaN` and infinite-slope arithmetic instead of substituting a vertical
+  vector. Arrowheads default to disabled; explicit dynamic arrow, scale, and
+  mesh terms use the same bounded, atomic behavior as VectorField. Function
+  dependencies remain metadata-only. The public runtime does not yet expose
+  either field type's `setF` mutation method.
+- `createNormal` translates registered Line/Point, Circle/Point, and
+  Curve/Point parents in either order. The Line branch preserves the ideal
+  direction helper, `point` and `subs.point` access, and the duplicated helper
+  entry in `inherits`; the Circle branch reuses its midpoint and the supplied
+  Point. FunctionGraph, true parametric Curve, and degree-one data Plot
+  branches use the upstream derivative or nearest-projection coefficients and
+  two hidden constrained endpoints. Both explicit parents own the output child
+  edge, so removing either parent removes the Normal, while removing the
+  Normal leaves its hidden helpers registered. JSXGraph `1.13.3` accepts a
+  coordinate-array Point far enough to create cyclic helper ownership and then
+  throws `RangeError: Maximum call stack size exceeded`; Kotlin rejects that
+  form as a structured unsupported-parent result. Cross-Board, unregistered,
+  one-point Plot, unsupported-degree, projection, and duplicate-ID failures
+  are also structured and roll back new helpers atomically. Glider, Turtle,
+  transformed-Curve, degree-three Plot/Bezier, and Ellipse/Hyperbola Conic
+  branches remain unsupported. The Conic branch requires dedicated
+  interoperation evidence rather than implicitly entering the generic Curve
+  path.
 - The translated Arc and Sector subsets accept three registered Point
   references or coordinate arrays and preserve existing-versus-owned Point
-  dependencies. They support `auto`/`minor`/`major` selection, clockwise and
+  dependencies. Arc additionally accepts four Point parents when
+  `useDirection` is `true`; the fourth Point participates in dependency
+  updates and selects the endpoint order with the upstream determinant.
+  They support `auto`/`minor`/`major` selection, clockwise and
   counterclockwise orientation, and the upstream four-segment cubic Bezier
   approximation. Angle supports the three-point form, parent reordering,
   numeric or `auto` radius, and `sector` display. Two-line Sector/Angle forms,
-  `useDirection`, visible/styled sub-elements, labels, transformations,
-  arrows, hit testing, Angle mutation, and `square`/`sectordot`/`none` display
-  are rejected or remain unavailable. A right Angle whose effective
-  `orthoType` is not `sector` is rejected instead of silently drawing a sector.
+  Sector/Angle `useDirection`, visible/styled sub-elements, labels,
+  transformations, arrows, hit testing, Angle mutation, and
+  `square`/`sectordot`/`none` display are rejected or remain unavailable. A
+  right Angle whose effective `orthoType` is not `sector` is rejected instead
+  of silently drawing a sector.
+- The translated Arc-composition subset follows `src/element/arc.js`
+  `createSemicircle`, `createCircumcircleArc`, `createMinorArc`, and
+  `createMajorArc`. Semicircle accepts two Point/reference/coordinate parents
+  and owns a hidden Midpoint center. CircumcircleArc accepts three such parents,
+  owns a hidden Circumcenter, and passes the third source Point through the
+  direction-point branch. MinorArc and MajorArc preserve the source center and
+  endpoints while forcing the corresponding selection mode. Dependency
+  updates, helper ownership/removal, registration rollback, and upstream
+  degenerate arithmetic are translated. The composition-specific nested
+  attribute groups and the remaining Arc mutation/rendering surface remain
+  pending. This focused subset is outside the `0.1.0` Stable corpus.
+- The translated Sector-composition subset follows `src/element/sector.js`
+  `createCircumcircleSector`, `createMinorSector`, `createMajorSector`,
+  `createNonreflexAngle`, and `createReflexAngle`. CircumcircleSector accepts
+  three Point/reference/coordinate parents, owns a hidden Circumcenter, and
+  passes the third source Point through the four-parent direction-selection
+  path. MinorSector and MajorSector preserve the source center and endpoints
+  while forcing the corresponding selection mode. NonreflexAngle and
+  ReflexAngle force minor/major selection and expose the upstream
+  radian-default, unit-aware `Value()` behavior. Dependency updates, helper
+  ownership/removal, registration rollback, and upstream degenerate
+  arithmetic are translated. Composition-specific nested attribute groups and
+  the remaining Sector/Angle mutation and rendering surface remain pending.
+  This focused subset is outside the `0.1.0` Stable corpus.
+- The translated `JXG.Composition` subset is a non-Board container with
+  role-based membership, ID/name selection, ordered objects, `subs`, type
+  access, generated update lifecycle, parent forwarding, member removal, and
+  Board-driven deletion of its registered members. Generic group/filter
+  selection and generated forwarding for untranslated element APIs remain
+  pending. In particular, upstream `Composition.setAttribute` forwards a
+  visual mutation to every member; Kotlin returns no such callable property
+  until the mutable visual-property model exists.
+- Native `bisectorlines` follows
+  `src/element/composition.js -> createAngularBisectorsOfTwoLines`: two
+  registered output Lines are backed by four hidden constrained Points and
+  carry the two source Lines as parent metadata without adding source-child
+  links. Only nested `line1` and `line2` creator attributes style the outputs.
+  An observed top-level `layer: 5` remains on the Composition attributes and
+  both outputs retain the Line default layer `7`, which Kotlin preserves.
+  JSXGraph `1.13.3` silently accepts duplicate nested output IDs and leaves an
+  ambiguous Board registry; Kotlin instead returns the existing structured
+  `DuplicateElementId` failure and atomically removes all partially created
+  helpers and outputs. Collapsed source Lines preserve upstream `NaN`
+  propagation. This focused subset remains outside the `0.1.0` Stable corpus.
 - The translated Text subset accepts numeric or string coordinates, static
   string/number content, and numeric JessieCode expressions inside upstream
   `<value>...</value>` tags. It preserves the upstream short-math expansion,
@@ -159,26 +596,71 @@ practical.
   `Type.deepCopy(..., true)`. As upstream does, an assignment target becomes
   the creator's implicit `name` when neither `name` nor `id` is supplied.
   Kotlin exposes custom creators through the explicit `JessieCodeCreator`
-  adapter and gives them precedence over the native `point`, `line`, `circle`,
-  `curve`, `functiongraph`, `plot`, `polygon`, `text`, `arc`, `sector`, and
-  `angle` registry. Attributes on an ordinary function return
+  adapter and gives them precedence over the native `point`, `line`, `arrow`,
+  `segment`, `circle`, `ellipse`, `hyperbola`, `circumcenter`, `circumcirclemidpoint`, `circumcircle`, `midpoint`,
+  `reflection`, `mirrorelement`, `mirrorpoint`, `orthogonalprojection`,
+  `perpendicularpoint`, `perpendicular`, `perpendicularsegment`,
+  `parallelpoint`, `parallel`, `arrowparallel`, `bisectorlines`, `bisector`,
+  `incenter`, `incircle`, `curve`, `functiongraph`, `plot`, `stepfunction`,
+  `derivative`, `spline`, `cardinalspline`, `riemannsum`, `boxplot`, `comb`,
+  `inequality`, `vectorfield`, `slopefield`,
+  `polygon`, `polygonalchain`, `parallelogram`, `regularpolygon`,
+  `radicalaxis`, `polepoint`, `tangent`, `polar`, `tangentto`, `polarline`,
+  `text`, `arc`,
+  `semicircle`,
+  `circumcirclearc`, `minorarc`, `majorarc`, `sector`, `circumcirclesector`,
+  `minorsector`, `majorsector`, `angle`, `nonreflexangle`, and `reflexangle`
+  registry. Attributes on an ordinary function return
   `UnexpectedCreatorAttributes` instead of throwing, and attribute
   nesting/collection growth shares the evaluator resource limits.
 - Native JessieCode creators currently apply `id`, `name`, and
   `needsRegularUpdate`; Curve creators additionally consume their translated
   plotting attributes, Polygon consumes `withLines`, Text consumes `parse`,
   `formatNumber`, and `digits`, Arc/Sector consume `selection` and
-  `orientation`, and Angle also consumes `radius`. Other visual and nested
-  element attributes are evaluated and merged but not applied because the
-  visual-property model is not translated yet. Invalid supported attribute
-  types, unavailable Boards, unsupported parent combinations, and native
-  factory failures return `CreatorFailure` instead of throwing.
+  `orientation`, Arc additionally consumes `useDirection`, Angle also
+  consumes `radius`. Arc and Sector compositions consume the translated
+  common/shape attributes while forcing their upstream composition semantics.
+  Parallelogram consumes nested `parallelpoint` identity and Point styling,
+  while preserving the upstream forced draggable/non-fixed helper state.
+  RegularPolygon consumes nested `vertices` identity, `ids`, and translated
+  Point styling while likewise forcing generated helpers draggable/non-fixed.
+  RadicalAxis consumes nested `point1`/`point2` identity and regular-update
+  attributes while retaining hidden constrained helper Points.
+  Ellipse and Hyperbola consume nested `center` identity, fixed state, and
+  regular-update attributes plus their translated Curve sampling/style fields.
+  Circle/Point and Curve/Point Tangent and Polar, plus PolarLine, consume the
+  same nested helper identity and regular-update attributes for their hidden
+  constrained endpoints. Line/Point Tangent and Polar ignore those nested
+  attributes because they reuse the source Line endpoints, matching upstream.
+  TangentTo consumes the top-level tangent endpoint identities, nested polar
+  Line and endpoint identities, and the contact Point identity/fixed state.
+  BoxPlot consumes `dir`, `smallWidth`, and nested outlier `face`/`size`.
+  Comb consumes numeric/function-valued `frequency`, `width`, `angle`, and
+  `reverse`, plus nested hidden `point1`/`point2` identity and fixed settings.
+  Inequality consumes Boolean/function-valued `inverse`.
+  VectorField and SlopeField consume numeric/function-valued `scale` and
+  nested `arrowhead.enabled`/`size`/`angle`.
+  The public scene bridge snapshots bounded literal creator attributes and
+  applies the same supported top-level style, visibility, line-end, Point,
+  static Line arrow-head, Curve, Polygon, Text, Arc, Sector, and Angle fields
+  as the construction-document path.
+  Function, Board, element-reference, cyclic, and over-depth attribute values
+  fail explicitly. Nested element styling and later visual-property mutation
+  remain pending. Invalid supported attribute types, unavailable Boards,
+  unsupported parent combinations, and native factory failures return
+  structured errors instead of throwing.
 - The debug-only official JSXGraph iframe allows CSP `unsafe-eval` because
   upstream JessieCode compiles string curve expressions through JavaScript
   evaluation. That permission is confined to the comparison renderer;
   `jsxgraph-core` and `jsxgraph-compose` contain no JavaScript engine or
   WebView dependency. The visual capture harness treats upstream
   `error compiling function` console messages as failures.
+- The comparison workbench accepts a strict debug-only JSON envelope for a
+  JessieCode case. The same raw `source` and Board options drive native
+  `JsxGraphJessieCodeSession.execute` and official `board.jc.parse`; unknown
+  fields, arbitrary-JavaScript input kinds, invalid bounds, and non-Boolean
+  Board flags are rejected. This envelope is not accepted by either production
+  source API.
 - The deprecated `delete` statement removes a resolved geometry element
   through the translated `Board.removeObject` lifecycle and returns
   `UndefinedValue`. Kotlin does not emit the upstream deprecation warning
@@ -247,13 +729,21 @@ practical.
 - Numeric vectors and matrices use `DoubleArray` and `Array<DoubleArray>`.
   Malformed dimensions are outside the internal contract and may fail
   differently from malformed JavaScript arrays.
-- `Transformation` currently exposes only the static numeric 2D kernel.
-  Unsupported type names, wrong parameter counts, malformed matrix shapes,
-  and malformed reflection coordinates return `GMResult.Err` instead of
-  throwing or failing while indexing. Dynamic number/string/function
-  parameters, `bindTo`/`meltTo`, coordinate-element transformation lists,
-  transformed element factories, construction-document exposure, and 3D
-  transformations remain pending.
+- `Transformation` covers the numeric and dynamic 2D kernel. Unsupported type
+  names, wrong parameter counts, malformed matrix shapes, malformed reflection
+  coordinates, JessieCode compile/evaluation failures, nonnumeric expression
+  results, and rejected structured function parameters return `GMResult.Err`
+  instead of throwing or failing while indexing. `bindTo`, static `meltTo`,
+  coordinate-element transformation lists, transformed-position preimages,
+  the dedicated JessieCode Transformation runtime reference, the native
+  `transform` creator, and transformed-Point creation are translated.
+- JSXGraph `1.13.3` returns `null` from `Transformation.clone()` for dynamic
+  matrices, but `meltTo()` still appends that value and fails on the next
+  element update. Kotlin returns
+  `TransformationError.DynamicMeltUnsupported` without mutating the target.
+  Dynamic transforms remain available through `bindTo`, which is the working
+  upstream route. Construction-document exposure, transformed Text/Image
+  rendering, and 3D transformations remain pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
@@ -272,22 +762,31 @@ practical.
   strings. Unknown and empty strings return `null` instead of the unchanged
   input string. Group lookup and function/object filter `Composition` results
   remain pending with those untranslated models.
-- `CoordsElement.setPositionDirectly` currently covers free elements without
-  relative coordinates or transformations. Its snap-to-grid, snap-to-point,
-  and attractor calls are lifecycle hooks with no-op defaults until the
+- `CoordsElement.setPositionDirectly` covers free and persistently transformed
+  elements, including inverse-composite preimage recovery. A singular
+  composite returns
+  `CoordinateTransformationError.NonInvertibleCompositeMatrix` from the
+  explicit result API instead of failing in matrix-vector multiplication.
+  Relative coordinates remain pending. Snap-to-grid, snap-to-point, and
+  attractor calls are lifecycle hooks with no-op defaults until the
   visual-property and attractor models are translated.
-- `Point.create` accepts numeric free-point coordinates or a list of at least
-  two JessieCode string coordinate expressions. The native JessieCode creator
-  also accepts mixed numeric/string terms by preserving string expressions and
-  converting numeric constants to JessieCode number sources. String-expression
-  compilation, first evaluation, and numeric validation return `GMResult.Err`
-  before registration. Later failures are exposed through
+- `Point.create` accepts numeric free-point coordinates, a list of at least
+  two JessieCode string coordinate expressions, mixed
+  numeric/string/function terms, or one function returning a numeric
+  coordinate array. Runtime functions are called without arguments with a
+  fresh evaluation budget on each update, matching the translated closure
+  lifecycle. String-expression compilation, first evaluation, array-shape,
+  and numeric validation return `GMResult.Err` before registration. Later
+  failures are exposed through
   `coordinateConstraintResult()` and `coordinateEvaluationError`; the regular
   update path writes `NaN` coordinate values instead of throwing or retaining
-  stale geometry. Direct function and slider terms, a single function
-  returning coordinates, and transformed points remain pending. JSXGraph
-  throws from `createPoint` when its dynamic parent array cannot be interpreted
-  as a free, constrained, or transformed point.
+  stale geometry. The native JessieCode creator also accepts a CoordsElement
+  plus one Transformation or a nonempty Transformation array. JSXGraph
+  `1.13.3` accepts nonnumeric members from a function-returned JavaScript
+  array and can corrupt coordinate storage, or throws a `TypeError` when the
+  single function returns a scalar. Kotlin requires numeric array members and
+  returns a structured failure instead. Slider and Coords-object function
+  results remain pending.
 - `Point.isOn` currently supports translated `Point`, ordinary `Line`, and
   circle-boundary targets. Segment clipping, circle interior hits, curves,
   polygons, and turtles remain pending on their element and visual-property
@@ -298,21 +797,153 @@ practical.
   translates the numeric three-standard-form-coordinate branch. Function
   parents and transformations remain pending. Factory and creator failures use
   `GMResult.Err`; JSXGraph throws for unsupported parent values.
+- `createArrow` reuses the translated Line parent forms, forces visible
+  `straightFirst` and `straightLast` to `false`, and preserves the upstream
+  vector type and `arrow` identity. `createArrowParallel` reuses the translated
+  three-Point and Line/Point Parallel forms with the same forced flags and
+  `arrowparallel` identity. A missing final head defaults to type `1`, size
+  `6`, and highlight size `6`; explicit `lastArrow: false` remains disabled,
+  matching the observed JSXGraph `1.13.3` normalized-attribute behavior.
+  Static `firstArrow` and `lastArrow` values accept Booleans or objects with
+  finite non-negative `size`/`highlightSize` and integer `type` in `1..7`.
+  Compose translates `getArrowHeadData`, `getPositionArrowHead`, and Canvas
+  `drawArrows`, including per-type endpoint shortening, minimum-length
+  behavior, cubic paths for types `4..7`, the four-pixel infinite-line inset,
+  filled types `1..6`, and open type `7` with its fixed effective size.
+  Dynamic attribute functions, highlight-state rendering, touch-point
+  adjustment, non-Canvas renderer variants, and Curve/Arc/Sector arrows remain
+  pending. JSXGraph's two-Point `createArrowParallel` dispatch creates a
+  registered object with non-finite geometry; Kotlin returns structured
+  `UnsupportedParents` instead of exposing an unusable scene element.
+- `createSegment` reuses the translated two-Point Line construction, assigns
+  the upstream `segment` element type, and unconditionally forces
+  `straightFirst` and `straightLast` to `false`, including when input
+  attributes request `true`. Registered Point and coordinate-array parents are
+  supported. An optional numeric, JessieCode-string, or JessieCode-function
+  third parent enables the translated `setFixedLength` and
+  `updateSegmentFixedLength` lifecycle. It preserves upstream endpoint
+  ownership, fixed-endpoint fallback, absolute negative lengths,
+  `nonnegativeOnly`, random-direction recovery for coincident endpoints,
+  string/function dependency updates, and a fresh evaluation budget for each
+  external function call; tests inject the random source for determinism.
+  Compilation, initial/runtime evaluation, missing dependency, and nonnumeric
+  result failures are structured. Initial factory failure atomically removes
+  owned coordinate/coefficient helper Points but never removes existing
+  Points. A failed production-session scene update restores every Point,
+  including an endpoint moved indirectly by the length constraint. JSXGraph
+  `1.13.3` instead throws when the fixture function throws after retaining
+  three partially created objects, and propagates `NaN` geometry when the
+  function returns a nonnumeric value.
 - `Line.getAngle(String)` returns `GMResult.Err(UnsupportedAngleUnit)` for an
   unknown unit. JSXGraph returns JavaScript `undefined`; valid unit prefixes
   and the no-unit radians result retain upstream behavior.
 - `Circle.create` currently accepts an already registered center plus an
   already registered circumference `Point`, a fixed numeric or JessieCode
   string radius, an already registered `Line`, or an already registered source
-  `Circle` from the same `Board`. String-radius compilation, first evaluation,
-  and numeric validation return `GMResult.Err` before registration; later
-  evaluation failures are available through `radiusResult()` and
-  `radiusEvaluationError`, while the legacy numeric `Radius()` path returns
-  `NaN`. JSXGraph can instead throw during expression execution or propagate
-  JavaScript coercion. The native JessieCode creator resolves names/IDs,
-  creates unnamed helper Points from coordinate arrays, and accepts the
-  translated radius forms in either upstream order. Function radii,
-  three-point circumcircles, and transformations remain pending.
+  `Circle` from the same `Board`. Three registered or coordinate-array Points
+  create the upstream constrained circumcenter sub-element and a dependent
+  circumcircle; the implicit center remains registered for update/removal
+  ordering but is excluded from source scene snapshots. String-radius
+  compilation, first evaluation, and numeric validation return `GMResult.Err`
+  before registration; later evaluation failures are available through
+  `radiusResult()` and `radiusEvaluationError`, while the legacy numeric
+  `Radius()` path returns `NaN`. JSXGraph can instead throw during expression
+  execution or propagate JavaScript coercion. The native JessieCode creator
+  resolves names/IDs, creates unnamed helper Points from coordinate arrays,
+  and accepts the translated radius forms in either upstream order. A genuine
+  JessieCode function radius is called without arguments, receives a fresh
+  evaluation budget on every external Circle update, and contributes its
+  statically discovered element dependencies without becoming a geometric
+  parent. `nonnegativeOnly` clamps numeric, string, and function results to
+  zero before the Circle is updated. Initial invocation, dependency,
+  registration, and nonnumeric-result failures return structured errors;
+  helper Points created for a failed factory call are removed atomically.
+  Transformations remain pending.
+- Explicit `createCircumcenter`, its `circumcirclemidpoint` alias, and
+  `createCircumcircle` accept three Point/reference/coordinate parents through
+  construction documents and native JessieCode. Public centers keep the
+  upstream `circumcenter` element type; Circumcircle owns a hidden registered
+  center, exposes it through `subs.center`, and preserves the upstream
+  `[center, firstPoint, circle]` inheritance list. Existing parents own the
+  dependencies, coordinate helpers are owned by the constrained center, and
+  removal or failed registration follows the source-controlled lifecycle.
+  Degenerate ideal/`NaN` arithmetic is preserved. The same-source static and
+  parent-drag fixture passes at both viewports, but these explicit creators
+  remain outside the `0.1.0` Stable corpus.
+- `createReflection` currently translates its existing-Point plus Line branch;
+  `createMirrorElement` translates its existing-Point plus Point branch, and
+  `createMirrorPoint` reuses that branch with the upstream alias `elType`.
+  Outputs use live reflect/rotate transformations, remain non-draggable, and
+  preserve the upstream asymmetric dependency: the source Point is metadata
+  only, while the Line or mirror center owns the output and controls recursive
+  removal. `needsRegularUpdate: false` freezes the output after its initial
+  update. Although the API documentation suggests Point-like coordinate
+  inputs, JSXGraph `1.13.3` rejects coordinate arrays after `board.select`;
+  Kotlin preserves that rejection. Reflection and MirrorElement branches for
+  Line, Curve, Polygon, Circle, Arc, and Sector remain explicitly unsupported.
+  Same-source static and source-drag parity passes at both viewports, but the
+  Point branches remain outside the `0.1.0` Stable corpus.
+- `createMidpoint` accepts two registered Point, Point name/ID, or
+  coordinate-array parents, or one registered Line parent whose endpoints are
+  reused. Its homogeneous arithmetic matches the source-controlled official
+  fixture: moving either parent updates the result, an ideal parent produces
+  `[1, NaN, NaN]`, and a `NaN` in one summed coordinate does not discard the
+  other finite coordinate. Existing parents own the Midpoint dependency and
+  survive its removal; coordinate helper Points are owned children and are
+  removed recursively with it. Registration failure removes all helpers
+  atomically. Although `Type.isPointType` and `Type.providePoints` document a
+  function returning a coordinate array, JSXGraph `1.13.3`
+  `createMidpoint` first replaces every parent with `board.select(parent)`;
+  the function form then throws the standard unsupported-parent error. Native
+  JessieCode preserves that observed failure as `UnsupportedParents`. The
+  official fixture also records that applying one explicit Midpoint `id` to
+  coordinate-array parents propagates that `id` into upstream helper
+  attributes and corrupts the official Board registry; the production visual
+  case therefore uses existing Point and Line parents, while helper ownership
+  and rollback remain covered by native tests.
+- `createOrthogonalProjection`, `createPerpendicularPoint`,
+  `createPerpendicular`, and `createPerpendicularSegment` accept one registered
+  Point, Point name/ID, or coordinate-array parent and one registered Line
+  parent in either order. The translated factories preserve the upstream
+  projection versus endpoint-sensitive perpendicular branches, dependency
+  edges, parent metadata, helper ownership, perpendicular standard-form
+  coefficients, and dynamic PerpendicularSegment endpoint order. The
+  OrthogonalProjection parent list deliberately stores the output Point's own
+  ID instead of the source Line ID because JSXGraph `1.13.3`
+  `createOrthogonalProjection` does the same. Registration and unsupported
+  parent failures return structured errors and remove owned helper Points
+  atomically. Symbolic `generatePolynomial` methods remain excluded with the
+  rest of `src/unused/symbolic.js`-dependent CAS behavior.
+- `createParallelPoint` accepts three registered Point, Point name/ID, or
+  coordinate-array parents, or one Line and one Point in either order. It
+  preserves the upstream homogeneous `c + b - a` constraint, parent metadata,
+  dependency updates, and existing-versus-owned Point lifecycle.
+  `createParallel` accepts the same parent forms. Three Points create a finite
+  ParallelPoint endpoint and preserve caller-supplied `straightFirst` and
+  `straightLast`; a Line and Point create the normalized upstream ideal
+  direction Point. The source Line intentionally does not own that helper, and
+  removing the Parallel leaves the ideal helper registered as JSXGraph
+  `1.13.3` does. Compose scene snapshots adapt the ideal endpoint to a finite
+  directional endpoint because the platform-independent renderer has no
+  homogeneous Point representation. Degenerate geometry follows the Board
+  arithmetic, while a production scene containing non-finite Line geometry is
+  rejected structurally. Registration and unsupported-parent failures roll
+  back newly materialized helpers atomically.
+- `createBisector`, `createIncenter`, and `createIncircle` accept three
+  registered Point, Point name/ID, or coordinate-array parents. Bisector uses
+  the exact `Geometry.angleBisector` constraint and a hidden Point; Incenter
+  uses the upstream side-length weighting; Incircle uses a hidden Incenter and
+  the upstream semiperimeter-area radius. Their dependencies, parent metadata,
+  updates, and degenerate `NaN`/zero-radius arithmetic match JSXGraph `1.13.3`.
+  Removing a Bisector or Incircle leaves its hidden helper registered, while
+  removing that helper recursively removes the visible construction. A direct
+  coordinate-parent Incenter owns and removes its temporary Points; Bisector
+  and Incircle removal leaves the surviving helper and its coordinate Points,
+  matching the official lifecycle. JSXGraph propagates an explicit output
+  `id` to coordinate helper attributes and can overwrite its temporary Board
+  registry entries. Native factories deliberately allocate isolated helper
+  IDs and return structured errors with atomic rollback instead of reproducing
+  that registry corruption.
 - `Board.removeObject` resets a removed element's board position to `-1` and
   ignores later attempts to remove the same reference. JSXGraph leaves the
   stale `_pos` value on the removed object, so removing that reference again

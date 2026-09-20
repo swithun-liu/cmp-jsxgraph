@@ -39,15 +39,15 @@ internal sealed interface JessieCodeExpressionCompileError {
  * dependencies used by JSXGraph's Type.createFunction.
  */
 internal class JessieCodeExpressionFunction private constructor(
-    internal val origin: String,
+    override val origin: String,
     internal val variableNames: List<String>,
-    internal val dependencies: Map<String, GeometryElement>,
+    override val dependencies: Map<String, GeometryElement>,
     private val ast: JessieCodeAstNode,
     private val baseEnvironment: JessieCodeRuntimeEnvironment,
     private val evaluator: JessieCodeEvaluator,
-) {
-    internal fun evaluate(
-        arguments: List<JessieCodeRuntimeValue> = emptyList(),
+) : JessieCodeCoordinateFunction {
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
         val variables = linkedMapOf<String, JessieCodeRuntimeValue>()
         variables.putAll(baseEnvironment.variables)

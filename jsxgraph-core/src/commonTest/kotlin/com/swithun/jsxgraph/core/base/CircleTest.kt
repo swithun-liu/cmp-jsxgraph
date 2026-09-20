@@ -1,8 +1,11 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
+import com.swithun.jsxgraph.core.parser.JessieCodeCallable
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -278,6 +281,137 @@ class CircleTest {
     }
 
     @Test
+    fun nonnegativeOnlyClampsNumericAndStringRadiusSources() {
+        val board = board()
+        val center = point(board, doubleArrayOf(0.0, 0.0))
+        val driver = point(
+            board = board,
+            coordinates = doubleArrayOf(3.0, 0.0),
+            name = "A",
+        )
+        val numeric = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radius = -3.0,
+                nonnegativeOnly = true,
+            ),
+        )
+        val expression = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusExpression = "A.X() - 5",
+                nonnegativeOnly = true,
+            ),
+        )
+
+        assertTrue(numeric.nonnegativeOnly)
+        assertEquals(0.0, numeric.Radius(), absoluteTolerance = TOLERANCE)
+        assertEquals(0.0, expression.Radius(), absoluteTolerance = TOLERANCE)
+
+        driver.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(7.0, 0.0),
+        )
+        board.update()
+
+        assertEquals(2.0, expression.Radius(), absoluteTolerance = TOLERANCE)
+        assertEquals(2.0, expression.radius, absoluteTolerance = TOLERANCE)
+    }
+
+    @Test
+    fun functionRadiusTracksDependenciesAndPreservesStructuredFailures() {
+        val board = board()
+        val center = point(board, doubleArrayOf(0.0, 0.0))
+        val driver = point(
+            board = board,
+            coordinates = doubleArrayOf(2.0, 0.0),
+            name = "A",
+        )
+        val location = JessieCodeAstLocation(1, 0, 1, 8)
+        val function = JessieCodeRuntimeValue.FunctionValue(
+            name = "function",
+            callable = JessieCodeCallable { _, _ ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.NumberValue(driver.X() - 4.0),
+                )
+            },
+            dependencies = mapOf(driver.id to driver),
+        )
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusFunction = function,
+                radiusFunctionLocation = location,
+                nonnegativeOnly = true,
+            ),
+        )
+
+        assertSame(function, assertNotNull(circle.radiusFunction).function)
+        assertEquals(0.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertSame(circle, driver.childElements[circle.id])
+        assertSame(driver, circle.ancestors[driver.id])
+
+        driver.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(7.0, 0.0),
+        )
+        board.update()
+        assertEquals(3.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+
+        val runtimeFailure = assertIs<
+            GMResult.Err<CircleError.RadiusFunctionEvaluation>
+            >(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusFunction = JessieCodeRuntimeValue.FunctionValue(
+                    name = "function",
+                    callable = JessieCodeCallable { _, callLocation ->
+                        GMResult.Err(
+                            JessieCodeRuntimeError.BuiltInInvocationFailure(
+                                functionName = "radius",
+                                reason = "failed",
+                                location = callLocation,
+                            ),
+                        )
+                    },
+                ),
+                radiusFunctionLocation = location,
+            ),
+        ).error
+        assertIs<JessieCodeRuntimeError.BuiltInInvocationFailure>(
+            runtimeFailure.error,
+        )
+
+        assertEquals(
+            CircleError.NonNumericRadiusFunction("string"),
+            assertIs<
+                GMResult.Err<CircleError.NonNumericRadiusFunction>
+                >(
+                Circle.create(
+                    board = board,
+                    center = center,
+                    radiusFunction =
+                        JessieCodeRuntimeValue.FunctionValue(
+                            name = "function",
+                            callable = JessieCodeCallable { _, _ ->
+                                GMResult.Ok(
+                                    JessieCodeRuntimeValue.StringValue(
+                                        "radius",
+                                    ),
+                                )
+                            },
+                        ),
+                    radiusFunctionLocation = location,
+                ),
+            ).error,
+        )
+    }
+
+    @Test
     fun stringRadiusMatchesOfficialStableIdAndUpdateBehavior() {
         val board = board()
         val center = point(
@@ -494,6 +628,124 @@ class CircleTest {
 
         assertEquals(4.0, circle.Radius(), absoluteTolerance = TOLERANCE)
         assertArrayMatches(doubleArrayOf(-3.0, 2.0, 5.0, -6.0), circle.bounds())
+    }
+
+    @Test
+    fun threePointCircleUsesImplicitCircumcenterAndTracksDependencies() {
+        val board = board()
+        val point1 = point(board, doubleArrayOf(-3.0, -2.0))
+        val point2 = point(board, doubleArrayOf(3.0, -1.0))
+        val point3 = point(board, doubleArrayOf(0.0, 3.0))
+
+        val circle = circle(
+            Circle.create(
+                board = board,
+                point1 = point1,
+                point2 = point2,
+                point3 = point3,
+            ),
+        )
+        val center = assertIs<CircumcenterPoint>(circle.center)
+
+        assertEquals("boardP3", center.id)
+        assertEquals("", center.name)
+        assertEquals("circumcenter", center.elType)
+        assertEquals(Const.OBJECT_TYPE_CAS, center.type)
+        assertEquals(Const.OBJECT_TYPE_POINT, center.originalType)
+        assertTrue(!center.isDraggable)
+        assertArrayMatches(
+            doubleArrayOf(
+                1.0,
+                -0.2037037037037037,
+                -0.2777777777777778,
+            ),
+            center.coords.usrCoords,
+        )
+        assertEquals("boardC4", circle.id)
+        assertEquals("circle", circle.elType)
+        assertEquals("twoPoints", circle.method)
+        assertEquals(
+            listOf(point1.id, point2.id, point3.id),
+            center.parents,
+        )
+        assertEquals(
+            listOf(point1.id, point2.id, point3.id),
+            circle.parents,
+        )
+        for (point in listOf(point1, point2, point3)) {
+            assertSame(center, point.childElements[center.id])
+            assertSame(circle, point.childElements[circle.id])
+            assertEquals(
+                center.Dist(point),
+                circle.Radius(),
+                absoluteTolerance = TOLERANCE,
+            )
+        }
+        assertSame(circle, center.childElements[circle.id])
+
+        point2.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(4.0, -2.0),
+        )
+        board.update(draggedElement = point2)
+
+        assertArrayMatches(
+            doubleArrayOf(1.0, 0.5, -0.7),
+            center.coords.usrCoords,
+        )
+        for (point in listOf(point1, point2, point3)) {
+            assertEquals(
+                center.Dist(point),
+                circle.Radius(),
+                absoluteTolerance = TOLERANCE,
+            )
+        }
+    }
+
+    @Test
+    fun threePointCircleRejectsInvalidParentsWithoutCreatingCenter() {
+        val board = board()
+        val point1 = point(board, doubleArrayOf(-3.0, -2.0))
+        val point2 = point(board, doubleArrayOf(3.0, -1.0))
+        val duplicate = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 3.0),
+                id = "duplicate",
+            ),
+        ).value
+        val foreignBoard = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "foreign",
+        )
+        val foreign = point(foreignBoard, doubleArrayOf(0.0, 3.0))
+        val originalObjectIds = board.objects.keys.toSet()
+
+        assertEquals(
+            CircleError.ParentBoardMismatch(parentIndex = 2),
+            assertIs<GMResult.Err<CircleError.ParentBoardMismatch>>(
+                Circle.create(board, point1, point2, foreign),
+            ).error,
+        )
+        assertEquals(
+            BoardError.DuplicateElementId("duplicate"),
+            assertIs<GMResult.Err<CircleError.Registration>>(
+                Circle.create(
+                    board = board,
+                    point1 = point1,
+                    point2 = point2,
+                    point3 = duplicate,
+                    id = "duplicate",
+                ),
+            ).error.error,
+        )
+        assertEquals(originalObjectIds, board.objects.keys)
+        assertTrue(point1.childElements.isEmpty())
+        assertTrue(point2.childElements.isEmpty())
+        assertTrue(duplicate.childElements.isEmpty())
     }
 
     @Test

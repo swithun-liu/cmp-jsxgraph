@@ -129,6 +129,606 @@ jobs:
           PARITY_CASE_IDS=baseline_geometry \
           npm --prefix tools/visual-parity run audit
 
+      - name: Capture direction-point Arc drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/arc-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_arc_direction_route \
+          INTERACTION_TRACE=direction_point_arc_flip \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce direction-point Arc drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/arc-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_arc_direction_route \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Arc composition parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/arc-composition-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=arc_compositions \
+          INTERACTION_TRACE=arc_composition_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Arc composition parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/arc-composition-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=arc_compositions \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Sector composition parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/sector-composition-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=sector_compositions \
+          INTERACTION_TRACE=sector_composition_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Sector composition parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/sector-composition-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=sector_compositions \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Circumcircle creator parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/circumcircle-creator-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=circumcircle_creators \
+          INTERACTION_TRACE=circumcircle_creator_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Circumcircle creator parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/circumcircle-creator-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=circumcircle_creators \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Point reflection source drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/point-reflection-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=point_reflections \
+          INTERACTION_TRACE=point_reflection_source_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Point reflection source drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/point-reflection-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=point_reflections \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture BisectorLines parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/bisector-lines-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=bisector_lines \
+          INTERACTION_TRACE=bisector_lines_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce BisectorLines parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/bisector-lines-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=bisector_lines \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture circumcircle parent drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/circumcircle-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_circumcircle \
+          INTERACTION_TRACE=circumcircle_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce circumcircle parent drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/circumcircle-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_circumcircle \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Midpoint parent drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/midpoint-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_midpoints \
+          INTERACTION_TRACE=midpoint_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Midpoint parent drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/midpoint-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_midpoints \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture orthogonal parent drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/orthogonal-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_orthogonal_constructions \
+          INTERACTION_TRACE=orthogonal_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce orthogonal parent drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/orthogonal-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_orthogonal_constructions \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture dynamic Circle radius drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/dynamic-circle-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_interaction_dynamic_circle_radius \
+          INTERACTION_TRACE=dynamic_circle_radius_clamp \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce dynamic Circle radius drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/dynamic-circle-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_interaction_dynamic_circle_radius \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture dynamic Segment length drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/dynamic-segment-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=prod_geometry_fixed_length_segment \
+          INTERACTION_TRACE=dynamic_segment_length \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce dynamic Segment length drag parity
+        run: |
+          CORPUS_SOURCE=production \
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/dynamic-segment-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=prod_geometry_fixed_length_segment \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture transformed Point driver drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/transformed-point-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=transformed_points \
+          INTERACTION_TRACE=transformed_point_driver \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce transformed Point driver drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/transformed-point-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=transformed_points \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture function-coordinate Point driver drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/function-coordinate-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=function_coordinate_points \
+          INTERACTION_TRACE=function_coordinate_driver \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce function-coordinate Point driver drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/function-coordinate-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=function_coordinate_points \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture PolePoint parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/pole-point-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=pole_point \
+          INTERACTION_TRACE=pole_point_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce PolePoint parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/pole-point-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=pole_point \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Circle Tangent and Polar parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-polar-circle-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=tangent_polar_circle \
+          INTERACTION_TRACE=tangent_polar_circle_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Circle Tangent and Polar parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-polar-circle-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=tangent_polar_circle \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture TangentTo static parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-to-static \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=tangent_to_circle \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce TangentTo static parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-to-static \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=tangent_to_circle \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture TangentTo source-Point drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-to-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=tangent_to_circle \
+          INTERACTION_TRACE=tangent_to_point_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce TangentTo source-Point drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-to-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=tangent_to_circle \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Line Tangent and Polar parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-line-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=tangent_line \
+          INTERACTION_TRACE=tangent_line_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Line Tangent and Polar parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-line-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=tangent_line \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Curve Tangent and Polar point drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-curve-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=tangent_curve \
+          INTERACTION_TRACE=tangent_curve_point_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Curve Tangent and Polar point drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/tangent-curve-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.93 \
+          PARITY_CASE_IDS=tangent_curve \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Parallel parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/parallel-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=parallel_constructions \
+          INTERACTION_TRACE=parallel_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Parallel parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/parallel-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=parallel_constructions \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture ArrowParallel parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/line-arrow-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=line_arrows \
+          INTERACTION_TRACE=line_arrow_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce ArrowParallel parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/line-arrow-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=line_arrows \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture triangle-center parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/triangle-center-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=triangle_centers \
+          INTERACTION_TRACE=triangle_center_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce triangle-center parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/triangle-center-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=triangle_centers \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Intersection Circle-parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/intersection-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=intersection_points \
+          INTERACTION_TRACE=intersection_circle_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Intersection Circle-parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/intersection-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=intersection_points \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Polygon path-intersection parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/polygon-path-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=polygon_path_intersections \
+          INTERACTION_TRACE=polygon_path_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Polygon path-intersection parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/polygon-path-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=polygon_path_intersections \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture curve Boolean parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/curve-boolean-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=8000 \
+          PARITY_CASE_IDS=curve_boolean_clipping \
+          INTERACTION_TRACE=curve_boolean_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce curve Boolean parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/curve-boolean-interaction \
+          MIN_CAPTURE_BYTES=8000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=curve_boolean_clipping \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Inequality Line-parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/inequality-line-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=inequalities \
+          INTERACTION_TRACE=inequality_line_parent_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Inequality Line-parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/inequality-line-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=inequalities \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Inequality FunctionGraph-driver drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/inequality-function-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=inequalities \
+          INTERACTION_TRACE=inequality_function_driver_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Inequality FunctionGraph-driver drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/inequality-function-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=inequalities \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture VectorField driver drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/vector-field-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=vector_fields \
+          INTERACTION_TRACE=vector_field_driver_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce VectorField driver drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/vector-field-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=vector_fields \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture SlopeField driver drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/slope-field-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=slope_fields \
+          INTERACTION_TRACE=slope_field_driver_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce SlopeField driver drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/slope-field-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=slope_fields \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Ellipse point-parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/ellipse-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=ellipses \
+          INTERACTION_TRACE=ellipse_point_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Ellipse point-parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/ellipse-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=ellipses \
+          npm --prefix tools/visual-parity run audit
+
+      - name: Capture Hyperbola point-parent drag parity
+        run: |
+          BASE_URL=http://127.0.0.1:8093/ \
+          OUTPUT_DIR=captures/visual-parity/${{ matrix.profile }}/hyperbola-interaction \
+          VIEWPORT_WIDTH=${{ matrix.width }} \
+          VIEWPORT_HEIGHT=${{ matrix.height }} \
+          MIN_CAPTURE_BYTES=5000 \
+          PARITY_CASE_IDS=hyperbolas \
+          INTERACTION_TRACE=hyperbola_point_drag \
+          npm --prefix tools/visual-parity run capture
+
+      - name: Enforce Hyperbola point-parent drag parity
+        run: |
+          INPUT_DIR=captures/visual-parity/${{ matrix.profile }}/hyperbola-interaction \
+          MIN_CAPTURE_BYTES=5000 \
+          MIN_BOARD_SSIM=0.90 \
+          PARITY_CASE_IDS=hyperbolas \
+          npm --prefix tools/visual-parity run audit
+
       - name: Capture independent production corpus
         run: |
           CORPUS_SOURCE=production \
