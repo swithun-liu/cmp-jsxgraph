@@ -30,6 +30,7 @@
  * src/3d/box3d.js -> createAxis3D,
  * src/3d/ticks3d.js -> createTicks3D,
  * src/3d/text3d.js -> createText3D,
+ * src/3d/polygon3d.js -> createPolygon3D,
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
  * src/element/arc.js -> createArc / createSemicircle /
  * createCircumcircleArc / createMinorArc / createMajorArc,
@@ -136,6 +137,9 @@ import com.swithun.jsxgraph.core.base.PointReflections
 import com.swithun.jsxgraph.core.base.PolePoint
 import com.swithun.jsxgraph.core.base.PolePointError
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Polygon3D
+import com.swithun.jsxgraph.core.base.Polygon3DError
+import com.swithun.jsxgraph.core.base.Polygon3DVertexAttributes
 import com.swithun.jsxgraph.core.base.PolygonError
 import com.swithun.jsxgraph.core.base.Polyhedron3D
 import com.swithun.jsxgraph.core.base.Polyhedron3DError
@@ -227,6 +231,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Polyhedron3DFactory(
         val error: Polyhedron3DError,
+    ) : JessieCodeCreatorError
+
+    data class Polygon3DFactory(
+        val error: Polygon3DError,
     ) : JessieCodeCreatorError
 
     data class Ticks3DFactory(
@@ -452,6 +460,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createPolyhedron3D(board, parents, attributes, location)
+        },
+        "polygon3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createPolygon3D(board, parents, attributes, location)
         },
         "polepoint" to JessieCodeCreator {
                 board,
@@ -3105,6 +3121,201 @@ internal object NativeJessieCodeCreators {
             board.removeObject(point.point)
         }
     }
+
+    // JSXGraph: src/3d/polygon3d.js -> createPolygon3D.
+    private fun createPolygon3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "polygon3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val nestedVertices = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "vertices",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val vertexIdentity = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "vertices",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val vertexWithLabel = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = nestedVertices,
+                name = "withlabel",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val vertexAttributes = Polygon3DVertexAttributes(
+            id = vertexIdentity.id,
+            name = vertexIdentity.name,
+            needsRegularUpdate = vertexIdentity.needsRegularUpdate,
+            fixed = vertexIdentity.fixed,
+            withLabel = vertexWithLabel,
+        )
+        val withLines = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "withlines",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (parents.size == 3) {
+            val base = resolveElement(resolvedBoard, parents[1])
+                as? Polygon3D
+            val transformations = transformationReferences(parents[2])
+            if (base != null && transformations != null) {
+                return polygon3DResult(
+                    result = Polygon3D.create(
+                        view = view,
+                        base = base,
+                        transformations = transformations,
+                        vertexAttributes = vertexAttributes,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate = identity.needsRegularUpdate,
+                        withLines = withLines,
+                    ),
+                    location = location,
+                )
+            }
+        }
+        if (parents.size < 2) {
+            return unsupported(creatorName, parents, location)
+        }
+
+        val vertexValues = polygon3DVertexValues(
+            board = resolvedBoard,
+            values = parents.drop(1),
+        )
+        val providedVertices = mutableListOf<ProvidedLine3DPoint>()
+        for (value in vertexValues) {
+            val provided = when (
+                val result = provideLine3DPoint(
+                    board = resolvedBoard,
+                    view = view,
+                    value = value,
+                    attributes = attributes,
+                    role = "vertices",
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    for (vertex in providedVertices.asReversed()) {
+                        discardProvidedPoint3D(resolvedBoard, vertex)
+                    }
+                    return result
+                }
+            }
+            providedVertices += provided
+        }
+        return polygon3DResult(
+            result = Polygon3D.create(
+                view = view,
+                vertices = providedVertices.map(ProvidedLine3DPoint::point),
+                ownedVertices = providedVertices
+                    .filter(ProvidedLine3DPoint::owned)
+                    .mapTo(linkedSetOf(), ProvidedLine3DPoint::point),
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                withLines = withLines,
+            ),
+            location = location,
+        )
+    }
+
+    private fun polygon3DVertexValues(
+        board: Board,
+        values: List<JessieCodeRuntimeValue>,
+    ): List<JessieCodeRuntimeValue> {
+        if (values.size != 1) {
+            return values
+        }
+        val nested = values[0] as? JessieCodeRuntimeValue.ArrayValue
+            ?: return values
+        if (nested.values.isEmpty()) {
+            return values
+        }
+        val isPointList = nested.values.all { value ->
+            resolveElement(board, value) is Point3D
+        }
+        val isCoordinateList = nested.values.all { value ->
+            val coordinates = value as? JessieCodeRuntimeValue.ArrayValue
+                ?: return@all false
+            coordinates.values.firstOrNull() is
+                JessieCodeRuntimeValue.NumberValue
+        }
+        return if (isPointList || isCoordinateList) {
+            nested.values
+        } else {
+            values
+        }
+    }
+
+    private fun polygon3DResult(
+        result: GMResult<Polygon3D, Polygon3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "polygon3d",
+                error = JessieCodeCreatorError.Polygon3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
 
     // JSXGraph: src/3d/polyhedron3d.js -> createPolyhedron3D.
     private fun createPolyhedron3D(

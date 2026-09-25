@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 84 source-controlled cases: 30 independent production scenarios and
-54 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 85 source-controlled cases: 30 independent production scenarios and
+55 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -33,6 +33,7 @@ Focused direct links remain available for cases such as
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
 [Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
+[Polygon3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=polygon3d_projection),
 [spatial lines and planes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=spatial_lines_planes),
 [Plane3D surfaces](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=plane3d_surfaces),
 [Polyhedron3D faces](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=polyhedron3d_faces),
@@ -151,21 +152,22 @@ Implemented translation slices:
   Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; the
   source-mapped `View3D`, `Point3D`, `Line3D`, Plane3D wireframe and finite
   surfaces, `Mesh3D`,
-  `Axis3D`, `Face3D`, `Polyhedron3D`, and `transform3d` lifecycle from
+  `Axis3D`, `Polygon3D`, `Face3D`, `Polyhedron3D`, and `transform3d` lifecycle from
   `src/3d/element3d.js`,
   `src/3d/view3d.js`, `src/3d/point3d.js`, `src/3d/linspace3d.js`,
-  `src/3d/box3d.js`, `src/3d/face3d.js`, `src/3d/polyhedron3d.js`, and
-  `src/base/transformation.js`, including parallel and central projection,
+  `src/3d/box3d.js`, `src/3d/polygon3d.js`, `src/3d/face3d.js`,
+  `src/3d/polyhedron3d.js`, and `src/base/transformation.js`, including
+  parallel and central projection,
   numeric, homogeneous, and function-valued coordinates, 2D proxy rendering
   and drag projection, transformed 3D updates, finite plane outlines and
   visible `Mesh3D` wireframes, rectangle/triangle surface tiling, cyclic
   color arrays, HSL shaders, height colormaps, infinite plane/box clipping,
   projected Text3D,
   Ticks3D curves and labels, automatic `border`/`none` View3D axes, explicit
-  Axes3D scene expansion, direct and transformed Polyhedron3D creation,
-  cyclic/per-face Face3D styling, per-Polyhedron depth ordering,
-  `applyOnce`, dependency updates, removal, resource limits, and structured
-  failures;
+  Axes3D scene expansion, direct and transformed Polygon3D and Polyhedron3D
+  creation, Polygon3D proxy rendering and nested vertex/border styles,
+  cyclic/per-face Face3D styling, per-Polyhedron depth ordering, `applyOnce`,
+  dependency updates, removal, resource limits, and structured failures;
   Point coordinates from scalar
   JessieCode functions or one function returning a coordinate array; the
   translated Point/Line/Circle/Polygon/Text `methodMap` subset, Point `X`/`Y`
@@ -239,7 +241,8 @@ and function-valued element mutation, Slider/Glider-backed built-ins,
 construction-document element types and attributes, and the complete element
 renderer are not yet translated. The current 3D preview does not yet include
 global View3D `depthOrder`/layer configuration, camera controls, gliders,
-animations, Stable qualification, or the complete 3D APIs.
+animations, Stable qualification, the `circle3d`, `curve3d`, `surface3d`, and
+`sphere3d` modules, or the complete 3D APIs.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

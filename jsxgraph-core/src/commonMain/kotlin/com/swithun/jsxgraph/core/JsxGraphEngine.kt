@@ -28,6 +28,7 @@ import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Point3D
 import com.swithun.jsxgraph.core.base.Plane3D
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Polygon3D
 import com.swithun.jsxgraph.core.base.Polyhedron3D
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Text
@@ -1349,6 +1350,11 @@ object JsxGraphEngine {
             )
         }
         val requestedPolygonVertices = when {
+            creatorName == "polygon3d" ->
+                runtimePolygon3DVertexCount(
+                    board = board,
+                    parents = parents,
+                )
             creatorName == "polyhedron3d" ->
                 runtimePolyhedron3DMaximumFaceVertexCount(
                     board = board,
@@ -2467,6 +2473,7 @@ object JsxGraphEngine {
             "line3d" -> 2
             "axis3d" -> 2
             "plane3d" -> 2
+            "polygon3d" -> 2
             "polyhedron3d" -> 2
             else -> return parents
         }
@@ -2799,6 +2806,17 @@ object JsxGraphEngine {
                     is GMResult.Ok -> result.value
                     is GMResult.Err -> return result
                 }
+            }
+
+            is Polygon3D -> when (
+                val result = polygon3DSceneElement(
+                    element = element,
+                    attributes = attributes,
+                    style = style,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
             }
 
             is Line -> {
@@ -3603,6 +3621,111 @@ object JsxGraphEngine {
         )
     }
 
+    // JSXGraph 1.13.3: src/3d/polygon3d.js -> createPolygon3D;
+    // src/base/polygon.js -> Polygon constructor.
+    private fun polygon3DSceneElement(
+        element: Polygon3D,
+        attributes: AttributeReader,
+        style: JsxGraphElementStyle,
+    ): GMResult<JsxGraphSceneElement.Polygon, JsxGraphDocumentError> {
+        for (vertex in element.vertices) {
+            val lifecycleError =
+                vertex.coordinateEvaluationError
+                    ?: vertex.transformationEvaluationError
+            if (lifecycleError != null) {
+                return GMResult.Err(
+                    attributes.elementCreation(lifecycleError.toString()),
+                )
+            }
+        }
+        val vertices = element.vertices.map { vertex ->
+            point(vertex.point2D)
+                ?: return GMResult.Err(attributes.nonFiniteGeometry())
+        }
+        val vertexAttributes = when (
+            val result = attributes.nested("vertices")
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withVertexLabels = when (
+            val result = vertexAttributes.boolean(
+                name = "withlabel",
+                default = true,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val implicitVertices = mutableListOf<JsxGraphSceneElement.Point>()
+        for (vertex in element.vertices) {
+            if (vertex !in element.ownedVertices) {
+                continue
+            }
+            val proxy = vertex.point2D
+            if (withVertexLabels && proxy.name.isNotEmpty()) {
+                return GMResult.Err(
+                    vertexAttributes.unsupportedValue(
+                        attribute = "withLabel",
+                        value = "true with non-empty name",
+                    ),
+                )
+            }
+            val vertexStyle = when (
+                val result = vertexAttributes.style(proxy)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            when (
+                val result = pointSceneElement(
+                    element = proxy,
+                    attributes = vertexAttributes,
+                    style = vertexStyle,
+                    respectFixedAttribute = false,
+                )
+            ) {
+                is GMResult.Ok -> implicitVertices += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        val borderAttributes = when (
+            val result = attributes.nested("borders")
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val borderElement =
+            element.polygon2D.borders.firstOrNull()
+                ?: element.polygon2D
+        val resolvedBorderStyle = when (
+            val result = borderAttributes.style(borderElement)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val borderStyle =
+            if (borderAttributes.has("layer")) {
+                resolvedBorderStyle
+            } else {
+                resolvedBorderStyle.copy(
+                    layer = DEFAULT_POLYGON_BORDER_LAYER,
+                )
+            }
+        return GMResult.Ok(
+            JsxGraphSceneElement.Polygon(
+                id = element.id,
+                name = element.name,
+                style = style,
+                vertices = vertices,
+                implicitVertices = implicitVertices,
+                borderStyle = borderStyle,
+                withLines = element.withLines,
+                isClosed = true,
+            ),
+        )
+    }
+
     private fun curveSceneElement(
         element: GeometryElement,
         points: List<com.swithun.jsxgraph.core.base.Coords>,
@@ -3802,14 +3925,16 @@ object JsxGraphEngine {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
             }
-            when (
-                val result = validatePolygonVertexLimit(
-                    sourceObject,
-                    limits.maxPolygonVertices,
-                )
-            ) {
-                is GMResult.Ok -> Unit
-                is GMResult.Err -> return result
+            if (sourceObject.type != "polygon3d") {
+                when (
+                    val result = validatePolygonVertexLimit(
+                        sourceObject,
+                        limits.maxPolygonVertices,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
             }
             when (
                 val result = validateTextLengthLimit(
@@ -3823,6 +3948,20 @@ object JsxGraphEngine {
             objects += sourceObject
         }
         val objectsById = objects.associateBy(ParsedObject::id)
+        for (sourceObject in objects) {
+            if (sourceObject.type == "polygon3d") {
+                when (
+                    val result = validatePolygonVertexLimit(
+                        sourceObject = sourceObject,
+                        limit = limits.maxPolygonVertices,
+                        objectsById = objectsById,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
+        }
         val sceneObjectCount = objects.sumOf { sourceObject ->
             sceneElementCount(sourceObject, objectsById).toLong()
         }
@@ -4203,6 +4342,56 @@ object JsxGraphEngine {
     ): Int =
         jsonPolyhedron3DFaceVertexCounts(source).maxOrNull() ?: 0
 
+    private fun runtimePolygon3DVertexCount(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+    ): Long? {
+        val base = when (
+            val value = parents.getOrNull(1)
+        ) {
+            is JessieCodeRuntimeValue.ElementReference ->
+                value.element as? Polygon3D
+            is JessieCodeRuntimeValue.StringValue ->
+                board?.select(value.value) as? Polygon3D
+            else -> null
+        }
+        if (base != null) {
+            return (base.vertices.size - 1).coerceAtLeast(0).toLong()
+        }
+        val direct = parents.drop(1)
+        if (direct.isEmpty()) {
+            return 0L
+        }
+        val nested =
+            if (direct.size == 1) {
+                direct[0] as? JessieCodeRuntimeValue.ArrayValue
+            } else {
+                null
+            }
+        if (nested != null && nested.values.isNotEmpty()) {
+            val isPointList = nested.values.all { value ->
+                when (value) {
+                    is JessieCodeRuntimeValue.ElementReference ->
+                        value.element is Point3D
+                    is JessieCodeRuntimeValue.StringValue ->
+                        board?.select(value.value) is Point3D
+                    else -> false
+                }
+            }
+            val isCoordinateList = nested.values.all { value ->
+                val coordinates = value as?
+                    JessieCodeRuntimeValue.ArrayValue
+                    ?: return@all false
+                coordinates.values.firstOrNull() is
+                    JessieCodeRuntimeValue.NumberValue
+            }
+            if (isPointList || isCoordinateList) {
+                return nested.values.size.toLong()
+            }
+        }
+        return direct.size.toLong()
+    }
+
     private fun polyhedron3DCurvePointCount(vertexCount: Int): Long =
         vertexCount.toLong() +
             if (vertexCount > 0 && vertexCount != 2) 1L else 0L
@@ -4474,26 +4663,34 @@ object JsxGraphEngine {
     private fun validatePolygonVertexLimit(
         sourceObject: ParsedObject,
         limit: Int,
+        objectsById: Map<String, ParsedObject> = emptyMap(),
     ): GMResult<Unit, JsxGraphDocumentError> {
         if (
             sourceObject.type != "polygon" &&
             sourceObject.type != "polygonalchain" &&
             sourceObject.type != "parallelogram" &&
             sourceObject.type != "regularpolygon" &&
+            sourceObject.type != "polygon3d" &&
             sourceObject.type != "polyhedron3d" &&
             sourceObject.type != "plane3d"
         ) {
             return GMResult.Ok(Unit)
         }
         if (
+            sourceObject.type == "polygon3d" ||
             sourceObject.type == "polyhedron3d" ||
             sourceObject.type == "plane3d"
         ) {
             val actual =
-                if (sourceObject.type == "polyhedron3d") {
-                    jsonPolyhedron3DMaximumFaceVertexCount(sourceObject)
-                } else {
-                    jsonPlaneMaximumFaceVertexCount(sourceObject)
+                when (sourceObject.type) {
+                    "polygon3d" -> jsonPolygon3DVertexCount(
+                        source = sourceObject,
+                        objectsById = objectsById,
+                        visited = emptySet(),
+                    )
+                    "polyhedron3d" ->
+                        jsonPolyhedron3DMaximumFaceVertexCount(sourceObject)
+                    else -> jsonPlaneMaximumFaceVertexCount(sourceObject)
                 }
             return if (actual > limit) {
                 GMResult.Err(
@@ -4542,6 +4739,56 @@ object JsxGraphEngine {
         } else {
             GMResult.Ok(Unit)
         }
+    }
+
+    private fun jsonPolygon3DVertexCount(
+        source: ParsedObject,
+        objectsById: Map<String, ParsedObject>,
+        visited: Set<String>,
+    ): Int {
+        if (source.id in visited) {
+            return 0
+        }
+        val baseId = (
+            source.parents.getOrNull(1) as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content
+        val base = baseId?.let(objectsById::get)
+            ?.takeIf { it.type == "polygon3d" }
+        if (base != null) {
+            return (
+                jsonPolygon3DVertexCount(
+                    source = base,
+                    objectsById = objectsById,
+                    visited = visited + source.id,
+                ) - 1
+                ).coerceAtLeast(0)
+        }
+        val direct = source.parents.drop(1)
+        if (direct.isEmpty()) {
+            return 0
+        }
+        val nested =
+            if (direct.size == 1) direct[0] as? JsonArray else null
+        if (nested != null && nested.isNotEmpty()) {
+            val isPointList = nested.all { value ->
+                (value as? JsonPrimitive)
+                    ?.takeIf(JsonPrimitive::isString)
+                    ?.content
+                    ?.let(objectsById::get)
+                    ?.type == "point3d"
+            }
+            val isCoordinateList = nested.all { value ->
+                val coordinates = value as? JsonArray
+                    ?: return@all false
+                (
+                    coordinates.firstOrNull() as? JsonPrimitive
+                    )?.doubleOrNull != null
+            }
+            if (isPointList || isCoordinateList) {
+                return nested.size
+            }
+        }
+        return direct.size
     }
 
     private fun validateTextLengthLimit(
@@ -4866,6 +5113,7 @@ object JsxGraphEngine {
         when (element) {
             is Curve -> listOf(element)
             is Face3D -> listOf(element.curve2D)
+            is Polygon3D -> emptyList()
             is Polyhedron3D -> element.faces.map(Face3D::curve2D)
             is Plane3D -> buildList {
                 add(element.outline2D)
@@ -4961,6 +5209,7 @@ object JsxGraphEngine {
                         is Face3D -> FACE_3D_ATTRIBUTES
                         is Line3D -> LINE_ATTRIBUTES
                         is Plane3D -> PLANE_3D_ATTRIBUTES
+                        is Polygon3D -> POLYGON_3D_ATTRIBUTES
                         is Point3D -> POINT_ATTRIBUTES
                         is Point -> POINT_ATTRIBUTES
                         is Line -> LINE_ATTRIBUTES
@@ -5198,6 +5447,26 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
+            if (element is Polygon3D) {
+                when (
+                    val result = validateNestedAttributes(
+                        name = "vertices",
+                        supported = COMMON_ATTRIBUTES + POINT_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = validateNestedAttributes(
+                        name = "borders",
+                        supported = COMMON_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
             return GMResult.Ok(Unit)
         }
 
@@ -5232,6 +5501,8 @@ object JsxGraphEngine {
             )
         }
 
+        fun has(name: String): Boolean = name in attributes
+
         fun style(
             element: GeometryElement,
         ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
@@ -5258,6 +5529,7 @@ object JsxGraphEngine {
             val defaultFill = when (element) {
                 is Face3D -> DEFAULT_FACE_3D_FILL_COLOR
                 is Plane3D -> DEFAULT_PLANE_3D_FILL_COLOR
+                is Polygon3D -> JsxGraphColor.Transparent
                 is Point3D -> DEFAULT_POINT_3D_COLOR
                 is Point -> DEFAULT_POINT_COLOR
                 is Curve ->
@@ -5318,6 +5590,7 @@ object JsxGraphEngine {
                         when {
                             element is Line3D -> 1.0
                             element is Face3D -> 1.0
+                            element is Polygon3D -> 1.0
                             element is Point3D -> 0.0
                             element is Curve && element.isBoxPlot -> 2.0
                             element is Curve &&
@@ -5683,6 +5956,7 @@ object JsxGraphEngine {
                 is Face3D -> DEFAULT_FACE_3D_LAYER
                 is Line3D -> DEFAULT_LINE_3D_LAYER
                 is Plane3D -> DEFAULT_CURVE_LAYER
+                is Polygon3D -> DEFAULT_POLYGON_3D_LAYER
                 is Point3D -> DEFAULT_POINT_3D_LAYER
                 is Point -> DEFAULT_POINT_LAYER
                 is Text3D, is Text -> DEFAULT_TEXT_LAYER
@@ -5913,6 +6187,7 @@ object JsxGraphEngine {
     private const val DEFAULT_POINT_LAYER = 9
     private const val DEFAULT_POINT_3D_LAYER = 13
     private const val DEFAULT_LINE_3D_LAYER = 12
+    private const val DEFAULT_POLYGON_3D_LAYER = 12
     private const val DEFAULT_MESH_3D_LAYER = 12
     private const val DEFAULT_FACE_3D_LAYER = 12
     private const val DEFAULT_TEXT_LAYER = 9
@@ -6720,6 +6995,8 @@ object JsxGraphEngine {
     private val POLYGON_ATTRIBUTES = setOf(
         "withlines",
     )
+    private val POLYGON_3D_ATTRIBUTES =
+        POLYGON_ATTRIBUTES + setOf("vertices", "borders")
     private val TEXT_ATTRIBUTES = setOf(
         "fontsize",
         "fontunit",

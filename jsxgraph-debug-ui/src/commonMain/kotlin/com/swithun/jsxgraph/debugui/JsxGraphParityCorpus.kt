@@ -739,6 +739,24 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "polygon3d_projection",
+            title = "Polygon3D projection",
+            scenario = "A parallel View3D projects coordinate-owned and Point3D-backed polygons through ordinary Polygon proxies.",
+            source = POLYGON_3D_PROJECTION_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "view3d",
+                "point3d",
+                "polygon3d",
+                "parallel-projection",
+                "proxy-polygon",
+                "owned-vertices",
+                "nested-vertex-style",
+                "nested-border-style",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "view3d_default_axes",
             title = "View3D default axes",
             scenario = "A parallel View3D factory creates border axes, Ticks3D curves, and numeric labels.",
@@ -2608,6 +2626,21 @@ private const val POLYHEDRON_3D_FACES_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [8, 7],\n  [[-5, 5], [-4, 6], [-3, 7]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: true >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nsolid = polyhedron3d(\n  view,\n  [\n    [-3, -3, -3], [3, -3, -3],\n    [3, 3, -3], [-3, 3, -3],\n    [-3, -3, 3], [3, -3, 3],\n    [3, 3, 3], [-3, 3, 3]\n  ],\n  [\n    [[0, 1, 2, 3], << fillColor: \"#009E73\", fillOpacity: 0.62 >>],\n    [0, 1, 5, 4],\n    [1, 2, 6, 5],\n    [2, 3, 7, 6],\n    [3, 0, 4, 7],\n    [4, 5, 6, 7]\n  ]\n) <<\n  name: \"\", fillColorArray: [\"#56B4E9\", \"#E69F00\"],\n  strokeColor: \"#49545D\", strokeWidth: 2,\n  fillOpacity: 0.48, layer: 12,\n  fixed: true, highlight: false,\n  shader: << enabled: false >>\n>>;"
+}
+"""
+
+private const val POLYGON_3D_PROJECTION_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [8, 7],\n  [[-5, 5], [-4, 6], [-3, 7]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: true >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nowned = polygon3d(\n  view,\n  [-4, -2, -1], [0, -3, 1], [1, 1, 2], [-3, 2, 0]\n) <<\n  id: \"owned\", name: \"\",\n  fillColor: \"#F0E442\", fillOpacity: 0.42, layer: 12,\n  vertices: <<\n    name: \"\", withLabel: false, size: 5,\n    strokeColor: \"#D9553F\", fillColor: \"#FFFFFF\",\n    strokeWidth: 2, fixed: true\n  >>,\n  borders: <<\n    strokeColor: \"#49545D\", strokeWidth: 3, layer: 11\n  >>\n>>;\na = point3d(view, [1, -2, -1]) <<\n  id: \"a\", name: \"\", withLabel: false,\n  size: 5, strokeColor: \"#246BCE\", fillColor: \"#FFFFFF\",\n  strokeWidth: 2, fixed: true\n>>;\nb = point3d(view, [4, -1, 0]) <<\n  id: \"b\", name: \"\", withLabel: false,\n  size: 5, strokeColor: \"#246BCE\", fillColor: \"#FFFFFF\",\n  strokeWidth: 2, fixed: true\n>>;\nc = point3d(view, [3, 3, 2]) <<\n  id: \"c\", name: \"\", withLabel: false,\n  size: 5, strokeColor: \"#246BCE\", fillColor: \"#FFFFFF\",\n  strokeWidth: 2, fixed: true\n>>;\nreferenced = polygon3d(view, a, b, c) <<\n  id: \"referenced\", name: \"\",\n  fillColor: \"#56B4E9\", fillOpacity: 0.34, layer: 12,\n  borders: <<\n    strokeColor: \"#16877A\", strokeWidth: 3, layer: 11\n  >>\n>>;"
 }
 """
 

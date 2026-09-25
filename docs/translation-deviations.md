@@ -780,10 +780,10 @@ practical.
   pending.
 - The bounded
   `GeometryElement3D`/`View3D`/`Point3D`/`Line3D`/`Plane3D`/`Face3D`/
-  `Polyhedron3D` lifecycle and the ordinary-Curve Mesh3D factory follow
+  `Polygon3D`/`Polyhedron3D` lifecycle and the ordinary-Curve Mesh3D factory follow
   `src/3d/element3d.js`, `src/3d/view3d.js`, `src/3d/point3d.js`,
-  `src/3d/linspace3d.js`, `src/3d/box3d.js`, `src/3d/face3d.js`, and
-  `src/3d/polyhedron3d.js`.
+  `src/3d/linspace3d.js`, `src/3d/box3d.js`, `src/3d/polygon3d.js`,
+  `src/3d/face3d.js`, and `src/3d/polyhedron3d.js`.
   Kotlin preserves parallel and central projection, numeric and homogeneous
   coordinates, function reevaluation, 3D transformation binding, `applyOnce`,
   ordinary 2D Point/Segment/Curve proxies, cube clamping, Line3D endpoint
@@ -819,6 +819,19 @@ practical.
   bounded vertex/face/curve-point checks and atomic rollback. Scene assembly
   sorts contiguous faces within each Polyhedron by ascending local `zIndex`;
   global View3D `depthOrder` and layer redistribution remain pending.
+- Polygon3D preserves direct existing-Point3D, coordinate-array,
+  scalar-function, and array-function vertices, open 3D vertex storage, the
+  closed ordinary Polygon proxy, generated-versus-external ownership, nested
+  `vertices`/`borders` styles, centroid depth, updates, and removal from
+  `src/3d/polygon3d.js`. The transformed branch intentionally preserves the
+  upstream `base.vertices.length - 1` loop, including its dropped final base
+  vertex. JSXGraph `1.13.3` then fails while registering the first transformed
+  Point3D with
+  `TypeError: Cannot set properties of undefined (setting 'jxgBoard1point3d219')`.
+  Kotlin does not reproduce that partial-Board corruption: it returns a usable
+  transformed Polygon3D when construction succeeds and reports validation or
+  factory failures through `GMResult.Err`, with atomic cleanup of generated
+  Point3D and Polygon proxy elements.
 - `src/3d/box3d.js` `createAxis3D` is translated as the upstream Line3D
   wrapper. The core `Axes3D` composition creates the three main axes where
   applicable, six axis planes, and twelve face axes for `center`, `border`,
@@ -834,8 +847,8 @@ practical.
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
   registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe
-  and finite surface, `mesh3d`, `axis3d`, `polyhedron3d`, and `transform3d`
-  creator routes but
+  and finite surface, `mesh3d`, `axis3d`, `polygon3d`, `polyhedron3d`, and
+  `transform3d` creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
   property access that the baseline does not expose. Camera controls, Point3D
   gliders and animations, and the remaining 3D APIs are still pending.

@@ -97,6 +97,19 @@ and homogeneous vertices, a four-point closed triangular proxy with green
 `0.5` fill and `4px` stroke, an unclosed two-point proxy, transformed
 coordinates `[1, 3, -1, 6]`, and dynamic base/transformed updates.
 
+Capture the official Polygon3D open-vertex/closed-proxy structure, dynamic
+coordinates, nested styles, centroid depth, and transformed-creator failure:
+
+```bash
+node tools/upstream-fixtures/polygon3d.mjs
+```
+
+The direct fixture records object type `46`, four open 3D vertices, five
+closed proxy vertices, four proxy borders, dynamic x-coordinate and depth
+updates, and nested fill/border styles. JSXGraph `1.13.3` throws while
+registering the first transformed Point3D; the exact failure and the Kotlin
+safety adaptation are recorded in `translation-deviations.md`.
+
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
 
@@ -1135,8 +1148,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 84 cases:
-30 generated production scenarios followed by 54 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 85 cases:
+30 generated production scenarios followed by 55 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1155,6 +1168,9 @@ raw JessieCode source.
 The focused `point3d_projection` case uses the same ordered construction
 document on both renderers and projects its Point3D elements through the
 ordinary 2D scene consumed by Compose.
+The focused `polygon3d_projection` case uses one JessieCode source for a
+coordinate-owned quadrilateral and a triangle backed by existing Point3D
+elements, including nested vertex and border styles.
 The focused `spatial_lines_planes` case likewise uses one construction
 document for bounded Line3D, a finite Plane3D outline with its visible Mesh3D
 wireframe, and Axis3D.
@@ -1235,6 +1251,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `function_circle_radius` | 0.987261 | 0.975137 |
 | `transformed_points` | 0.986656 | 0.972766 |
 | `point3d_projection` | 0.986505 | 0.972805 |
+| `polygon3d_projection` | 0.988028 | 0.982365 |
 | `spatial_lines_planes` | 0.987328 | 0.975225 |
 | `plane3d_surfaces` | 0.987317 | 0.984636 |
 | `polyhedron3d_faces` | 0.987380 | 0.984777 |
@@ -1548,6 +1565,14 @@ source Point3D's constant-z plane, updated the transformed Point3D, and scored
 `0.986588` and `0.972885`, respectively. All four contact sheets passed manual
 review for marker position, dependency updates, clipping, overlap, and blank
 output. This remains a focused preview outside the 30-case Stable corpus.
+The Polygon3D capture verifies direct coordinate-owned and existing-Point3D
+vertex forms, open 3D vertex storage, closed ordinary Polygon proxies, nested
+vertex and border styles, and parallel projection. Static captures scored
+`0.988028` on Desktop and `0.982365` on Compact. Both contact sheets passed
+manual review for projected geometry, closure, fill, borders, vertex
+ownership, overlap, clipping, and blank output. The remaining visible
+differences are existing Point marker fill and antialiasing differences. This
+is a focused preview outside the 30-case Stable corpus.
 The same upstream lifecycle fixture now records Line3D two-Point,
 point/direction/range, copied-direction, transformed, coordinate-projection,
 and screen-projection behavior; Plane3D finite, three-Point, transformed,
@@ -1591,9 +1616,9 @@ Desktop and `0.984777` on Compact; both contact sheets passed manual review
 for geometry, face closure, transparent overlays, borders, overlap, clipping,
 and blank output. The local ordering test deliberately supplies near/far
 faces in reverse and verifies that the scene emits them in ascending depth.
-Together with the official lifecycle fixture, this raises the development
-corpus to 84 cases while the independently qualified 30-case Stable corpus
-remains unchanged.
+Together with the Polygon3D fixture, the development corpus now contains 85
+cases while the independently qualified 30-case Stable corpus remains
+unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous
 normalization, and non-draggable constrained Points. After dragging the shared
