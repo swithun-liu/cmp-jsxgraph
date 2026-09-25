@@ -39,14 +39,15 @@ Ordered construction documents now expose 2D `transform` IDs to subsequent
 transformed Points. The source-mapped 4x4 Transformation kernel covers every
 JSXGraph `1.13.3` 3D matrix form with official numerical fixture evidence;
 the bounded `View3D`, `Point3D`, `Line3D`, Plane3D wireframe and finite
-surfaces, `Mesh3D`, `Curve3D`, `Axis3D`, `Polygon3D`, `Face3D`, `Polyhedron3D`, and
+surfaces, `Mesh3D`, `Curve3D`, `Circle3D`, `Axis3D`, `Polygon3D`, `Face3D`,
+`Polyhedron3D`, and
 `transform3d` lifecycle now has
 source-mapped construction, projection, 2D proxy rendering, transformation
 binding, update/removal, structured-error, official-fixture, and focused JVM
 evidence. Point3D additionally has drag and `applyOnce` parity evidence;
 Line3D, finite Plane3D outlines with visible Mesh3D wireframes, finite
 Plane3D rectangle/triangle surfaces with cyclic colors, HSL shaders, and
-height colormaps, Curve3D, Axis3D, Polygon3D, and Polyhedron3D have focused
+height colormaps, Curve3D, Circle3D, Axis3D, Polygon3D, and Polyhedron3D have focused
 Desktop/Compact static parity evidence. Text3D, Ticks3D, explicit Axes3D scene expansion, and
 automatic `center`/`border`/`none` View3D axes now have bounded JSON/JessieCode
 creation and resource accounting.
@@ -59,11 +60,13 @@ owned or referenced Point3D vertices, dynamic coordinates, nested vertex and
 border styles, and an ordinary closed Polygon proxy while retaining the
 upstream open 3D vertex list. Curve3D accepts vector functions, component
 functions, discrete matrices, and transformed parents through an ordinary
-Curve proxy with bounded sampling. Its parametric projection remains pending
-the source-mapped `math/nlp.js` COBYLA dependency. Global View3D
+Curve proxy with bounded sampling. Circle3D accepts dynamic center, normal,
+frame, and radius inputs through an owned Curve3D/Curve proxy. Their
+parametric projection remains pending the source-mapped `math/nlp.js` COBYLA
+dependency. Global View3D
 `depthOrder`/layer configuration, camera controls, Point3D gliders and
-animations, `circle3d`, `surface3d`, `sphere3d`, and the remaining 3D APIs are
-still pending.
+animations, `surface3d`, `sphere3d`, `intersectioncircle3d`, and the remaining
+3D APIs are still pending.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.
 Intersection and OtherIntersection now have source-mapped Line/Segment/Circle,

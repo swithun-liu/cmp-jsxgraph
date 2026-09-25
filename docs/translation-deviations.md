@@ -779,11 +779,13 @@ practical.
   when all entries are numbers. Transformed Text/Image rendering remains
   pending.
 - The bounded
-  `GeometryElement3D`/`View3D`/`Point3D`/`Line3D`/`Plane3D`/`Face3D`/
-  `Polygon3D`/`Polyhedron3D` lifecycle and the ordinary-Curve Mesh3D factory follow
+  `GeometryElement3D`/`View3D`/`Point3D`/`Line3D`/`Plane3D`/`Curve3D`/
+  `Circle3D`/`Face3D`/`Polygon3D`/`Polyhedron3D` lifecycle and the
+  ordinary-Curve Mesh3D factory follow
   `src/3d/element3d.js`, `src/3d/view3d.js`, `src/3d/point3d.js`,
-  `src/3d/linspace3d.js`, `src/3d/box3d.js`, `src/3d/polygon3d.js`,
-  `src/3d/face3d.js`, and `src/3d/polyhedron3d.js`.
+  `src/3d/linspace3d.js`, `src/3d/curve3d.js`, `src/3d/circle3d.js`,
+  `src/3d/box3d.js`, `src/3d/polygon3d.js`, `src/3d/face3d.js`, and
+  `src/3d/polyhedron3d.js`.
   Kotlin preserves parallel and central projection, numeric and homogeneous
   coordinates, function reevaluation, 3D transformation binding, `applyOnce`,
   ordinary 2D Point/Segment/Curve proxies, cube clamping, Line3D endpoint
@@ -819,6 +821,16 @@ practical.
   bounded vertex/face/curve-point checks and atomic rollback. Scene assembly
   sorts contiguous faces within each Polyhedron by ascending local `zIndex`;
   global View3D `depthOrder` and layer redistribution remain pending.
+- Circle3D preserves its Point3D center, three-/four-value and array-function
+  normals, numeric and function-valued absolute radii, normalized normal,
+  orthogonal frame construction, exact `0..2π` Curve3D sampling, and ordinary
+  Curve proxy from `src/3d/circle3d.js`. Dynamic center, normal, and radius
+  changes recompute the frame and sampled proxy through the regular Board
+  update pass. Kotlin reports malformed normals and rejected dynamic values
+  through `GMResult.Err`; update-time failures expose `NaN` proxy coordinates
+  instead of throwing through scene construction. Parametric projection
+  remains unavailable until the source-mapped COBYLA dependency is
+  translated.
 - Polygon3D preserves direct existing-Point3D, coordinate-array,
   scalar-function, and array-function vertices, open 3D vertex storage, the
   closed ordinary Polygon proxy, generated-versus-external ownership, nested
@@ -847,11 +859,12 @@ practical.
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
   registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe
-  and finite surface, `mesh3d`, `axis3d`, `polygon3d`, `polyhedron3d`, and
-  `transform3d` creator routes but
+  and finite surface, `curve3d`, `circle3d`, `mesh3d`, `axis3d`, `polygon3d`,
+  `polyhedron3d`, and `transform3d` creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
   property access that the baseline does not expose. Camera controls, Point3D
-  gliders and animations, and the remaining 3D APIs are still pending.
+  gliders and animations, `surface3d`, `sphere3d`, `intersectioncircle3d`, and
+  the remaining 3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
@@ -1145,8 +1158,9 @@ practical.
   is singular. JSXGraph `1.13.3` throws from `Numerics.Gauss`.
 - `Geometry.meetPlaneSphere` and `Geometry.meetSphereSphere` return a numeric
   `Circle3DIntersection` snapshot. JSXGraph returns element-bound functions
-  that recalculate center and radius; the future Plane3D/Sphere3D layer will
-  provide that dynamic wrapper around these pure calculations.
+  that recalculate center and radius; the future Sphere3D and
+  `intersectioncircle3d` layer will provide that dynamic wrapper around these
+  pure calculations.
 - `Geometry.reuleauxPolygon` accepts a positive odd `Int` vertex count and
   returns `GMResult.Err` for even/non-positive counts or too few points.
   JSXGraph accepts a dynamic number and fails later while indexing for

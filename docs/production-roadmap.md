@@ -44,7 +44,7 @@ qualification batches pass.
   affine, affinematrix, generic, and matrix forms with scalar, vector,
   JessieCode, and structured dynamic evaluation.
 - View3D, Point3D, Line3D, Plane3D wireframe and finite surfaces, Mesh3D,
-  Curve3D,
+  Curve3D, Circle3D,
   Axis3D, Polygon3D, Face3D, and Polyhedron3D: the bounded lifecycle from
   `src/3d/element3d.js`,
   `src/3d/view3d.js`, `src/3d/point3d.js`, `src/3d/linspace3d.js`,
@@ -54,13 +54,15 @@ qualification batches pass.
   covers View3D registration and selection, parallel and central camera
   matrices, forward/inverse projection helpers, cube bounds, dynamic 3D
   coordinates/vectors/ranges, ordinary 2D proxies, Curve3D sampling,
+  Circle3D normal/frame/radius evaluation,
   Line3D and Plane3D
   transforms, finite plane outlines and Mesh3D wireframes, exact
   rectangle/triangle surface tiling, cyclic color arrays, HSL shaders,
   height colormaps, fully infinite plane/box clipping, projected Text3D,
   Ticks3D curves and labels, automatic
   `border`/`none` View3D axes, explicit Axes3D scene expansion, direct and
-  transformed Curve3D, Polygon3D, and Polyhedron3D creators, open Polygon3D vertex
+  transformed Curve3D, direct Circle3D, Polygon3D, and Polyhedron3D creators,
+  open Polygon3D vertex
   storage with a closed ordinary Polygon proxy, Point-backed/function-valued/
   homogeneous vertices, nested Polygon3D vertex/border styles, cyclic and
   per-face styles, HSL Face3D shaders, local ascending face-depth ordering,
@@ -69,14 +71,15 @@ qualification batches pass.
   lifecycle fixtures and focused JVM tests pass. Point3D has focused static
   plus proxy-drag visual parity; Line3D, finite Plane3D with its visible
   Mesh3D, Plane3D surface modes, Axis3D, automatic border axes, Polygon3D,
-  Curve3D, and Polyhedron3D have focused Desktop/Compact static parity.
+  Curve3D, Circle3D, and Polyhedron3D have focused Desktop/Compact static parity.
 - Still pending around transforms and 3D: transformed Text/Image and general
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
   null-clone defect, global View3D `depthOrder`/layer configuration, camera
   controls, Point3D gliders and
-  animations, Stable qualification, Curve3D parametric projection pending
-  `src/math/nlp.js -> Nlp.FindMinimum`, and the untranslated `circle3d`,
-  `surface3d`, and `sphere3d` modules plus remaining 3D APIs.
+  animations, Stable qualification, Curve3D and Circle3D parametric projection
+  pending `src/math/nlp.js -> Nlp.FindMinimum`, and the untranslated
+  `surface3d`, `sphere3d`, and `intersectioncircle3d` modules plus remaining
+  3D APIs.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed

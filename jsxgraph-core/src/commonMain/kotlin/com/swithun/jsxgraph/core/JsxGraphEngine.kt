@@ -15,6 +15,7 @@ import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Axes3D
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Circle3D
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.Curve3D
@@ -1314,7 +1315,8 @@ object JsxGraphEngine {
                     )
                 }
             }
-            creatorName == "curve3d" ->
+            creatorName == "curve3d" ||
+                creatorName == "circle3d" ->
                 runtimeCurve3DPointCount(
                     board = board,
                     parents = parents,
@@ -2788,6 +2790,32 @@ object JsxGraphEngine {
                 }
             }
 
+            is Circle3D -> {
+                element.evaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                when (
+                    val result = curveSceneElement(
+                        element = element,
+                        points = element.curve.curve2D.points,
+                        bezierDegree = element.curve.curve2D.bezierDegree,
+                        style = style.copy(
+                            visible =
+                                style.visible &&
+                                    !element.Radius().isNaN(),
+                        ),
+                        attributes = attributes,
+                        allowFill = false,
+                        allowPathBreaks = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+
             is Plane3D -> {
                 val lifecycleError =
                     element.directionEvaluationError
@@ -4140,6 +4168,7 @@ object JsxGraphEngine {
                 "plane3d",
                 "polyhedron3d",
                 "curve3d",
+                "circle3d",
             )
         ) {
             return GMResult.Ok(Unit)
@@ -4158,7 +4187,10 @@ object JsxGraphEngine {
         } else {
             null
         }
-        val requested = if (sourceObject.type == "curve3d") {
+        val requested = if (
+            sourceObject.type == "curve3d" ||
+            sourceObject.type == "circle3d"
+        ) {
             jsonCurve3DPointCount(
                 source = sourceObject,
                 objectsById = objectsById,
@@ -5247,6 +5279,7 @@ object JsxGraphEngine {
         when (element) {
             is Curve -> listOf(element)
             is Curve3D -> listOf(element.curve2D)
+            is Circle3D -> listOf(element.curve.curve2D)
             is Face3D -> listOf(element.curve2D)
             is Polygon3D -> emptyList()
             is Polyhedron3D -> element.faces.map(Face3D::curve2D)
@@ -5345,6 +5378,7 @@ object JsxGraphEngine {
                         is Line3D -> LINE_ATTRIBUTES
                         is Plane3D -> PLANE_3D_ATTRIBUTES
                         is Curve3D -> CURVE_ATTRIBUTES
+                        is Circle3D -> CIRCLE_3D_ATTRIBUTES
                         is Polygon3D -> POLYGON_3D_ATTRIBUTES
                         is Point3D -> POINT_ATTRIBUTES
                         is Point -> POINT_ATTRIBUTES
@@ -5424,6 +5458,7 @@ object JsxGraphEngine {
                 is Line3D -> listOf("point", "point1", "point2")
                 is Plane3D ->
                     listOf("point", "point1", "point2", "point3")
+                is Circle3D -> listOf("point")
                 is Line -> listOf("point", "point1", "point2")
                 is Circle -> listOf("center", "point2")
                 is Arc -> listOf("center", "radiuspoint", "anglepoint")
@@ -5645,6 +5680,7 @@ object JsxGraphEngine {
             val defaultStroke = when (element) {
                 is Line3D -> DEFAULT_LINE_3D_COLOR
                 is Curve3D -> DEFAULT_STROKE_COLOR
+                is Circle3D -> DEFAULT_STROKE_COLOR
                 is Point3D -> DEFAULT_STROKE_COLOR
                 is Point -> DEFAULT_POINT_COLOR
                 is Text3D, is Text -> DEFAULT_TEXT_COLOR
@@ -5727,6 +5763,7 @@ object JsxGraphEngine {
                         when {
                             element is Line3D -> 1.0
                             element is Curve3D -> 1.0
+                            element is Circle3D -> 1.0
                             element is Face3D -> 1.0
                             element is Polygon3D -> 1.0
                             element is Point3D -> 0.0
@@ -6094,6 +6131,7 @@ object JsxGraphEngine {
                 is Face3D -> DEFAULT_FACE_3D_LAYER
                 is Line3D -> DEFAULT_LINE_3D_LAYER
                 is Curve3D -> DEFAULT_CURVE_3D_LAYER
+                is Circle3D -> DEFAULT_CURVE_3D_LAYER
                 is Plane3D -> DEFAULT_CURVE_LAYER
                 is Polygon3D -> DEFAULT_POLYGON_3D_LAYER
                 is Point3D -> DEFAULT_POINT_3D_LAYER
@@ -6420,6 +6458,8 @@ object JsxGraphEngine {
         "isarrayofcoordinates",
         "points",
     )
+    private val CIRCLE_3D_ATTRIBUTES =
+        CURVE_ATTRIBUTES + setOf("point")
     private val MESH_3D_ATTRIBUTES =
         COMMON_ATTRIBUTES +
             CURVE_ATTRIBUTES +

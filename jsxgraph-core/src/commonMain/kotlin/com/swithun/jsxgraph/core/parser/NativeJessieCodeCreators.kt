@@ -33,6 +33,7 @@
  * src/3d/polygon3d.js -> createPolygon3D,
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
  * src/3d/curve3d.js -> createCurve3D,
+ * src/3d/circle3d.js -> createCircle3D,
  * src/element/arc.js -> createArc / createSemicircle /
  * createCircumcircleArc / createMinorArc / createMajorArc,
  * src/element/sector.js -> createSector / createAngle /
@@ -59,6 +60,9 @@ import com.swithun.jsxgraph.core.base.BisectorLines
 import com.swithun.jsxgraph.core.base.BisectorLinesError
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Circle3D
+import com.swithun.jsxgraph.core.base.Circle3DError
+import com.swithun.jsxgraph.core.base.Circle3DNormalSource
 import com.swithun.jsxgraph.core.base.CircleError
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.Const
@@ -246,6 +250,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Curve3DFactory(
         val error: Curve3DError,
+    ) : JessieCodeCreatorError
+
+    data class Circle3DFactory(
+        val error: Circle3DError,
     ) : JessieCodeCreatorError
 
     data class Ticks3DFactory(
@@ -487,6 +495,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createCurve3D(board, parents, attributes, location)
+        },
+        "circle3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createCircle3D(board, parents, attributes, location)
         },
         "polepoint" to JessieCodeCreator {
                 board,
@@ -3660,6 +3676,176 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = "curve3d",
                 error = JessieCodeCreatorError.Curve3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    // JSXGraph: src/3d/circle3d.js -> createCircle3D.
+    private fun createCircle3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "circle3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 4) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampleCount = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "numberpointshigh",
+                default = Circle3D.DEFAULT_SAMPLE_COUNT,
+                minimum = 1,
+                maximum = Circle3D.MAX_SAMPLE_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val center = when (
+            val result = provideLine3DPoint(
+                board = resolvedBoard,
+                view = view,
+                value = parents[1],
+                attributes = attributes,
+                role = "point",
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val normal = when (
+            val result = circle3DNormal(
+                value = parents[2],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                discardProvidedPoint3D(resolvedBoard, center)
+                return result
+            }
+        }
+        val radius = when (
+            val result = line3DCoordinateValue(
+                value = parents[3],
+                attribute = "radius",
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                discardProvidedPoint3D(resolvedBoard, center)
+                return result
+            }
+        }
+        val radiusDependencies =
+            (parents[3] as? JessieCodeRuntimeValue.FunctionValue)
+                ?.dependencies
+                ?.values
+                ?.toList()
+                ?: emptyList()
+        val result = Circle3D.create(
+            view = view,
+            center = center.point,
+            normalSource = normal,
+            radiusSource = radius,
+            ownsCenter = center.owned,
+            radiusDependencies = radiusDependencies,
+            sampleCount = sampleCount,
+            id = identity.id,
+            name = identity.name,
+            needsRegularUpdate = identity.needsRegularUpdate,
+        )
+        if (result is GMResult.Err) {
+            discardProvidedPoint3D(resolvedBoard, center)
+        }
+        return circle3DResult(result, location)
+    }
+
+    private fun circle3DNormal(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Circle3DNormalSource, JessieCodeRuntimeError> {
+        if (value is JessieCodeRuntimeValue.FunctionValue) {
+            return GMResult.Ok(
+                Circle3DNormalSource.Function(
+                    line3DArrayEvaluator(
+                        function = value,
+                        location = location,
+                    ),
+                ),
+            )
+        }
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = "circle3d",
+                attribute = "normal",
+                expected = "function or 3D/4D vector",
+                actual = value,
+                location = location,
+            )
+        if (array.values.size !in setOf(3, 4)) {
+            return invalidAttribute(
+                creatorName = "circle3d",
+                attribute = "normal",
+                expected = "array of three or four values",
+                actual = value,
+                location = location,
+            )
+        }
+        val coordinates = mutableListOf<Line3DCoordinateValue>()
+        for (coordinate in array.values) {
+            when (
+                val result = line3DCoordinateValue(
+                    value = coordinate,
+                    attribute = "normal",
+                    location = location,
+                    creatorName = "circle3d",
+                )
+            ) {
+                is GMResult.Ok -> coordinates += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(Circle3DNormalSource.Values(coordinates))
+    }
+
+    private fun circle3DResult(
+        result: GMResult<Circle3D, Circle3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "circle3d",
+                error = JessieCodeCreatorError.Circle3DFactory(
                     result.error,
                 ),
                 location = location,

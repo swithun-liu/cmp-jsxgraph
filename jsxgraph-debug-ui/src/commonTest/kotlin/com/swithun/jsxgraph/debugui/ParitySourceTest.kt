@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(86, cases.size)
+        assertEquals(87, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            56,
+            57,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
