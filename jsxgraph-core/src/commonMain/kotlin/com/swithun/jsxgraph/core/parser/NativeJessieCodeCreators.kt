@@ -162,6 +162,13 @@ import com.swithun.jsxgraph.core.base.RadicalAxis
 import com.swithun.jsxgraph.core.base.RadicalAxisError
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.SectorError
+import com.swithun.jsxgraph.core.base.Surface3D
+import com.swithun.jsxgraph.core.base.Surface3DArrayEvaluator
+import com.swithun.jsxgraph.core.base.Surface3DAttributes
+import com.swithun.jsxgraph.core.base.Surface3DDynamicError
+import com.swithun.jsxgraph.core.base.Surface3DError
+import com.swithun.jsxgraph.core.base.Surface3DScalarEvaluator
+import com.swithun.jsxgraph.core.base.Surface3DSource
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Text3D
 import com.swithun.jsxgraph.core.base.Text3DError
@@ -254,6 +261,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Circle3DFactory(
         val error: Circle3DError,
+    ) : JessieCodeCreatorError
+
+    data class Surface3DFactory(
+        val error: Surface3DError,
     ) : JessieCodeCreatorError
 
     data class Ticks3DFactory(
@@ -503,6 +514,34 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createCircle3D(board, parents, attributes, location)
+        },
+        "parametricsurface3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createSurface3D(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+                functionGraph = false,
+            )
+        },
+        "functiongraph3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createSurface3D(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+                functionGraph = true,
+            )
         },
         "polepoint" to JessieCodeCreator {
                 board,
@@ -3682,6 +3721,399 @@ internal object NativeJessieCodeCreators {
             )
         }
 
+    // JSXGraph: src/3d/surface3d.js ->
+    // createParametricSurface3D / createFunctiongraph3D.
+    private fun createSurface3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+        functionGraph: Boolean,
+    ): CreatorResult {
+        val creatorName =
+            if (functionGraph) "functiongraph3d" else "parametricsurface3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val surfaceType = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "type",
+                default = "wireframe",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value.lowercase()
+            is GMResult.Err -> return result
+        }
+        val tiling = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "tiling",
+                default = "rectangle",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value.lowercase()
+            is GMResult.Err -> return result
+        }
+        val surfaceAttributes = when (
+            val result = plane3DSurfaceAttributes(
+                attributes = attributes,
+                location = location,
+                defaults = Plane3DSurfaceAttributes(
+                    stepsU = Surface3D.DEFAULT_STEPS_U,
+                    stepsV = Surface3D.DEFAULT_STEPS_V,
+                ),
+                creatorName = creatorName,
+                minimumStepsU = if (surfaceType == "wireframe") 0 else 1,
+                minimumStepsV =
+                    if (
+                        surfaceType == "wireframe" ||
+                        tiling == "triangle"
+                    ) {
+                        0
+                    } else {
+                        1
+                    },
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }.let {
+            Surface3DAttributes(
+                surfaceType = surfaceType,
+                tiling = it.tiling,
+                stepsU = it.stepsU,
+                stepsV = it.stepsV,
+                fillColorArray = it.fillColorArray,
+                faceAttributes = it.faceAttributes,
+                colormap = it.colormap,
+            )
+        }
+
+        if (!functionGraph && parents.size == 3) {
+            val base = resolveElement(resolvedBoard, parents[1])
+                as? Surface3D
+            val transformations = transformationReferences(parents[2])
+            if (base != null && transformations != null) {
+                return surface3DResult(
+                    creatorName = creatorName,
+                    result = Surface3D.create(
+                        view = view,
+                        baseSurface = base,
+                        transformations = transformations,
+                        attributes = surfaceAttributes,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate = identity.needsRegularUpdate,
+                    ),
+                    location = location,
+                )
+            }
+        }
+
+        val expectedCount = if (functionGraph) 4 else null
+        if (expectedCount != null && parents.size != expectedCount) {
+            return unsupported(creatorName, parents, location)
+        }
+        val rangeIndexes = when {
+            functionGraph -> 2 to 3
+            parents.size == 4 -> 2 to 3
+            parents.size == 6 -> 4 to 5
+            else -> return unsupported(creatorName, parents, location)
+        }
+        val rangeU = when (
+            val result = line3DRange(
+                value = parents[rangeIndexes.first],
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rangeV = when (
+            val result = line3DRange(
+                value = parents[rangeIndexes.second],
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        val sourceAndDependencies = when {
+            functionGraph -> {
+                val z = when (
+                    val result = surface3DScalarEvaluator(
+                        board = resolvedBoard,
+                        value = parents[1],
+                        variableNames = listOf("x", "y"),
+                        location = location,
+                        creatorName = creatorName,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                Surface3DSource.Components(
+                    x = Surface3DScalarEvaluator { u, _ ->
+                        GMResult.Ok(u)
+                    },
+                    y = Surface3DScalarEvaluator { _, v ->
+                        GMResult.Ok(v)
+                    },
+                    z = z.evaluator,
+                ) to z.dependencies
+            }
+            parents.size == 4 -> {
+                val function = parents[1] as?
+                    JessieCodeRuntimeValue.FunctionValue
+                    ?: return unsupported(creatorName, parents, location)
+                Surface3DSource.Function(
+                    surface3DArrayEvaluator(function, location),
+                ) to function.dependencies.values.toList()
+            }
+            else -> {
+                val parsed = mutableListOf<ParsedSurface3DScalarEvaluator>()
+                for (value in parents.subList(1, 4)) {
+                    val evaluator = when (
+                        val result = surface3DScalarEvaluator(
+                            board = resolvedBoard,
+                            value = value,
+                            variableNames = listOf("u", "v"),
+                            location = location,
+                            creatorName = creatorName,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    parsed += evaluator
+                }
+                Surface3DSource.Components(
+                    x = parsed[0].evaluator,
+                    y = parsed[1].evaluator,
+                    z = parsed[2].evaluator,
+                ) to parsed.flatMap(ParsedSurface3DScalarEvaluator::dependencies)
+            }
+        }
+        return surface3DResult(
+            creatorName = creatorName,
+            result = Surface3D.create(
+                view = view,
+                source = sourceAndDependencies.first,
+                rangeUSource = rangeU.values,
+                rangeVSource = rangeV.values,
+                attributes = surfaceAttributes,
+                dependencies =
+                    sourceAndDependencies.second +
+                        rangeU.dependencies +
+                        rangeV.dependencies,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                functionGraph = functionGraph,
+            ),
+            location = location,
+        )
+    }
+
+    private fun surface3DArrayEvaluator(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): Surface3DArrayEvaluator =
+        Surface3DArrayEvaluator { parameterU, parameterV ->
+            when (
+                val result = function.externalCallable.call(
+                    arguments = listOf(
+                        JessieCodeRuntimeValue.NumberValue(parameterU),
+                        JessieCodeRuntimeValue.NumberValue(parameterV),
+                    ),
+                    location = location,
+                )
+            ) {
+                is GMResult.Err -> GMResult.Err(
+                    Surface3DDynamicError.Rejected(
+                        result.error.toString(),
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val values = (
+                        result.value as?
+                            JessieCodeRuntimeValue.ArrayValue
+                        )?.values
+                    val coordinates = values?.map {
+                        (it as? JessieCodeRuntimeValue.NumberValue)?.value
+                            ?: return@Surface3DArrayEvaluator GMResult.Err(
+                                Surface3DDynamicError.Rejected(
+                                    "Expected numeric coordinate array, got " +
+                                        typeName(result.value),
+                                ),
+                            )
+                    }
+                    if (coordinates == null) {
+                        GMResult.Err(
+                            Surface3DDynamicError.Rejected(
+                                "Expected numeric coordinate array, got " +
+                                    typeName(result.value),
+                            ),
+                        )
+                    } else {
+                        GMResult.Ok(coordinates.toDoubleArray())
+                    }
+                }
+            }
+        }
+
+    private fun surface3DScalarEvaluator(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        variableNames: List<String>,
+        location: JessieCodeAstLocation,
+        creatorName: String,
+    ): GMResult<
+        ParsedSurface3DScalarEvaluator,
+        JessieCodeRuntimeError,
+        > =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(
+                    ParsedSurface3DScalarEvaluator(
+                        evaluator = Surface3DScalarEvaluator { _, _ ->
+                            GMResult.Ok(value.value)
+                        },
+                        dependencies = emptyList(),
+                    ),
+                )
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(
+                    ParsedSurface3DScalarEvaluator(
+                        evaluator = Surface3DScalarEvaluator { u, v ->
+                            surface3DScalarResult(
+                                result = value.externalCallable.call(
+                                    arguments = listOf(
+                                        JessieCodeRuntimeValue.NumberValue(u),
+                                        JessieCodeRuntimeValue.NumberValue(v),
+                                    ),
+                                    location = location,
+                                ),
+                            )
+                        },
+                        dependencies =
+                            value.dependencies.values.toList(),
+                    ),
+                )
+            is JessieCodeRuntimeValue.StringValue -> {
+                val expression = when (
+                    val result = JessieCodeExpressionFunction.compile(
+                        source = value.value,
+                        board = board,
+                        variableNames = variableNames,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return failure(
+                        creatorName = creatorName,
+                        error =
+                            JessieCodeCreatorError.InvalidAttributeType(
+                                attribute = "surface function",
+                                expected = "valid JessieCode expression",
+                                actual = result.error.toString(),
+                            ),
+                        location = location,
+                    )
+                }
+                GMResult.Ok(
+                    ParsedSurface3DScalarEvaluator(
+                        evaluator = Surface3DScalarEvaluator { u, v ->
+                            surface3DScalarResult(
+                                result = expression.evaluate(
+                                    listOf(
+                                        JessieCodeRuntimeValue.NumberValue(u),
+                                        JessieCodeRuntimeValue.NumberValue(v),
+                                    ),
+                                ),
+                            )
+                        },
+                        dependencies =
+                            expression.dependencies.values.toList(),
+                    ),
+                )
+            }
+            else -> invalidAttribute(
+                creatorName = creatorName,
+                attribute = "surface function",
+                expected = "number, function, or JessieCode expression",
+                actual = value,
+                location = location,
+            )
+        }
+
+    private fun surface3DScalarResult(
+        result: GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError>,
+    ): GMResult<Double, Surface3DDynamicError> =
+        when (result) {
+            is GMResult.Err -> GMResult.Err(
+                Surface3DDynamicError.Rejected(
+                    result.error.toString(),
+                ),
+            )
+            is GMResult.Ok -> {
+                val number = result.value as?
+                    JessieCodeRuntimeValue.NumberValue
+                if (number == null) {
+                    GMResult.Err(
+                        Surface3DDynamicError.Rejected(
+                            "Expected number, got ${typeName(result.value)}",
+                        ),
+                    )
+                } else {
+                    GMResult.Ok(number.value)
+                }
+            }
+        }
+
+    private fun surface3DResult(
+        creatorName: String,
+        result: GMResult<Surface3D, Surface3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.Surface3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
     // JSXGraph: src/3d/circle3d.js -> createCircle3D.
     private fun createCircle3D(
         board: Board?,
@@ -5331,8 +5763,10 @@ internal object NativeJessieCodeCreators {
         defaults: Plane3DSurfaceAttributes =
             Plane3DSurfaceAttributes(),
         planeVisibleDefault: Boolean = true,
+        creatorName: String = "plane3d",
+        minimumStepsU: Int = 1,
+        minimumStepsV: Int = 1,
     ): GMResult<Plane3DSurfaceAttributes, JessieCodeRuntimeError> {
-        val creatorName = "plane3d"
         val tiling = when (
             val result = stringAttribute(
                 creatorName = creatorName,
@@ -5351,7 +5785,7 @@ internal object NativeJessieCodeCreators {
                 attributes = attributes,
                 name = "stepsu",
                 default = defaults.stepsU,
-                minimum = 1,
+                minimum = minimumStepsU,
                 maximum = Polyhedron3D.MAX_VERTEX_COUNT,
                 location = location,
             )
@@ -5365,7 +5799,7 @@ internal object NativeJessieCodeCreators {
                 attributes = attributes,
                 name = "stepsv",
                 default = defaults.stepsV,
-                minimum = 1,
+                minimum = minimumStepsV,
                 maximum = Polyhedron3D.MAX_VERTEX_COUNT,
                 location = location,
             )
@@ -5560,6 +5994,7 @@ internal object NativeJessieCodeCreators {
                     defaults.colormap.minimumHue,
                 ),
                 location = location,
+                creatorName = creatorName,
             )
         ) {
             is GMResult.Ok -> result.value
@@ -5574,6 +6009,7 @@ internal object NativeJessieCodeCreators {
                     defaults.colormap.maximumHue,
                 ),
                 location = location,
+                creatorName = creatorName,
             )
         ) {
             is GMResult.Ok -> result.value
@@ -5627,6 +6063,7 @@ internal object NativeJessieCodeCreators {
         name: String,
         default: DoubleArray,
         location: JessieCodeAstLocation,
+        creatorName: String = "plane3d",
     ): GMResult<DoubleArray, JessieCodeRuntimeError> {
         val value = attributes.properties[name]
             ?: return GMResult.Ok(default)
@@ -5635,7 +6072,7 @@ internal object NativeJessieCodeCreators {
         }
         val values = (value as? JessieCodeRuntimeValue.ArrayValue)?.values
             ?: return invalidAttribute(
-                creatorName = "plane3d",
+                creatorName = creatorName,
                 attribute = "colormap.$name",
                 expected = "array of two numbers",
                 actual = value,
@@ -5643,7 +6080,7 @@ internal object NativeJessieCodeCreators {
             )
         if (values.size != 2) {
             return failure(
-                creatorName = "plane3d",
+                creatorName = creatorName,
                 error = JessieCodeCreatorError.UnsupportedAttributeValue(
                     attribute = "colormap.$name",
                     actual = "array of ${values.size} values",
@@ -5658,7 +6095,7 @@ internal object NativeJessieCodeCreators {
                     ?.value
             if (number == null || !number.isFinite()) {
                 return invalidAttribute(
-                    creatorName = "plane3d",
+                    creatorName = creatorName,
                     attribute = "colormap.$name",
                     expected = "array of two finite numbers",
                     actual = values[index],
@@ -13317,6 +13754,11 @@ internal object NativeJessieCodeCreators {
 
     private data class ParsedPlane3DDirection(
         val source: Plane3DDirectionSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedSurface3DScalarEvaluator(
+        val evaluator: Surface3DScalarEvaluator,
         val dependencies: List<GeometryElement>,
     )
 

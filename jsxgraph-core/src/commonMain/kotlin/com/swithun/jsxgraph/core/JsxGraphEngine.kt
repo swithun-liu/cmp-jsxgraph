@@ -33,6 +33,7 @@ import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Polygon3D
 import com.swithun.jsxgraph.core.base.Polyhedron3D
 import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Text3D
 import com.swithun.jsxgraph.core.base.Ticks3D
@@ -696,6 +697,40 @@ object JsxGraphEngine {
                                         )
                                     created += expanded
                                     creationCount += expanded.size
+                                } else if (
+                                    creatorName == "parametricsurface3d" ||
+                                    creatorName == "functiongraph3d"
+                                ) {
+                                    val surface =
+                                        value.element as? Surface3D
+                                    if (surface == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native $creatorName " +
+                                                        "creator returned an " +
+                                                        "unexpected element.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
+                                    created += CreatedSourceElement(
+                                        source = source,
+                                        element = surface,
+                                    )
+                                    val expanded =
+                                        surface.polyhedron?.let {
+                                                polyhedron,
+                                            ->
+                                            polyhedron3DCreatedSourceElements(
+                                                source = source.copy(
+                                                    index = source.index + 1,
+                                                ),
+                                                polyhedron = polyhedron,
+                                            )
+                                        }.orEmpty()
+                                    created += expanded
+                                    creationCount += 1 + expanded.size
                                 } else if (creatorName == "plane3d") {
                                     val plane = value.element as? Plane3D
                                     if (plane == null) {
@@ -1178,6 +1213,9 @@ object JsxGraphEngine {
                     parents = parents,
                     attributes = attributes,
                 )
+            creatorName == "parametricsurface3d" ||
+                creatorName == "functiongraph3d" ->
+                runtimeSurface3DMaximumCurvePointCount(attributes)
             creatorName == "ticks3d" -> {
                 val length = (
                     parents.getOrNull(3) as?
@@ -1375,6 +1413,9 @@ object JsxGraphEngine {
                     parents = parents,
                     attributes = attributes,
                 )
+            creatorName == "parametricsurface3d" ||
+                creatorName == "functiongraph3d" ->
+                runtimeSurface3DMaximumFaceVertexCount(attributes)
             creatorName == "regularpolygon" -> {
                 val numericCount = (
                     parents.lastOrNull() as?
@@ -2397,6 +2438,29 @@ object JsxGraphEngine {
                     source = sourceObject,
                     polyhedron = polyhedron,
                 )
+            } else if (
+                sourceObject.type == "parametricsurface3d" ||
+                sourceObject.type == "functiongraph3d"
+            ) {
+                val surface = element as? Surface3D
+                    ?: return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = sourceObject.index,
+                            id = sourceObject.id,
+                            type = sourceObject.type,
+                            reason =
+                                "creator did not return a Surface3D",
+                        ),
+                    )
+                created += CreatedSourceElement(sourceObject, surface)
+                surface.polyhedron?.let { polyhedron ->
+                    created += polyhedron3DCreatedSourceElements(
+                        source = sourceObject.copy(
+                            index = sourceObject.index + 1,
+                        ),
+                        polyhedron = polyhedron,
+                    )
+                }
             } else if (sourceObject.type == "plane3d") {
                 val plane = element as? Plane3D
                     ?: return GMResult.Err(
@@ -2483,6 +2547,7 @@ object JsxGraphEngine {
             "axis3d" -> 2
             "plane3d" -> 2
             "curve3d" -> 2
+            "parametricsurface3d" -> 2
             "polygon3d" -> 2
             "polyhedron3d" -> 2
             else -> return parents
@@ -2805,6 +2870,33 @@ object JsxGraphEngine {
                             visible =
                                 style.visible &&
                                     !element.Radius().isNaN(),
+                        ),
+                        attributes = attributes,
+                        allowFill = false,
+                        allowPathBreaks = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+
+            is Surface3D -> {
+                element.evaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                when (
+                    val result = curveSceneElement(
+                        element = element,
+                        points = element.curve2D.points,
+                        bezierDegree = element.curve2D.bezierDegree,
+                        style = style.copy(
+                            visible =
+                                style.visible &&
+                                    element.surfaceAttributes.surfaceType ==
+                                    "wireframe",
                         ),
                         attributes = attributes,
                         allowFill = false,
@@ -4169,6 +4261,8 @@ object JsxGraphEngine {
                 "polyhedron3d",
                 "curve3d",
                 "circle3d",
+                "parametricsurface3d",
+                "functiongraph3d",
             )
         ) {
             return GMResult.Ok(Unit)
@@ -4206,6 +4300,12 @@ object JsxGraphEngine {
             ).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         } else if (sourceObject.type == "plane3d") {
             jsonPlaneMaximumCurvePointCount(sourceObject)
+                .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        } else if (
+            sourceObject.type == "parametricsurface3d" ||
+            sourceObject.type == "functiongraph3d"
+        ) {
+            jsonSurface3DMaximumCurvePointCount(sourceObject.attributes)
                 .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         } else if (sourceObject.type == "ticks3d") {
             val length = (
@@ -4520,6 +4620,106 @@ object JsxGraphEngine {
         }
     }
 
+    private fun runtimeSurface3DMaximumCurvePointCount(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long {
+        val type = (
+            attributes.properties["type"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value?.lowercase() ?: "wireframe"
+        if (type != "wireframe") {
+            return polyhedron3DCurvePointCount(
+                runtimeSurface3DMaximumFaceVertexCount(attributes).toInt(),
+            )
+        }
+        val stepsU = runtimeNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsu",
+            default = Surface3D.DEFAULT_STEPS_U,
+        ) ?: return 0L
+        val stepsV = runtimeNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsv",
+            default = Surface3D.DEFAULT_STEPS_V,
+        ) ?: return 0L
+        return surface3DWireframePointCount(stepsU, stepsV)
+    }
+
+    private fun runtimeSurface3DMaximumFaceVertexCount(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long {
+        val type = (
+            attributes.properties["type"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value?.lowercase() ?: "wireframe"
+        if (type == "wireframe") {
+            return 0L
+        }
+        val tiling = (
+            attributes.properties["tiling"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value?.lowercase() ?: "rectangle"
+        return if (tiling == "triangle") 3L else 4L
+    }
+
+    private fun jsonSurface3DMaximumCurvePointCount(
+        attributes: JsonObject,
+    ): Long {
+        val type = (
+            attributes["type"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)
+            ?.content?.lowercase() ?: "wireframe"
+        if (type != "wireframe") {
+            return polyhedron3DCurvePointCount(
+                jsonSurface3DMaximumFaceVertexCount(attributes),
+            )
+        }
+        val stepsU = jsonNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsu",
+            default = Surface3D.DEFAULT_STEPS_U,
+        ) ?: return 0L
+        val stepsV = jsonNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsv",
+            default = Surface3D.DEFAULT_STEPS_V,
+        ) ?: return 0L
+        return surface3DWireframePointCount(stepsU, stepsV)
+    }
+
+    private fun jsonSurface3DMaximumFaceVertexCount(
+        attributes: JsonObject,
+    ): Int {
+        val type = (
+            attributes["type"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)
+            ?.content?.lowercase() ?: "wireframe"
+        if (type == "wireframe") {
+            return 0
+        }
+        val tiling = (
+            attributes["tiling"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)
+            ?.content?.lowercase() ?: "rectangle"
+        return if (tiling == "triangle") 3 else 4
+    }
+
+    private fun surface3DWireframePointCount(
+        stepsU: Int,
+        stepsV: Int,
+    ): Long {
+        val rowCount = maxOf(stepsU, 1).toLong() + 1L
+        val columnCount = maxOf(stepsV, 1).toLong() + 1L
+        return (
+            if (stepsU > 0) rowCount * columnCount else 0L
+            ) +
+            (
+                if (stepsV > 0) rowCount * columnCount else 0L
+                ) +
+            rowCount +
+            columnCount
+    }
+
     private fun polyhedron3DCurvePointCount(vertexCount: Int): Long =
         vertexCount.toLong() +
             if (vertexCount > 0 && vertexCount != 2) 1L else 0L
@@ -4800,14 +5000,18 @@ object JsxGraphEngine {
             sourceObject.type != "regularpolygon" &&
             sourceObject.type != "polygon3d" &&
             sourceObject.type != "polyhedron3d" &&
-            sourceObject.type != "plane3d"
+            sourceObject.type != "plane3d" &&
+            sourceObject.type != "parametricsurface3d" &&
+            sourceObject.type != "functiongraph3d"
         ) {
             return GMResult.Ok(Unit)
         }
         if (
             sourceObject.type == "polygon3d" ||
             sourceObject.type == "polyhedron3d" ||
-            sourceObject.type == "plane3d"
+            sourceObject.type == "plane3d" ||
+            sourceObject.type == "parametricsurface3d" ||
+            sourceObject.type == "functiongraph3d"
         ) {
             val actual =
                 when (sourceObject.type) {
@@ -4818,7 +5022,12 @@ object JsxGraphEngine {
                     )
                     "polyhedron3d" ->
                         jsonPolyhedron3DMaximumFaceVertexCount(sourceObject)
-                    else -> jsonPlaneMaximumFaceVertexCount(sourceObject)
+                    "plane3d" ->
+                        jsonPlaneMaximumFaceVertexCount(sourceObject)
+                    else ->
+                        jsonSurface3DMaximumFaceVertexCount(
+                            sourceObject.attributes,
+                        )
                 }
             return if (actual > limit) {
                 GMResult.Err(
@@ -5280,6 +5489,10 @@ object JsxGraphEngine {
             is Curve -> listOf(element)
             is Curve3D -> listOf(element.curve2D)
             is Circle3D -> listOf(element.curve.curve2D)
+            is Surface3D -> buildList {
+                add(element.curve2D)
+                element.polyhedron?.faces?.mapTo(this, Face3D::curve2D)
+            }
             is Face3D -> listOf(element.curve2D)
             is Polygon3D -> emptyList()
             is Polyhedron3D -> element.faces.map(Face3D::curve2D)
@@ -5377,6 +5590,7 @@ object JsxGraphEngine {
                         is Face3D -> FACE_3D_ATTRIBUTES
                         is Line3D -> LINE_ATTRIBUTES
                         is Plane3D -> PLANE_3D_ATTRIBUTES
+                        is Surface3D -> SURFACE_3D_ATTRIBUTES
                         is Curve3D -> CURVE_ATTRIBUTES
                         is Circle3D -> CIRCLE_3D_ATTRIBUTES
                         is Polygon3D -> POLYGON_3D_ATTRIBUTES
@@ -5537,7 +5751,7 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
-            if (element is Plane3D) {
+            if (element is Plane3D || element is Surface3D) {
                 when (
                     val result = validateNestedAttributes(
                         name = "mesh3d",
@@ -5679,6 +5893,7 @@ object JsxGraphEngine {
         ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
             val defaultStroke = when (element) {
                 is Line3D -> DEFAULT_LINE_3D_COLOR
+                is Surface3D -> DEFAULT_STROKE_COLOR
                 is Curve3D -> DEFAULT_STROKE_COLOR
                 is Circle3D -> DEFAULT_STROKE_COLOR
                 is Point3D -> DEFAULT_STROKE_COLOR
@@ -5762,6 +5977,7 @@ object JsxGraphEngine {
                     default =
                         when {
                             element is Line3D -> 1.0
+                            element is Surface3D -> 0.75
                             element is Curve3D -> 1.0
                             element is Circle3D -> 1.0
                             element is Face3D -> 1.0
@@ -6130,6 +6346,7 @@ object JsxGraphEngine {
             when (element) {
                 is Face3D -> DEFAULT_FACE_3D_LAYER
                 is Line3D -> DEFAULT_LINE_3D_LAYER
+                is Surface3D -> DEFAULT_CURVE_3D_LAYER
                 is Curve3D -> DEFAULT_CURVE_3D_LAYER
                 is Circle3D -> DEFAULT_CURVE_3D_LAYER
                 is Plane3D -> DEFAULT_CURVE_LAYER
@@ -6438,6 +6655,14 @@ object JsxGraphEngine {
         "polyhedron",
         "colormap",
     )
+    private val SURFACE_3D_ATTRIBUTES = setOf(
+        "type",
+        "tiling",
+        "stepsu",
+        "stepsv",
+        "polyhedron",
+        "colormap",
+    )
     private val ARROW_HEAD_ATTRIBUTES = setOf(
         "type",
         "size",
@@ -6588,6 +6813,24 @@ object JsxGraphEngine {
                 .coerceAtMost(Int.MAX_VALUE.toLong())
                 .toInt()
         }
+        if (
+            creatorName == "parametricsurface3d" ||
+            creatorName == "functiongraph3d"
+        ) {
+            val type = (
+                attributes.properties["type"] as?
+                    JessieCodeRuntimeValue.StringValue
+                )?.value?.lowercase() ?: "wireframe"
+            val childCount =
+                if (type == "wireframe") {
+                    0L
+                } else {
+                    runtimeSurface3DFaceCount(attributes)
+                }
+            return (1L + childCount)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+        }
         if (creatorName == "polyhedron3d") {
             return runtimePolyhedron3DFaceVertexCounts(board, parents)
                 ?.size ?: 0
@@ -6636,6 +6879,24 @@ object JsxGraphEngine {
                     jsonPlaneSurfaceFaceCount(source.attributes)
                 else -> 0L
             }
+            return (1L + childCount)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+        }
+        if (
+            source.type == "parametricsurface3d" ||
+            source.type == "functiongraph3d"
+        ) {
+            val type = (
+                source.attributes["type"] as? JsonPrimitive
+                )?.takeIf(JsonPrimitive::isString)
+                ?.content?.lowercase() ?: "wireframe"
+            val childCount =
+                if (type == "wireframe") {
+                    0L
+                } else {
+                    jsonSurface3DFaceCount(source.attributes)
+                }
             return (1L + childCount)
                 .coerceAtMost(Int.MAX_VALUE.toLong())
                 .toInt()
@@ -6825,6 +7086,26 @@ object JsxGraphEngine {
         )
     }
 
+    private fun runtimeSurface3DFaceCount(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long {
+        val stepsU = runtimeNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsu",
+            default = Surface3D.DEFAULT_STEPS_U,
+        ) ?: return 0L
+        val stepsV = runtimeNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsv",
+            default = Surface3D.DEFAULT_STEPS_V,
+        ) ?: return 0L
+        val tiling = (
+            attributes.properties["tiling"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: "rectangle"
+        return planeSurfaceFaceCount(tiling, stepsU, stepsV)
+    }
+
     private fun runtimePositiveIntegerAttribute(
         attributes: JessieCodeRuntimeValue.ObjectValue,
         name: String,
@@ -6842,6 +7123,26 @@ object JsxGraphEngine {
             number.isFinite() &&
                 integer.toDouble() == number &&
                 integer > 0
+        }
+    }
+
+    private fun runtimeNonNegativeIntegerAttribute(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: Int,
+    ): Int? {
+        val value = attributes.properties[name]
+            ?: return default
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return default
+        }
+        val number = (value as? JessieCodeRuntimeValue.NumberValue)?.value
+            ?: return null
+        val integer = number.toInt()
+        return integer.takeIf {
+            number.isFinite() &&
+                integer.toDouble() == number &&
+                integer >= 0
         }
     }
 
@@ -6929,6 +7230,25 @@ object JsxGraphEngine {
         )
     }
 
+    private fun jsonSurface3DFaceCount(
+        attributes: JsonObject,
+    ): Long {
+        val stepsU = jsonNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsu",
+            default = Surface3D.DEFAULT_STEPS_U,
+        ) ?: return 0L
+        val stepsV = jsonNonNegativeIntegerAttribute(
+            attributes = attributes,
+            name = "stepsv",
+            default = Surface3D.DEFAULT_STEPS_V,
+        ) ?: return 0L
+        val tiling = (
+            attributes["tiling"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content ?: "rectangle"
+        return planeSurfaceFaceCount(tiling, stepsU, stepsV)
+    }
+
     private fun jsonPositiveIntegerAttribute(
         attributes: JsonObject,
         name: String,
@@ -6941,6 +7261,21 @@ object JsxGraphEngine {
             number.isFinite() &&
                 integer.toDouble() == number &&
                 integer > 0
+        }
+    }
+
+    private fun jsonNonNegativeIntegerAttribute(
+        attributes: JsonObject,
+        name: String,
+        default: Int,
+    ): Int? {
+        val number = (attributes[name] as? JsonPrimitive)?.doubleOrNull
+            ?: return if (name in attributes) null else default
+        val integer = number.toInt()
+        return integer.takeIf {
+            number.isFinite() &&
+                integer.toDouble() == number &&
+                integer >= 0
         }
     }
 

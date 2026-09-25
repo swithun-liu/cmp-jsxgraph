@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 87 source-controlled cases: 30 independent production scenarios and
-57 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 88 source-controlled cases: 30 independent production scenarios and
+58 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -36,6 +36,7 @@ Focused direct links remain available for cases such as
 [Polygon3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=polygon3d_projection),
 [Curve3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve3d_projection),
 [Circle3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=circle3d_projection),
+[Surface3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=surface3d_projection),
 [spatial lines and planes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=spatial_lines_planes),
 [Plane3D surfaces](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=plane3d_surfaces),
 [Polyhedron3D faces](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=polyhedron3d_faces),
@@ -153,11 +154,13 @@ Implemented translation slices:
   transformed Points from one Transformation or a chain, and the 4x4
   Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; the
   source-mapped `View3D`, `Point3D`, `Line3D`, Plane3D wireframe and finite
-  surfaces, `Mesh3D`, `Curve3D`, `Circle3D`,
+  surfaces, `Mesh3D`, `Curve3D`, `Circle3D`, `Surface3D`,
+  `FunctionGraph3D`,
   `Axis3D`, `Polygon3D`, `Face3D`, `Polyhedron3D`, and `transform3d` lifecycle from
   `src/3d/element3d.js`,
   `src/3d/view3d.js`, `src/3d/point3d.js`, `src/3d/linspace3d.js`,
   `src/3d/box3d.js`, `src/3d/curve3d.js`, `src/3d/circle3d.js`,
+  `src/3d/surface3d.js`, `src/math/tiling.js`,
   `src/3d/polygon3d.js`, `src/3d/face3d.js`,
   `src/3d/polyhedron3d.js`, and `src/base/transformation.js`, including
   parallel and central projection,
@@ -169,7 +172,9 @@ Implemented translation slices:
   Ticks3D curves and labels, automatic `border`/`none` View3D axes, explicit
   Axes3D scene expansion, direct and transformed Polygon3D and Polyhedron3D
   creation, Curve3D component/vector/discrete/transformed forms, Circle3D
-  numeric/function radius and normal forms, their ordinary Curve proxy rendering,
+  numeric/function radius and normal forms, Surface3D vector/component
+  functions, dynamic ranges, transformed parents, and FunctionGraph3D,
+  together with their ordinary Curve proxy rendering,
   Polygon3D proxy rendering and nested vertex/border styles,
   cyclic/per-face Face3D styling, per-Polyhedron depth ordering, `applyOnce`,
   dependency updates, removal, resource limits, and structured failures;
@@ -244,10 +249,12 @@ Stable contract. The remaining JessieCode creator registry, visual-property
 and function-valued element mutation, Slider/Glider-backed built-ins,
 `import`/`$log`/`D`, the complete element `methodMap`, the remaining
 construction-document element types and attributes, and the complete element
-renderer are not yet translated. The current 3D preview does not yet include
-global View3D `depthOrder`/layer configuration, camera controls, gliders,
-animations, Stable qualification, Curve3D and Circle3D parametric projection
-pending the source-mapped COBYLA dependency, the `surface3d`, `sphere3d`, and
+renderer are not yet translated. The current 3D preview includes bounded
+`surface3d` and `functiongraph3d` wireframe, rectangle/triangle tiling,
+color-array, Shader, and colormap rendering. It does not yet include global
+View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
+Stable qualification, Curve3D, Circle3D, and Surface3D parametric projection
+pending the source-mapped COBYLA dependency, the `sphere3d` and
 `intersectioncircle3d` modules, or the complete 3D APIs.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for

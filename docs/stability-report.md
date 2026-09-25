@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 57 focused cases, but this does not change the
+contains 30 production and 58 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary
@@ -179,6 +179,14 @@ for circle geometry, projected flattening and tilt, color, dash style,
 clipping, overlap, and blank output. This evidence remains outside the Stable
 production corpus; Circle3D parametric projection still awaits the
 source-mapped COBYLA dependency.
+The focused `surface3d_projection` fixture verifies a two-parameter
+FunctionGraph3D wireframe and a Shader-backed triangular ParametricSurface3D
+through ordinary Curve and Face3D proxies. Static captures scored `0.985262`
+on Desktop and `0.985297` on Compact. Both contact sheets passed manual review
+for sampled geometry, NaN-separated wire paths, triangle topology, face
+closure, shading, transparency, overlap, clipping, and blank output. This
+evidence remains outside the Stable production corpus; Surface3D parametric
+projection still awaits the source-mapped COBYLA dependency.
 The focused `spatial_lines_planes` fixture adds same-source Line3D, a finite
 Plane3D outline with its visible Mesh3D wireframe, and Axis3D evidence. Its
 static captures scored `0.987328` on Desktop and `0.975225` on Compact. Both
