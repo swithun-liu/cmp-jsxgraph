@@ -515,6 +515,37 @@ internal open class Circle internal constructor(
             )
         }
 
+        // JSXGraph: src/base/circle.js -> createCircle pointRadius branch.
+        // Used by source-mapped internal factories whose radius function does
+        // not originate from JessieCode.
+        internal fun create(
+            board: Board,
+            center: Point,
+            radiusFunction: () -> Double,
+            nonnegativeOnly: Boolean = false,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Circle, CircleError> {
+            validateParent(board, center, parentIndex = 0)?.let {
+                return GMResult.Err(it)
+            }
+
+            return register(
+                circle = Circle(
+                    board = board,
+                    method = POINT_RADIUS_METHOD,
+                    center = center,
+                    nativeRadiusFunction = radiusFunction,
+                    nonnegativeOnly = nonnegativeOnly,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                ),
+                dependencies = listOf(center),
+            )
+        }
+
         // JSXGraph: src/base/circle.js -> pointRadius / Type.createFunction
         fun create(
             board: Board,

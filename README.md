@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 88 source-controlled cases: 30 independent production scenarios and
-58 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 89 source-controlled cases: 30 independent production scenarios and
+59 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -251,11 +251,14 @@ and function-valued element mutation, Slider/Glider-backed built-ins,
 construction-document element types and attributes, and the complete element
 renderer are not yet translated. The current 3D preview includes bounded
 `surface3d` and `functiongraph3d` wireframe, rectangle/triangle tiling,
-color-array, Shader, and colormap rendering. It does not yet include global
+color-array, Shader, and colormap rendering, plus `sphere3d` Point/Point and
+Point/radius construction with parallel Circle and central Ellipse proxies.
+It does not yet include global
 View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
 Stable qualification, Curve3D, Circle3D, and Surface3D parametric projection
-pending the source-mapped COBYLA dependency, the `sphere3d` and
-`intersectioncircle3d` modules, or the complete 3D APIs.
+pending the source-mapped COBYLA dependency, the `intersectioncircle3d`
+module, runtime Sphere3D projection-mode mutation, radial-gradient rendering,
+or the complete 3D APIs.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

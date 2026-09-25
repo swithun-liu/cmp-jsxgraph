@@ -34,6 +34,7 @@
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
  * src/3d/curve3d.js -> createCurve3D,
  * src/3d/circle3d.js -> createCircle3D,
+ * src/3d/sphere3d.js -> createSphere3D,
  * src/element/arc.js -> createArc / createSemicircle /
  * createCircumcircleArc / createMinorArc / createMajorArc,
  * src/element/sector.js -> createSector / createAngle /
@@ -162,6 +163,8 @@ import com.swithun.jsxgraph.core.base.RadicalAxis
 import com.swithun.jsxgraph.core.base.RadicalAxisError
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.SectorError
+import com.swithun.jsxgraph.core.base.Sphere3D
+import com.swithun.jsxgraph.core.base.Sphere3DError
 import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Surface3DArrayEvaluator
 import com.swithun.jsxgraph.core.base.Surface3DAttributes
@@ -261,6 +264,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Circle3DFactory(
         val error: Circle3DError,
+    ) : JessieCodeCreatorError
+
+    data class Sphere3DFactory(
+        val error: Sphere3DError,
     ) : JessieCodeCreatorError
 
     data class Surface3DFactory(
@@ -514,6 +521,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createCircle3D(board, parents, attributes, location)
+        },
+        "sphere3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createSphere3D(board, parents, attributes, location)
         },
         "parametricsurface3d" to JessieCodeCreator {
                 board,
@@ -4278,6 +4293,285 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = "circle3d",
                 error = JessieCodeCreatorError.Circle3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    // JSXGraph: src/3d/sphere3d.js -> createSphere3D.
+    private fun createSphere3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "sphere3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampleCount = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "numberpointshigh",
+                default = Sphere3D.DEFAULT_SAMPLE_COUNT,
+                minimum = 1,
+                maximum = Sphere3D.MAX_SAMPLE_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val center = when (
+            val result = provideLine3DPoint(
+                board = resolvedBoard,
+                view = view,
+                value = parents[1],
+                attributes = attributes,
+                role = "center",
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val second = parents[2]
+        val pointValue = when (second) {
+            is JessieCodeRuntimeValue.ArrayValue,
+            is JessieCodeRuntimeValue.ElementReference,
+            is JessieCodeRuntimeValue.StringValue,
+            -> resolveSphere3DPointValue(
+                board = resolvedBoard,
+                value = second,
+            )
+            is JessieCodeRuntimeValue.FunctionValue ->
+                when (
+                    val result = second.externalCallable.call(
+                        arguments = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok ->
+                        if (
+                            result.value is
+                                JessieCodeRuntimeValue.ArrayValue
+                        ) {
+                            second
+                        } else {
+                            null
+                        }
+                    is GMResult.Err -> {
+                        discardProvidedPoint3D(resolvedBoard, center)
+                        return failure(
+                            creatorName = creatorName,
+                            error =
+                                JessieCodeCreatorError.InvalidAttributeType(
+                                    attribute = "point or radius",
+                                    expected =
+                                        "Point3D, coordinate array, " +
+                                            "number, function, or " +
+                                            "JessieCode expression",
+                                    actual = result.error.toString(),
+                                ),
+                            location = location,
+                        )
+                    }
+                }
+            else -> null
+        }
+        if (pointValue != null) {
+            val point = when (
+                val result = provideLine3DPoint(
+                    board = resolvedBoard,
+                    view = view,
+                    value = pointValue,
+                    attributes = attributes,
+                    role = "point",
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    discardProvidedPoint3D(resolvedBoard, center)
+                    return result
+                }
+            }
+            val result = Sphere3D.create(
+                view = view,
+                center = center.point,
+                point2 = point.point,
+                ownsCenter = center.owned,
+                ownsPoint2 = point.owned,
+                sampleCount = sampleCount,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+            if (result is GMResult.Err) {
+                discardProvidedPoint3D(resolvedBoard, center)
+                discardProvidedPoint3D(resolvedBoard, point)
+            }
+            return sphere3DResult(result, location)
+        }
+
+        val radius = when (
+            val result = sphere3DRadius(
+                board = resolvedBoard,
+                value = second,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                discardProvidedPoint3D(resolvedBoard, center)
+                return result
+            }
+        }
+        val result = Sphere3D.create(
+            view = view,
+            center = center.point,
+            radiusSource = radius.source,
+            ownsCenter = center.owned,
+            radiusDependencies = radius.dependencies,
+            sampleCount = sampleCount,
+            id = identity.id,
+            name = identity.name,
+            needsRegularUpdate = identity.needsRegularUpdate,
+        )
+        if (result is GMResult.Err) {
+            discardProvidedPoint3D(resolvedBoard, center)
+        }
+        return sphere3DResult(result, location)
+    }
+
+    private fun resolveSphere3DPointValue(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+    ): JessieCodeRuntimeValue? =
+        when (value) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                if (value.values.size >= 3) value else null
+            is JessieCodeRuntimeValue.ElementReference ->
+                if (value.element is Point3D) value else null
+            is JessieCodeRuntimeValue.StringValue ->
+                if (board.select(value.value) is Point3D) value else null
+            else -> null
+        }
+
+    private fun sphere3DRadius(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedSphere3DRadius, JessieCodeRuntimeError> {
+        if (value is JessieCodeRuntimeValue.StringValue) {
+            val expression = when (
+                val result = JessieCodeExpressionFunction.compile(
+                    source = value.value,
+                    board = board,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return failure(
+                    creatorName = "sphere3d",
+                    error = JessieCodeCreatorError.InvalidAttributeType(
+                        attribute = "radius",
+                        expected = "valid JessieCode expression",
+                        actual = result.error.toString(),
+                    ),
+                    location = location,
+                )
+            }
+            return GMResult.Ok(
+                ParsedSphere3DRadius(
+                    source = Line3DCoordinateValue.Dynamic(
+                        Line3DScalarEvaluator {
+                            sphere3DRadiusResult(expression.evaluate())
+                        },
+                    ),
+                    dependencies = expression.dependencies.values.toList(),
+                ),
+            )
+        }
+        val source = when (
+            val result = line3DCoordinateValue(
+                value = value,
+                attribute = "radius",
+                location = location,
+                creatorName = "sphere3d",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ParsedSphere3DRadius(
+                source = source,
+                dependencies =
+                    (value as? JessieCodeRuntimeValue.FunctionValue)
+                        ?.dependencies
+                        ?.values
+                        ?.toList()
+                        ?: emptyList(),
+            ),
+        )
+    }
+
+    private fun sphere3DRadiusResult(
+        result: GMResult<
+            JessieCodeRuntimeValue,
+            JessieCodeRuntimeError,
+            >,
+    ): GMResult<Double, Line3DDynamicError> =
+        when (result) {
+            is GMResult.Err -> GMResult.Err(
+                Line3DDynamicError.Rejected(result.error.toString()),
+            )
+            is GMResult.Ok -> {
+                val number = result.value as?
+                    JessieCodeRuntimeValue.NumberValue
+                if (number == null) {
+                    GMResult.Err(
+                        Line3DDynamicError.Rejected(
+                            "Expected number, got ${typeName(result.value)}",
+                        ),
+                    )
+                } else {
+                    GMResult.Ok(number.value)
+                }
+            }
+        }
+
+    private fun sphere3DResult(
+        result: GMResult<Sphere3D, Sphere3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "sphere3d",
+                error = JessieCodeCreatorError.Sphere3DFactory(
                     result.error,
                 ),
                 location = location,
@@ -13749,6 +14043,11 @@ internal object NativeJessieCodeCreators {
 
     private data class ParsedLine3DDirection(
         val source: Line3DDirectionSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedSphere3DRadius(
+        val source: Line3DCoordinateValue,
         val dependencies: List<GeometryElement>,
     )
 

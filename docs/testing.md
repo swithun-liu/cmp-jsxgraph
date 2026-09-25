@@ -135,6 +135,20 @@ radius parents, absolute-value radius behavior, dynamic frame
 recalculation, the owned Curve3D parent, and `NaN` proxy coordinates after an
 invalid dynamic radius.
 
+Capture the official Sphere3D Point/Point and Point/radius forms, dynamic
+absolute radius, parallel Circle proxy, central Ellipse proxy, auxiliary
+Points, and analytic coordinate projection:
+
+```bash
+node tools/upstream-fixtures/sphere3d.mjs
+```
+
+The fixture records object type `40`, `pointRadius` and `twoPoints` methods,
+live radius updates, Circle and Curve/Ellipse proxy types, the three central
+projection auxiliary Points, parent metadata, and the projected coordinate
+and parameter values. The browser produces the complete JSON evidence before
+the local sandbox rejects Chrome Crashpad shutdown access.
+
 Capture the official Surface3D vector/component functions, FunctionGraph3D
 wrapper, dynamic ranges, wireframe separators, and rectangle topology:
 
@@ -1185,8 +1199,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 88 cases:
-30 generated production scenarios followed by 58 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 89 cases:
+30 generated production scenarios followed by 59 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1211,6 +1225,9 @@ elements, including nested vertex and border styles.
 The focused `circle3d_projection` case uses one construction document for
 numeric and function-valued Circle3D radii and normals through the ordinary
 Curve3D/Curve proxy chain.
+The focused `sphere3d_projection` case uses one JessieCode source for
+Point/radius Sphere3D instances in parallel and central View3D projections
+through ordinary Circle and Ellipse proxies.
 The focused `surface3d_projection` case uses one JessieCode source for a
 FunctionGraph3D wireframe and a Shader-backed triangular ParametricSurface3D
 expanded through ordinary Curve and Face3D proxies.
@@ -1296,6 +1313,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `point3d_projection` | 0.986505 | 0.972805 |
 | `polygon3d_projection` | 0.988028 | 0.982365 |
 | `circle3d_projection` | 0.988886 | 0.985882 |
+| `sphere3d_projection` | 0.988869 | 0.985957 |
 | `surface3d_projection` | 0.985262 | 0.985297 |
 | `spatial_lines_planes` | 0.987328 | 0.975225 |
 | `plane3d_surfaces` | 0.987317 | 0.984636 |
@@ -1635,6 +1653,15 @@ review for circle geometry, projected flattening and tilt, color, dash style,
 clipping, overlap, and blank output. Parametric point projection remains
 pending the same source-mapped COBYLA dependency. This is a focused preview
 outside the 30-case Stable corpus.
+The Sphere3D capture verifies dynamic absolute radius evaluation and the
+parallel Circle versus central Ellipse projection branches from one source.
+The source explicitly sets `gradient: "none"` so the current flat Compose
+fill is compared to the same official rendering. Desktop `1200 x 900` and
+Compact `390 x 844` captures scored `0.988869` and `0.985957`. Both contact
+sheets passed manual review for geometry, fill, border, placement, clipping,
+overlap, and blank output. Runtime projection-mode mutation and the official
+radial gradient remain pending. This is a focused preview outside the
+30-case Stable corpus.
 The same upstream lifecycle fixture now records Line3D two-Point,
 point/direction/range, copied-direction, transformed, coordinate-projection,
 and screen-projection behavior; Plane3D finite, three-Point, transformed,
@@ -1684,9 +1711,9 @@ FunctionGraph3D wireframe, NaN-separated row/column paths, triangular tiling,
 ordering. It scored `0.985262` on Desktop and `0.985297` on Compact; both
 contact sheets passed manual review for geometry, topology, face closure,
 shading, transparency, overlap, clipping, and blank output.
-Together with the Polygon3D, Curve3D, Circle3D, and Surface3D fixtures, the
-development corpus now contains 88 cases while the independently qualified 30-case Stable
-corpus remains unchanged.
+Together with the Polygon3D, Curve3D, Circle3D, Sphere3D, and Surface3D
+fixtures, the development corpus now contains 89 cases while the
+independently qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous
 normalization, and non-draggable constrained Points. After dragging the shared

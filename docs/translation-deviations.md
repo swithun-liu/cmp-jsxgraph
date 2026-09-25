@@ -869,13 +869,14 @@ practical.
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
   registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe
-  and finite surface, `curve3d`, `circle3d`, `surface3d`,
+  and finite surface, `curve3d`, `circle3d`, `sphere3d`, `surface3d`,
   `functiongraph3d`, `mesh3d`, `axis3d`, `polygon3d`, `polyhedron3d`, and
   `transform3d` creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
   property access that the baseline does not expose. Camera controls, Point3D
-  gliders and animations, `sphere3d`, `intersectioncircle3d`, Surface3D
-  parametric projection, and the remaining 3D APIs are still pending.
+  gliders and animations, runtime Sphere3D projection-mode mutation,
+  `intersectioncircle3d`, Surface3D parametric projection, and the remaining
+  3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
@@ -1169,9 +1170,21 @@ practical.
   is singular. JSXGraph `1.13.3` throws from `Numerics.Gauss`.
 - `Geometry.meetPlaneSphere` and `Geometry.meetSphereSphere` return a numeric
   `Circle3DIntersection` snapshot. JSXGraph returns element-bound functions
-  that recalculate center and radius; the future Sphere3D and
-  `intersectioncircle3d` layer will provide that dynamic wrapper around these
-  pure calculations.
+  that recalculate center and radius; the pending `intersectioncircle3d`
+  layer will provide that dynamic wrapper around these pure calculations.
+- Sphere3D's parallel proxy uses an internal Kotlin radius closure instead of
+  passing a JavaScript function through `Type.createFunction`; it preserves
+  dynamic absolute-radius evaluation and dependency updates without a JS
+  runtime. Central-projection focus, inner-vertex, Ellipse, and auxiliary
+  Point closures are translated directly.
+- Implicit central-projection Points are owned by the Sphere3D and excluded
+  from the Ellipse's serialized parent list so Board removal can clean the
+  complete proxy atomically. JSXGraph retains the three auxiliary Point IDs
+  in the Ellipse proxy's `parents` array.
+- The scene model currently renders Sphere3D fills as flat colors. It accepts
+  `gradient` metadata for source compatibility, but the official radial
+  gradient and runtime switching between parallel and central projections
+  remain explicit follow-up work.
 - `Geometry.reuleauxPolygon` accepts a positive odd `Int` vertex count and
   returns `GMResult.Err` for even/non-positive counts or too few points.
   JSXGraph accepts a dynamic number and fails later while indexing for
