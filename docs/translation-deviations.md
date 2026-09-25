@@ -811,6 +811,16 @@ practical.
   bounded Curve point, surface vertex, or surface face budgets before entering
   the sampling loops; upstream JavaScript can instead loop indefinitely or
   exhaust memory.
+- IntersectionLine3D preserves
+  `src/3d/linspace3d.js -> createIntersectionLine3D` and the Plane/Plane
+  branch of `src/math/geometry.js -> intersectionFunction3D`. JSXGraph
+  `1.13.3` computes the two View3D-clipped endpoint arrays once during
+  creation; later Plane updates do not recompute them. Kotlin preserves that
+  snapshot behavior, hidden owned Point3D definitions, Line3D proxy,
+  canonical parent metadata, dependency removal, and rollback. A parallel or
+  out-of-view intersection returns
+  `GMResult.Err(IntersectionLine3DError.MissingEndpoint)` instead of passing
+  JavaScript `false` into Point3D creation.
 - Face3D preserves the shared Polyhedron vertex maps, face closure rule,
   normals, projected coordinates, averaged `zIndex`, cyclic
   `fillColorArray`, per-face overrides, HSL angle/depth shaders, and ordinary
@@ -875,8 +885,9 @@ practical.
 - JSXGraph `1.13.3` leaves both
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
-  registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe
-  and finite surface, `curve3d`, `circle3d`, `intersectioncircle3d`,
+  registers the upstream `view3d`, `point3d`, `line3d`,
+  `intersectionline3d`, `plane3d` wireframe and finite surface, `curve3d`,
+  `circle3d`, `intersectioncircle3d`,
   `sphere3d`, `surface3d`,
   `functiongraph3d`, `mesh3d`, `axis3d`, `polygon3d`, `polyhedron3d`, and
   `transform3d` creator routes but

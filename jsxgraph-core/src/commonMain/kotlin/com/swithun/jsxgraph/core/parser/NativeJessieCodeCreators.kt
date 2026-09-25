@@ -26,7 +26,8 @@
  * src/base/text.js -> createText,
  * src/base/transformation.js -> createTransform,
  * src/3d/point3d.js -> createPoint3D,
- * src/3d/linspace3d.js -> createLine3D / createPlane3D,
+ * src/3d/linspace3d.js -> createLine3D / createIntersectionLine3D /
+ * createPlane3D,
  * src/3d/box3d.js -> createAxis3D,
  * src/3d/ticks3d.js -> createTicks3D,
  * src/3d/text3d.js -> createText3D,
@@ -100,6 +101,9 @@ import com.swithun.jsxgraph.core.base.IncenterPoint
 import com.swithun.jsxgraph.core.base.IncircleCircle
 import com.swithun.jsxgraph.core.base.IntersectionCircle3D
 import com.swithun.jsxgraph.core.base.IntersectionCircle3DError
+import com.swithun.jsxgraph.core.base.IntersectionLine3D
+import com.swithun.jsxgraph.core.base.IntersectionLine3DError
+import com.swithun.jsxgraph.core.base.IntersectionLine3DPointAttributes
 import com.swithun.jsxgraph.core.base.IntersectionError
 import com.swithun.jsxgraph.core.base.IntersectionIndexSource
 import com.swithun.jsxgraph.core.base.IntersectionPoint
@@ -239,6 +243,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Line3DFactory(
         val error: Line3DError,
+    ) : JessieCodeCreatorError
+
+    data class IntersectionLine3DFactory(
+        val error: IntersectionLine3DError,
     ) : JessieCodeCreatorError
 
     data class Axes3DFactory(
@@ -442,6 +450,19 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createLine3D(board, parents, attributes, location)
+        },
+        "intersectionline3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createIntersectionLine3D(
+                board,
+                parents,
+                attributes,
+                location,
+            )
         },
         "axis3d" to JessieCodeCreator {
                 board,
@@ -3230,6 +3251,140 @@ internal object NativeJessieCodeCreators {
             board.removeObject(point.point)
         }
     }
+
+    // JSXGraph: src/3d/linspace3d.js -> createIntersectionLine3D.
+    private fun createIntersectionLine3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "intersectionline3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val first = resolveElement(
+            resolvedBoard,
+            parents[1],
+        ) as? GeometryElement3D
+            ?: return unsupported(creatorName, parents, location)
+        val second = resolveElement(
+            resolvedBoard,
+            parents[2],
+        ) as? GeometryElement3D
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "fixed",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point1Attributes = when (
+            val result = intersectionLine3DPointAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "point1",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point2Attributes = when (
+            val result = intersectionLine3DPointAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "point2",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return intersectionLine3DResult(
+            result = IntersectionLine3D.create(
+                view = view,
+                first = first,
+                second = second,
+                point1Attributes = point1Attributes,
+                point2Attributes = point2Attributes,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            ),
+            location = location,
+        )
+    }
+
+    private fun intersectionLine3DPointAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<
+        IntersectionLine3DPointAttributes,
+        JessieCodeRuntimeError,
+        > =
+        when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = name,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                IntersectionLine3DPointAttributes(
+                    id = result.value.id,
+                    name = result.value.name,
+                    needsRegularUpdate =
+                        result.value.needsRegularUpdate,
+                    fixed = result.value.fixed,
+                ),
+            )
+            is GMResult.Err -> result
+        }
+
+    private fun intersectionLine3DResult(
+        result: GMResult<Line3D, IntersectionLine3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "intersectionline3d",
+                error =
+                    JessieCodeCreatorError.IntersectionLine3DFactory(
+                        result.error,
+                    ),
+                location = location,
+            )
+        }
 
     // JSXGraph: src/3d/polygon3d.js -> createPolygon3D.
     private fun createPolygon3D(

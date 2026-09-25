@@ -43,8 +43,8 @@ qualification batches pass.
   translate, three- and four-parameter scale, rotate/rotateX/rotateY/rotateZ,
   affine, affinematrix, generic, and matrix forms with scalar, vector,
   JessieCode, and structured dynamic evaluation.
-- View3D, Point3D, Line3D, Plane3D wireframe and finite surfaces, Mesh3D,
-  Curve3D, Circle3D,
+- View3D, Point3D, Line3D, IntersectionLine3D, Plane3D wireframe and finite
+  surfaces, Mesh3D, Curve3D, Circle3D,
   Axis3D, Polygon3D, Face3D, and Polyhedron3D: the bounded lifecycle from
   `src/3d/element3d.js`,
   `src/3d/view3d.js`, `src/3d/point3d.js`, `src/3d/linspace3d.js`,
@@ -76,8 +76,8 @@ qualification batches pass.
   lifecycle fixtures and focused JVM tests pass. Point3D has focused static
   plus proxy-drag visual parity; Line3D, finite Plane3D with its visible
   Mesh3D, Plane3D surface modes, Axis3D, automatic border axes, Polygon3D,
-  Curve3D, Circle3D, IntersectionCircle3D, Sphere3D, Surface3D, and
-  Polyhedron3D have focused
+  Curve3D, Circle3D, IntersectionLine3D, IntersectionCircle3D, Sphere3D,
+  Surface3D, and Polyhedron3D have focused
   Desktop/Compact static parity.
 - Still pending around transforms and 3D: transformed Text/Image and general
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`

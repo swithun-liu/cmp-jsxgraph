@@ -48,7 +48,8 @@ binding, update/removal, structured-error, official-fixture, and focused JVM
 evidence. Point3D additionally has drag and `applyOnce` parity evidence;
 Line3D, finite Plane3D outlines with visible Mesh3D wireframes, finite
 Plane3D rectangle/triangle surfaces with cyclic colors, HSL shaders, and
-height colormaps, Curve3D, Circle3D, Axis3D, Polygon3D, and Polyhedron3D have focused
+height colormaps, Curve3D, Circle3D, IntersectionLine3D, Axis3D, Polygon3D,
+and Polyhedron3D have focused
 Desktop/Compact static parity evidence. Text3D, Ticks3D, explicit Axes3D scene expansion, and
 automatic `center`/`border`/`none` View3D axes now have bounded JSON/JessieCode
 creation and resource accounting.
@@ -64,7 +65,11 @@ functions, discrete matrices, and transformed parents through an ordinary
 Curve proxy with bounded sampling. Circle3D accepts dynamic center, normal,
 frame, and radius inputs through an owned Curve3D/Curve proxy.
 IntersectionCircle3D supports Plane/Sphere in either order and Sphere/Sphere
-through a hidden dynamic center and the same bounded proxy lifecycle. Sphere3D
+through a hidden dynamic center and the same bounded proxy lifecycle.
+IntersectionLine3D supports Plane/Plane construction through two hidden owned
+Point3D definitions and a Line3D proxy. It preserves JSXGraph `1.13.3`'s
+creation-time View3D clipping snapshot, canonical parent dependencies,
+removal, rollback, and structured missing-intersection failure. Sphere3D
 accepts Point/Point and Point/radius parents, dynamic absolute radii, analytic
 coordinate projection, parallel Circle or central Ellipse proxies, and
 runtime projection-mode switching with complete owned-proxy cleanup. Its

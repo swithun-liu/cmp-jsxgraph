@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **57 development parity scenarios.** These remain focused regression
+3. **61 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 60 focused cases, but this does not change the
+contains 30 production and 61 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary
@@ -187,6 +187,15 @@ evidence for disjoint-result hiding, parent dependencies, and object type
 Both contact sheets passed manual review for projected geometry, color, dash
 style, placement, clipping, overlap, and blank output. This evidence remains
 outside the Stable production corpus.
+The focused `intersectionline3d_projection` fixture verifies two Plane/Plane
+intersections through hidden owned Point3D definitions and ordinary Line3D
+proxies. The official lifecycle fixture additionally records object type
+`39`, exact View3D-clipped endpoints, canonical parent dependencies, and the
+creation-time snapshot behavior of JSXGraph `1.13.3`. Static captures scored
+`0.989049` on Desktop and `0.986102` on Compact. Both contact sheets passed
+manual review for endpoint placement, line geometry, color, dash style,
+clipping, overlap, and blank output. This evidence remains outside the Stable
+production corpus.
 The focused `sphere3d_projection` fixture verifies Point/radius Sphere3D
 construction in parallel and central View3D instances through ordinary
 Circle and Ellipse proxies. The source exercises the official default radial

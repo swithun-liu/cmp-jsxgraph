@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 90 source-controlled cases: 30 independent production scenarios and
-60 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 91 source-controlled cases: 30 independent production scenarios and
+61 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -37,6 +37,7 @@ Focused direct links remain available for cases such as
 [Curve3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve3d_projection),
 [Circle3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=circle3d_projection),
 [IntersectionCircle3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=intersectioncircle3d_projection),
+[IntersectionLine3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=intersectionline3d_projection),
 [Surface3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=surface3d_projection),
 [spatial lines and planes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=spatial_lines_planes),
 [Plane3D surfaces](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=plane3d_surfaces),
@@ -154,8 +155,9 @@ Implemented translation slices:
   2D Transformation creation through JessieCode or construction documents,
   transformed Points from one Transformation or a chain, and the 4x4
   Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; the
-  source-mapped `View3D`, `Point3D`, `Line3D`, Plane3D wireframe and finite
-  surfaces, `Mesh3D`, `Curve3D`, `Circle3D`, `IntersectionCircle3D`,
+  source-mapped `View3D`, `Point3D`, `Line3D`, `IntersectionLine3D`, Plane3D
+  wireframe and finite surfaces, `Mesh3D`, `Curve3D`, `Circle3D`,
+  `IntersectionCircle3D`,
   `Sphere3D`, `Surface3D`,
   `FunctionGraph3D`,
   `Axis3D`, `Polygon3D`, `Face3D`, `Polyhedron3D`, and `transform3d` lifecycle from
@@ -174,8 +176,9 @@ Implemented translation slices:
   Ticks3D curves and labels, automatic `border`/`none` View3D axes, explicit
   Axes3D scene expansion, direct and transformed Polygon3D and Polyhedron3D
   creation, Curve3D component/vector/discrete/transformed forms, Circle3D
-  numeric/function radius and normal forms, Plane/Sphere and Sphere/Sphere
-  IntersectionCircle3D forms, Sphere3D Point/Point and Point/radius forms,
+  numeric/function radius and normal forms, Plane/Plane IntersectionLine3D,
+  Plane/Sphere and Sphere/Sphere IntersectionCircle3D forms, Sphere3D
+  Point/Point and Point/radius forms,
   Surface3D vector/component
   functions, dynamic ranges, transformed parents, and FunctionGraph3D,
   together with their ordinary Curve proxy rendering,
