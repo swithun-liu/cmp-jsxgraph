@@ -64,6 +64,41 @@ data class JsxGraphColor(
     }
 }
 
+/**
+ * Platform-independent fill-gradient parameters.
+ *
+ * JSXGraph 1.13.3: src/options.js -> gradient*;
+ * src/renderer/svg.js -> updateGradient, updateGradientAngle,
+ * updateGradientCircle.
+ */
+sealed interface JsxGraphFillGradient {
+    val secondColor: JsxGraphColor
+    val secondOpacity: Double
+    val startOffset: Double
+    val endOffset: Double
+
+    data class Linear(
+        override val secondColor: JsxGraphColor,
+        override val secondOpacity: Double,
+        override val startOffset: Double,
+        override val endOffset: Double,
+        val angle: Double,
+    ) : JsxGraphFillGradient
+
+    data class Radial(
+        override val secondColor: JsxGraphColor,
+        override val secondOpacity: Double,
+        override val startOffset: Double,
+        override val endOffset: Double,
+        val centerX: Double,
+        val centerY: Double,
+        val radius: Double,
+        val focalX: Double,
+        val focalY: Double,
+        val focalRadius: Double,
+    ) : JsxGraphFillGradient
+}
+
 data class JsxGraphElementStyle(
     val visible: Boolean,
     val strokeColor: JsxGraphColor,
@@ -77,6 +112,7 @@ data class JsxGraphElementStyle(
     // src/renderer/canvas.js -> _stroke.
     // Values are resolved CSS-pixel dash and gap lengths.
     val strokeDashPattern: List<Double> = emptyList(),
+    val fillGradient: JsxGraphFillGradient? = null,
 )
 
 /**

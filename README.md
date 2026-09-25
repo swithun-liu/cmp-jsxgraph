@@ -258,10 +258,12 @@ renderer are not yet translated. The current 3D preview includes bounded
 color-array, Shader, and colormap rendering, plus `sphere3d` Point/Point and
 Point/radius construction with parallel Circle and central Ellipse proxies.
 View3D projection values can be reevaluated dynamically, and Sphere3D
-atomically rebuilds its proxy when the mode changes.
+atomically rebuilds its proxy when the mode changes. Sphere3D also carries
+the official static linear/radial fill-gradient parameters through the scene
+and renders the default off-center radial gradient on Compose Canvas.
 It does not yet include global
 View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
-Stable qualification, radial-gradient rendering, or the complete 3D APIs.
+Stable qualification, or the complete 3D APIs.
 Curve3D, Circle3D, and
 Surface3D parametric projection now use the source-mapped
 `src/math/nlp.js -> Nlp.FindMinimum` COBYLA translation.

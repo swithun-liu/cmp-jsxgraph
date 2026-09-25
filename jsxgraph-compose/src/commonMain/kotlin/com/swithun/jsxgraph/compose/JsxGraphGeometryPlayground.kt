@@ -43,8 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathEffect
@@ -65,6 +69,8 @@ import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.JsxGraphColor
+import com.swithun.jsxgraph.core.JsxGraphElementStyle
+import com.swithun.jsxgraph.core.JsxGraphFillGradient
 import com.swithun.jsxgraph.core.JsxGraphInteractionError
 import com.swithun.jsxgraph.core.JsxGraphInteractionState
 import com.swithun.jsxgraph.core.JsxGraphJessieCodeSession
@@ -75,6 +81,8 @@ import com.swithun.jsxgraph.core.JsxGraphSession
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.max
@@ -794,14 +802,26 @@ private fun DrawScope.drawSceneCircle(
     val radiusY = circle.radius.toFloat() * metrics.scaleY
     val topLeft = Offset(center.x - radiusX, center.y - radiusY)
     val ellipseSize = Size(radiusX * 2.0f, radiusY * 2.0f)
-    val fill = circle.style.fillColor.toComposeColor(
-        opacity = circle.style.fillOpacity,
-    )
-    if (fill.alpha > 0.0f) {
-        drawOval(
-            color = fill,
-            topLeft = topLeft,
-            size = ellipseSize,
+    val bounds = Rect(offset = topLeft, size = ellipseSize)
+    if (circle.style.fillGradient == null) {
+        val fill = circle.style.fillColor.toComposeColor(
+            opacity = circle.style.fillOpacity,
+        )
+        if (fill.alpha > 0.0f) {
+            drawOval(
+                color = fill,
+                topLeft = topLeft,
+                size = ellipseSize,
+            )
+        }
+    } else {
+        val path = Path().apply {
+            addOval(bounds)
+        }
+        drawSceneFill(
+            path = path,
+            bounds = bounds,
+            style = circle.style,
         )
     }
     val stroke = circle.style.strokeColor.toComposeColor(
@@ -856,13 +876,11 @@ private fun DrawScope.drawSceneCurve(
             }
         }
     }
-    val fill = curve.style.fillColor.toComposeColor(
-        opacity = curve.style.fillOpacity,
-    )
-    if (segmentCount > 0 && fill.alpha > 0.0f) {
-        drawPath(
+    if (segmentCount > 0) {
+        drawSceneFill(
             path = path,
-            color = fill,
+            bounds = path.getBounds(),
+            style = curve.style,
         )
     }
     val stroke = curve.style.strokeColor.toComposeColor(
@@ -883,6 +901,213 @@ private fun DrawScope.drawSceneCurve(
             ),
         )
     }
+}
+
+// JSXGraph 1.13.3: src/renderer/svg.js -> updateGradient,
+// updateGradientAngle, updateGradientCircle. Compose has no portable
+// two-circle radial shader, so radial contours are rasterized into an
+// isolated layer while retaining SVG objectBoundingBox geometry.
+private fun DrawScope.drawSceneFill(
+    path: Path,
+    bounds: Rect,
+    style: JsxGraphElementStyle,
+) {
+    val gradient = style.fillGradient
+    if (
+        gradient == null ||
+        bounds.width <= 0.0f ||
+        bounds.height <= 0.0f ||
+        !bounds.left.isFinite() ||
+        !bounds.top.isFinite() ||
+        !bounds.right.isFinite() ||
+        !bounds.bottom.isFinite()
+    ) {
+        val fill = style.fillColor.toComposeColor(style.fillOpacity)
+        if (fill.alpha > 0.0f) {
+            drawPath(path = path, color = fill)
+        }
+        return
+    }
+
+    val colors = gradientStopColors(style, gradient)
+    if (colors.first.alpha <= 0.0f && colors.second.alpha <= 0.0f) {
+        return
+    }
+    when (gradient) {
+        is JsxGraphFillGradient.Linear -> {
+            val geometry = linearGradientGeometry(
+                bounds = bounds,
+                angle = gradient.angle,
+            )
+            drawPath(
+                path = path,
+                brush = Brush.linearGradient(
+                    gradient.startOffset.toFloat() to colors.first,
+                    gradient.endOffset
+                        .coerceAtLeast(gradient.startOffset)
+                        .toFloat() to colors.second,
+                    start = geometry.start,
+                    end = geometry.end,
+                ),
+            )
+        }
+        is JsxGraphFillGradient.Radial ->
+            drawRadialGradient(
+                path = path,
+                bounds = bounds,
+                style = style,
+                gradient = gradient,
+                edgeColor = colors.second,
+            )
+    }
+}
+
+private fun DrawScope.drawRadialGradient(
+    path: Path,
+    bounds: Rect,
+    style: JsxGraphElementStyle,
+    gradient: JsxGraphFillGradient.Radial,
+    edgeColor: Color,
+) {
+    val steps = radialGradientStepCount(bounds)
+    drawContext.canvas.saveLayer(bounds, Paint())
+    try {
+        drawContext.canvas.clipPath(path)
+        drawPath(
+            path = path,
+            color = edgeColor,
+            blendMode = BlendMode.Src,
+        )
+        for (index in steps downTo 0) {
+            val progress = index.toFloat() / steps
+            val contour = radialGradientContour(
+                bounds = bounds,
+                gradient = gradient,
+                progress = progress,
+            )
+            if (contour.radiusX <= 0.0f || contour.radiusY <= 0.0f) {
+                continue
+            }
+            drawOval(
+                color = gradientColorAt(
+                    style = style,
+                    gradient = gradient,
+                    position = progress,
+                ),
+                topLeft = Offset(
+                    x = contour.center.x - contour.radiusX,
+                    y = contour.center.y - contour.radiusY,
+                ),
+                size = Size(
+                    width = contour.radiusX * 2.0f,
+                    height = contour.radiusY * 2.0f,
+                ),
+                blendMode = BlendMode.Src,
+            )
+        }
+    } finally {
+        drawContext.canvas.restore()
+    }
+}
+
+internal data class LinearGradientGeometry(
+    val start: Offset,
+    val end: Offset,
+)
+
+internal fun linearGradientGeometry(
+    bounds: Rect,
+    angle: Double,
+): LinearGradientGeometry {
+    val cosine = cos(angle)
+    val sine = sin(angle)
+    val factor = 1.0 / max(abs(cosine), abs(sine))
+    val startX = if (cosine >= 0.0) 0.0 else -cosine * factor
+    val endX = if (cosine >= 0.0) cosine * factor else 0.0
+    val startY = if (sine >= 0.0) 0.0 else -sine * factor
+    val endY = if (sine >= 0.0) sine * factor else 0.0
+    return LinearGradientGeometry(
+        start = Offset(
+            x = bounds.left + bounds.width * startX.toFloat(),
+            y = bounds.top + bounds.height * startY.toFloat(),
+        ),
+        end = Offset(
+            x = bounds.left + bounds.width * endX.toFloat(),
+            y = bounds.top + bounds.height * endY.toFloat(),
+        ),
+    )
+}
+
+internal data class RadialGradientContour(
+    val center: Offset,
+    val radiusX: Float,
+    val radiusY: Float,
+)
+
+internal fun radialGradientContour(
+    bounds: Rect,
+    gradient: JsxGraphFillGradient.Radial,
+    progress: Float,
+): RadialGradientContour {
+    val t = progress.coerceIn(0.0f, 1.0f)
+    val centerX = gradient.focalX +
+        (gradient.centerX - gradient.focalX) * t
+    val centerY = gradient.focalY +
+        (gradient.centerY - gradient.focalY) * t
+    val radius = gradient.focalRadius +
+        (gradient.radius - gradient.focalRadius) * t
+    return RadialGradientContour(
+        center = Offset(
+            x = bounds.left + bounds.width * centerX.toFloat(),
+            y = bounds.top + bounds.height * centerY.toFloat(),
+        ),
+        radiusX = bounds.width * radius.toFloat(),
+        radiusY = bounds.height * radius.toFloat(),
+    )
+}
+
+internal fun radialGradientStepCount(bounds: Rect): Int =
+    ceil(max(bounds.width, bounds.height).toDouble())
+        .toInt()
+        .coerceIn(256, 1024)
+
+internal fun gradientStopColors(
+    style: JsxGraphElementStyle,
+    gradient: JsxGraphFillGradient,
+): Pair<Color, Color> =
+    style.fillColor.toComposeColor(
+        // SVG assigns fillOpacity both to the first stop and to the element.
+        opacity = style.fillOpacity * style.fillOpacity,
+    ) to gradient.secondColor.toComposeColor(
+        opacity = style.fillOpacity * gradient.secondOpacity,
+    )
+
+internal fun gradientColorAt(
+    style: JsxGraphElementStyle,
+    gradient: JsxGraphFillGradient,
+    position: Float,
+): Color {
+    val colors = gradientStopColors(style, gradient)
+    val start = gradient.startOffset.toFloat()
+    val end = gradient.endOffset
+        .coerceAtLeast(gradient.startOffset)
+        .toFloat()
+    val fraction = when {
+        position < start -> 0.0f
+        position >= end -> 1.0f
+        end == start -> 1.0f
+        else -> (position - start) / (end - start)
+    }
+    return Color(
+        red = colors.first.red +
+            (colors.second.red - colors.first.red) * fraction,
+        green = colors.first.green +
+            (colors.second.green - colors.first.green) * fraction,
+        blue = colors.first.blue +
+            (colors.second.blue - colors.first.blue) * fraction,
+        alpha = colors.first.alpha +
+            (colors.second.alpha - colors.first.alpha) * fraction,
+    )
 }
 
 internal fun curveScreenPoints(
@@ -1116,7 +1341,7 @@ internal fun textTopLeft(
 private fun com.swithun.jsxgraph.core.JsxGraphPoint2D.toOffset(): Offset =
     Offset(x.toFloat(), y.toFloat())
 
-private fun JsxGraphColor.toComposeColor(
+internal fun JsxGraphColor.toComposeColor(
     opacity: Double,
 ): Color =
     Color(

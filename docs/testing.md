@@ -148,14 +148,16 @@ two dynamic spheres become disjoint.
 
 Capture the official Sphere3D Point/Point and Point/radius forms, dynamic
 absolute radius, parallel Circle proxy, central Ellipse proxy, auxiliary
-Points, and analytic coordinate projection:
+Points, analytic coordinate projection, and default radial-gradient
+parameters:
 
 ```bash
 node tools/upstream-fixtures/sphere3d.mjs
 ```
 
 The fixture records object type `40`, `pointRadius` and `twoPoints` methods,
-live radius updates, Circle and Curve/Ellipse proxy types, the three central
+live radius updates, Circle and Curve/Ellipse proxy types, the complete
+default radial-gradient values, the three central
 projection auxiliary Points, parent metadata, and the projected coordinate
 and parameter values. It also switches one View3D from parallel to central
 and back through `setAttribute`, recording proxy and auxiliary IDs, direct
@@ -1262,7 +1264,8 @@ for Plane/Sphere and Sphere/Sphere intersection circles with hidden parents
 and ordinary Curve3D/Curve proxies.
 The focused `sphere3d_projection` case uses one JessieCode source for
 Point/radius Sphere3D instances in parallel and central View3D projections
-through ordinary Circle and Ellipse proxies.
+through ordinary Circle and Ellipse proxies with default and custom
+off-center radial gradients.
 The focused `surface3d_projection` case uses one JessieCode source for a
 FunctionGraph3D wireframe and a Shader-backed triangular ParametricSurface3D
 expanded through ordinary Curve and Face3D proxies.
@@ -1349,7 +1352,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `polygon3d_projection` | 0.988028 | 0.982365 |
 | `circle3d_projection` | 0.988886 | 0.985882 |
 | `intersectioncircle3d_projection` | 0.989030 | 0.986025 |
-| `sphere3d_projection` | 0.988869 | 0.985957 |
+| `sphere3d_projection` | 0.988514 | 0.985909 |
 | `surface3d_projection` | 0.985262 | 0.985297 |
 | `spatial_lines_planes` | 0.987328 | 0.975225 |
 | `plane3d_surfaces` | 0.987317 | 0.984636 |
@@ -1699,15 +1702,17 @@ output. The sparse Compact official image used a reviewed 4000-byte nonblank
 floor. This is a focused preview outside the 30-case Stable corpus.
 The Sphere3D capture verifies dynamic absolute radius evaluation and the
 parallel Circle versus central Ellipse projection branches from one source.
-The source explicitly sets `gradient: "none"` so the current flat Compose
-fill is compared to the same official rendering. Desktop `1200 x 900` and
-Compact `390 x 844` captures scored `0.988869` and `0.985957`. Both contact
-sheets passed manual review for geometry, fill, border, placement, clipping,
+The source exercises the official default radial gradient and a custom
+off-center radial gradient with second-color and opacity overrides. Desktop
+`1200 x 900` and Compact `390 x 844` captures scored `0.988514` and
+`0.985909`. Both contact sheets passed manual review for focal direction,
+smooth interpolation, geometry, opacity, border, placement, clipping,
 overlap, and blank output. The lifecycle fixture and focused JVM tests
-additionally verify parallel-to-central-to-parallel runtime switching,
-dynamic projection evaluation, structured evaluation failure, and complete
-proxy cleanup. The official radial gradient remains pending. This is a
-focused preview outside the 30-case Stable corpus.
+additionally verify default and custom static gradient parameters,
+`gradient: "none"`, invalid-value errors, parallel-to-central-to-parallel
+runtime switching, dynamic projection evaluation, structured evaluation
+failure, and complete proxy cleanup. This is a focused preview outside the
+30-case Stable corpus.
 The same upstream lifecycle fixture now records Line3D two-Point,
 point/direction/range, copied-direction, transformed, coordinate-projection,
 and screen-projection behavior; Plane3D finite, three-Point, transformed,

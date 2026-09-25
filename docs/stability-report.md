@@ -189,15 +189,16 @@ style, placement, clipping, overlap, and blank output. This evidence remains
 outside the Stable production corpus.
 The focused `sphere3d_projection` fixture verifies Point/radius Sphere3D
 construction in parallel and central View3D instances through ordinary
-Circle and Ellipse proxies. Its flat-fill source explicitly disables the
-official radial gradient so geometry, color, opacity, and stroke are compared
-against the current Compose scene contract. Static captures scored `0.988869`
-on Desktop and `0.985957` on Compact. Both contact sheets passed manual review
-for Circle/Ellipse geometry, fill, border, placement, clipping, overlap, and
-blank output. The official lifecycle fixture and focused JVM tests additionally
-cover parallel-to-central-to-parallel runtime switching and owned-proxy
-cleanup. This evidence remains outside the Stable production corpus;
-radial-gradient rendering remains pending.
+Circle and Ellipse proxies. The source exercises the official default radial
+gradient and a custom off-center radial gradient, including second-color and
+per-stop opacity overrides. Static `1200 x 900` and `390 x 844` captures
+scored `0.988514` on Desktop and `0.985909` on Compact. Both contact sheets
+passed manual review for focal direction, smooth color interpolation,
+Circle/Ellipse geometry, opacity, border, placement, clipping, overlap, and
+blank output. The official lifecycle fixture and focused JVM tests
+additionally cover the complete static gradient parameter defaults,
+parallel-to-central-to-parallel runtime switching, and owned-proxy cleanup.
+This evidence remains outside the Stable production corpus.
 The focused `surface3d_projection` fixture verifies a two-parameter
 FunctionGraph3D wireframe and a Shader-backed triangular ParametricSurface3D
 through ordinary Curve and Face3D proxies. Static captures scored `0.985262`

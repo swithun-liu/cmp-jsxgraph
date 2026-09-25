@@ -145,6 +145,7 @@ try {
                     radius: parallelSphere.Radius(),
                     proxyType: parallelSphere.element2D.elType,
                     proxyRadius: parallelSphere.element2D.Radius(),
+                    gradient: gradientSnapshot(parallelSphere.element2D),
                     parentIds: parallelSphere.parents,
                     proxyParentIds: parallelSphere.element2D.parents
                 },
@@ -157,9 +158,27 @@ try {
                     proxyPointCount:
                         centralSphere.element2D.numberPoints,
                     auxiliaryPointCount: centralSphere.aux2D.length,
+                    gradient: gradientSnapshot(centralSphere.element2D),
                     parentIds: centralSphere.parents,
                     proxyParentIds: centralSphere.element2D.parents
                 }
+            };
+        }
+
+        function gradientSnapshot(proxy) {
+            return {
+                type: proxy.evalVisProp("gradient"),
+                secondColor: proxy.evalVisProp("gradientsecondcolor"),
+                secondOpacity:
+                    proxy.evalVisProp("gradientsecondopacity"),
+                startOffset: proxy.evalVisProp("gradientstartoffset"),
+                endOffset: proxy.evalVisProp("gradientendoffset"),
+                centerX: proxy.evalVisProp("gradientcx"),
+                centerY: proxy.evalVisProp("gradientcy"),
+                radius: proxy.evalVisProp("gradientr"),
+                focalX: proxy.evalVisProp("gradientfx"),
+                focalY: proxy.evalVisProp("gradientfy"),
+                focalRadius: proxy.evalVisProp("gradientfr")
             };
         }
 

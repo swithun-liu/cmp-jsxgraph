@@ -1194,9 +1194,14 @@ practical.
   registered on the Board. Kotlin clears both as part of the owned projection
   set before building the replacement, while preserving the observable
   Circle/Ellipse switching behavior.
-- The scene model currently renders Sphere3D fills as flat colors. It accepts
-  `gradient` metadata for source compatibility, but the official radial
-  gradient remains explicit follow-up work.
+- Sphere3D static `none`/`linear`/`radial` gradient attributes are retained in
+  the scene model with the official SVG stop and object-bounding-box
+  geometry. Compose's common API has no portable two-circle conical shader,
+  so linear fills use `Brush.linearGradient` while radial fills rasterize
+  256-1024 clipped interpolated ellipses into an isolated layer with
+  `BlendMode.Src`. This preserves the official focal/outer-circle and
+  stop-opacity semantics without platform-specific Skia APIs; dynamic
+  function-valued gradient attributes remain outside the translated subset.
 - `Geometry.reuleauxPolygon` accepts a positive odd `Int` vertex count and
   returns `GMResult.Err` for even/non-positive counts or too few points.
   JSXGraph accepts a dynamic number and fails later while indexing for

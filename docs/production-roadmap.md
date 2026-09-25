@@ -65,6 +65,8 @@ qualification batches pass.
   transformed Curve3D, direct Circle3D, direct Sphere3D with parallel Circle
   and central Ellipse proxies, direct/transformed Surface3D,
   Polygon3D, and Polyhedron3D creators,
+  static Sphere3D linear/radial fill-gradient parameters and portable
+  Compose Canvas radial rendering,
   open Polygon3D vertex
   storage with a closed ordinary Polygon proxy, Point-backed/function-valued/
   homogeneous vertices, nested Polygon3D vertex/border styles, cyclic and
@@ -81,7 +83,7 @@ qualification batches pass.
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
   null-clone defect, global View3D `depthOrder`/layer configuration, camera
   controls, Point3D gliders and
-  animations, Stable qualification, radial gradients, plus remaining 3D APIs.
+  animations, Stable qualification, plus remaining 3D APIs.
   Sphere3D runtime projection-mode switching is translated with atomic owned
   proxy cleanup. Curve3D, Circle3D, and
   Surface3D parametric projection now use the source-mapped

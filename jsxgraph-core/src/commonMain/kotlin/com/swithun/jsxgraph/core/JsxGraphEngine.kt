@@ -6138,6 +6138,12 @@ object JsxGraphEngine {
                         length * dashFactor
                     }
                 }
+            val fillGradient = when (
+                val result = fillGradient(element)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
             if (element !is Line) {
                 for (arrow in listOf("firstarrow", "lastarrow")) {
                     when (val value = attributes[arrow]) {
@@ -6167,6 +6173,7 @@ object JsxGraphEngine {
                     fillOpacity = fillOpacity,
                     layer = layer,
                     strokeDashPattern = strokeDashPattern,
+                    fillGradient = fillGradient,
                 ),
             )
         }
@@ -6473,6 +6480,151 @@ object JsxGraphEngine {
                 )
         }
 
+        // JSXGraph 1.13.3: src/options.js -> gradient*;
+        // src/options3d.js -> Options3D.sphere3d.
+        private fun fillGradient(
+            element: GeometryElement,
+        ): GMResult<JsxGraphFillGradient?, JsxGraphDocumentError> {
+            if (element !is Sphere3D) {
+                return GMResult.Ok(null)
+            }
+            val type = when (
+                val result = string("gradient", default = "radial")
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (type == "none") {
+                return GMResult.Ok(null)
+            }
+            if (type != "linear" && type != "radial") {
+                return GMResult.Err(
+                    unsupportedValue("gradient", type),
+                )
+            }
+            val secondColor = when (
+                val result = color(
+                    "gradientsecondcolor",
+                    DEFAULT_SPHERE_3D_STROKE_COLOR,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val secondOpacity = when (
+                val result = number(
+                    "gradientsecondopacity",
+                    default = 1.0,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val startOffset = when (
+                val result = number(
+                    "gradientstartoffset",
+                    default = 0.0,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val endOffset = when (
+                val result = number(
+                    "gradientendoffset",
+                    default = 1.0,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (type == "linear") {
+                val angle = when (
+                    val result = number("gradientangle", default = 0.0)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                return GMResult.Ok(
+                    JsxGraphFillGradient.Linear(
+                        secondColor = secondColor,
+                        secondOpacity = secondOpacity,
+                        startOffset = startOffset,
+                        endOffset = endOffset,
+                        angle = angle,
+                    ),
+                )
+            }
+
+            fun normalized(
+                name: String,
+                default: Double,
+            ): GMResult<Double, JsxGraphDocumentError> =
+                number(
+                    name = name,
+                    default = default,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+
+            val centerX = when (
+                val result = normalized("gradientcx", default = 0.5)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val centerY = when (
+                val result = normalized("gradientcy", default = 0.5)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val radius = when (
+                val result = normalized("gradientr", default = 0.5)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val focalX = when (
+                val result = normalized("gradientfx", default = 0.7)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val focalY = when (
+                val result = normalized("gradientfy", default = 0.3)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val focalRadius = when (
+                val result = normalized("gradientfr", default = 0.0)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            return GMResult.Ok(
+                JsxGraphFillGradient.Radial(
+                    secondColor = secondColor,
+                    secondOpacity = secondOpacity,
+                    startOffset = startOffset,
+                    endOffset = endOffset,
+                    centerX = centerX,
+                    centerY = centerY,
+                    radius = radius,
+                    focalX = focalX,
+                    focalY = focalY,
+                    focalRadius = focalRadius,
+                ),
+            )
+        }
+
         private fun validateHiddenSubElement(
             name: String,
             supportsIdentity: Boolean,
@@ -6754,9 +6906,17 @@ object JsxGraphEngine {
                 "center",
                 "point",
                 "gradient",
+                "gradientangle",
+                "gradientcx",
+                "gradientcy",
+                "gradientendoffset",
+                "gradientfr",
                 "gradientsecondcolor",
+                "gradientsecondopacity",
+                "gradientstartoffset",
                 "gradientfx",
                 "gradientfy",
+                "gradientr",
             )
     private val MESH_3D_ATTRIBUTES =
         COMMON_ATTRIBUTES +

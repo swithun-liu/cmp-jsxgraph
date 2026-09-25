@@ -5,6 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class JsxGraphSphere3DTest {
@@ -34,6 +35,21 @@ class JsxGraphSphere3DTest {
         assertEquals(1.0, sphere.style.strokeWidth)
         assertEquals(0.4, sphere.style.fillOpacity)
         assertEquals(12, sphere.style.layer)
+        assertEquals(
+            JsxGraphFillGradient.Radial(
+                secondColor = JsxGraphColor(0, 255, 128),
+                secondOpacity = 1.0,
+                startOffset = 0.0,
+                endOffset = 1.0,
+                centerX = 0.5,
+                centerY = 0.5,
+                radius = 0.5,
+                focalX = 0.7,
+                focalY = 0.3,
+                focalRadius = 0.0,
+            ),
+            sphere.style.fillGradient,
+        )
     }
 
     @Test
@@ -81,10 +97,136 @@ class JsxGraphSphere3DTest {
 
         val sphere = curve(scene, "sphere")
         assertEquals(17, sphere.points.size)
+        assertNull(sphere.style.fillGradient)
         assertTrue(sphere.points.all { point ->
             val coordinate = assertNotNull(point)
             coordinate.x.isFinite() && coordinate.y.isFinite()
         })
+    }
+
+    @Test
+    fun jsonParsesCustomLinearAndRadialGradients() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                document(
+                    projection = "parallel",
+                    objects =
+                        """
+                        {
+                          "id": "linear",
+                          "type": "sphere3d",
+                          "parents": ["view", [-2, 0, 0], 1],
+                          "attributes": {
+                            "name": "",
+                            "gradient": "linear",
+                            "gradientSecondColor": "#123456",
+                            "gradientSecondOpacity": 0.6,
+                            "gradientStartOffset": 0.1,
+                            "gradientEndOffset": 0.9,
+                            "gradientAngle": 1.25
+                          }
+                        },
+                        {
+                          "id": "radial",
+                          "type": "sphere3d",
+                          "parents": ["view", [2, 0, 0], 1],
+                          "attributes": {
+                            "name": "",
+                            "gradient": "radial",
+                            "gradientSecondColor": "#abcdef",
+                            "gradientSecondOpacity": 0.7,
+                            "gradientStartOffset": 0.2,
+                            "gradientEndOffset": 0.8,
+                            "gradientCX": 0.4,
+                            "gradientCY": 0.6,
+                            "gradientR": 0.45,
+                            "gradientFX": 0.2,
+                            "gradientFY": 0.3,
+                            "gradientFR": 0.1
+                          }
+                        }
+                        """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        assertEquals(
+            JsxGraphFillGradient.Linear(
+                secondColor = JsxGraphColor(18, 52, 86),
+                secondOpacity = 0.6,
+                startOffset = 0.1,
+                endOffset = 0.9,
+                angle = 1.25,
+            ),
+            curve(scene, "linear").style.fillGradient,
+        )
+        assertEquals(
+            JsxGraphFillGradient.Radial(
+                secondColor = JsxGraphColor(171, 205, 239),
+                secondOpacity = 0.7,
+                startOffset = 0.2,
+                endOffset = 0.8,
+                centerX = 0.4,
+                centerY = 0.6,
+                radius = 0.45,
+                focalX = 0.2,
+                focalY = 0.3,
+                focalRadius = 0.1,
+            ),
+            curve(scene, "radial").style.fillGradient,
+        )
+    }
+
+    @Test
+    fun invalidGradientTypeAndRangeAreStructured() {
+        val typeResult = JsxGraphEngine.parse(
+            document(
+                projection = "parallel",
+                objects =
+                    """
+                    {
+                      "id": "sphere",
+                      "type": "sphere3d",
+                      "parents": ["view", [0, 0, 0], 1],
+                      "attributes": {
+                        "name": "",
+                        "gradient": "conic"
+                      }
+                    }
+                    """.trimIndent(),
+            ),
+        )
+        val type = assertIs<
+            JsxGraphDocumentError.UnsupportedAttributeValue
+            >(
+            assertIs<GMResult.Err<JsxGraphDocumentError>>(typeResult).error,
+        )
+        assertEquals("gradient", type.attribute)
+        assertEquals("conic", type.value)
+
+        val rangeResult = JsxGraphEngine.parse(
+            document(
+                projection = "parallel",
+                objects =
+                    """
+                    {
+                      "id": "sphere",
+                      "type": "sphere3d",
+                      "parents": ["view", [0, 0, 0], 1],
+                      "attributes": {
+                        "name": "",
+                        "gradient": "radial",
+                        "gradientFX": 1.1
+                      }
+                    }
+                    """.trimIndent(),
+            ),
+        )
+        val range = assertIs<JsxGraphDocumentError.InvalidAttribute>(
+            assertIs<GMResult.Err<JsxGraphDocumentError>>(rangeResult).error,
+        )
+        assertEquals("gradientfx", range.attribute)
+        assertEquals("a finite number in 0.0..1.0", range.expected)
     }
 
     @Test

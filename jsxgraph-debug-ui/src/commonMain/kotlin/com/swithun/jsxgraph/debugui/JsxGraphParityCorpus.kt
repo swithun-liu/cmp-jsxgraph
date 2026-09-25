@@ -809,7 +809,7 @@ object JsxGraphParityCorpus {
         JsxGraphParityCase(
             id = "sphere3d_projection",
             title = "Sphere3D projection",
-            scenario = "Parallel and central View3D instances project dynamic-radius Sphere3D definitions through Circle and Ellipse proxies.",
+            scenario = "Parallel and central View3D instances project Sphere3D definitions through Circle and Ellipse proxies with default and custom radial gradients.",
             source = SPHERE_3D_PROJECTION_SOURCE,
             features = setOf(
                 "jessiecode",
@@ -820,6 +820,7 @@ object JsxGraphParityCorpus {
                 "proxy-circle",
                 "proxy-ellipse",
                 "dynamic-radius",
+                "radial-gradient",
             ),
             suite = JsxGraphParitySuite.Focused,
         ),
@@ -2769,7 +2770,7 @@ private const val SPHERE_3D_PROJECTION_SOURCE: String = """
     "grid": false,
     "keepAspectRatio": true
   },
-  "source": "use jxgbox;\nparallelView = view3d(\n  [-9, -4],\n  [8, 8],\n  [[-3, 3], [-3, 3], [-3, 3]]\n) <<\n  id: \"parallelView\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\ncentralView = view3d(\n  [1, -4],\n  [8, 8],\n  [[-3, 3], [-3, 3], [-3, 3]]\n) <<\n  id: \"centralView\", name: \"\", projection: \"central\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nparallelSphere = sphere3d(\n  parallelView, [-0.4, 0, 0], -1.7\n) <<\n  id: \"parallelSphere\", name: \"\", withLabel: false,\n  gradient: \"none\", fillColor: \"#56B4E9\", fillOpacity: 0.38,\n  strokeColor: \"#0072B2\", strokeWidth: 3,\n  center: << visible: false >>,\n  fixed: true, highlight: false\n>>;\ncentralSphere = sphere3d(\n  centralView, [0.4, 0, 0], function() { return 1.6; }\n) <<\n  id: \"centralSphere\", name: \"\", withLabel: false,\n  numberPointsHigh: 160,\n  gradient: \"none\", fillColor: \"#E69F00\", fillOpacity: 0.38,\n  strokeColor: \"#D55E00\", strokeWidth: 3,\n  center: << visible: false >>,\n  fixed: true, highlight: false\n>>;"
+  "source": "use jxgbox;\nparallelView = view3d(\n  [-9, -4],\n  [8, 8],\n  [[-3, 3], [-3, 3], [-3, 3]]\n) <<\n  id: \"parallelView\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\ncentralView = view3d(\n  [1, -4],\n  [8, 8],\n  [[-3, 3], [-3, 3], [-3, 3]]\n) <<\n  id: \"centralView\", name: \"\", projection: \"central\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nparallelSphere = sphere3d(\n  parallelView, [-0.4, 0, 0], -1.7\n) <<\n  id: \"parallelSphere\", name: \"\", withLabel: false,\n  strokeWidth: 3,\n  center: << visible: false >>,\n  fixed: true, highlight: false\n>>;\ncentralSphere = sphere3d(\n  centralView, [0.4, 0, 0], function() { return 1.6; }\n) <<\n  id: \"centralSphere\", name: \"\", withLabel: false,\n  numberPointsHigh: 160,\n  gradient: \"radial\",\n  gradientSecondColor: \"#E69F00\", gradientSecondOpacity: 0.9,\n  gradientFX: 0.3, gradientFY: 0.2,\n  fillColor: \"#FFF4D6\", fillOpacity: 0.55,\n  strokeColor: \"#D55E00\", strokeWidth: 3,\n  center: << visible: false >>,\n  fixed: true, highlight: false\n>>;"
 }
 """
 
