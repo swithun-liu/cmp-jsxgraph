@@ -882,8 +882,7 @@ practical.
   `transform3d` creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
   property access that the baseline does not expose. Camera controls, Point3D
-  gliders and animations, runtime Sphere3D projection-mode mutation,
-  and the remaining 3D APIs are still pending.
+  gliders and animations, and the remaining 3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
@@ -1189,10 +1188,15 @@ practical.
   from the Ellipse's serialized parent list so Board removal can clean the
   complete proxy atomically. JSXGraph retains the three auxiliary Point IDs
   in the Ellipse proxy's `parents` array.
+- During parallel-to-central-to-parallel Sphere3D switching, JSXGraph
+  `1.13.3` removes the visible proxies and three auxiliary Points but retains
+  stale entries in `sphere.inherits` and leaves the Ellipse's generated center
+  registered on the Board. Kotlin clears both as part of the owned projection
+  set before building the replacement, while preserving the observable
+  Circle/Ellipse switching behavior.
 - The scene model currently renders Sphere3D fills as flat colors. It accepts
   `gradient` metadata for source compatibility, but the official radial
-  gradient and runtime switching between parallel and central projections
-  remain explicit follow-up work.
+  gradient remains explicit follow-up work.
 - `Geometry.reuleauxPolygon` accepts a positive odd `Int` vertex count and
   returns `GMResult.Err` for even/non-positive counts or too few points.
   JSXGraph accepts a dynamic number and fails later while indexing for

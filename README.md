@@ -257,10 +257,12 @@ renderer are not yet translated. The current 3D preview includes bounded
 `surface3d` and `functiongraph3d` wireframe, rectangle/triangle tiling,
 color-array, Shader, and colormap rendering, plus `sphere3d` Point/Point and
 Point/radius construction with parallel Circle and central Ellipse proxies.
+View3D projection values can be reevaluated dynamically, and Sphere3D
+atomically rebuilds its proxy when the mode changes.
 It does not yet include global
 View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
-Stable qualification, runtime Sphere3D projection-mode mutation,
-radial-gradient rendering, or the complete 3D APIs. Curve3D, Circle3D, and
+Stable qualification, radial-gradient rendering, or the complete 3D APIs.
+Curve3D, Circle3D, and
 Surface3D parametric projection now use the source-mapped
 `src/math/nlp.js -> Nlp.FindMinimum` COBYLA translation.
 

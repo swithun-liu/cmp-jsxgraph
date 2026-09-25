@@ -375,6 +375,27 @@ class View3DPoint3DTest {
                 ),
             ),
         )
+        assertIs<GMResult.Err<View3DError.ProjectionEvaluation>>(
+            View3D.create(
+                board = createBoard(),
+                lowerLeftCorner = doubleArrayOf(-5.0, -4.0),
+                size = doubleArrayOf(8.0, 7.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-4.0, 6.0),
+                    doubleArrayOf(-3.0, 7.0),
+                ),
+                projectionSource = View3DProjectionSource.Dynamic(
+                    View3DProjectionEvaluator {
+                        GMResult.Err(
+                            View3DProjectionDynamicError.Rejected(
+                                "projection",
+                            ),
+                        )
+                    },
+                ),
+            ),
+        )
     }
 
     private fun createBoard(): Board =

@@ -81,8 +81,9 @@ qualification batches pass.
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
   null-clone defect, global View3D `depthOrder`/layer configuration, camera
   controls, Point3D gliders and
-  animations, Stable qualification, runtime Sphere3D projection-mode mutation
-  and radial gradients, plus remaining 3D APIs. Curve3D, Circle3D, and
+  animations, Stable qualification, radial gradients, plus remaining 3D APIs.
+  Sphere3D runtime projection-mode switching is translated with atomic owned
+  proxy cleanup. Curve3D, Circle3D, and
   Surface3D parametric projection now use the source-mapped
   `src/math/nlp.js -> Nlp.FindMinimum` translation.
   The upstream 3D `generic`

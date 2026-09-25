@@ -20,6 +20,28 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.tan
 
+// JSXGraph: src/base/element.js -> evalVisProp('projection')
+// and src/3d/view3d.js -> update.
+internal sealed interface View3DProjectionDynamicError {
+    data class Rejected(
+        val reason: String,
+    ) : View3DProjectionDynamicError
+}
+
+internal fun interface View3DProjectionEvaluator {
+    fun evaluate(): GMResult<String, View3DProjectionDynamicError>
+}
+
+internal sealed interface View3DProjectionSource {
+    data class Value(
+        val value: String,
+    ) : View3DProjectionSource
+
+    data class Dynamic(
+        val evaluator: View3DProjectionEvaluator,
+    ) : View3DProjectionSource
+}
+
 internal sealed interface View3DError {
     data class InvalidLowerLeftCorner(
         val actualCount: Int,
@@ -32,6 +54,10 @@ internal sealed interface View3DError {
     data class InvalidBoundingBox(
         val actualDimensions: Int,
         val dimensionSizes: List<Int>,
+    ) : View3DError
+
+    data class ProjectionEvaluation(
+        val error: View3DProjectionDynamicError,
     ) : View3DError
 
     data class Registration(
@@ -52,6 +78,7 @@ internal class View3D private constructor(
     internal val size: DoubleArray,
     internal val bbox3D: Array<DoubleArray>,
     projection: String,
+    private var projectionSource: View3DProjectionSource,
     azimuth: Double,
     elevation: Double,
     bank: Double,
@@ -96,6 +123,9 @@ internal class View3D private constructor(
     internal var focalDist: Double = -1.0
         private set
     internal var projectionType: String = projection.lowercase()
+        private set
+    private var pendingProjection: String? = projection
+    internal var evaluationError: View3DError? = null
         private set
 
     init {
@@ -192,6 +222,20 @@ internal class View3D private constructor(
     override fun update(fromParent: Boolean): GeometryElement {
         if (!needsUpdate) {
             return this
+        }
+        val projectionResult = pendingProjection?.let { initial ->
+            pendingProjection = null
+            GMResult.Ok(initial)
+        } ?: evaluateProjectionSource(projectionSource)
+        when (val result = projectionResult) {
+            is GMResult.Ok -> {
+                projectionType = result.value.lowercase()
+                evaluationError = null
+            }
+            is GMResult.Err -> {
+                evaluationError = result.error
+                return this
+            }
         }
         val mat2D = Mat.identity(3)
         matrix3DRot = getRotationFromAngles()
@@ -671,6 +715,18 @@ internal class View3D private constructor(
         return this
     }
 
+    // JSXGraph: src/base/element.js -> setAttribute({projection})
+    // and src/3d/view3d.js -> update.
+    internal fun setProjection(projection: String): View3D {
+        projectionSource = View3DProjectionSource.Value(projection)
+        if (needsRegularUpdate) {
+            board.update(this)
+        } else {
+            board.fullUpdate()
+        }
+        return this
+    }
+
     // JSXGraph: src/3d/view3d.js -> createView3D.
     internal fun createDefaultAxes(
         axesPosition: String = "center",
@@ -731,6 +787,7 @@ internal class View3D private constructor(
             size: DoubleArray,
             boundingBox: Array<DoubleArray>,
             projection: String = "parallel",
+            projectionSource: View3DProjectionSource? = null,
             azimuth: Double = DEFAULT_AZIMUTH,
             elevation: Double = DEFAULT_ELEVATION,
             bank: Double = DEFAULT_BANK,
@@ -764,13 +821,24 @@ internal class View3D private constructor(
                     ),
                 )
             }
+            val resolvedProjectionSource =
+                projectionSource
+                    ?: View3DProjectionSource.Value(projection)
+            val evaluatedProjection = when (
+                val result =
+                    evaluateProjectionSource(resolvedProjectionSource)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
             val view = View3D(
                 board = board,
                 llftCorner = lowerLeftCorner.copyOf(),
                 size = size.copyOf(),
                 bbox3D =
                     boundingBox.map(DoubleArray::copyOf).toTypedArray(),
-                projection = projection,
+                projection = evaluatedProjection,
+                projectionSource = resolvedProjectionSource,
                 azimuth = azimuth,
                 elevation = elevation,
                 bank = bank,
@@ -806,3 +874,17 @@ internal class View3D private constructor(
 
 private fun Array<DoubleArray>.deepCopy(): Array<DoubleArray> =
     map(DoubleArray::copyOf).toTypedArray()
+
+private fun evaluateProjectionSource(
+    source: View3DProjectionSource,
+): GMResult<String, View3DError> =
+    when (source) {
+        is View3DProjectionSource.Value -> GMResult.Ok(source.value)
+        is View3DProjectionSource.Dynamic ->
+            when (val result = source.evaluator.evaluate()) {
+                is GMResult.Ok -> result
+                is GMResult.Err -> GMResult.Err(
+                    View3DError.ProjectionEvaluation(result.error),
+                )
+            }
+    }

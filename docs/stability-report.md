@@ -194,9 +194,10 @@ official radial gradient so geometry, color, opacity, and stroke are compared
 against the current Compose scene contract. Static captures scored `0.988869`
 on Desktop and `0.985957` on Compact. Both contact sheets passed manual review
 for Circle/Ellipse geometry, fill, border, placement, clipping, overlap, and
-blank output. This evidence remains outside the Stable production corpus;
-runtime projection-mode mutation and radial-gradient rendering remain
-pending.
+blank output. The official lifecycle fixture and focused JVM tests additionally
+cover parallel-to-central-to-parallel runtime switching and owned-proxy
+cleanup. This evidence remains outside the Stable production corpus;
+radial-gradient rendering remains pending.
 The focused `surface3d_projection` fixture verifies a two-parameter
 FunctionGraph3D wireframe and a Shader-backed triangular ParametricSurface3D
 through ordinary Curve and Face3D proxies. Static captures scored `0.985262`

@@ -98,12 +98,38 @@ try {
         radius = -3;
         board.update();
         const updated = snapshot(parallel, central);
+        const initialParallelProxyId = parallel.element2D.id;
+        const projectionSwitch = {
+            initial: projectionSnapshot(parallelView, parallel)
+        };
+
+        parallelView.setAttribute({projection: "central"});
+        board.update();
+        const centralProxyId = parallel.element2D.id;
+        const centralAuxiliaryIds = parallel.aux2D.map((point) => point.id);
+        projectionSwitch.central = {
+            ...projectionSnapshot(parallelView, parallel),
+            oldProxyRemoved:
+                board.objects[initialParallelProxyId] === undefined
+        };
+
+        parallelView.setAttribute({projection: "parallel"});
+        board.update();
+        projectionSwitch.restored = {
+            ...projectionSnapshot(parallelView, parallel),
+            centralProxyRemoved:
+                board.objects[centralProxyId] === undefined,
+            centralAuxiliariesRemoved: centralAuxiliaryIds.every(
+                (id) => board.objects[id] === undefined
+            )
+        };
         const parameters = [Number.NaN, Number.NaN];
 
         return {
             version: JXG.version,
             initial,
             updated,
+            projectionSwitch,
             projection: Array.from(
                 parallel.projectCoords([4, 0, 0], parameters)
             ),
@@ -134,6 +160,20 @@ try {
                     parentIds: centralSphere.parents,
                     proxyParentIds: centralSphere.element2D.parents
                 }
+            };
+        }
+
+        function projectionSnapshot(view, sphere) {
+            return {
+                viewProjection: view.projectionType,
+                sphereProjection: sphere.projectionType,
+                proxyId: sphere.element2D.id,
+                proxyType: sphere.element2D.elType,
+                auxiliaryIds: sphere.aux2D.map((point) => point.id),
+                auxiliaryPointCount: sphere.aux2D.length,
+                inheritedIds: sphere.inherits.map((element) => element.id),
+                directChildIds: Object.keys(sphere.childElements),
+                boardObjectCount: Object.keys(board.objects).length
             };
         }
     });

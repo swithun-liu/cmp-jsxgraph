@@ -106,6 +106,133 @@ class Sphere3DTest {
     }
 
     @Test
+    fun runtimeProjectionSwitchRebuildsAndCleansOwnedElements() {
+        val board = createBoard()
+        val view = createView(
+            board = board,
+            projection = "parallel",
+            needsRegularUpdate = false,
+        )
+        val center = point(view, doubleArrayOf(0.0, 0.0, 0.0), "center")
+        val sphere = sphere(
+            Sphere3D.create(
+                view = view,
+                center = center,
+                radiusSource = Line3DCoordinateValue.Numeric(1.0),
+                sampleCount = 17,
+                id = "sphere",
+                name = "",
+            ),
+        )
+        val parallelProxy = assertIs<Circle>(sphere.element2D)
+        val parallelProjectionIds = sphere.childElements.keys.toSet()
+
+        assertSame(view, view.setProjection("CENTRAL"))
+
+        val centralProxy = assertIs<Curve>(sphere.element2D)
+        val centralProjectionIds = sphere.childElements.keys.toSet()
+        assertEquals("central", view.projectionType)
+        assertEquals("central", sphere.projectionType)
+        assertTrue(centralProxy.isEllipse)
+        assertTrue(parallelProxy.id != centralProxy.id)
+        assertTrue(
+            parallelProjectionIds.all { board.elementById(it) == null },
+        )
+        assertEquals(3, sphere.aux2D.size)
+        assertEquals(3, sphere.points.size)
+        assertEquals(
+            listOf<GeometryElement>(centralProxy),
+            sphere.inherits,
+        )
+        assertTrue(
+            centralProjectionIds.all { board.elementById(it) != null },
+        )
+
+        assertSame(view, view.setProjection("parallel"))
+
+        val restoredProxy = assertIs<Circle>(sphere.element2D)
+        assertEquals("parallel", view.projectionType)
+        assertEquals("parallel", sphere.projectionType)
+        assertTrue(centralProxy.id != restoredProxy.id)
+        assertTrue(
+            centralProjectionIds.all { board.elementById(it) == null },
+        )
+        assertTrue(sphere.aux2D.isEmpty())
+        assertTrue(sphere.points.isEmpty())
+        assertEquals(
+            listOf<GeometryElement>(restoredProxy),
+            sphere.inherits,
+        )
+        assertEquals(setOf(restoredProxy.id), sphere.childElements.keys)
+        assertEquals(
+            setOf(restoredProxy.id),
+            center.point2D.childElements.keys,
+        )
+    }
+
+    @Test
+    fun dynamicProjectionKeepsLastValidModeOnEvaluationFailure() {
+        val board = createBoard()
+        var projection = "parallel"
+        var rejected = false
+        var evaluationCount = 0
+        val view = createView(
+            board = board,
+            projection = "unused",
+            projectionSource = View3DProjectionSource.Dynamic(
+                View3DProjectionEvaluator {
+                    evaluationCount += 1
+                    if (rejected) {
+                        GMResult.Err(
+                            View3DProjectionDynamicError.Rejected(
+                                "projection",
+                            ),
+                        )
+                    } else {
+                        GMResult.Ok(projection)
+                    }
+                },
+            ),
+        )
+        assertEquals(1, evaluationCount)
+        val center = point(view, doubleArrayOf(0.0, 0.0, 0.0), "center")
+        val sphere = sphere(
+            Sphere3D.create(
+                view = view,
+                center = center,
+                radiusSource = Line3DCoordinateValue.Numeric(1.0),
+                id = "sphere",
+                name = "",
+            ),
+        )
+        assertEquals(2, evaluationCount)
+
+        projection = "central"
+        board.fullUpdate()
+        val centralProxy = assertIs<Curve>(sphere.element2D)
+        assertNull(view.evaluationError)
+        assertEquals(3, evaluationCount)
+
+        projection = "parallel"
+        rejected = true
+        board.fullUpdate()
+
+        assertEquals("central", view.projectionType)
+        assertSame(centralProxy, sphere.element2D)
+        assertIs<View3DError.ProjectionEvaluation>(view.evaluationError)
+        assertEquals(4, evaluationCount)
+
+        rejected = false
+        board.fullUpdate()
+
+        assertEquals("parallel", view.projectionType)
+        assertIs<Circle>(sphere.element2D)
+        assertNull(view.evaluationError)
+        assertNull(board.elementById(centralProxy.id))
+        assertEquals(5, evaluationCount)
+    }
+
+    @Test
     fun removalKeepsExternalParentsAndRemovesOwnedParentsAndProxies() {
         val board = createBoard()
         val view = createView(board, projection = "central")
@@ -204,6 +331,8 @@ class Sphere3DTest {
     private fun createView(
         board: Board,
         projection: String,
+        projectionSource: View3DProjectionSource? = null,
+        needsRegularUpdate: Boolean = true,
     ): View3D =
         assertIs<GMResult.Ok<View3D>>(
             View3D.create(
@@ -216,11 +345,13 @@ class Sphere3DTest {
                     doubleArrayOf(-3.0, 5.0),
                 ),
                 projection = projection,
+                projectionSource = projectionSource,
                 azimuth = 1.0,
                 elevation = 0.3,
                 bank = 0.0,
                 id = "view",
                 name = "",
+                needsRegularUpdate = needsRegularUpdate,
             ),
         ).value
 

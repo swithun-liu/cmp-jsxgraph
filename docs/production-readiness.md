@@ -66,7 +66,8 @@ frame, and radius inputs through an owned Curve3D/Curve proxy.
 IntersectionCircle3D supports Plane/Sphere in either order and Sphere/Sphere
 through a hidden dynamic center and the same bounded proxy lifecycle. Sphere3D
 accepts Point/Point and Point/radius parents, dynamic absolute radii, analytic
-coordinate projection, and parallel Circle or central Ellipse proxies.
+coordinate projection, parallel Circle or central Ellipse proxies, and
+runtime projection-mode switching with complete owned-proxy cleanup.
 Surface3D
 accepts vector and component functions, dynamic ranges, transformed parents,
 wireframe sampling, rectangle/triangle tiling, and color-array, Shader, and
@@ -74,8 +75,7 @@ colormap faces through Curve and Polyhedron3D proxies. Curve3D, Circle3D, and
 Surface3D parametric projection use the source-mapped `math/nlp.js` COBYLA
 translation and match official numerical fixtures. Global View3D
 `depthOrder`/layer configuration, camera controls, Point3D gliders and
-animations, runtime Sphere3D projection-mode mutation and radial-gradient
-rendering, and the remaining 3D APIs are still
+animations, radial-gradient rendering, and the remaining 3D APIs are still
 pending.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.

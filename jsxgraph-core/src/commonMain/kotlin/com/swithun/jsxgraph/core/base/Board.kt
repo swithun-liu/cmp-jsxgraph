@@ -293,7 +293,9 @@ internal class Board(
     internal fun updateElements(
         draggedElement: GeometryElement? = null,
     ): Board {
-        for (element in objectsList) {
+        var index = 0
+        while (index < objectsList.size) {
+            val element = objectsList[index]
             element
                 .update(
                     fromParent =
@@ -301,6 +303,7 @@ internal class Board(
                             element.id != draggedElement.id,
                 )
                 .updateVisibility()
+            index += 1
         }
         return this
     }

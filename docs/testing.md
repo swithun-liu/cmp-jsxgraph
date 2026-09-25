@@ -157,8 +157,11 @@ node tools/upstream-fixtures/sphere3d.mjs
 The fixture records object type `40`, `pointRadius` and `twoPoints` methods,
 live radius updates, Circle and Curve/Ellipse proxy types, the three central
 projection auxiliary Points, parent metadata, and the projected coordinate
-and parameter values. The browser produces the complete JSON evidence before
-the local sandbox rejects Chrome Crashpad shutdown access.
+and parameter values. It also switches one View3D from parallel to central
+and back through `setAttribute`, recording proxy and auxiliary IDs, direct
+children, inherited proxies, Board object counts, and old-object removal.
+The browser produces the complete JSON evidence before the local sandbox
+rejects Chrome Crashpad shutdown access.
 
 Capture the official Surface3D vector/component functions, FunctionGraph3D
 wrapper, dynamic ranges, wireframe separators, and rectangle topology:
@@ -1700,9 +1703,11 @@ The source explicitly sets `gradient: "none"` so the current flat Compose
 fill is compared to the same official rendering. Desktop `1200 x 900` and
 Compact `390 x 844` captures scored `0.988869` and `0.985957`. Both contact
 sheets passed manual review for geometry, fill, border, placement, clipping,
-overlap, and blank output. Runtime projection-mode mutation and the official
-radial gradient remain pending. This is a focused preview outside the
-30-case Stable corpus.
+overlap, and blank output. The lifecycle fixture and focused JVM tests
+additionally verify parallel-to-central-to-parallel runtime switching,
+dynamic projection evaluation, structured evaluation failure, and complete
+proxy cleanup. The official radial gradient remains pending. This is a
+focused preview outside the 30-case Stable corpus.
 The same upstream lifecycle fixture now records Line3D two-Point,
 point/direction/range, copied-direction, transformed, coordinate-projection,
 and screen-projection behavior; Plane3D finite, three-Point, transformed,
