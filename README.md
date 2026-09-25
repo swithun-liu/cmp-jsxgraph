@@ -259,10 +259,10 @@ color-array, Shader, and colormap rendering, plus `sphere3d` Point/Point and
 Point/radius construction with parallel Circle and central Ellipse proxies.
 It does not yet include global
 View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
-Stable qualification, Curve3D, Circle3D, and Surface3D parametric projection
-pending the source-mapped COBYLA dependency, runtime Sphere3D projection-mode
-mutation, radial-gradient rendering,
-or the complete 3D APIs.
+Stable qualification, runtime Sphere3D projection-mode mutation,
+radial-gradient rendering, or the complete 3D APIs. Curve3D, Circle3D, and
+Surface3D parametric projection now use the source-mapped
+`src/math/nlp.js -> Nlp.FindMinimum` COBYLA translation.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

@@ -71,8 +71,8 @@ Surface3D
 accepts vector and component functions, dynamic ranges, transformed parents,
 wireframe sampling, rectangle/triangle tiling, and color-array, Shader, and
 colormap faces through Curve and Polyhedron3D proxies. Curve3D, Circle3D, and
-Surface3D parametric projection remains pending the source-mapped
-`math/nlp.js` COBYLA dependency. Global View3D
+Surface3D parametric projection use the source-mapped `math/nlp.js` COBYLA
+translation and match official numerical fixtures. Global View3D
 `depthOrder`/layer configuration, camera controls, Point3D gliders and
 animations, runtime Sphere3D projection-mode mutation and radial-gradient
 rendering, and the remaining 3D APIs are still

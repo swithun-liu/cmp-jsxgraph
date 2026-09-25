@@ -8,7 +8,10 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
+import com.swithun.jsxgraph.core.math.ParametricProjectionError
 
 internal sealed interface Curve3DDynamicError {
     data class Rejected(
@@ -101,7 +104,9 @@ internal sealed interface Curve3DError {
         val error: CurveError,
     ) : Curve3DError
 
-    data object ParametricProjectionUnavailable : Curve3DError
+    data class ParametricProjection(
+        val error: ParametricProjectionError<Curve3DError>,
+    ) : Curve3DError
 }
 
 /**
@@ -366,14 +371,31 @@ internal class Curve3D private constructor(
 
     // JSXGraph: src/3d/curve3d.js -> projectCoords;
     // src/math/geometry.js -> projectCoordsToParametric.
-    // The upstream method depends on src/math/nlp.js -> Nlp.FindMinimum.
-    // Returning a structured gap avoids silently substituting a different
-    // minimization algorithm before that shared upstream dependency is ported.
     internal fun projectCoords(
         coordinates: DoubleArray,
-        parameters: DoubleArray,
-    ): GMResult<DoubleArray, Curve3DError> =
-        GMResult.Err(Curve3DError.ParametricProjectionUnavailable)
+        parameters: MutableList<Double>,
+    ): GMResult<DoubleArray, Curve3DError> {
+        val range = when (val result = evaluateRange()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Geometry.projectCoordsToParametric(
+                coordinates = coordinates,
+                evaluator = Parametric3DEvaluator { values ->
+                    evalFResult(values[0])
+                },
+                dimension = 1,
+                parameters = parameters,
+                rangeU = range,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                Curve3DError.ParametricProjection(result.error),
+            )
+        }
+    }
 
     override fun remove(): GeometryElement {
         points.clear()

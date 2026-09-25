@@ -98,6 +98,20 @@ class Curve3DTest {
         )
 
         end = 4.0
+        val parameters = mutableListOf(1.0)
+        val projection = curve.projectCoords(
+            coordinates = doubleArrayOf(1.0, 3.0, 9.0, -3.0),
+            parameters = parameters,
+        )
+
+        assertArrayClose(
+            doubleArrayOf(1.0, 3.0, 9.0, -3.0),
+            assertIs<GMResult.Ok<DoubleArray>>(projection).value,
+            absoluteTolerance = 1.0e-5,
+        )
+        assertEquals(3.0, parameters.single(), 1.0e-6)
+        assertContentEquals(doubleArrayOf(0.0, 2.0), curve.evaluatedRange)
+
         curve.prepareUpdate().update()
 
         assertSame(proxy, curve.curve2D)
@@ -106,6 +120,50 @@ class Curve3DTest {
             curve.points[1],
         )
         assertContentEquals(doubleArrayOf(0.0, 4.0), curve.evaluatedRange)
+    }
+
+    @Test
+    fun parametricProjectionMatchesOfficialCobylaResult() {
+        val curve = curve(
+            Curve3D.create(
+                view = createView(createBoard()),
+                source = Curve3DSource.Components(
+                    x = Curve3DScalarEvaluator { parameter ->
+                        GMResult.Ok(cos(parameter))
+                    },
+                    y = Curve3DScalarEvaluator { parameter ->
+                        GMResult.Ok(sin(parameter))
+                    },
+                    z = Curve3DScalarEvaluator { parameter ->
+                        GMResult.Ok(parameter / PI)
+                    },
+                ),
+                rangeSource = range(0.0, 2.0 * PI),
+                sampleCount = 5,
+                name = "",
+            ),
+        )
+        val parameters = mutableListOf(0.3)
+
+        val result = curve.projectCoords(
+            coordinates = doubleArrayOf(1.0, 0.2, 1.2, 0.7),
+            parameters = parameters,
+        )
+
+        assertArrayClose(
+            doubleArrayOf(
+                1.0,
+                0.10392226619847204,
+                0.9945854224691683,
+                0.4668606818536723,
+            ),
+            assertIs<GMResult.Ok<DoubleArray>>(result).value,
+        )
+        assertEquals(
+            1.4666860883614186,
+            parameters.single(),
+            absoluteTolerance = 1.0e-12,
+        )
     }
 
     @Test
@@ -254,13 +312,14 @@ class Curve3DTest {
     private fun assertArrayClose(
         expected: DoubleArray,
         actual: DoubleArray,
+        absoluteTolerance: Double = 1.0e-12,
     ) {
         assertEquals(expected.size, actual.size)
         for (index in expected.indices) {
             assertEquals(
                 expected[index],
                 actual[index],
-                absoluteTolerance = 1.0e-12,
+                absoluteTolerance = absoluteTolerance,
             )
         }
     }

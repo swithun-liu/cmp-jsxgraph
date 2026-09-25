@@ -14,6 +14,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.floor
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 data class SegmentIntersection(
     val point: DoubleArray,
@@ -189,6 +190,53 @@ sealed interface GeometryError {
     ) : GeometryError
 
     data object PolygonProjectionUnavailable : GeometryError
+}
+
+internal sealed interface ParametricProjectionError<out E> {
+    data class InvalidDimension(
+        val dimension: Int,
+    ) : ParametricProjectionError<Nothing>
+
+    data class InvalidCoordinateCount(
+        val count: Int,
+    ) : ParametricProjectionError<Nothing>
+
+    data class InvalidParameterCount(
+        val dimension: Int,
+        val count: Int,
+    ) : ParametricProjectionError<Nothing>
+
+    data class InvalidRange(
+        val axis: Int,
+        val start: Double?,
+        val end: Double?,
+    ) : ParametricProjectionError<Nothing>
+
+    data class InvalidTargetCoordinateCount(
+        val count: Int,
+    ) : ParametricProjectionError<Nothing>
+
+    data class Evaluation<E>(
+        val cause: E,
+    ) : ParametricProjectionError<E>
+
+    data class Optimization<E>(
+        val cause: NlpError<ParametricEvaluationError<E>>,
+    ) : ParametricProjectionError<E>
+}
+
+internal sealed interface ParametricEvaluationError<out E> {
+    data class Target<E>(
+        val cause: E,
+    ) : ParametricEvaluationError<E>
+
+    data class InvalidCoordinateCount(
+        val count: Int,
+    ) : ParametricEvaluationError<Nothing>
+}
+
+internal fun interface Parametric3DEvaluator<E> {
+    fun evaluate(parameters: DoubleArray): GMResult<DoubleArray, E>
 }
 
 object Geometry {
@@ -2960,6 +3008,287 @@ object Geometry {
             normal = Statistics.subtract(secondCenter, firstCenter),
             radius = sqrt(radiusSquared),
         )
+    }
+
+    // JSXGraph: src/math/geometry.js -> _paramsOutOfRange.
+    private fun paramsOutOfRange(
+        parameters: DoubleArray,
+        rangeU: DoubleArray,
+        rangeV: DoubleArray,
+    ): Boolean =
+        parameters[0] < rangeU[0] ||
+            parameters[0] > rangeU[1] ||
+            (
+                parameters.size > 1 &&
+                    (
+                        parameters[1] < rangeV[0] ||
+                            parameters[1] > rangeV[1]
+                    )
+            )
+
+    // JSXGraph: src/math/geometry.js -> projectCoordsToParametric.
+    internal fun <E> projectCoordsToParametric(
+        coordinates: DoubleArray,
+        evaluator: Parametric3DEvaluator<E>,
+        dimension: Int,
+        parameters: MutableList<Double>,
+        rangeU: DoubleArray,
+        rangeV: DoubleArray? = null,
+        random: Random = Random.Default,
+    ): GMResult<DoubleArray, ParametricProjectionError<E>> {
+        if (dimension !in 1..2) {
+            return GMResult.Err(
+                ParametricProjectionError.InvalidDimension(dimension),
+            )
+        }
+        if (coordinates.size != 4) {
+            return GMResult.Err(
+                ParametricProjectionError.InvalidCoordinateCount(
+                    coordinates.size,
+                ),
+            )
+        }
+        if (parameters.isNotEmpty() && parameters.size < dimension) {
+            return GMResult.Err(
+                ParametricProjectionError.InvalidParameterCount(
+                    dimension = dimension,
+                    count = parameters.size,
+                ),
+            )
+        }
+        val checkedRangeU = when (
+            val result = validateParametricRange(rangeU, 0)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val checkedRangeV: DoubleArray =
+            if (dimension == 2) {
+                when (
+                    val result = validateParametricRange(rangeV, 1)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            } else {
+                DoubleArray(0)
+            }
+        val initialTrustRegion =
+            if (dimension == 1) {
+                0.1 * (checkedRangeU[1] - checkedRangeU[0])
+            } else {
+                0.1 * minOf(
+                    checkedRangeU[1] - checkedRangeU[0],
+                    checkedRangeV[1] - checkedRangeV[0],
+                )
+            }
+        val finalTrustRegion = initialTrustRegion / 5.0e6
+        val constraintCount = 2 * dimension
+        val factor = random.nextDouble() * 0.01 + 0.5
+
+        if (parameters.isEmpty()) {
+            parameters +=
+                factor * (checkedRangeU[0] + checkedRangeU[1])
+            if (dimension == 2) {
+                parameters +=
+                    factor *
+                    (checkedRangeV[0] + checkedRangeV[1])
+            }
+        } else {
+            parameters[0] = when {
+                parameters[0] <= checkedRangeU[0] ->
+                    checkedRangeU[0] + Mat.eps
+                parameters[0] >= checkedRangeU[1] ->
+                    checkedRangeU[1] - Mat.eps
+                else -> parameters[0]
+            }
+            if (dimension == 2) {
+                parameters[1] = when {
+                    parameters[1] <= checkedRangeV[0] ->
+                        checkedRangeV[0] + Mat.eps
+                    parameters[1] >= checkedRangeV[1] ->
+                        checkedRangeV[1] - Mat.eps
+                    else -> parameters[1]
+                }
+            }
+        }
+
+        val workingParameters =
+            DoubleArray(dimension) { index -> parameters[index] }
+        var objectivePoint = coordinates.copyOf()
+        val calculation =
+            NlpCalculation<ParametricEvaluationError<E>> { _, m, values, constraints ->
+                val targetPoint = when (
+                    val result = evaluator.evaluate(values)
+                ) {
+                    is GMResult.Ok -> when (result.value.size) {
+                        3 -> doubleArrayOf(
+                            1.0,
+                            result.value[0],
+                            result.value[1],
+                            result.value[2],
+                        )
+                        4 -> result.value
+                        else -> return@NlpCalculation GMResult.Err(
+                            ParametricEvaluationError.InvalidCoordinateCount(
+                                result.value.size,
+                            ),
+                        )
+                    }
+                    is GMResult.Err -> return@NlpCalculation GMResult.Err(
+                        ParametricEvaluationError.Target(result.error),
+                    )
+                }
+                if (m >= 2) {
+                    constraints[0] = values[0] - checkedRangeU[0]
+                    constraints[1] = -values[0] + checkedRangeU[1]
+                }
+                if (m >= 4) {
+                    constraints[2] = values[1] - checkedRangeV[0]
+                    constraints[3] = -values[1] + checkedRangeV[1]
+                }
+                val xDifference = objectivePoint[1] - targetPoint[1]
+                val yDifference = objectivePoint[2] - targetPoint[2]
+                val zDifference = objectivePoint[3] - targetPoint[3]
+                GMResult.Ok(
+                    xDifference * xDifference +
+                        yDifference * yDifference +
+                        zDifference * zDifference,
+                )
+            }
+
+        when (
+            val result = Nlp.findMinimum(
+                calculation = calculation,
+                variableCount = dimension,
+                constraintCount = constraintCount,
+                variables = workingParameters,
+                initialTrustRegion = initialTrustRegion,
+                finalTrustRegion = finalTrustRegion,
+                printLevel = 0,
+                maximumEvaluations = 200,
+            )
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return GMResult.Err(
+                ParametricProjectionError.Optimization(result.error),
+            )
+        }
+
+        val firstProjection = when (
+            val result = evaluator.evaluate(workingParameters)
+        ) {
+            is GMResult.Ok -> when (result.value.size) {
+                3 -> doubleArrayOf(
+                    1.0,
+                    result.value[0],
+                    result.value[1],
+                    result.value[2],
+                )
+                4 -> result.value.copyOf()
+                else -> return GMResult.Err(
+                    ParametricProjectionError.InvalidTargetCoordinateCount(
+                        result.value.size,
+                    ),
+                )
+            }
+            is GMResult.Err -> return GMResult.Err(
+                ParametricProjectionError.Evaluation(result.error),
+            )
+        }
+        objectivePoint = firstProjection
+
+        if (
+            paramsOutOfRange(
+                workingParameters,
+                checkedRangeU,
+                checkedRangeV,
+            )
+        ) {
+            workingParameters[0] = when {
+                workingParameters[0] <= checkedRangeU[0] ->
+                    checkedRangeU[0] + Mat.eps
+                workingParameters[0] >= checkedRangeU[1] ->
+                    checkedRangeU[1] - Mat.eps
+                else -> workingParameters[0]
+            }
+            if (dimension == 2) {
+                workingParameters[1] = when {
+                    workingParameters[1] <= checkedRangeV[0] ->
+                        checkedRangeV[0] + Mat.eps
+                    workingParameters[1] >= checkedRangeV[1] ->
+                        checkedRangeV[1] - Mat.eps
+                    else -> workingParameters[1]
+                }
+            }
+            when (
+                val result = Nlp.findMinimum(
+                    calculation = calculation,
+                    variableCount = dimension,
+                    constraintCount = constraintCount,
+                    variables = workingParameters,
+                    initialTrustRegion = initialTrustRegion,
+                    finalTrustRegion = finalTrustRegion,
+                    printLevel = 0,
+                    maximumEvaluations = 200,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return GMResult.Err(
+                    ParametricProjectionError.Optimization(result.error),
+                )
+            }
+        }
+
+        for (index in 0 until dimension) {
+            parameters[index] = workingParameters[index]
+        }
+        return when (val result = evaluator.evaluate(workingParameters)) {
+            is GMResult.Ok -> when (result.value.size) {
+                3 -> GMResult.Ok(
+                    doubleArrayOf(
+                        1.0,
+                        result.value[0],
+                        result.value[1],
+                        result.value[2],
+                    ),
+                )
+                4 -> GMResult.Ok(result.value.copyOf())
+                else -> GMResult.Err(
+                    ParametricProjectionError.InvalidTargetCoordinateCount(
+                        result.value.size,
+                    ),
+                )
+            }
+            is GMResult.Err -> GMResult.Err(
+                ParametricProjectionError.Evaluation(result.error),
+            )
+        }
+    }
+
+    private fun validateParametricRange(
+        range: DoubleArray?,
+        axis: Int,
+    ): GMResult<DoubleArray, ParametricProjectionError<Nothing>> {
+        val start = range?.getOrNull(0)
+        val end = range?.getOrNull(1)
+        if (
+            range?.size != 2 ||
+            start == null ||
+            end == null ||
+            !start.isFinite() ||
+            !end.isFinite() ||
+            end <= start
+        ) {
+            return GMResult.Err(
+                ParametricProjectionError.InvalidRange(
+                    axis = axis,
+                    start = start,
+                    end = end,
+                ),
+            )
+        }
+        return GMResult.Ok(range)
     }
 
     // JSXGraph: src/math/geometry.js -> project3DTo3DPlane

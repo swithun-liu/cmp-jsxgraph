@@ -172,6 +172,24 @@ The fixture records object type `37`, the `parametricsurface3d` and
 row/column Curve proxy arrays with NaN separators, and a `3 x 3` rectangle
 grid with four faces.
 
+Capture the official COBYLA optimizer and Curve3D/Surface3D parametric
+projection results:
+
+```bash
+node tools/upstream-fixtures/nlp-parametric.mjs
+```
+
+The fixture records normal status `0`, the exact unconstrained result
+`[0.9999998880066555, -1.999999990526853]` after 66 evaluations, and the
+exact constrained result `[0.49999991923923603, 0.5000000807607639]` after
+59 evaluations. It also records the Curve3D projection parameter
+`1.4666860883614186` and point
+`[1, 0.10392226619847204, 0.9945854224691683, 0.4668606818536723]`, plus the
+Surface3D parameters `[0.7333332582827766, -0.4666667008424886]` and point
+`[1, 0.7333332582827766, -0.4666667008424886, 0.266666557440288]`. The
+browser produces the complete JSON evidence before the local sandbox rejects
+Chrome Crashpad shutdown access.
+
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
 
@@ -1656,18 +1674,18 @@ a discrete point matrix, a transformed parent, exact sampling, and ordinary
 Curve proxy projection. Static captures scored `0.988916` on Desktop and
 `0.986324` on Compact. Both contact sheets passed manual review for path
 shape, transform offset, dash style, clipping, overlap, and blank output.
-Parametric point projection remains pending the source-mapped
-`src/math/nlp.js -> Nlp.FindMinimum` dependency. This is a focused preview
-outside the 30-case Stable corpus.
+Curve3D parametric point projection additionally matches the official COBYLA
+fixture above. This remains a focused preview outside the 30-case Stable
+corpus.
 The Circle3D capture verifies numeric and function-valued radii, numeric and
 function-valued normals, dynamic center/normal/radius updates,
 negative-radius normalization, frame recomputation, and ordinary
 Curve3D/Curve proxy projection. Desktop `1200 x 900` and Compact `390 x 844`
 captures scored `0.988886` and `0.985882`. Both contact sheets passed manual
 review for circle geometry, projected flattening and tilt, color, dash style,
-clipping, overlap, and blank output. Parametric point projection remains
-pending the same source-mapped COBYLA dependency. This is a focused preview
-outside the 30-case Stable corpus.
+clipping, overlap, and blank output. Circle3D parametric point projection
+delegates to the same tested Curve3D path. This is a focused preview outside
+the 30-case Stable corpus.
 The IntersectionCircle3D capture verifies Plane/Sphere in either order,
 Sphere/Sphere, hidden dynamic center ownership, canonical parent
 dependencies, structured rollback, bounded sampling, and disjoint-result
@@ -1733,7 +1751,9 @@ FunctionGraph3D wireframe, NaN-separated row/column paths, triangular tiling,
 93 Face3D proxies, HSL Shader colors, translucent fills, and local depth
 ordering. It scored `0.985262` on Desktop and `0.985297` on Compact; both
 contact sheets passed manual review for geometry, topology, face closure,
-shading, transparency, overlap, clipping, and blank output.
+shading, transparency, overlap, clipping, and blank output. Surface3D
+parametric point projection additionally matches the official COBYLA fixture
+above.
 Together with the Polygon3D, Curve3D, Circle3D, IntersectionCircle3D,
 Sphere3D, and Surface3D fixtures, the development corpus now contains 90 cases
 while the

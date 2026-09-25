@@ -181,7 +181,7 @@ internal class Circle3D private constructor(
     // JSXGraph: src/3d/circle3d.js -> projectCoords.
     internal fun projectCoords(
         coordinates: DoubleArray,
-        parameters: DoubleArray,
+        parameters: MutableList<Double>,
     ): GMResult<DoubleArray, Curve3DError> =
         curve.projectCoords(coordinates, parameters)
 

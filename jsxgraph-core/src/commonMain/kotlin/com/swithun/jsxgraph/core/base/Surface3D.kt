@@ -10,7 +10,10 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
+import com.swithun.jsxgraph.core.math.ParametricProjectionError
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -154,7 +157,9 @@ internal sealed interface Surface3DError {
         val error: Polyhedron3DError,
     ) : Surface3DError
 
-    data object ParametricProjectionUnavailable : Surface3DError
+    data class ParametricProjection(
+        val error: ParametricProjectionError<Surface3DError>,
+    ) : Surface3DError
 }
 
 /**
@@ -496,12 +501,36 @@ internal class Surface3D private constructor(
 
     // JSXGraph: src/3d/surface3d.js -> projectCoords;
     // src/math/geometry.js -> projectCoordsToParametric.
-    // The shared COBYLA-backed projection is translated in a later slice.
     internal fun projectCoords(
         coordinates: DoubleArray,
-        parameters: DoubleArray,
-    ): GMResult<DoubleArray, Surface3DError> =
-        GMResult.Err(Surface3DError.ParametricProjectionUnavailable)
+        parameters: MutableList<Double>,
+    ): GMResult<DoubleArray, Surface3DError> {
+        val rangeU = when (val result = evaluateRange(rangeUSource, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rangeV = when (val result = evaluateRange(rangeVSource, 1)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Geometry.projectCoordsToParametric(
+                coordinates = coordinates,
+                evaluator = Parametric3DEvaluator { values ->
+                    evalFResult(values[0], values[1])
+                },
+                dimension = 2,
+                parameters = parameters,
+                rangeU = rangeU,
+                rangeV = rangeV,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                Surface3DError.ParametricProjection(result.error),
+            )
+        }
+    }
 
     override fun remove(): GeometryElement {
         points.clear()

@@ -169,7 +169,7 @@ through ordinary Curve proxies. Static captures scored `0.988916` on Desktop
 and `0.986324` on Compact. Both contact sheets passed manual review for path
 shape, transform offset, dash style, clipping, overlap, and blank output.
 This evidence remains outside the Stable production corpus; parametric point
-projection still awaits the source-mapped COBYLA dependency.
+projection additionally matches the official COBYLA fixture.
 The focused `circle3d_projection` fixture verifies three Circle3D elements
 with numeric and function-valued radii, numeric and function-valued normals,
 dynamic center/normal/radius updates, negative-radius normalization, and
@@ -177,8 +177,8 @@ ordinary Curve3D/Curve proxy rendering. Static captures scored `0.988886` on
 Desktop and `0.985882` on Compact. Both contact sheets passed manual review
 for circle geometry, projected flattening and tilt, color, dash style,
 clipping, overlap, and blank output. This evidence remains outside the Stable
-production corpus; Circle3D parametric projection still awaits the
-source-mapped COBYLA dependency.
+production corpus; Circle3D parametric projection delegates to the same tested
+Curve3D path.
 The focused `intersectioncircle3d_projection` fixture verifies Plane/Sphere
 in either order and Sphere/Sphere through owned hidden Point3D centers and
 ordinary Curve3D/Curve proxies. It also has official dynamic lifecycle
@@ -204,7 +204,7 @@ on Desktop and `0.985297` on Compact. Both contact sheets passed manual review
 for sampled geometry, NaN-separated wire paths, triangle topology, face
 closure, shading, transparency, overlap, clipping, and blank output. This
 evidence remains outside the Stable production corpus; Surface3D parametric
-projection still awaits the source-mapped COBYLA dependency.
+projection additionally matches the official COBYLA fixture.
 The focused `spatial_lines_planes` fixture adds same-source Line3D, a finite
 Plane3D outline with its visible Mesh3D wireframe, and Axis3D evidence. Its
 static captures scored `0.987328` on Desktop and `0.975225` on Compact. Both

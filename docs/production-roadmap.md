@@ -81,10 +81,10 @@ qualification batches pass.
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
   null-clone defect, global View3D `depthOrder`/layer configuration, camera
   controls, Point3D gliders and
-  animations, Stable qualification, Curve3D, Circle3D, and Surface3D
-  parametric projection
-  pending `src/math/nlp.js -> Nlp.FindMinimum`, runtime Sphere3D
-  projection-mode mutation and radial gradients, plus remaining 3D APIs.
+  animations, Stable qualification, runtime Sphere3D projection-mode mutation
+  and radial gradients, plus remaining 3D APIs. Curve3D, Circle3D, and
+  Surface3D parametric projection now use the source-mapped
+  `src/math/nlp.js -> Nlp.FindMinimum` translation.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed

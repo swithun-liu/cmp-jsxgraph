@@ -829,8 +829,7 @@ practical.
   update pass. Kotlin reports malformed normals and rejected dynamic values
   through `GMResult.Err`; update-time failures expose `NaN` proxy coordinates
   instead of throwing through scene construction. Parametric projection
-  remains unavailable until the source-mapped COBYLA dependency is
-  translated.
+  delegates to the source-mapped Curve3D/COBYLA path.
 - IntersectionCircle3D preserves
   `src/3d/circle3d.js -> createIntersectionCircle3D` and
   `src/math/geometry.js -> intersectionFunction3D` dispatch for Plane/Sphere
@@ -847,8 +846,8 @@ practical.
   shaders, height colormaps, and local depth ordering. Kotlin bounds steps,
   generated curve points, vertices, faces, and face vertices before
   allocation, returns factory and evaluation failures through `GMResult.Err`,
-  and keeps `projectCoords` explicitly unavailable until the source-mapped
-  COBYLA dependency is translated.
+  and translates `projectCoords` through the shared source-mapped COBYLA
+  optimizer.
 - Polygon3D preserves direct existing-Point3D, coordinate-array,
   scalar-function, and array-function vertices, open 3D vertex storage, the
   closed ordinary Polygon proxy, generated-versus-external ownership, nested
@@ -884,8 +883,7 @@ practical.
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
   property access that the baseline does not expose. Camera controls, Point3D
   gliders and animations, runtime Sphere3D projection-mode mutation,
-  Surface3D parametric projection, and the remaining
-  3D APIs are still pending.
+  and the remaining 3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix
@@ -1216,16 +1214,14 @@ practical.
   beyond the platform's shortest round-trip `Double` representation.
 - Native math functions can differ from JavaScript by a few final binary
   digits. Official-reference assertions use narrow numeric tolerances.
+- `Nlp.findMinimum` preserves the one-based JSXGraph `1.13.3` COBYLA control
+  flow and numeric results, but validates array sizes, trust-region values,
+  print level, and evaluation limits before allocation. Callback failures are
+  returned as `GMResult.Err(NlpError.Evaluation)` instead of escaping through
+  the optimizer.
 - Statistics filters `NaN` values before sorting percentile and boxplot data.
   Upstream filters after sorting, which makes results depend on the
   JavaScript engine's sort behavior when the comparator receives `NaN`.
-- `Curve3D.projectCoords` returns
-  `GMResult.Err(ParametricProjectionUnavailable)` until
-  `src/math/nlp.js -> Nlp.FindMinimum` is translated. JSXGraph uses COBYLA
-  for this method. Kotlin deliberately does not substitute Brent or another
-  one-dimensional minimizer because that would silently change upstream
-  projection semantics.
-
 ## Safety Guards
 
 The following upstream edge cases can loop indefinitely or recurse without a

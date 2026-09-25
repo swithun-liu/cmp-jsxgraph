@@ -47,6 +47,27 @@ class Surface3DTest {
         val proxy = surface.curve2D
 
         endU = 4.0
+        val parameters = mutableListOf(1.0, 0.0)
+        val projection = surface.projectCoords(
+            coordinates = doubleArrayOf(1.0, 3.0, 0.0, 3.0),
+            parameters = parameters,
+        )
+
+        assertArrayClose(
+            doubleArrayOf(1.0, 3.0, 0.0, 3.0),
+            assertIs<GMResult.Ok<DoubleArray>>(projection).value,
+            absoluteTolerance = 1.0e-5,
+        )
+        assertArrayClose(
+            doubleArrayOf(3.0, 0.0),
+            parameters.toDoubleArray(),
+            absoluteTolerance = 1.0e-6,
+        )
+        assertContentEquals(
+            doubleArrayOf(0.0, 2.0),
+            surface.evaluatedRangeU,
+        )
+
         surface.prepareUpdate().update()
 
         assertSame(proxy, surface.curve2D)
@@ -220,6 +241,46 @@ class Surface3DTest {
     }
 
     @Test
+    fun parametricProjectionMatchesOfficialCobylaResult() {
+        val surface = surface(
+            Surface3D.create(
+                view = createView(createBoard()),
+                source = components(),
+                rangeUSource = range(-2.0, 2.0),
+                rangeVSource = range(-2.0, 2.0),
+                attributes = Surface3DAttributes(
+                    stepsU = 1,
+                    stepsV = 1,
+                ),
+                name = "",
+            ),
+        )
+        val parameters = mutableListOf(0.1, 0.1)
+
+        val result = surface.projectCoords(
+            coordinates = doubleArrayOf(1.0, 0.8, -0.4, 0.2),
+            parameters = parameters,
+        )
+
+        assertArrayClose(
+            doubleArrayOf(
+                1.0,
+                0.7333332582827766,
+                -0.4666667008424886,
+                0.266666557440288,
+            ),
+            assertIs<GMResult.Ok<DoubleArray>>(result).value,
+        )
+        assertArrayClose(
+            doubleArrayOf(
+                0.7333332582827766,
+                -0.4666667008424886,
+            ),
+            parameters.toDoubleArray(),
+        )
+    }
+
+    @Test
     fun malformedInputsReturnStructuredErrors() {
         val view = createView(createBoard())
         assertIs<GMResult.Err<Surface3DError.InvalidRangeCount>>(
@@ -322,4 +383,19 @@ class Surface3DTest {
                 name = "",
             ),
         ).value
+
+    private fun assertArrayClose(
+        expected: DoubleArray,
+        actual: DoubleArray,
+        absoluteTolerance: Double = 1.0e-12,
+    ) {
+        assertEquals(expected.size, actual.size)
+        for (index in expected.indices) {
+            assertEquals(
+                expected[index],
+                actual[index],
+                absoluteTolerance = absoluteTolerance,
+            )
+        }
+    }
 }

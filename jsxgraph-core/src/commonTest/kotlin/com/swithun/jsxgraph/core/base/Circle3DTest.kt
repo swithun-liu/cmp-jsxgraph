@@ -110,6 +110,54 @@ class Circle3DTest {
     }
 
     @Test
+    fun projectionDelegatesToOwnedParametricCurve() {
+        val view = createView(createBoard())
+        val circle = circle(
+            Circle3D.create(
+                view = view,
+                center = point(
+                    view,
+                    doubleArrayOf(0.0, 0.0, 0.0),
+                    "center",
+                ),
+                normalSource = normal(0.0, 0.0, 1.0),
+                radiusSource = Line3DCoordinateValue.Numeric(2.0),
+                sampleCount = 9,
+                name = "",
+            ),
+        )
+        val expectedParameter = kotlin.math.PI
+        val expectedPoint = circle.curve.F(expectedParameter)
+        val parameters = mutableListOf(expectedParameter - 0.2)
+
+        val result = circle.projectCoords(
+            coordinates = doubleArrayOf(
+                1.0,
+                expectedPoint[0],
+                expectedPoint[1],
+                expectedPoint[2],
+            ),
+            parameters = parameters,
+        )
+
+        assertArrayClose(
+            doubleArrayOf(
+                1.0,
+                expectedPoint[0],
+                expectedPoint[1],
+                expectedPoint[2],
+            ),
+            assertIs<GMResult.Ok<DoubleArray>>(result).value,
+            absoluteTolerance = 2.0e-7,
+        )
+        assertEquals(
+            expectedParameter,
+            parameters.single(),
+            absoluteTolerance = 1.0e-6,
+        )
+    }
+
+    @Test
     fun invalidDynamicValuesReturnStructuredErrors() {
         val board = createBoard()
         val view = createView(board)
@@ -254,13 +302,14 @@ class Circle3DTest {
     private fun assertArrayClose(
         expected: DoubleArray,
         actual: DoubleArray,
+        absoluteTolerance: Double = 1.0e-12,
     ) {
         assertEquals(expected.size, actual.size)
         for (index in expected.indices) {
             assertEquals(
                 expected[index],
                 actual[index],
-                absoluteTolerance = 1.0e-12,
+                absoluteTolerance = absoluteTolerance,
             )
         }
     }
