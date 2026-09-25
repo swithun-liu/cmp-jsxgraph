@@ -74,7 +74,8 @@ qualification batches pass.
   lifecycle fixtures and focused JVM tests pass. Point3D has focused static
   plus proxy-drag visual parity; Line3D, finite Plane3D with its visible
   Mesh3D, Plane3D surface modes, Axis3D, automatic border axes, Polygon3D,
-  Curve3D, Circle3D, Sphere3D, Surface3D, and Polyhedron3D have focused
+  Curve3D, Circle3D, IntersectionCircle3D, Sphere3D, Surface3D, and
+  Polyhedron3D have focused
   Desktop/Compact static parity.
 - Still pending around transforms and 3D: transformed Text/Image and general
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
@@ -83,8 +84,7 @@ qualification batches pass.
   animations, Stable qualification, Curve3D, Circle3D, and Surface3D
   parametric projection
   pending `src/math/nlp.js -> Nlp.FindMinimum`, runtime Sphere3D
-  projection-mode mutation and radial gradients, and the untranslated
-  `intersectioncircle3d` module plus remaining 3D APIs.
+  projection-mode mutation and radial gradients, plus remaining 3D APIs.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed

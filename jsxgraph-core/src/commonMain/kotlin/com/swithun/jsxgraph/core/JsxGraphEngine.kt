@@ -1356,6 +1356,7 @@ object JsxGraphEngine {
             }
             creatorName == "curve3d" ||
                 creatorName == "circle3d" ||
+                creatorName == "intersectioncircle3d" ||
                 creatorName == "sphere3d" ->
                 runtimeCurve3DPointCount(
                     board = board,
@@ -4306,6 +4307,7 @@ object JsxGraphEngine {
                 "polyhedron3d",
                 "curve3d",
                 "circle3d",
+                "intersectioncircle3d",
                 "sphere3d",
                 "parametricsurface3d",
                 "functiongraph3d",
@@ -4330,6 +4332,7 @@ object JsxGraphEngine {
         val requested = if (
             sourceObject.type == "curve3d" ||
             sourceObject.type == "circle3d" ||
+            sourceObject.type == "intersectioncircle3d" ||
             sourceObject.type == "sphere3d"
         ) {
             jsonCurve3DPointCount(

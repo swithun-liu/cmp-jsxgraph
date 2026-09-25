@@ -831,6 +831,14 @@ practical.
   instead of throwing through scene construction. Parametric projection
   remains unavailable until the source-mapped COBYLA dependency is
   translated.
+- IntersectionCircle3D preserves
+  `src/3d/circle3d.js -> createIntersectionCircle3D` and
+  `src/math/geometry.js -> intersectionFunction3D` dispatch for Plane/Sphere
+  in either order and Sphere/Sphere. It owns the hidden dynamic center,
+  reuses Circle3D's Curve3D/Curve proxy, preserves canonical parent metadata
+  and dependency edges, and hides disjoint results through the upstream
+  `NaN` radius. Kotlin rejects unsupported parent pairs and rolls back helper
+  creation through `GMResult.Err`.
 - Surface3D preserves vector-function and three-component-function sources,
   FunctionGraph3D's scalar-to-vector wrapper, dynamic parameter ranges,
   transformed surfaces, exact row/column wireframe sampling with NaN
@@ -869,13 +877,14 @@ practical.
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
   registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe
-  and finite surface, `curve3d`, `circle3d`, `sphere3d`, `surface3d`,
+  and finite surface, `curve3d`, `circle3d`, `intersectioncircle3d`,
+  `sphere3d`, `surface3d`,
   `functiongraph3d`, `mesh3d`, `axis3d`, `polygon3d`, `polyhedron3d`, and
   `transform3d` creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
   property access that the baseline does not expose. Camera controls, Point3D
   gliders and animations, runtime Sphere3D projection-mode mutation,
-  `intersectioncircle3d`, Surface3D parametric projection, and the remaining
+  Surface3D parametric projection, and the remaining
   3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
@@ -1169,9 +1178,10 @@ practical.
 - `Geometry.getPlaneBounds` returns `GMResult.Err` when either 2D linear solve
   is singular. JSXGraph `1.13.3` throws from `Numerics.Gauss`.
 - `Geometry.meetPlaneSphere` and `Geometry.meetSphereSphere` return a numeric
-  `Circle3DIntersection` snapshot. JSXGraph returns element-bound functions
-  that recalculate center and radius; the pending `intersectioncircle3d`
-  layer will provide that dynamic wrapper around these pure calculations.
+  `Circle3DIntersection` snapshot. `IntersectionCircle3D` supplies the
+  element-bound dynamic center/radius and Sphere/Sphere normal wrappers around
+  those pure calculations; Plane/Sphere retains the plane normal snapshot
+  passed by JSXGraph `1.13.3`.
 - Sphere3D's parallel proxy uses an internal Kotlin radius closure instead of
   passing a JavaScript function through `Type.createFunction`; it preserves
   dynamic absolute-radius evaluation and dependency updates without a JS

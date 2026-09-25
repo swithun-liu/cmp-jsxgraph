@@ -790,6 +790,23 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "intersectioncircle3d_projection",
+            title = "IntersectionCircle3D projection",
+            scenario = "A parallel View3D projects Plane/Sphere and Sphere/Sphere intersection circles through owned dynamic centers and Curve3D proxies.",
+            source = INTERSECTION_CIRCLE_3D_PROJECTION_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "view3d",
+                "intersectioncircle3d",
+                "plane-sphere",
+                "sphere-sphere",
+                "parallel-projection",
+                "proxy-curve",
+                "owned-center",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "sphere3d_projection",
             title = "Sphere3D projection",
             scenario = "Parallel and central View3D instances project dynamic-radius Sphere3D definitions through Circle and Ellipse proxies.",
@@ -2753,6 +2770,21 @@ private const val SPHERE_3D_PROJECTION_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nparallelView = view3d(\n  [-9, -4],\n  [8, 8],\n  [[-3, 3], [-3, 3], [-3, 3]]\n) <<\n  id: \"parallelView\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\ncentralView = view3d(\n  [1, -4],\n  [8, 8],\n  [[-3, 3], [-3, 3], [-3, 3]]\n) <<\n  id: \"centralView\", name: \"\", projection: \"central\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nparallelSphere = sphere3d(\n  parallelView, [-0.4, 0, 0], -1.7\n) <<\n  id: \"parallelSphere\", name: \"\", withLabel: false,\n  gradient: \"none\", fillColor: \"#56B4E9\", fillOpacity: 0.38,\n  strokeColor: \"#0072B2\", strokeWidth: 3,\n  center: << visible: false >>,\n  fixed: true, highlight: false\n>>;\ncentralSphere = sphere3d(\n  centralView, [0.4, 0, 0], function() { return 1.6; }\n) <<\n  id: \"centralSphere\", name: \"\", withLabel: false,\n  numberPointsHigh: 160,\n  gradient: \"none\", fillColor: \"#E69F00\", fillOpacity: 0.38,\n  strokeColor: \"#D55E00\", strokeWidth: 3,\n  center: << visible: false >>,\n  fixed: true, highlight: false\n>>;"
+}
+"""
+
+private const val INTERSECTION_CIRCLE_3D_PROJECTION_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [10, 8],\n  [[-5, 5], [-4, 4], [-3, 5]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nplane = plane3d(\n  view, [0, 0, 0], [1, 0, 0], [0, 1, 0],\n  [-5, 5], [-4, 4]\n) <<\n  id: \"plane\", name: \"\", visible: false, type: \"wireframe\",\n  point: << visible: false >>\n>>;\nplaneSphere = sphere3d(\n  view, [-2.0, -1.0, 0.6], 1.5\n) <<\n  id: \"planeSphere\", name: \"\", visible: false,\n  numberPointsHigh: 16, gradient: \"none\",\n  center: << visible: false >>\n>>;\nplaneCircle = intersectioncircle3d(\n  view, plane, planeSphere\n) <<\n  id: \"planeCircle\", name: \"\", withLabel: false,\n  numberPointsHigh: 160,\n  strokeColor: \"#0072B2\", strokeWidth: 4,\n  fixed: true, highlight: false\n>>;\nleftSphere = sphere3d(\n  view, [1.2, 0.7, -0.2], 1.7\n) <<\n  id: \"leftSphere\", name: \"\", visible: false,\n  numberPointsHigh: 16, gradient: \"none\",\n  center: << visible: false >>\n>>;\nrightSphere = sphere3d(\n  view, [2.8, 0.7, -0.2], 1.4\n) <<\n  id: \"rightSphere\", name: \"\", visible: false,\n  numberPointsHigh: 16, gradient: \"none\",\n  center: << visible: false >>\n>>;\nsphereCircle = intersectioncircle3d(\n  view, leftSphere, rightSphere\n) <<\n  id: \"sphereCircle\", name: \"\", withLabel: false,\n  numberPointsHigh: 160,\n  strokeColor: \"#D55E00\", strokeWidth: 4,\n  dash: 2, fixed: true, highlight: false\n>>;"
 }
 """
 

@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 59 focused cases, but this does not change the
+contains 30 production and 60 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary
@@ -179,6 +179,14 @@ for circle geometry, projected flattening and tilt, color, dash style,
 clipping, overlap, and blank output. This evidence remains outside the Stable
 production corpus; Circle3D parametric projection still awaits the
 source-mapped COBYLA dependency.
+The focused `intersectioncircle3d_projection` fixture verifies Plane/Sphere
+in either order and Sphere/Sphere through owned hidden Point3D centers and
+ordinary Curve3D/Curve proxies. It also has official dynamic lifecycle
+evidence for disjoint-result hiding, parent dependencies, and object type
+`42`. Static captures scored `0.989030` on Desktop and `0.986025` on Compact.
+Both contact sheets passed manual review for projected geometry, color, dash
+style, placement, clipping, overlap, and blank output. This evidence remains
+outside the Stable production corpus.
 The focused `sphere3d_projection` fixture verifies Point/radius Sphere3D
 construction in parallel and central View3D instances through ordinary
 Circle and Ellipse proxies. Its flat-fill source explicitly disables the

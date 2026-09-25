@@ -33,7 +33,7 @@
  * src/3d/polygon3d.js -> createPolygon3D,
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
  * src/3d/curve3d.js -> createCurve3D,
- * src/3d/circle3d.js -> createCircle3D,
+ * src/3d/circle3d.js -> createCircle3D / createIntersectionCircle3D,
  * src/3d/sphere3d.js -> createSphere3D,
  * src/element/arc.js -> createArc / createSemicircle /
  * createCircumcircleArc / createMinorArc / createMajorArc,
@@ -93,10 +93,13 @@ import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.Face3DLightAttributes
 import com.swithun.jsxgraph.core.base.Face3DShaderAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.GeometryElement3D
 import com.swithun.jsxgraph.core.base.Hyperbola
 import com.swithun.jsxgraph.core.base.HyperbolaError
 import com.swithun.jsxgraph.core.base.IncenterPoint
 import com.swithun.jsxgraph.core.base.IncircleCircle
+import com.swithun.jsxgraph.core.base.IntersectionCircle3D
+import com.swithun.jsxgraph.core.base.IntersectionCircle3DError
 import com.swithun.jsxgraph.core.base.IntersectionError
 import com.swithun.jsxgraph.core.base.IntersectionIndexSource
 import com.swithun.jsxgraph.core.base.IntersectionPoint
@@ -264,6 +267,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Circle3DFactory(
         val error: Circle3DError,
+    ) : JessieCodeCreatorError
+
+    data class IntersectionCircle3DFactory(
+        val error: IntersectionCircle3DError,
     ) : JessieCodeCreatorError
 
     data class Sphere3DFactory(
@@ -521,6 +528,19 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createCircle3D(board, parents, attributes, location)
+        },
+        "intersectioncircle3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createIntersectionCircle3D(
+                board,
+                parents,
+                attributes,
+                location,
+            )
         },
         "sphere3d" to JessieCodeCreator {
                 board,
@@ -4293,6 +4313,88 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = "circle3d",
                 error = JessieCodeCreatorError.Circle3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    // JSXGraph: src/3d/circle3d.js -> createIntersectionCircle3D.
+    private fun createIntersectionCircle3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "intersectioncircle3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val first = resolveElement(
+            resolvedBoard,
+            parents[1],
+        ) as? GeometryElement3D
+            ?: return unsupported(creatorName, parents, location)
+        val second = resolveElement(
+            resolvedBoard,
+            parents[2],
+        ) as? GeometryElement3D
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampleCount = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "numberpointshigh",
+                default = Circle3D.DEFAULT_SAMPLE_COUNT,
+                minimum = 1,
+                maximum = Circle3D.MAX_SAMPLE_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return intersectionCircle3DResult(
+            result = IntersectionCircle3D.create(
+                view = view,
+                first = first,
+                second = second,
+                sampleCount = sampleCount,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+            location = location,
+        )
+    }
+
+    private fun intersectionCircle3DResult(
+        result: GMResult<Circle3D, IntersectionCircle3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "intersectioncircle3d",
+                error = JessieCodeCreatorError.IntersectionCircle3DFactory(
                     result.error,
                 ),
                 location = location,
