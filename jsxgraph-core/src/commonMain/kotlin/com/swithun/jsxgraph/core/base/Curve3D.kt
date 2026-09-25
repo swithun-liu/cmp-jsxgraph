@@ -12,6 +12,7 @@ import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
 import com.swithun.jsxgraph.core.math.ParametricProjectionError
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 
 internal sealed interface Curve3DDynamicError {
     data class Rejected(
@@ -104,6 +105,10 @@ internal sealed interface Curve3DError {
         val error: CurveError,
     ) : Curve3DError
 
+    data class VectorField(
+        val error: CurveError,
+    ) : Curve3DError
+
     data class ParametricProjection(
         val error: ParametricProjectionError<Curve3DError>,
     ) : Curve3DError
@@ -116,6 +121,7 @@ internal class Curve3D private constructor(
     view: View3D,
     private val source: Curve3DSource,
     private val rangeSource: List<Line3DCoordinateValue>,
+    private val vectorFieldDefinition: Curve3DVectorFieldDefinition?,
     internal val sampleCount: Int,
     id: String,
     name: String?,
@@ -137,6 +143,8 @@ internal class Curve3D private constructor(
     internal val inherits = mutableListOf<GeometryElement>()
     internal var evaluationError: Curve3DError? = null
         private set
+    internal val isVectorField3D: Boolean
+        get() = vectorFieldDefinition != null
 
     init {
         elType = CURVE_3D_ELEMENT_TYPE
@@ -146,6 +154,23 @@ internal class Curve3D private constructor(
     // JSXGraph: src/3d/curve3d.js -> updateCoords.
     internal fun updateCoordsResult(): GMResult<Curve3D, Curve3DError> {
         points.clear()
+        vectorFieldDefinition?.let { definition ->
+            return when (
+                val result = updateVectorField3D(
+                    definition = definition,
+                    board = view.board,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    points += result.value.points
+                    numberPoints = points.size
+                    GMResult.Ok(this)
+                }
+                is GMResult.Err -> GMResult.Err(
+                    Curve3DError.VectorField(result.error),
+                )
+            }
+        }
         when (val currentSource = source) {
             is Curve3DSource.Arrays -> {
                 for (index in currentSource.x.indices) {
@@ -294,6 +319,12 @@ internal class Curve3D private constructor(
         evaluationError = null
         return this
     }
+
+    internal fun requestedPointCount(): Long? =
+        vectorFieldDefinition?.requestedPointCount
+
+    internal fun vectorField3DSnapshot(): Curve3DVectorFieldSnapshot? =
+        vectorFieldDefinition?.snapshot
 
     // JSXGraph: src/3d/curve3d.js -> updateTransform.
     internal fun updateTransformResult(): GMResult<Curve3D, Curve3DError> {
@@ -511,6 +542,7 @@ internal class Curve3D private constructor(
                 view = view,
                 source = source,
                 rangeSource = rangeSource,
+                vectorFieldDefinition = null,
                 sampleCount = sampleCount,
                 dependencies = dependencies,
                 baseCurve = null,
@@ -552,6 +584,7 @@ internal class Curve3D private constructor(
                 view = view,
                 source = Curve3DSource.Transformed(baseCurve),
                 rangeSource = emptyList(),
+                vectorFieldDefinition = null,
                 sampleCount = sampleCount,
                 dependencies = emptyList(),
                 baseCurve = baseCurve,
@@ -562,10 +595,65 @@ internal class Curve3D private constructor(
             )
         }
 
+        // JSXGraph 1.13.3:
+        // src/3d/curve3d.js -> createVectorfield3D.
+        internal fun createVectorField(
+            view: View3D,
+            field: Curve3DVectorFieldFunction,
+            xData: List<JessieCodeCoordinateFunction>,
+            yData: List<JessieCodeCoordinateFunction>,
+            zData: List<JessieCodeCoordinateFunction>,
+            scaleTerm: JessieCodeCoordinateFunction,
+            arrowEnabledTerm: JessieCodeCoordinateFunction,
+            arrowSizeTerm: JessieCodeCoordinateFunction,
+            arrowAngleTerm: JessieCodeCoordinateFunction,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve3D, Curve3DError> {
+            if (xData.size != 3 || yData.size != 3 || zData.size != 3) {
+                return GMResult.Err(
+                    Curve3DError.VectorField(
+                        CurveError.NonNumericExpression(
+                            term = "vectorfield3d.mesh",
+                            actualType = "invalid length",
+                        ),
+                    ),
+                )
+            }
+            return createInternal(
+                view = view,
+                source = Curve3DSource.Arrays(
+                    x = doubleArrayOf(),
+                    y = doubleArrayOf(),
+                    z = doubleArrayOf(),
+                ),
+                rangeSource = emptyList(),
+                vectorFieldDefinition = Curve3DVectorFieldDefinition(
+                    field = field,
+                    xData = xData,
+                    yData = yData,
+                    zData = zData,
+                    scaleTerm = scaleTerm,
+                    arrowEnabledTerm = arrowEnabledTerm,
+                    arrowSizeTerm = arrowSizeTerm,
+                    arrowAngleTerm = arrowAngleTerm,
+                ),
+                sampleCount = 1,
+                dependencies = emptyList(),
+                baseCurve = null,
+                transformations = emptyList(),
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+        }
+
         private fun createInternal(
             view: View3D,
             source: Curve3DSource,
             rangeSource: List<Line3DCoordinateValue>,
+            vectorFieldDefinition: Curve3DVectorFieldDefinition?,
             sampleCount: Int,
             dependencies: Iterable<GeometryElement>,
             baseCurve: Curve3D?,
@@ -602,6 +690,7 @@ internal class Curve3D private constructor(
                 view = view,
                 source = source,
                 rangeSource = rangeSource,
+                vectorFieldDefinition = vectorFieldDefinition,
                 sampleCount = sampleCount,
                 id = id,
                 name = name,
@@ -663,5 +752,23 @@ internal class Curve3D private constructor(
             }
             return GMResult.Ok(curve)
         }
+
+        internal const val VECTOR_FIELD_DEFAULT_SCALE: Double = 1.0
+        internal const val VECTOR_FIELD_DEFAULT_ARROW_SIZE: Double = 5.0
+        internal const val VECTOR_FIELD_DEFAULT_ARROW_ANGLE: Double =
+            kotlin.math.PI * 0.125
+
+        internal fun vectorFieldPointCount(
+            xSteps: Double,
+            ySteps: Double,
+            zSteps: Double,
+            arrowEnabled: Boolean,
+        ): Long =
+            vectorField3DPointCount(
+                xSteps = xSteps,
+                ySteps = ySteps,
+                zSteps = zSteps,
+                arrowEnabled = arrowEnabled,
+            )
     }
 }

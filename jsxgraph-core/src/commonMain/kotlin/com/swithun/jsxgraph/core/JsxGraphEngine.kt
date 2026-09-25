@@ -579,14 +579,18 @@ object JsxGraphEngine {
                                 "comb" -> COMB_SEMANTIC_ATTRIBUTES
                                 "inequality" ->
                                     INEQUALITY_SEMANTIC_ATTRIBUTES
-                                "vectorfield", "slopefield" ->
+                                "vectorfield",
+                                "slopefield",
+                                "vectorfield3d",
+                                ->
                                     VECTOR_FIELD_SEMANTIC_ATTRIBUTES
                                 else -> emptySet()
                             },
                         ignoredFunctionPropertiesByPath =
                             if (
                                 creatorName == "vectorfield" ||
-                                creatorName == "slopefield"
+                                    creatorName == "slopefield" ||
+                                    creatorName == "vectorfield3d"
                             ) {
                                 mapOf(
                                     "attributes.arrowhead" to
@@ -948,15 +952,11 @@ object JsxGraphEngine {
                         sourceElement.element
                 }
                 .flatMap { sourceElement ->
-                    sourceCurves(sourceElement.element).asSequence()
+                    sourceCurvePointUsages(
+                        sourceElement.element,
+                    ).asSequence()
                 }
-                .map { curve ->
-                    maxOf(
-                        curve.requestedPointCount()
-                            ?: curve.numberPoints.toLong(),
-                        curve.numberPoints.toLong(),
-                    )
-                }
+                .map(CurvePointUsage::requested)
                 .firstOrNull { requested ->
                     requested > limits.maxCurvePoints
                 }
@@ -1354,6 +1354,11 @@ object JsxGraphEngine {
                     )
                 }
             }
+            creatorName == "vectorfield3d" ->
+                runtimeVectorField3DPointCount(
+                    parents = parents,
+                    attributes = attributes,
+                )
             creatorName == "curve3d" ||
                 creatorName == "circle3d" ||
                 creatorName == "intersectioncircle3d" ||
@@ -2600,17 +2605,17 @@ object JsxGraphEngine {
         for (sourceElement in depthOrderedSourceElements(created)) {
             val curve = sourceElement.element as? Curve
             if (maxCurvePoints != null) {
-                for (sourceCurve in sourceCurves(sourceElement.element)) {
-                    val requested = maxOf(
-                        sourceCurve.requestedPointCount()
-                            ?: sourceCurve.numberPoints.toLong(),
-                        sourceCurve.numberPoints.toLong(),
+                for (
+                    usage in sourceCurvePointUsages(
+                        sourceElement.element,
                     )
+                ) {
+                    val requested = usage.requested
                     if (requested > maxCurvePoints) {
                         return GMResult.Err(
                             JsxGraphDocumentError.CurvePointLimitExceeded(
                                 objectIndex = sourceElement.source.index,
-                                id = sourceCurve.id,
+                                id = usage.id,
                                 limit = maxCurvePoints,
                                 actual = requested
                                     .coerceAtMost(Int.MAX_VALUE.toLong())
@@ -2851,6 +2856,40 @@ object JsxGraphEngine {
                         attributes = attributes,
                         allowFill = false,
                         allowPathBreaks = true,
+                        vectorField3D =
+                            element.vectorField3DSnapshot()?.let {
+                                    vectorField ->
+                                JsxGraphVectorField3D(
+                                    vectors =
+                                        vectorField.vectors.map { vector ->
+                                            JsxGraphVectorField3DVector(
+                                                start =
+                                                    vector.start.toList(),
+                                                vector =
+                                                    vector.vector.toList(),
+                                                scaledNorm =
+                                                    vector.scaledNorm,
+                                            )
+                                        },
+                                    arrowEnabled =
+                                        vectorField.arrowEnabled,
+                                    arrowSize = vectorField.arrowSize,
+                                    arrowAngle = vectorField.arrowAngle,
+                                    projection = JsxGraphProjection3D(
+                                        matrix3D =
+                                            element.view.matrix3D.map {
+                                                it.toList()
+                                            },
+                                        central =
+                                            element.view.projectionType ==
+                                                "central",
+                                        viewPortTransform =
+                                            element.view
+                                                .viewPortTransform
+                                                ?.map { it.toList() },
+                                    ),
+                                )
+                            },
                     )
                 ) {
                     is GMResult.Ok -> result.value
@@ -3933,6 +3972,7 @@ object JsxGraphEngine {
         autoRadiusAngle: JsxGraphAutoRadiusAngle? = null,
         boxPlot: JsxGraphBoxPlot? = null,
         vectorField: JsxGraphVectorField? = null,
+        vectorField3D: JsxGraphVectorField3D? = null,
     ): GMResult<JsxGraphSceneElement.Curve, JsxGraphDocumentError> {
         val lineCap = when (
             val result = attributes.string(
@@ -3996,6 +4036,7 @@ object JsxGraphEngine {
                 autoRadiusAngle = autoRadiusAngle,
                 boxPlot = boxPlot,
                 vectorField = vectorField,
+                vectorField3D = vectorField3D,
                 ticks3D =
                     (element as? Curve)
                         ?.ticks3DDefinition
@@ -4298,6 +4339,7 @@ object JsxGraphEngine {
                 "inequality",
                 "vectorfield",
                 "slopefield",
+                "vectorfield3d",
                 "ellipse",
                 "hyperbola",
                 "parabola",
@@ -4329,7 +4371,11 @@ object JsxGraphEngine {
         } else {
             null
         }
-        val requested = if (
+        val requested = if (sourceObject.type == "vectorfield3d") {
+            jsonVectorField3DPointCount(sourceObject)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
+        } else if (
             sourceObject.type == "curve3d" ||
             sourceObject.type == "circle3d" ||
             sourceObject.type == "intersectioncircle3d" ||
@@ -4668,6 +4714,39 @@ object JsxGraphEngine {
             configured.isNaN() -> 0L
             else -> configured.toLong()
         }
+    }
+
+    private fun runtimeVectorField3DPointCount(
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long {
+        val steps = (2..4).map { parentIndex ->
+            (
+                (
+                    parents.getOrNull(parentIndex) as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values?.getOrNull(1) as?
+                    JessieCodeRuntimeValue.NumberValue
+                )?.value
+        }
+        if (steps.any { it == null }) {
+            return 0L
+        }
+        val arrowEnabled = (
+            (
+                (
+                    attributes.properties["arrowhead"] as?
+                        JessieCodeRuntimeValue.ObjectValue
+                    )?.properties?.get("enabled") as?
+                    JessieCodeRuntimeValue.BooleanValue
+                )?.value
+            ) ?: true
+        return Curve3D.vectorFieldPointCount(
+            xSteps = steps[0] ?: return 0L,
+            ySteps = steps[1] ?: return 0L,
+            zSteps = steps[2] ?: return 0L,
+            arrowEnabled = arrowEnabled,
+        )
     }
 
     private fun runtimeSurface3DMaximumCurvePointCount(
@@ -5216,6 +5295,36 @@ object JsxGraphEngine {
             )?.intOrNull ?: Curve3D.DEFAULT_SAMPLE_COUNT
     }
 
+    private fun jsonVectorField3DPointCount(
+        source: ParsedObject,
+    ): Long {
+        val steps = (2..4).map { parentIndex ->
+            (
+                (
+                    source.parents.getOrNull(parentIndex) as?
+                        JsonArray
+                    )?.getOrNull(1) as? JsonPrimitive
+                )?.doubleOrNull
+        }
+        if (steps.any { it == null }) {
+            return 0L
+        }
+        val arrowEnabled = (
+            (
+                (
+                    source.attributes["arrowhead"] as?
+                        JsonObject
+                    )?.get("enabled") as? JsonPrimitive
+                )?.booleanOrNull
+            ) ?: true
+        return Curve3D.vectorFieldPointCount(
+            xSteps = steps[0] ?: return 0L,
+            ySteps = steps[1] ?: return 0L,
+            zSteps = steps[2] ?: return 0L,
+            arrowEnabled = arrowEnabled,
+        )
+    }
+
     private fun validateTextLengthLimit(
         sourceObject: ParsedObject,
         limit: Int,
@@ -5534,6 +5643,38 @@ object JsxGraphEngine {
         val element: GeometryElement,
     )
 
+    private data class CurvePointUsage(
+        val id: String,
+        val requested: Long,
+    )
+
+    private fun sourceCurvePointUsages(
+        element: GeometryElement,
+    ): List<CurvePointUsage> =
+        if (element is Curve3D) {
+            listOf(
+                CurvePointUsage(
+                    id = element.id,
+                    requested = maxOf(
+                        element.requestedPointCount()
+                            ?: element.numberPoints.toLong(),
+                        element.numberPoints.toLong(),
+                    ),
+                ),
+            )
+        } else {
+            sourceCurves(element).map { curve ->
+                CurvePointUsage(
+                    id = curve.id,
+                    requested = maxOf(
+                        curve.requestedPointCount()
+                            ?: curve.numberPoints.toLong(),
+                        curve.numberPoints.toLong(),
+                    ),
+                )
+            }
+        }
+
     private fun sourceCurves(element: GeometryElement): List<Curve> =
         when (element) {
             is Curve -> listOf(element)
@@ -5643,7 +5784,13 @@ object JsxGraphEngine {
                         is Line3D -> LINE_ATTRIBUTES
                         is Plane3D -> PLANE_3D_ATTRIBUTES
                         is Surface3D -> SURFACE_3D_ATTRIBUTES
-                        is Curve3D -> CURVE_ATTRIBUTES
+                        is Curve3D ->
+                            CURVE_ATTRIBUTES +
+                                if (element.isVectorField3D) {
+                                    VECTOR_FIELD_SEMANTIC_ATTRIBUTES
+                                } else {
+                                    emptySet()
+                                }
                         is Circle3D -> CIRCLE_3D_ATTRIBUTES
                         is Sphere3D -> SPHERE_3D_ATTRIBUTES
                         is Polygon3D -> POLYGON_3D_ATTRIBUTES
@@ -5795,6 +5942,17 @@ object JsxGraphEngine {
                 }
             }
             if (element is Curve && element.isVectorField) {
+                when (
+                    val result = validateNestedAttributes(
+                        name = "arrowhead",
+                        supported = VECTOR_FIELD_ARROW_HEAD_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
+            if (element is Curve3D && element.isVectorField3D) {
                 when (
                     val result = validateNestedAttributes(
                         name = "arrowhead",

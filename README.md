@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 91 source-controlled cases: 30 independent production scenarios and
-61 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 92 source-controlled cases: 30 independent production scenarios and
+62 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -35,6 +35,7 @@ Focused direct links remain available for cases such as
 [Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
 [Polygon3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=polygon3d_projection),
 [Curve3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve3d_projection),
+[VectorField3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=vectorfield3d_projection),
 [Circle3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=circle3d_projection),
 [IntersectionCircle3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=intersectioncircle3d_projection),
 [IntersectionLine3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=intersectionline3d_projection),
@@ -156,7 +157,7 @@ Implemented translation slices:
   transformed Points from one Transformation or a chain, and the 4x4
   Transformation kernel for every JSXGraph `1.13.3` 3D matrix form; the
   source-mapped `View3D`, `Point3D`, `Line3D`, `IntersectionLine3D`, Plane3D
-  wireframe and finite surfaces, `Mesh3D`, `Curve3D`, `Circle3D`,
+  wireframe and finite surfaces, `Mesh3D`, `Curve3D`, `VectorField3D`, `Circle3D`,
   `IntersectionCircle3D`,
   `Sphere3D`, `Surface3D`,
   `FunctionGraph3D`,
@@ -175,7 +176,9 @@ Implemented translation slices:
   projected Text3D,
   Ticks3D curves and labels, automatic `border`/`none` View3D axes, explicit
   Axes3D scene expansion, direct and transformed Polygon3D and Polyhedron3D
-  creation, Curve3D component/vector/discrete/transformed forms, Circle3D
+  creation, Curve3D component/vector/discrete/transformed forms,
+  VectorField3D component/array-function forms with dynamic 3D meshes and
+  viewport-sized arrowheads, Circle3D
   numeric/function radius and normal forms, Plane/Plane IntersectionLine3D,
   Plane/Sphere and Sphere/Sphere IntersectionCircle3D forms, Sphere3D
   Point/Point and Point/radius forms,
@@ -708,6 +711,16 @@ dynamic mesh, scale, viewport arrow, bounded-output, and rollback behavior.
 Focused static plus driver-drag Desktop/Compact parity evidence remains
 outside the 30-case Stable corpus. Runtime `setF` mutation remains pending
 with the broader Curve mutation API.
+
+VectorField3D translates
+`src/3d/curve3d.js -> createVectorfield3D`. It retains the upstream
+`Curve3D`/ordinary-Curve proxy identity while accepting three component
+functions/expressions or one array-returning function/expression, inclusive
+dynamic X/Y/Z meshes, `scale`, and nested arrow settings. Zero vectors are
+skipped at JavaScript `Number.EPSILON`; Compose resolves the three arrow-leg
+axes from the actual viewport before View3D projection. Static/dynamic output
+is bounded and failures are structured. Focused Desktop/Compact parity
+evidence remains outside the 30-case Stable corpus.
 
 Arrow accepts the translated two-Point Line parent forms. ArrowParallel wraps
 the three-Point and Line/Point Parallel forms. Both force their visible

@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **61 development parity scenarios.** These remain focused regression
+3. **62 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 61 focused cases, but this does not change the
+contains 30 production and 62 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary
@@ -170,6 +170,14 @@ and `0.986324` on Compact. Both contact sheets passed manual review for path
 shape, transform offset, dash style, clipping, overlap, and blank output.
 This evidence remains outside the Stable production corpus; parametric point
 projection additionally matches the official COBYLA fixture.
+The focused `vectorfield3d_projection` fixture verifies component and
+array-returning VectorField3D definitions, inclusive three-axis meshes,
+zero-vector suppression, scale, `NaN` path breaks, and viewport-sized
+arrowheads before parallel View3D projection. Static captures scored
+`0.988321` on Desktop and `0.984174` on Compact. Both contact sheets passed
+manual review for vector placement, arrow direction and size, color,
+clipping, overlap, and blank output. This evidence remains outside the Stable
+production corpus.
 The focused `circle3d_projection` fixture verifies three Circle3D elements
 with numeric and function-valued radii, numeric and function-valued normals,
 dynamic center/normal/radius updates, negative-radius normalization, and

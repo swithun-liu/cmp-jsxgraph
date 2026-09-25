@@ -135,6 +135,18 @@ radius parents, absolute-value radius behavior, dynamic frame
 recalculation, the owned Curve3D parent, and `NaN` proxy coordinates after an
 invalid dynamic radius.
 
+Capture the official VectorField3D component/array-function forms, dynamic
+scale and arrow settings, inclusive X/Y/Z meshes, zero-field suppression, and
+default style:
+
+```bash
+node tools/upstream-fixtures/vectorfield3d.mjs
+```
+
+The fixture records Curve3D object type `36`, class `8`, four vectors as 28
+points with arrows, 12 points without arrows, an empty zero field, default
+`5px`/`π/8` arrowheads, `1px` stroke, and layer `12`.
+
 Capture the official IntersectionCircle3D Plane/Sphere and Sphere/Sphere
 forms, dynamic recomputation, hidden owned center, and parent dependencies:
 
@@ -1244,8 +1256,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 91 cases:
-30 generated production scenarios followed by 61 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 92 cases:
+30 generated production scenarios followed by 62 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1270,6 +1282,9 @@ elements, including nested vertex and border styles.
 The focused `circle3d_projection` case uses one construction document for
 numeric and function-valued Circle3D radii and normals through the ordinary
 Curve3D/Curve proxy chain.
+The focused `vectorfield3d_projection` case uses one JessieCode source for
+component and array-returning 3D fields, inclusive meshes, path breaks, and
+viewport-sized arrowheads through the ordinary Curve3D/Curve proxy chain.
 The focused `intersectioncircle3d_projection` case uses one JessieCode source
 for Plane/Sphere and Sphere/Sphere intersection circles with hidden parents
 and ordinary Curve3D/Curve proxies.
@@ -1367,6 +1382,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `circle3d_projection` | 0.988886 | 0.985882 |
 | `intersectioncircle3d_projection` | 0.989030 | 0.986025 |
 | `intersectionline3d_projection` | 0.989049 | 0.986102 |
+| `vectorfield3d_projection` | 0.988321 | 0.984174 |
 | `sphere3d_projection` | 0.988514 | 0.985909 |
 | `surface3d_projection` | 0.985262 | 0.985297 |
 | `spatial_lines_planes` | 0.987328 | 0.975225 |
@@ -1698,6 +1714,14 @@ shape, transform offset, dash style, clipping, overlap, and blank output.
 Curve3D parametric point projection additionally matches the official COBYLA
 fixture above. This remains a focused preview outside the 30-case Stable
 corpus.
+The VectorField3D capture verifies component and array-returning field forms,
+inclusive three-axis meshes, scale, zero-vector suppression, `NaN` path
+breaks, ordinary Curve3D/Curve proxy identity, and viewport CSS-pixel
+arrowheads generated before View3D projection. Desktop `1200 x 900` and
+Compact `390 x 844` captures scored `0.988321` and `0.984174`. Both contact
+sheets passed manual review for vector placement, arrow direction and size,
+color, clipping, overlap, and blank output. This is a focused preview outside
+the 30-case Stable corpus.
 The Circle3D capture verifies numeric and function-valued radii, numeric and
 function-valued normals, dynamic center/normal/radius updates,
 negative-radius normalization, frame recomputation, and ordinary
@@ -1787,10 +1811,10 @@ contact sheets passed manual review for geometry, topology, face closure,
 shading, transparency, overlap, clipping, and blank output. Surface3D
 parametric point projection additionally matches the official COBYLA fixture
 above.
-Together with the Polygon3D, Curve3D, Circle3D, IntersectionCircle3D,
-IntersectionLine3D, Sphere3D, and Surface3D fixtures, the development corpus
-now contains 91 cases while the independently qualified 30-case Stable corpus
-remains unchanged.
+Together with the Polygon3D, Curve3D, VectorField3D, Circle3D,
+IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
+the development corpus now contains 92 cases while the independently
+qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous
 normalization, and non-draggable constrained Points. After dragging the shared

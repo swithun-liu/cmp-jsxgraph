@@ -774,6 +774,23 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "vectorfield3d_projection",
+            title = "VectorField3D projection",
+            scenario = "A parallel View3D projects component and array-returning VectorField3D definitions with viewport-sized arrowheads.",
+            source = VECTOR_FIELD_3D_PROJECTION_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "view3d",
+                "vectorfield3d",
+                "parallel-projection",
+                "proxy-curve",
+                "function-parent",
+                "pixel-arrowhead",
+                "path-break",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "circle3d_projection",
             title = "Circle3D projection",
             scenario = "A parallel View3D projects fixed and function-valued Circle3D definitions through their Curve3D proxies.",
@@ -2757,6 +2774,21 @@ private const val CURVE_3D_PROJECTION_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [10, 8],\n  [[-5, 5], [-4, 4], [-3, 5]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nhelix = curve3d(\n  view,\n  function(u) { return -2.2 + cos(u); },\n  function(u) { return sin(u); },\n  function(u) { return u / PI - 2; },\n  [0, 4 * PI]\n) <<\n  id: \"helix\", name: \"\", withLabel: false,\n  numberPointsHigh: 200,\n  strokeColor: \"#0072B2\", strokeWidth: 3,\n  fixed: true, highlight: false\n>>;\nvectorCurve = curve3d(\n  view,\n  function(u) { return [2.0 + 1.2 * cos(u), 1.2 * sin(u), 0.4 * cos(2 * u)]; },\n  [0, 2 * PI]\n) <<\n  id: \"vectorCurve\", name: \"\", withLabel: false,\n  numberPointsHigh: 160,\n  strokeColor: \"#009E73\", strokeWidth: 3,\n  fixed: true, highlight: false\n>>;\ndataCurve = curve3d(\n  view,\n  [[-1.2, -2.8, -1], [0, -1.6, 0.5], [1.2, -2.8, 2], [2.4, -1.6, 3]]\n) <<\n  id: \"dataCurve\", name: \"\", withLabel: false,\n  strokeColor: \"#D55E00\", strokeWidth: 3,\n  fixed: true, highlight: false\n>>;\nshift = transform3d(view, 0.5, 0.4, 0.7) << type: \"translate\" >>;\nmoved = curve3d(view, dataCurve, shift) <<\n  id: \"moved\", name: \"\", withLabel: false,\n  strokeColor: \"#CC79A7\", strokeWidth: 2,\n  dash: 2, fixed: true, highlight: false\n>>;"
+}
+"""
+
+private const val VECTOR_FIELD_3D_PROJECTION_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [10, 8],\n  [[-5, 5], [-4, 4], [-3, 5]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: false >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nrotational = vectorfield3d(\n  view,\n  [\n    function(x, y, z) { return -0.32 * y; },\n    function(x, y, z) { return 0.32 * x; },\n    function(x, y, z) { return 0.16 * (1 - z); }\n  ],\n  [-3, 3, 3], [-2, 2, 2], [-2, 2, 2]\n) <<\n  id: \"rotational\", name: \"\", withLabel: false,\n  scale: 0.9,\n  arrowHead: << enabled: true, size: 6, angle: PI * 0.125 >>,\n  strokeColor: \"#0072B2\", strokeWidth: 2,\n  fixed: true, highlight: false\n>>;\nradial = vectorfield3d(\n  view,\n  function(x, y, z) { return [0.25 * x, 0.25 * y, -0.2 * z]; },\n  [-2, 2, 2], [-2, 2, 2], [2.5, 0, 2.5]\n) <<\n  id: \"radial\", name: \"\", withLabel: false,\n  scale: 0.8,\n  arrowHead: << enabled: false >>,\n  strokeColor: \"#D55E00\", strokeWidth: 3,\n  fixed: true, highlight: false\n>>;"
 }
 """
 

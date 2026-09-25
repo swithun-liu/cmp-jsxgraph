@@ -821,6 +821,18 @@ practical.
   out-of-view intersection returns
   `GMResult.Err(IntersectionLine3DError.MissingEndpoint)` instead of passing
   JavaScript `false` into Point3D creation.
+- VectorField3D preserves
+  `src/3d/curve3d.js -> createVectorfield3D`, including Curve3D identity,
+  inclusive X/Y/Z mesh loops, `Number.EPSILON` zero-vector suppression,
+  scale, `NaN` path breaks, and the exact spherical arrowhead formulas.
+  JSXGraph `1.13.3` accidentally validates the first three parent lengths but
+  never validates `zData.length`; malformed z meshes can therefore propagate
+  `undefined` and non-finite geometry. Kotlin rejects all malformed
+  three-term meshes with `GMResult.Err(Curve3DError.VectorField(...))`.
+  Arrowhead coordinates are regenerated from CSS-pixel dimensions at Compose
+  draw time because the construction-document Board has no final viewport
+  units; the resulting 3D points are then passed through the same View3D
+  projection matrix.
 - Face3D preserves the shared Polyhedron vertex maps, face closure rule,
   normals, projected coordinates, averaged `zIndex`, cyclic
   `fillColorArray`, per-face overrides, HSL angle/depth shaders, and ordinary
@@ -887,7 +899,7 @@ practical.
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
   registers the upstream `view3d`, `point3d`, `line3d`,
   `intersectionline3d`, `plane3d` wireframe and finite surface, `curve3d`,
-  `circle3d`, `intersectioncircle3d`,
+  `vectorfield3d`, `circle3d`, `intersectioncircle3d`,
   `sphere3d`, `surface3d`,
   `functiongraph3d`, `mesh3d`, `axis3d`, `polygon3d`, `polyhedron3d`, and
   `transform3d` creator routes but

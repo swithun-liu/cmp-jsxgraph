@@ -44,7 +44,7 @@ qualification batches pass.
   affine, affinematrix, generic, and matrix forms with scalar, vector,
   JessieCode, and structured dynamic evaluation.
 - View3D, Point3D, Line3D, IntersectionLine3D, Plane3D wireframe and finite
-  surfaces, Mesh3D, Curve3D, Circle3D,
+  surfaces, Mesh3D, Curve3D, VectorField3D, Circle3D,
   Axis3D, Polygon3D, Face3D, and Polyhedron3D: the bounded lifecycle from
   `src/3d/element3d.js`,
   `src/3d/view3d.js`, `src/3d/point3d.js`, `src/3d/linspace3d.js`,
@@ -76,7 +76,8 @@ qualification batches pass.
   lifecycle fixtures and focused JVM tests pass. Point3D has focused static
   plus proxy-drag visual parity; Line3D, finite Plane3D with its visible
   Mesh3D, Plane3D surface modes, Axis3D, automatic border axes, Polygon3D,
-  Curve3D, Circle3D, IntersectionLine3D, IntersectionCircle3D, Sphere3D,
+  Curve3D, VectorField3D, Circle3D, IntersectionLine3D,
+  IntersectionCircle3D, Sphere3D,
   Surface3D, and Polyhedron3D have focused
   Desktop/Compact static parity.
 - Still pending around transforms and 3D: transformed Text/Image and general
@@ -316,6 +317,13 @@ qualification batches pass.
   creator, document/session, official fixture, and focused static plus
   driver-drag Desktop/Compact parity gates pass. Runtime `setF`, an independent
   production case, and Stable qualification remain pending.
+- VectorField3D: `src/3d/curve3d.js -> createVectorfield3D` now covers
+  component and array-returning functions, inclusive dynamic X/Y/Z meshes,
+  scale, zero-vector suppression, nested arrow settings, ordinary Curve3D
+  proxy identity, viewport-sized 3D arrowheads, bounded output, structured
+  failures, official fixtures, focused tests, and Desktop/Compact parity.
+  Runtime `setF`, an independent production case, complete APIs, and Stable
+  qualification remain pending.
 - Circumcircle creators: `createCircumcenter`, the
   `circumcirclemidpoint` alias, and `createCircumcircle` now cover
   Point/reference/coordinate parents, public and hidden center metadata,

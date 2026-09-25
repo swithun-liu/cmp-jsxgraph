@@ -33,7 +33,7 @@
  * src/3d/text3d.js -> createText3D,
  * src/3d/polygon3d.js -> createPolygon3D,
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
- * src/3d/curve3d.js -> createCurve3D,
+ * src/3d/curve3d.js -> createCurve3D / createVectorfield3D,
  * src/3d/circle3d.js -> createCircle3D / createIntersectionCircle3D,
  * src/3d/sphere3d.js -> createSphere3D,
  * src/element/arc.js -> createArc / createSemicircle /
@@ -77,6 +77,9 @@ import com.swithun.jsxgraph.core.base.Curve3DDynamicError
 import com.swithun.jsxgraph.core.base.Curve3DError
 import com.swithun.jsxgraph.core.base.Curve3DScalarEvaluator
 import com.swithun.jsxgraph.core.base.Curve3DSource
+import com.swithun.jsxgraph.core.base.Curve3DVectorFieldArrayFunction
+import com.swithun.jsxgraph.core.base.Curve3DVectorFieldComponentFunction
+import com.swithun.jsxgraph.core.base.Curve3DVectorFieldFunction
 import com.swithun.jsxgraph.core.base.CurveCoordinateSplinePoint
 import com.swithun.jsxgraph.core.base.CurveElementSplinePoint
 import com.swithun.jsxgraph.core.base.CurveError
@@ -541,6 +544,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createCurve3D(board, parents, attributes, location)
+        },
+        "vectorfield3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createVectorField3D(board, parents, attributes, location)
         },
         "circle3d" to JessieCodeCreator {
                 board,
@@ -3803,6 +3814,152 @@ internal object NativeJessieCodeCreators {
         return unsupported(creatorName, parents, location)
     }
 
+    // JSXGraph 1.13.3:
+    // src/3d/curve3d.js -> createVectorfield3D.
+    private fun createVectorField3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "vectorfield3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 5) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0])
+            as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val field = when (
+            val result = vectorField3DFunction(
+                board = resolvedBoard,
+                value = parents[1],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return vectorField3DFailure(
+                error = result.error,
+                location = location,
+            )
+        }
+        val meshes = mutableListOf<List<JessieCodeCoordinateFunction>>()
+        for ((index, axis) in listOf("x", "y", "z").withIndex()) {
+            when (
+                val result = vectorFieldMesh(
+                    board = resolvedBoard,
+                    value = parents[index + 2],
+                    termName = "$creatorName.${axis}Data",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> meshes += result.value
+                is GMResult.Err -> return vectorField3DFailure(
+                    error = result.error,
+                    location = location,
+                )
+            }
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val scaleTerm = when (
+            val result = numericAttributeTerm(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "scale",
+                default = Curve3D.VECTOR_FIELD_DEFAULT_SCALE,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val arrowHead = when (
+            val value = attributes.properties["arrowhead"]
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue ->
+                JessieCodeRuntimeValue.ObjectValue(emptyMap())
+            is JessieCodeRuntimeValue.ObjectValue -> value
+            else -> return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "arrowhead",
+                expected = "object",
+                actual = value,
+                location = location,
+            )
+        }
+        val arrowEnabledTerm = when (
+            val result = booleanAttributeTerm(
+                creatorName = creatorName,
+                attributes = arrowHead,
+                name = "enabled",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val arrowSizeTerm = when (
+            val result = numericAttributeTerm(
+                creatorName = creatorName,
+                attributes = arrowHead,
+                name = "size",
+                default = Curve3D.VECTOR_FIELD_DEFAULT_ARROW_SIZE,
+                location = location,
+                attributePrefix = "arrowhead.",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val arrowAngleTerm = when (
+            val result = numericAttributeTerm(
+                creatorName = creatorName,
+                attributes = arrowHead,
+                name = "angle",
+                default = Curve3D.VECTOR_FIELD_DEFAULT_ARROW_ANGLE,
+                location = location,
+                attributePrefix = "arrowhead.",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return curve3DResult(
+            result = Curve3D.createVectorField(
+                view = view,
+                field = field,
+                xData = meshes[0],
+                yData = meshes[1],
+                zData = meshes[2],
+                scaleTerm = scaleTerm,
+                arrowEnabledTerm = arrowEnabledTerm,
+                arrowSizeTerm = arrowSizeTerm,
+                arrowAngleTerm = arrowAngleTerm,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+            location = location,
+            creatorName = creatorName,
+        )
+    }
+
     private fun numericCurve3DArray(
         value: JessieCodeRuntimeValue,
     ): DoubleArray? {
@@ -3899,17 +4056,30 @@ internal object NativeJessieCodeCreators {
     private fun curve3DResult(
         result: GMResult<Curve3D, Curve3DError>,
         location: JessieCodeAstLocation,
+        creatorName: String = "curve3d",
     ): CreatorResult =
         when (result) {
             is GMResult.Ok -> element(result.value)
             is GMResult.Err -> failure(
-                creatorName = "curve3d",
+                creatorName = creatorName,
                 error = JessieCodeCreatorError.Curve3DFactory(
                     result.error,
                 ),
                 location = location,
             )
         }
+
+    private fun vectorField3DFailure(
+        error: CurveError,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        failure(
+            creatorName = "vectorfield3d",
+            error = JessieCodeCreatorError.Curve3DFactory(
+                Curve3DError.VectorField(error),
+            ),
+            location = location,
+        )
 
     // JSXGraph: src/3d/surface3d.js ->
     // createParametricSurface3D / createFunctiongraph3D.
@@ -12941,6 +13111,70 @@ internal object NativeJessieCodeCreators {
             else -> GMResult.Err(
                 CurveError.NonNumericExpression(
                     term = "vectorfield.F",
+                    actualType = typeName(value),
+                ),
+            )
+        }
+
+    private fun vectorField3DFunction(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Curve3DVectorFieldFunction, CurveError> =
+        when (value) {
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                if (value.values.size != 3) {
+                    return GMResult.Err(
+                        CurveError.NonNumericExpression(
+                            term = "vectorfield3d.F",
+                            actualType = "invalid length",
+                        ),
+                    )
+                }
+                val terms = mutableListOf<JessieCodeCoordinateFunction>()
+                for ((index, component) in value.values.withIndex()) {
+                    when (
+                        val result = vectorFieldTerm(
+                            board = board,
+                            value = component,
+                            termName = "vectorfield3d.F[$index]",
+                            variableNames = listOf("x", "y", "z"),
+                            returnsArray = false,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> terms += result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                GMResult.Ok(
+                    Curve3DVectorFieldComponentFunction(
+                        xTerm = terms[0],
+                        yTerm = terms[1],
+                        zTerm = terms[2],
+                    ),
+                )
+            }
+            is JessieCodeRuntimeValue.StringValue,
+            is JessieCodeRuntimeValue.FunctionValue,
+            -> when (
+                val result = vectorFieldTerm(
+                    board = board,
+                    value = value,
+                    termName = "vectorfield3d.F",
+                    variableNames = listOf("x", "y", "z"),
+                    returnsArray = true,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> GMResult.Ok(
+                    Curve3DVectorFieldArrayFunction(result.value),
+                )
+                is GMResult.Err -> result
+            }
+            else -> GMResult.Err(
+                CurveError.NonNumericExpression(
+                    term = "vectorfield3d.F",
                     actualType = typeName(value),
                 ),
             )

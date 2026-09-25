@@ -268,6 +268,81 @@ data class JsxGraphVectorField(
         takeIf { x.isFinite() && y.isFinite() }
 }
 
+data class JsxGraphVectorField3DVector(
+    val start: List<Double>,
+    val vector: List<Double>,
+    val scaledNorm: Double,
+)
+
+/**
+ * Viewport-dependent VectorField3D data. JSXGraph specifies each arrowhead
+ * axis in CSS pixels before projecting the generated 3D points.
+ */
+data class JsxGraphVectorField3D(
+    val vectors: List<JsxGraphVectorField3DVector>,
+    val arrowEnabled: Boolean,
+    val arrowSize: Double,
+    val arrowAngle: Double,
+    val projection: JsxGraphProjection3D,
+) {
+    // JSXGraph 1.13.3:
+    // src/3d/curve3d.js -> createVectorfield3D.updateDataArray.
+    fun resolvePoints(
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): List<JsxGraphPoint2D?> {
+        val points = mutableListOf<JsxGraphPoint2D?>()
+        val arrowLegs = listOf(
+            arrowSize / cssPixelsPerUnitX,
+            arrowSize / cssPixelsPerUnitY,
+            arrowSize / sqrt(
+                cssPixelsPerUnitX * cssPixelsPerUnitY,
+            ),
+        )
+        for (entry in vectors) {
+            if (entry.start.size != 3 || entry.vector.size != 3) {
+                continue
+            }
+            val end = List(3) { index ->
+                entry.start[index] + entry.vector[index]
+            }
+            points += projection.project(entry.start)
+            points += projection.project(end)
+            points += null
+
+            if (arrowEnabled) {
+                val phi = atan2(entry.vector[1], entry.vector[0])
+                val theta = kotlin.math.asin(
+                    entry.vector[2] / entry.scaledNorm,
+                )
+                val theta1 = theta - arrowAngle
+                val theta2 = theta + arrowAngle
+                points += projection.project(
+                    listOf(
+                        end[0] -
+                            arrowLegs[0] * cos(phi) * cos(theta1),
+                        end[1] -
+                            arrowLegs[1] * sin(phi) * cos(theta1),
+                        end[2] - arrowLegs[2] * sin(theta2),
+                    ),
+                )
+                points += projection.project(end)
+                points += projection.project(
+                    listOf(
+                        end[0] -
+                            arrowLegs[0] * cos(phi) * cos(theta2),
+                        end[1] -
+                            arrowLegs[1] * sin(phi) * cos(theta2),
+                        end[2] - arrowLegs[2] * sin(theta1),
+                    ),
+                )
+                points += null
+            }
+        }
+        return points
+    }
+}
+
 data class JsxGraphProjection3D(
     val matrix3D: List<List<Double>>,
     val central: Boolean,
@@ -431,6 +506,7 @@ sealed interface JsxGraphSceneElement {
         val autoRadiusAngle: JsxGraphAutoRadiusAngle? = null,
         val boxPlot: JsxGraphBoxPlot? = null,
         val vectorField: JsxGraphVectorField? = null,
+        val vectorField3D: JsxGraphVectorField3D? = null,
         val ticks3D: JsxGraphTicks3D? = null,
     ) : JsxGraphSceneElement {
         fun resolvePoints(
@@ -443,6 +519,10 @@ sealed interface JsxGraphSceneElement {
                     cssPixelsPerUnitY = cssPixelsPerUnitY,
                 )
                 ?: vectorField?.resolvePoints(
+                    cssPixelsPerUnitX = cssPixelsPerUnitX,
+                    cssPixelsPerUnitY = cssPixelsPerUnitY,
+                )
+                ?: vectorField3D?.resolvePoints(
                     cssPixelsPerUnitX = cssPixelsPerUnitX,
                     cssPixelsPerUnitY = cssPixelsPerUnitY,
                 )
