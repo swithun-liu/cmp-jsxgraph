@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 82 source-controlled cases: 30 independent production scenarios and
-52 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 83 source-controlled cases: 30 independent production scenarios and
+53 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -36,6 +36,7 @@ Focused direct links remain available for cases such as
 [spatial lines and planes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=spatial_lines_planes),
 [Polyhedron3D faces](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=polyhedron3d_faces),
 [View3D default axes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=view3d_default_axes),
+[View3D center axes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=view3d_center_axes),
 [parallel constructions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=parallel_constructions),
 [Line arrows](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=line_arrows),
 [triangle centers](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=triangle_centers),
@@ -233,9 +234,9 @@ and function-valued element mutation, Slider/Glider-backed built-ins,
 `import`/`$log`/`D`, the complete element `methodMap`, the remaining
 construction-document element types and attributes, and the complete element
 renderer are not yet translated. The current 3D preview does not yet include
-the centered Axes3D origin intersection, Plane3D shader/colormap/color-array
-surface modes, global View3D `depthOrder`/layer configuration, camera controls,
-gliders, animations, Stable qualification, or the complete 3D APIs.
+Plane3D shader/colormap/color-array surface modes, global View3D
+`depthOrder`/layer configuration, camera controls, gliders, animations,
+Stable qualification, or the complete 3D APIs.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

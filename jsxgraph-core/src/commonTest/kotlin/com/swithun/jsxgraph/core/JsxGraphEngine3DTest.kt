@@ -509,7 +509,56 @@ class JsxGraphEngine3DTest {
     }
 
     @Test
-    fun defaultCenterAxesReturnExplicitDocumentGap() {
+    fun defaultCenterAxesExpandHiddenOfficialOrigin() {
+        val result = JsxGraphEngine.parse(
+            """
+                {
+                  "boundingBox": [-8, 8, 8, -8],
+                  "objects": [
+                    {
+                      "id": "view",
+                      "type": "view3d",
+                      "parents": [
+                        [-5, -4],
+                        [8, 7],
+                        [[-5, 5], [-4, 6], [-3, 7]]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "projection": "parallel",
+                        "o": {
+                          "name": "ignored",
+                          "visible": true,
+                          "withLabel": true
+                        },
+                        "xPlaneRear": {"visible": false},
+                        "yPlaneRear": {"visible": false},
+                        "zPlaneRear": {"visible": false}
+                      }
+                    }
+                  ]
+                }
+            """.trimIndent(),
+        )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
+
+        assertEquals(25, scene.elements.size)
+        assertEquals(
+            15,
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Line>().size,
+        )
+        val origin = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+            .single()
+        assertFalse(origin.style.visible)
+        assertFalse(origin.draggable)
+    }
+
+    @Test
+    fun explicitCenterAxesExpandHiddenOfficialOrigin() {
         val result = JsxGraphEngine.parse(
             """
             {
@@ -523,19 +572,45 @@ class JsxGraphEngine3DTest {
                     [8, 7],
                     [[-5, 5], [-4, 6], [-3, 7]]
                   ],
-                  "attributes": {"name": "", "projection": "parallel"}
+                  "attributes": {
+                    "name": "",
+                    "projection": "parallel",
+                    "axesPosition": "none",
+                    "xPlaneRear": {"visible": false},
+                    "yPlaneRear": {"visible": false},
+                    "zPlaneRear": {"visible": false}
+                  }
+                },
+                {
+                  "id": "axes",
+                  "type": "axes3d",
+                  "parents": ["view"],
+                  "attributes": {
+                    "axesPosition": "center",
+                    "xPlaneRear": {"visible": false},
+                    "yPlaneRear": {"visible": false},
+                    "zPlaneRear": {"visible": false}
+                  }
                 }
               ]
             }
             """.trimIndent(),
         )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
 
-        val error = assertIs<
-            GMResult.Err<JsxGraphDocumentError.ElementCreation>
-            >(result).error
-        assertEquals("view", error.id)
-        assertEquals("view3d", error.type)
-        assertTrue(error.reason.contains("center-origin"))
+        assertEquals(46, scene.elements.size)
+        assertEquals(
+            27,
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Line>().size,
+        )
+        val origin = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+            .single()
+        assertFalse(origin.style.visible)
+        assertFalse(origin.isReal)
     }
 
     @Test

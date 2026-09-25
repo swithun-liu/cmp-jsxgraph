@@ -347,6 +347,20 @@ try {
                 members
             };
         };
+        const snapshotAxesOrigin = (origin) => ({
+            id: origin.id,
+            name: origin.name,
+            elType: origin.elType,
+            type: origin.type,
+            elementClass: origin.elementClass,
+            is3D: origin.is3D,
+            coordinates: vector(origin.coords.usrCoords),
+            visible: origin.evalVisProp("visible"),
+            withLabel: origin.evalVisProp("withlabel"),
+            hasLabel: origin.hasLabel,
+            viewId: origin.view?.id ?? null,
+            relations: relations(origin)
+        });
         const captureError = (action) => {
             try {
                 const value = action();
@@ -779,9 +793,21 @@ try {
             {axesPosition: "border"}
         );
         automaticAxesBoard.update();
+        const automaticCenterBoard = createBoard();
+        const automaticCenterView = createView(
+            automaticCenterBoard,
+            "parallel",
+            "automaticCenterView",
+            {axesPosition: "center"}
+        );
+        automaticCenterBoard.update();
         const automaticDefaultAxes = {
             none: automaticNoneAxes,
-            border: snapshotDefaultAxes(automaticBorderView)
+            border: snapshotDefaultAxes(automaticBorderView),
+            center: snapshotDefaultAxes(automaticCenterView),
+            centerOrigin: snapshotAxesOrigin(
+                automaticCenterView.defaultAxes.O
+            )
         };
         const ticksBoard = createBoard();
         const ticksView = createView(

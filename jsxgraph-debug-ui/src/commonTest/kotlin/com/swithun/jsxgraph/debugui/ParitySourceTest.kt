@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(82, cases.size)
+        assertEquals(83, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            52,
+            53,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -2068,6 +2068,40 @@ class ParitySourceTest {
             ),
             labels.groupingBy { label -> label.content }.eachCount(),
         )
+    }
+
+    @Test
+    fun view3DCenterAxesFocusedCasePreservesHiddenOfficialOrigin() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("view3d_center_axes"),
+        ).value
+        val input = assertIs<GMResult.Ok<JsxGraphParityInput>>(
+            parseParityInput(parityCase.source),
+        ).value
+        assertIs<JsxGraphParityInput.ConstructionDocument>(input)
+
+        val result = parseParitySource(parityCase.source)
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
+        val lines =
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Line>()
+        val curves =
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Curve>()
+        val origin = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+            .single()
+
+        assertEquals(25, scene.elements.size)
+        assertEquals(15, lines.size)
+        assertEquals(3, lines.count { line -> line.style.visible })
+        assertEquals(9, curves.size)
+        assertTrue(curves.none { curve -> curve.style.visible })
+        assertFalse(origin.style.visible)
+        assertFalse(origin.draggable)
+        assertFalse(origin.isReal)
+        assertEquals(JsxGraphPoint2D(0.0, 0.0), origin.coordinates)
     }
 
     @Test

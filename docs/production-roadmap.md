@@ -64,8 +64,8 @@ qualification batches pass.
   have focused Desktop/Compact static parity.
 - Still pending around transforms and 3D: transformed Text/Image and general
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
-  null-clone defect, the centered Axes3D origin intersection, Plane3D
-  shader/colormap/color-array surface modes, global View3D
+  null-clone defect, Plane3D shader/colormap/color-array surface modes,
+  global View3D
   `depthOrder`/layer configuration, camera controls, Point3D gliders and
   animations, Stable qualification, and the remaining 3D APIs.
   The upstream 3D `generic`

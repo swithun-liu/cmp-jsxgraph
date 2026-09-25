@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **52 development parity scenarios.** These remain focused regression
+3. **53 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 52 focused cases, but this does not change the
+contains 30 production and 53 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `spatial_lines_planes` fixture adds same-source Line3D, a finite
 Plane3D outline with its visible Mesh3D wireframe, and Axis3D evidence. Its
@@ -169,6 +169,12 @@ construction document. Static captures scored `0.986921` on Desktop and
 `0.977686` on Compact. Both contact sheets passed manual review for tick
 endpoints, label order and placement, axis direction, clipping, overlap, and
 blank output. This remains outside the Stable production corpus.
+The focused `view3d_center_axes` fixture verifies the three factory-owned
+center Axis3D directions and the hidden, non-real `O` Intersection from one
+construction document. Static captures scored `0.989085` on Desktop and
+`0.986061` on Compact. Both contact sheets passed manual review for center
+alignment, arrow direction, color, clipping, overlap, and blank output. This
+remains outside the Stable production corpus.
 The focused `polyhedron3d_faces` fixture verifies six Face3D Curve proxies,
 cyclic colors, a per-face override, translucent fills, borders, and ascending
 local face-depth ordering from one JessieCode source. Static captures scored

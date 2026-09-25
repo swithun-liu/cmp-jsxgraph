@@ -821,18 +821,19 @@ practical.
   and `none`; `border` also creates its three Ticks3D curves and numeric
   Text3D labels. View3D factory creation owns this composition and removes it
   with the View. JSON and JessieCode expand explicit Axes3D and automatic
-  `border`/`none` axes into scene elements when unsupported rear shader planes
-  are hidden or replaced by wireframes. The centered origin intersection is
-  still unresolved, so public `center` creation returns a structured error
-  and rolls back the View instead of silently omitting `O`.
+  `center`/`border`/`none` axes into scene elements when unsupported rear
+  shader planes are hidden or replaced by wireframes. The centered `O`
+  preserves the JSXGraph `1.13.3` fallback through the Line3D default
+  `stdform`: it is a hidden, non-real `intersection` at homogeneous
+  `[0,0,0]`, parented by the x/y Line3D members.
 - JSXGraph `1.13.3` leaves both
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
   registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe,
   `mesh3d`, `axis3d`, `polyhedron3d`, and `transform3d` creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
-  property access that the baseline does not expose. The centered Axes3D
-  origin, Plane3D shader/colormap/color-array surface modes, camera controls,
+  property access that the baseline does not expose. Plane3D
+  shader/colormap/color-array surface modes, camera controls,
   Point3D gliders and animations, and the remaining 3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the

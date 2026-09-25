@@ -4,6 +4,7 @@ import com.swithun.jsxgraph.core.GMResult
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertSame
@@ -107,22 +108,40 @@ class Axes3DTest {
     }
 
     @Test
-    fun centerAndNonePositionsExposeCurrentDependencyGaps() {
+    fun centerCreatesOfficialOriginIntersectionAndNoneOmitsAxes() {
+        val centerBoard = createBoard()
+        val centerView = createView(centerBoard)
         val center = assertIs<GMResult.Ok<Axes3D>>(
             Axes3D.create(
-                view = createView(createBoard()),
+                view = centerView,
                 axesPosition = "center",
             ),
         ).value
-        assertEquals(21, center.objects.size)
+        assertEquals(22, center.objects.size)
         assertEquals(
-            setOf(
-                Axes3D.PLANE_SURFACE_GAP,
-                Axes3D.CENTER_ORIGIN_GAP,
-            ),
+            setOf(Axes3D.PLANE_SURFACE_GAP),
             center.unsupportedFeatures,
         )
-        assertTrue(center.member("xAxis") is Line3D)
+        val xAxis = assertIs<Line3D>(center.member("xAxis"))
+        val yAxis = assertIs<Line3D>(center.member("yAxis"))
+        val origin = assertIs<IntersectionPoint>(center.member("O"))
+        assertSame(xAxis, origin.firstElement)
+        assertSame(yAxis, origin.secondElement)
+        assertEquals(
+            listOf(xAxis.id, yAxis.id),
+            origin.parents,
+        )
+        assertFalse(origin.isDraggable)
+        assertFalse(origin.isReal)
+        assertContentEquals(
+            doubleArrayOf(0.0, 0.0, 0.0),
+            origin.coords.usrCoords,
+        )
+        val centerMemberIds = center.objects.keys.toList()
+        centerBoard.removeObject(center)
+        for (id in centerMemberIds) {
+            assertNull(centerBoard.elementById(id))
+        }
 
         val none = assertIs<GMResult.Ok<Axes3D>>(
             Axes3D.create(

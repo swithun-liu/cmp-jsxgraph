@@ -103,6 +103,7 @@ internal class IntersectionPoint private constructor(
     name: String?,
     needsRegularUpdate: Boolean,
     fixed: Boolean,
+    private val preservesHomogeneousZero: Boolean = false,
 ) : Point(
     board = board,
     coordinates = initialCoordinates,
@@ -125,6 +126,14 @@ internal class IntersectionPoint private constructor(
     // src/math/geometry.js -> intersectionFunction.
     override fun update(fromParent: Boolean): GeometryElement {
         if (!needsUpdate) {
+            return this
+        }
+        if (preservesHomogeneousZero) {
+            intersectionEvaluationError = null
+            coords.setCoordinates(
+                coordType = Const.COORDS_BY_USER,
+                coordinates = DoubleArray(3),
+            )
             return this
         }
         when (val result = coordinatesResult(useExternalIndexFunctions)) {
@@ -197,6 +206,52 @@ internal class IntersectionPoint private constructor(
     internal companion object {
         private const val POINT_ID_PREFIX = "P"
         private const val INTERSECTION_ELEMENT_TYPE = "intersection"
+
+        /**
+         * JSXGraph: src/3d/box3d.js -> createAxes3D origin;
+         * src/math/geometry.js -> intersectionFunction fallback.
+         *
+         * Line3D uses OBJECT_CLASS_3D, so the generic upstream intersection
+         * falls back to both Line3D default stdforms and stays at [0, 0, 0].
+         */
+        fun createAxes3DOrigin(
+            board: Board,
+            first: Line3D,
+            second: Line3D,
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<IntersectionPoint, IntersectionError> {
+            val output = IntersectionPoint(
+                board = board,
+                firstElement = first,
+                secondElement = second,
+                firstIndex = IntersectionIndexSource.Number(0.0),
+                secondIndex = IntersectionIndexSource.Number(0.0),
+                alwaysIntersect = true,
+                initialCoordinates = DoubleArray(3),
+                id = "",
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                fixed = false,
+                preservesHomogeneousZero = true,
+            )
+            output.baseElement = output
+            return when (
+                val registration = board.setId(output, POINT_ID_PREFIX)
+            ) {
+                is GMResult.Ok -> {
+                    first.addChild(output)
+                    second.addChild(output)
+                    output.setParents(listOf(first, second))
+                    output.useExternalIndexFunctions = true
+                    output.update()
+                    GMResult.Ok(output)
+                }
+                is GMResult.Err -> GMResult.Err(
+                    IntersectionError.Registration(registration.error),
+                )
+            }
+        }
 
         fun create(
             board: Board,

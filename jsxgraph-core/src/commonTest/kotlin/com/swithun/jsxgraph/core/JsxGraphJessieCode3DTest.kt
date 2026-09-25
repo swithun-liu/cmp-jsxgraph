@@ -551,27 +551,12 @@ class JsxGraphJessieCode3DTest {
     }
 
     @Test
-    fun defaultCenterAxesFailExplicitlyAndDoNotLeakTheViewRegistration() {
+    fun defaultCenterAxesExpandHiddenOfficialOrigin() {
         val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
             JsxGraphJessieCode.createSession(),
         ).value
-        val error = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
-            session.execute(
-                """
-                view = view3d(
-                    [-5, -4],
-                    [8, 7],
-                    [[-5, 5], [-4, 6], [-3, 7]]
-                ) << id: "view", name: "", projection: "parallel" >>;
-                """.trimIndent(),
-            ),
-        ).error
-        val runtime = assertIs<JsxGraphJessieCodeError.Runtime>(error)
-        assertTrue(runtime.reason.contains("center-origin"))
-
-        val recovered = assertIs<GMResult.Ok<JsxGraphScene>>(
-            session.execute(
-                """
+        val result = session.execute(
+            """
                 view = view3d(
                     [-5, -4],
                     [8, 7],
@@ -580,12 +565,69 @@ class JsxGraphJessieCode3DTest {
                     id: "view",
                     name: "",
                     projection: "parallel",
-                    $HIDDEN_DEFAULT_AXES_ATTRIBUTES
+                    xPlaneRear: << visible: false >>,
+                    yPlaneRear: << visible: false >>,
+                    zPlaneRear: << visible: false >>
                 >>;
-                """.trimIndent(),
-            ),
+            """.trimIndent(),
+        )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
         ).value
-        assertEquals(21, recovered.elements.size)
+
+        assertEquals(25, scene.elements.size)
+        assertEquals(
+            15,
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Line>().size,
+        )
+        val origin = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+            .single()
+        assertFalse(origin.style.visible)
+        assertFalse(origin.draggable)
+    }
+
+    @Test
+    fun explicitCenterAxesExpandHiddenOfficialOrigin() {
+        val result = JsxGraphJessieCode.parse(
+            """
+            view = view3d(
+                [-5, -4],
+                [8, 7],
+                [[-5, 5], [-4, 6], [-3, 7]]
+            ) <<
+                id: "view",
+                name: "",
+                projection: "parallel",
+                axesPosition: "none",
+                xPlaneRear: << visible: false >>,
+                yPlaneRear: << visible: false >>,
+                zPlaneRear: << visible: false >>
+            >>;
+            axes = axes3d(view) <<
+                axesPosition: "center",
+                xPlaneRear: << visible: false >>,
+                yPlaneRear: << visible: false >>,
+                zPlaneRear: << visible: false >>
+            >>;
+            """.trimIndent(),
+        )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
+
+        assertEquals(46, scene.elements.size)
+        assertEquals(
+            27,
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Line>().size,
+        )
+        val origin = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Point>()
+            .single()
+        assertFalse(origin.style.visible)
+        assertFalse(origin.isReal)
     }
 
     @Test

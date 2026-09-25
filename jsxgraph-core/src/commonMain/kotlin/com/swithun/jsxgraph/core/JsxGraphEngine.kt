@@ -635,15 +635,6 @@ object JsxGraphEngine {
                                             location,
                                         )
                                     }
-                                    if (
-                                        Axes3D.CENTER_ORIGIN_GAP in
-                                        axes.unsupportedFeatures
-                                    ) {
-                                        view.board.removeObject(view)
-                                        return@JessieCodeCreator invalidView3DDefaultAxesResult(
-                                            location,
-                                        )
-                                    }
                                     val expanded =
                                         axes3DCreatedSourceElements(
                                             source = ParsedObject(
@@ -750,13 +741,6 @@ object JsxGraphEngine {
                                 if (creatorName == "axes3d") {
                                     val axes = composition as? Axes3D
                                     if (axes == null) {
-                                        return@JessieCodeCreator invalidAxes3DResult(location)
-                                    }
-                                    if (
-                                        Axes3D.CENTER_ORIGIN_GAP in
-                                        axes.unsupportedFeatures
-                                    ) {
-                                        selectedBoard?.removeObject(axes)
                                         return@JessieCodeCreator invalidAxes3DResult(location)
                                     }
                                     val expanded =
@@ -1746,6 +1730,16 @@ object JsxGraphEngine {
         role: String,
         element: GeometryElement,
     ): JsonObject {
+        if (role == "O") {
+            return JsonObject(
+                linkedMapOf(
+                    "id" to JsonPrimitive(element.id),
+                    "name" to JsonPrimitive(""),
+                    "withlabel" to JsonPrimitive(false),
+                    "visible" to JsonPrimitive(false),
+                ),
+            )
+        }
         val defaults = linkedMapOf<String, JsonElement>(
             "id" to JsonPrimitive(element.id),
             "name" to JsonPrimitive(element.name),
@@ -1841,8 +1835,7 @@ object JsxGraphEngine {
         GMResult.Err(
             JessieCodeRuntimeError.InvalidAst(
                 reason =
-                    "Native axes3d creator requires the untranslated " +
-                        "center-origin intersection.",
+                    "Native axes3d creator returned an invalid composition.",
                 location = location,
             ),
         )
@@ -1853,8 +1846,7 @@ object JsxGraphEngine {
         GMResult.Err(
             JessieCodeRuntimeError.InvalidAst(
                 reason =
-                    "Native view3d default axes require the untranslated " +
-                        "center-origin intersection.",
+                    "Native view3d creator did not register default axes.",
                 location = location,
             ),
         )
@@ -1866,9 +1858,7 @@ object JsxGraphEngine {
             objectIndex = source.index,
             id = source.id,
             type = source.type,
-            reason =
-                "axes3d center position requires the untranslated " +
-                    "origin intersection",
+            reason = "creator returned an invalid axes3d composition",
         )
 
     private fun invalidView3DDefaultAxesDocumentResult(
@@ -1878,9 +1868,7 @@ object JsxGraphEngine {
             objectIndex = source.index,
             id = source.id,
             type = source.type,
-            reason =
-                "view3d default axes require the untranslated " +
-                    "center-origin intersection",
+            reason = "view3d creator did not register default axes",
         )
 
     private fun invalidTangentToResult(
@@ -2291,14 +2279,6 @@ object JsxGraphEngine {
                     ?: return GMResult.Err(
                         invalidAxes3DDocumentResult(sourceObject),
                     )
-                if (
-                    Axes3D.CENTER_ORIGIN_GAP in
-                    axes.unsupportedFeatures
-                ) {
-                    return GMResult.Err(
-                        invalidAxes3DDocumentResult(sourceObject),
-                    )
-                }
                 created += axes3DCreatedSourceElements(
                     source = sourceObject,
                     axes = axes,
@@ -2320,15 +2300,6 @@ object JsxGraphEngine {
                     ?: return GMResult.Err(
                         invalidView3DDefaultAxesDocumentResult(sourceObject),
                     )
-                if (
-                    Axes3D.CENTER_ORIGIN_GAP in
-                    axes.unsupportedFeatures
-                ) {
-                    board.removeObject(element)
-                    return GMResult.Err(
-                        invalidView3DDefaultAxesDocumentResult(sourceObject),
-                    )
-                }
                 created += axes3DCreatedSourceElements(
                     source = sourceObject,
                     axes = axes,

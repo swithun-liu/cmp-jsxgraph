@@ -45,14 +45,14 @@ binding, update/removal, structured-error, official-fixture, and focused JVM
 evidence. Point3D additionally has drag and `applyOnce` parity evidence;
 Line3D, finite Plane3D outlines with visible Mesh3D wireframes, Axis3D, and
 Polyhedron3D have focused Desktop/Compact static parity evidence. Text3D,
-Ticks3D, explicit Axes3D scene expansion, and automatic `border`/`none`
+Ticks3D, explicit Axes3D scene expansion, and automatic `center`/`border`/`none`
 View3D axes now have bounded JSON/JessieCode creation and resource accounting.
 The Polyhedron3D slice accepts direct and transformed creators, Point-backed,
 function-valued, and homogeneous vertices, cyclic `fillColorArray` plus
 per-face overrides, HSL Face3D shaders, ordinary Curve proxies, and ascending
 face `zIndex` ordering within each Polyhedron. This 3D preview remains outside
-the qualified Stable scope. The centered Axes3D origin helper, Plane3D
-shader/colormap/color-array surface modes, global View3D `depthOrder`/layer
+the qualified Stable scope. Plane3D shader/colormap/color-array surface modes,
+global View3D `depthOrder`/layer
 configuration, camera controls, Point3D gliders and animations, and the
 remaining 3D APIs are still pending.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same

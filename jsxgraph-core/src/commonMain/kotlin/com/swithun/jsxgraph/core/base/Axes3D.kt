@@ -95,6 +95,10 @@ internal sealed interface Axes3DError {
         val error: Axis3DError,
     ) : Axes3DError
 
+    data class OriginCreation(
+        val error: IntersectionError,
+    ) : Axes3DError
+
     data class PlaneCreation(
         val role: String,
         val error: Plane3DError,
@@ -116,9 +120,8 @@ internal data class Axes3DTicksAttributes(
 /**
  * Container produced by JSXGraph createAxes3D.
  *
- * The translated slice creates every Line3D, Plane3D, and border Ticks3D
- * member whose dependencies are available. The center-origin intersection
- * remains an explicit gap until that upstream lifecycle is translated.
+ * The translated slice creates every Line3D, center-origin Intersection,
+ * Plane3D, and border Ticks3D member whose dependencies are available.
  */
 internal class Axes3D private constructor(
     members: Map<String, GeometryElement>,
@@ -131,7 +134,6 @@ internal class Axes3D private constructor(
 
     internal companion object {
         private const val AXES_3D_ELEMENT_TYPE = "axes3d"
-        internal const val CENTER_ORIGIN_GAP = "center-origin-intersection"
         internal const val PLANE_SURFACE_GAP = "mesh3d/polyhedron3d"
 
         // JSXGraph: src/3d/box3d.js -> createAxes3D.
@@ -153,6 +155,7 @@ internal class Axes3D private constructor(
             val front = DoubleArray(3) { view.bbox3D[it][1] }
             val members = linkedMapOf<String, GeometryElement>()
             val created = mutableListOf<GeometryElement>()
+            val centerAxes = mutableListOf<Line3D>()
 
             fun cleanup() {
                 view.board.removeObjects(created.asReversed())
@@ -162,6 +165,7 @@ internal class Axes3D private constructor(
                 role: String,
                 start: DoubleArray,
                 end: DoubleArray,
+                createdAxes: MutableList<Line3D>? = null,
             ): Axes3DError? =
                 when (
                     val result = Axis3D.create(
@@ -175,6 +179,7 @@ internal class Axes3D private constructor(
                     is GMResult.Ok -> {
                         members[role] = result.value
                         created += result.value
+                        createdAxes?.add(result.value)
                         null
                     }
                     is GMResult.Err ->
@@ -188,10 +193,12 @@ internal class Axes3D private constructor(
                         val start = DoubleArray(3)
                         val end = DoubleArray(3)
                         end[dimension] = front[dimension]
+                        val role = "${direction}Axis"
                         createAxis(
-                            role = "${direction}Axis",
+                            role = role,
                             start = start,
                             end = end,
+                            createdAxes = centerAxes,
                         )?.let { error ->
                             cleanup()
                             return GMResult.Err(error)
@@ -296,6 +303,29 @@ internal class Axes3D private constructor(
                         created += ticks
                     }
                 }
+            }
+
+            if (normalizedPosition == "center") {
+                // JSXGraph: src/3d/box3d.js -> createAxes3D origin.
+                val origin = when (
+                    val result = IntersectionPoint.createAxes3DOrigin(
+                        board = view.board,
+                        first = centerAxes[0],
+                        second = centerAxes[1],
+                        name = "",
+                        needsRegularUpdate = needsRegularUpdate,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        cleanup()
+                        return GMResult.Err(
+                            Axes3DError.OriginCreation(result.error),
+                        )
+                    }
+                }
+                members["O"] = origin
+                created += origin
             }
 
             for (dimension in 0 until 3) {
@@ -413,17 +443,11 @@ internal class Axes3D private constructor(
                 }
             }
 
-            val gaps = buildSet {
-                add(PLANE_SURFACE_GAP)
-                if (normalizedPosition == "center") {
-                    add(CENTER_ORIGIN_GAP)
-                }
-            }
             return GMResult.Ok(
                 Axes3D(
                     members = members,
                     axesPosition = normalizedPosition,
-                    unsupportedFeatures = gaps,
+                    unsupportedFeatures = setOf(PLANE_SURFACE_GAP),
                 ),
             )
         }

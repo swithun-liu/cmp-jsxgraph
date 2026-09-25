@@ -735,6 +735,22 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "view3d_center_axes",
+            title = "View3D center axes",
+            scenario = "A parallel View3D factory creates centered axes and the hidden official origin Intersection.",
+            source = VIEW3D_CENTER_AXES_SOURCE,
+            features = setOf(
+                "construction-document",
+                "view3d",
+                "default-axes",
+                "axes3d",
+                "center-origin",
+                "intersection",
+                "parallel-projection",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "function_coordinate_points",
             title = "Function coordinate points",
             scenario = "Array, scalar, and homogeneous JessieCode functions constrain Points from one draggable driver.",
@@ -2515,6 +2531,65 @@ private const val VIEW3D_DEFAULT_AXES_SOURCE: String = """
               "anchorY": "middle"
             }
           }
+        },
+        "xPlaneRear": {"visible": false},
+        "xPlaneFront": {"visible": false},
+        "yPlaneRear": {"visible": false},
+        "yPlaneFront": {"visible": false},
+        "zPlaneRear": {"visible": false},
+        "zPlaneFront": {"visible": false},
+        "depthOrder": {"enabled": false},
+        "az": {"slider": {"visible": false, "start": 1}},
+        "el": {"slider": {"visible": false, "start": 0.3}},
+        "bank": {"slider": {"visible": false, "start": 0}}
+      }
+    }
+  ]
+}
+"""
+
+private const val VIEW3D_CENTER_AXES_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-8, 8, 8, -8],
+  "axis": false,
+  "grid": false,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "view",
+      "type": "view3d",
+      "parents": [
+        [-5, -4],
+        [8, 7],
+        [[-5, 5], [-4, 6], [-3, 7]]
+      ],
+      "attributes": {
+        "name": "",
+        "projection": "parallel",
+        "axesPosition": "center",
+        "xAxis": {
+          "name": "",
+          "withLabel": false,
+          "strokeColor": "#D9553F",
+          "strokeWidth": 3
+        },
+        "yAxis": {
+          "name": "",
+          "withLabel": false,
+          "strokeColor": "#16877A",
+          "strokeWidth": 3
+        },
+        "zAxis": {
+          "name": "",
+          "withLabel": false,
+          "strokeColor": "#246BCE",
+          "strokeWidth": 3
+        },
+        "O": {
+          "name": "ignored",
+          "visible": true,
+          "withLabel": true
         },
         "xPlaneRear": {"visible": false},
         "xPlaneFront": {"visible": false},
