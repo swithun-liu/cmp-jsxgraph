@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **55 development parity scenarios.** These remain focused regression
+3. **56 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 55 focused cases, but this does not change the
+contains 30 production and 56 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary
@@ -163,6 +163,13 @@ nested vertex/border styles. Static captures scored `0.988028` on Desktop and
 `0.982365` on Compact. Both contact sheets passed manual review for projected
 geometry, closure, fill, borders, ownership, overlap, clipping, and blank
 output. This evidence remains outside the Stable production corpus.
+The focused `curve3d_projection` fixture verifies component functions, a
+vector-valued function, a discrete point matrix, and a transformed Curve3D
+through ordinary Curve proxies. Static captures scored `0.988916` on Desktop
+and `0.986324` on Compact. Both contact sheets passed manual review for path
+shape, transform offset, dash style, clipping, overlap, and blank output.
+This evidence remains outside the Stable production corpus; parametric point
+projection still awaits the source-mapped COBYLA dependency.
 The focused `spatial_lines_planes` fixture adds same-source Line3D, a finite
 Plane3D outline with its visible Mesh3D wireframe, and Axis3D evidence. Its
 static captures scored `0.987328` on Desktop and `0.975225` on Compact. Both

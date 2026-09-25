@@ -110,6 +110,18 @@ updates, and nested fill/border styles. JSXGraph `1.13.3` throws while
 registering the first transformed Point3D; the exact failure and the Kotlin
 safety adaptation are recorded in `translation-deviations.md`.
 
+Capture the official Curve3D component/vector/discrete/transformed forms,
+sampling, projected proxy arrays, and dynamic function update:
+
+```bash
+node tools/upstream-fixtures/curve3d.mjs
+```
+
+The fixture records object type `36`, the exact inclusive
+`numberPointsHigh` loop, homogeneous 3D samples, matrix transposition,
+ordinary Curve proxy coordinates, transformed-parent metadata, and live
+function reevaluation.
+
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
 
@@ -1148,8 +1160,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 85 cases:
-30 generated production scenarios followed by 55 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 86 cases:
+30 generated production scenarios followed by 56 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1573,6 +1585,14 @@ manual review for projected geometry, closure, fill, borders, vertex
 ownership, overlap, clipping, and blank output. The remaining visible
 differences are existing Point marker fill and antialiasing differences. This
 is a focused preview outside the 30-case Stable corpus.
+The Curve3D capture verifies component functions, one vector-valued function,
+a discrete point matrix, a transformed parent, exact sampling, and ordinary
+Curve proxy projection. Static captures scored `0.988916` on Desktop and
+`0.986324` on Compact. Both contact sheets passed manual review for path
+shape, transform offset, dash style, clipping, overlap, and blank output.
+Parametric point projection remains pending the source-mapped
+`src/math/nlp.js -> Nlp.FindMinimum` dependency. This is a focused preview
+outside the 30-case Stable corpus.
 The same upstream lifecycle fixture now records Line3D two-Point,
 point/direction/range, copied-direction, transformed, coordinate-projection,
 and screen-projection behavior; Plane3D finite, three-Point, transformed,
@@ -1616,7 +1636,7 @@ Desktop and `0.984777` on Compact; both contact sheets passed manual review
 for geometry, face closure, transparent overlays, borders, overlap, clipping,
 and blank output. The local ordering test deliberately supplies near/far
 faces in reverse and verifies that the scene emits them in ascending depth.
-Together with the Polygon3D fixture, the development corpus now contains 85
+Together with the Polygon3D and Curve3D fixtures, the development corpus now contains 86
 cases while the independently qualified 30-case Stable corpus remains
 unchanged.
 The function-coordinate Point capture verifies one function returning a

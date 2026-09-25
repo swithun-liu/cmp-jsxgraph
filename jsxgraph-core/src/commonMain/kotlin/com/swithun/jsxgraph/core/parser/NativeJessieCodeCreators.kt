@@ -32,6 +32,7 @@
  * src/3d/text3d.js -> createText3D,
  * src/3d/polygon3d.js -> createPolygon3D,
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
+ * src/3d/curve3d.js -> createCurve3D,
  * src/element/arc.js -> createArc / createSemicircle /
  * createCircumcircleArc / createMinorArc / createMajorArc,
  * src/element/sector.js -> createSector / createAngle /
@@ -64,6 +65,12 @@ import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CircumcenterError
 import com.swithun.jsxgraph.core.base.CircumcenterPoint
 import com.swithun.jsxgraph.core.base.Curve
+import com.swithun.jsxgraph.core.base.Curve3D
+import com.swithun.jsxgraph.core.base.Curve3DArrayEvaluator
+import com.swithun.jsxgraph.core.base.Curve3DDynamicError
+import com.swithun.jsxgraph.core.base.Curve3DError
+import com.swithun.jsxgraph.core.base.Curve3DScalarEvaluator
+import com.swithun.jsxgraph.core.base.Curve3DSource
 import com.swithun.jsxgraph.core.base.CurveCoordinateSplinePoint
 import com.swithun.jsxgraph.core.base.CurveElementSplinePoint
 import com.swithun.jsxgraph.core.base.CurveError
@@ -235,6 +242,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Polygon3DFactory(
         val error: Polygon3DError,
+    ) : JessieCodeCreatorError
+
+    data class Curve3DFactory(
+        val error: Curve3DError,
     ) : JessieCodeCreatorError
 
     data class Ticks3DFactory(
@@ -468,6 +479,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createPolygon3D(board, parents, attributes, location)
+        },
+        "curve3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createCurve3D(board, parents, attributes, location)
         },
         "polepoint" to JessieCodeCreator {
                 board,
@@ -3311,6 +3330,336 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = "polygon3d",
                 error = JessieCodeCreatorError.Polygon3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    // JSXGraph: src/3d/curve3d.js -> createCurve3D.
+    private fun createCurve3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "curve3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampleCount = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "numberpointshigh",
+                default = Curve3D.DEFAULT_SAMPLE_COUNT,
+                minimum = 1,
+                maximum = Curve3D.MAX_SAMPLE_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (parents.size == 3) {
+            val base = resolveElement(resolvedBoard, parents[1])
+                as? Curve3D
+            val transformations = transformationReferences(parents[2])
+            if (base != null && transformations != null) {
+                return curve3DResult(
+                    result = Curve3D.create(
+                        view = view,
+                        baseCurve = base,
+                        transformations = transformations,
+                        sampleCount = sampleCount,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate = identity.needsRegularUpdate,
+                    ),
+                    location = location,
+                )
+            }
+        }
+
+        if (parents.size == 2) {
+            val matrix = parents[1] as?
+                JessieCodeRuntimeValue.ArrayValue
+                ?: return unsupported(creatorName, parents, location)
+            val coordinates = mutableListOf<DoubleArray>()
+            for (row in matrix.values) {
+                val values = numericCurve3DArray(row)
+                    ?: return unsupported(creatorName, parents, location)
+                if (values.size != 3) {
+                    return unsupported(creatorName, parents, location)
+                }
+                coordinates += values
+            }
+            return curve3DResult(
+                result = Curve3D.create(
+                    view = view,
+                    source = Curve3DSource.Arrays(
+                        x = DoubleArray(coordinates.size) {
+                            coordinates[it][0]
+                        },
+                        y = DoubleArray(coordinates.size) {
+                            coordinates[it][1]
+                        },
+                        z = DoubleArray(coordinates.size) {
+                            coordinates[it][2]
+                        },
+                    ),
+                    sampleCount = sampleCount,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                ),
+                location = location,
+            )
+        }
+
+        if (parents.size == 3) {
+            val function = parents[1] as?
+                JessieCodeRuntimeValue.FunctionValue
+                ?: return unsupported(creatorName, parents, location)
+            val range = when (
+                val result = line3DRange(
+                    value = parents[2],
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            return curve3DResult(
+                result = Curve3D.create(
+                    view = view,
+                    source = Curve3DSource.Function(
+                        curve3DArrayEvaluator(function, location),
+                    ),
+                    rangeSource = range.values,
+                    sampleCount = sampleCount,
+                    dependencies = range.dependencies,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                ),
+                location = location,
+            )
+        }
+
+        if (parents.size == 5) {
+            val arrays = parents.subList(1, 4)
+                .map(::numericCurve3DArray)
+            if (arrays.all { it != null }) {
+                val range = when (
+                    val result = line3DRange(
+                        value = parents[4],
+                        location = location,
+                        creatorName = creatorName,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                return curve3DResult(
+                    result = Curve3D.create(
+                        view = view,
+                        source = Curve3DSource.Arrays(
+                            x = arrays[0] ?: DoubleArray(0),
+                            y = arrays[1] ?: DoubleArray(0),
+                            z = arrays[2] ?: DoubleArray(0),
+                        ),
+                        rangeSource = range.values,
+                        sampleCount = sampleCount,
+                        dependencies = range.dependencies,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate = identity.needsRegularUpdate,
+                    ),
+                    location = location,
+                )
+            }
+            val functions = parents.subList(1, 4).map {
+                it as? JessieCodeRuntimeValue.FunctionValue
+            }
+            if (functions.all { it != null }) {
+                val range = when (
+                    val result = line3DRange(
+                        value = parents[4],
+                        location = location,
+                        creatorName = creatorName,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                return curve3DResult(
+                    result = Curve3D.create(
+                        view = view,
+                        source = Curve3DSource.Components(
+                            x = curve3DScalarEvaluator(
+                                functions[0] ?: return unsupported(
+                                    creatorName,
+                                    parents,
+                                    location,
+                                ),
+                                location,
+                            ),
+                            y = curve3DScalarEvaluator(
+                                functions[1] ?: return unsupported(
+                                    creatorName,
+                                    parents,
+                                    location,
+                                ),
+                                location,
+                            ),
+                            z = curve3DScalarEvaluator(
+                                functions[2] ?: return unsupported(
+                                    creatorName,
+                                    parents,
+                                    location,
+                                ),
+                                location,
+                            ),
+                        ),
+                        rangeSource = range.values,
+                        sampleCount = sampleCount,
+                        dependencies = range.dependencies,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate = identity.needsRegularUpdate,
+                    ),
+                    location = location,
+                )
+            }
+        }
+        return unsupported(creatorName, parents, location)
+    }
+
+    private fun numericCurve3DArray(
+        value: JessieCodeRuntimeValue,
+    ): DoubleArray? {
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return null
+        val numbers = array.values.map {
+            (it as? JessieCodeRuntimeValue.NumberValue)?.value
+                ?: return null
+        }
+        return numbers.toDoubleArray()
+    }
+
+    private fun curve3DArrayEvaluator(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): Curve3DArrayEvaluator =
+        Curve3DArrayEvaluator { parameter ->
+            when (
+                val result = function.externalCallable.call(
+                    arguments = listOf(
+                        JessieCodeRuntimeValue.NumberValue(parameter),
+                    ),
+                    location = location,
+                )
+            ) {
+                is GMResult.Err -> GMResult.Err(
+                    Curve3DDynamicError.Rejected(
+                        result.error.toString(),
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val values = (
+                        result.value as?
+                            JessieCodeRuntimeValue.ArrayValue
+                        )?.values
+                    val coordinates = values?.map {
+                        (it as? JessieCodeRuntimeValue.NumberValue)?.value
+                            ?: return@Curve3DArrayEvaluator GMResult.Err(
+                                Curve3DDynamicError.Rejected(
+                                    "Expected numeric coordinate array, got " +
+                                        typeName(result.value),
+                                ),
+                            )
+                    }
+                    if (coordinates == null) {
+                        GMResult.Err(
+                            Curve3DDynamicError.Rejected(
+                                "Expected numeric coordinate array, got " +
+                                    typeName(result.value),
+                            ),
+                        )
+                    } else {
+                        GMResult.Ok(coordinates.toDoubleArray())
+                    }
+                }
+            }
+        }
+
+    private fun curve3DScalarEvaluator(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): Curve3DScalarEvaluator =
+        Curve3DScalarEvaluator { parameter ->
+            when (
+                val result = function.externalCallable.call(
+                    arguments = listOf(
+                        JessieCodeRuntimeValue.NumberValue(parameter),
+                    ),
+                    location = location,
+                )
+            ) {
+                is GMResult.Err -> GMResult.Err(
+                    Curve3DDynamicError.Rejected(
+                        result.error.toString(),
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val number = result.value as?
+                        JessieCodeRuntimeValue.NumberValue
+                    if (number == null) {
+                        GMResult.Err(
+                            Curve3DDynamicError.Rejected(
+                                "Expected number, got " +
+                                    typeName(result.value),
+                            ),
+                        )
+                    } else {
+                        GMResult.Ok(number.value)
+                    }
+                }
+            }
+        }
+
+    private fun curve3DResult(
+        result: GMResult<Curve3D, Curve3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "curve3d",
+                error = JessieCodeCreatorError.Curve3DFactory(
                     result.error,
                 ),
                 location = location,

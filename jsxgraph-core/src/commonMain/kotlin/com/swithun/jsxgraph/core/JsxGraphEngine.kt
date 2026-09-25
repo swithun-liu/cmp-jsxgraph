@@ -17,6 +17,7 @@ import com.swithun.jsxgraph.core.base.Axes3D
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.Curve
+import com.swithun.jsxgraph.core.base.Curve3D
 import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
@@ -1313,6 +1314,12 @@ object JsxGraphEngine {
                     )
                 }
             }
+            creatorName == "curve3d" ->
+                runtimeCurve3DPointCount(
+                    board = board,
+                    parents = parents,
+                    attributes = attributes,
+                )
             creatorName in
                 setOf(
                     "curve",
@@ -2473,6 +2480,7 @@ object JsxGraphEngine {
             "line3d" -> 2
             "axis3d" -> 2
             "plane3d" -> 2
+            "curve3d" -> 2
             "polygon3d" -> 2
             "polyhedron3d" -> 2
             else -> return parents
@@ -2756,6 +2764,28 @@ object JsxGraphEngine {
                     firstArrow = firstArrow,
                     lastArrow = lastArrow,
                 )
+            }
+
+            is Curve3D -> {
+                element.evaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                when (
+                    val result = curveSceneElement(
+                        element = element,
+                        points = element.curve2D.points,
+                        bezierDegree = element.curve2D.bezierDegree,
+                        style = style,
+                        attributes = attributes,
+                        allowFill = false,
+                        allowPathBreaks = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
             }
 
             is Plane3D -> {
@@ -3916,14 +3946,16 @@ object JsxGraphEngine {
                     ),
                 )
             }
-            when (
-                val result = validateCurvePointLimit(
-                    sourceObject,
-                    limits.maxCurvePoints,
-                )
-            ) {
-                is GMResult.Ok -> Unit
-                is GMResult.Err -> return result
+            if (sourceObject.type != "curve3d") {
+                when (
+                    val result = validateCurvePointLimit(
+                        sourceObject,
+                        limits.maxCurvePoints,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
             }
             if (sourceObject.type != "polygon3d") {
                 when (
@@ -3949,6 +3981,18 @@ object JsxGraphEngine {
         }
         val objectsById = objects.associateBy(ParsedObject::id)
         for (sourceObject in objects) {
+            if (sourceObject.type == "curve3d") {
+                when (
+                    val result = validateCurvePointLimit(
+                        sourceObject = sourceObject,
+                        limit = limits.maxCurvePoints,
+                        objectsById = objectsById,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
             if (sourceObject.type == "polygon3d") {
                 when (
                     val result = validatePolygonVertexLimit(
@@ -4070,6 +4114,7 @@ object JsxGraphEngine {
     private fun validateCurvePointLimit(
         sourceObject: ParsedObject,
         limit: Int,
+        objectsById: Map<String, ParsedObject> = emptyMap(),
     ): GMResult<Unit, JsxGraphDocumentError> {
         if (
             sourceObject.type !in
@@ -4094,6 +4139,7 @@ object JsxGraphEngine {
                 "mesh3d",
                 "plane3d",
                 "polyhedron3d",
+                "curve3d",
             )
         ) {
             return GMResult.Ok(Unit)
@@ -4112,7 +4158,13 @@ object JsxGraphEngine {
         } else {
             null
         }
-        val requested = if (sourceObject.type == "polyhedron3d") {
+        val requested = if (sourceObject.type == "curve3d") {
+            jsonCurve3DPointCount(
+                source = sourceObject,
+                objectsById = objectsById,
+                visited = emptySet(),
+            )
+        } else if (sourceObject.type == "polyhedron3d") {
             jsonPolyhedron3DMaximumCurvePointCount(sourceObject)
         } else if (sourceObject.type == "mesh3d") {
             jsonMeshPointCount(
@@ -4390,6 +4442,50 @@ object JsxGraphEngine {
             }
         }
         return direct.size.toLong()
+    }
+
+    private fun runtimeCurve3DPointCount(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long {
+        val direct = parents.drop(1)
+        val base = direct.firstOrNull()?.let { value ->
+            when (value) {
+                is JessieCodeRuntimeValue.ElementReference ->
+                    value.element as? Curve3D
+                is JessieCodeRuntimeValue.StringValue ->
+                    board?.select(value.value) as? Curve3D
+                else -> null
+            }
+        }
+        if (base != null && direct.size == 2) {
+            return base.numberPoints.toLong()
+        }
+        if (direct.size == 1) {
+            val matrix = direct[0] as?
+                JessieCodeRuntimeValue.ArrayValue
+            if (matrix != null) {
+                return matrix.values.size.toLong()
+            }
+        }
+        if (
+            direct.size == 4 &&
+            direct[0] is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            return (
+                direct[0] as JessieCodeRuntimeValue.ArrayValue
+                ).values.size.toLong()
+        }
+        val configured = (
+            attributes.properties["numberpointshigh"] as?
+                JessieCodeRuntimeValue.NumberValue
+            )?.value
+        return when {
+            configured == null -> Curve3D.DEFAULT_SAMPLE_COUNT.toLong()
+            configured.isNaN() -> 0L
+            else -> configured.toLong()
+        }
     }
 
     private fun polyhedron3DCurvePointCount(vertexCount: Int): Long =
@@ -4791,6 +4887,44 @@ object JsxGraphEngine {
         return direct.size
     }
 
+    private fun jsonCurve3DPointCount(
+        source: ParsedObject,
+        objectsById: Map<String, ParsedObject>,
+        visited: Set<String>,
+    ): Int {
+        if (source.id in visited) {
+            return 0
+        }
+        val direct = source.parents.drop(1)
+        val baseId = (
+            direct.firstOrNull() as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content
+        val base = baseId?.let(objectsById::get)
+            ?.takeIf { it.type == "curve3d" }
+        if (base != null && direct.size == 2) {
+            return jsonCurve3DPointCount(
+                source = base,
+                objectsById = objectsById,
+                visited = visited + source.id,
+            )
+        }
+        if (direct.size == 1) {
+            val matrix = direct[0] as? JsonArray
+            if (matrix != null) {
+                return matrix.size
+            }
+        }
+        if (direct.size == 4) {
+            val xCoordinates = direct[0] as? JsonArray
+            if (xCoordinates != null) {
+                return xCoordinates.size
+            }
+        }
+        return (
+            source.attributes["numberpointshigh"] as? JsonPrimitive
+            )?.intOrNull ?: Curve3D.DEFAULT_SAMPLE_COUNT
+    }
+
     private fun validateTextLengthLimit(
         sourceObject: ParsedObject,
         limit: Int,
@@ -5112,6 +5246,7 @@ object JsxGraphEngine {
     private fun sourceCurves(element: GeometryElement): List<Curve> =
         when (element) {
             is Curve -> listOf(element)
+            is Curve3D -> listOf(element.curve2D)
             is Face3D -> listOf(element.curve2D)
             is Polygon3D -> emptyList()
             is Polyhedron3D -> element.faces.map(Face3D::curve2D)
@@ -5209,6 +5344,7 @@ object JsxGraphEngine {
                         is Face3D -> FACE_3D_ATTRIBUTES
                         is Line3D -> LINE_ATTRIBUTES
                         is Plane3D -> PLANE_3D_ATTRIBUTES
+                        is Curve3D -> CURVE_ATTRIBUTES
                         is Polygon3D -> POLYGON_3D_ATTRIBUTES
                         is Point3D -> POINT_ATTRIBUTES
                         is Point -> POINT_ATTRIBUTES
@@ -5508,6 +5644,7 @@ object JsxGraphEngine {
         ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
             val defaultStroke = when (element) {
                 is Line3D -> DEFAULT_LINE_3D_COLOR
+                is Curve3D -> DEFAULT_STROKE_COLOR
                 is Point3D -> DEFAULT_STROKE_COLOR
                 is Point -> DEFAULT_POINT_COLOR
                 is Text3D, is Text -> DEFAULT_TEXT_COLOR
@@ -5589,6 +5726,7 @@ object JsxGraphEngine {
                     default =
                         when {
                             element is Line3D -> 1.0
+                            element is Curve3D -> 1.0
                             element is Face3D -> 1.0
                             element is Polygon3D -> 1.0
                             element is Point3D -> 0.0
@@ -5955,6 +6093,7 @@ object JsxGraphEngine {
             when (element) {
                 is Face3D -> DEFAULT_FACE_3D_LAYER
                 is Line3D -> DEFAULT_LINE_3D_LAYER
+                is Curve3D -> DEFAULT_CURVE_3D_LAYER
                 is Plane3D -> DEFAULT_CURVE_LAYER
                 is Polygon3D -> DEFAULT_POLYGON_3D_LAYER
                 is Point3D -> DEFAULT_POINT_3D_LAYER
@@ -6187,6 +6326,7 @@ object JsxGraphEngine {
     private const val DEFAULT_POINT_LAYER = 9
     private const val DEFAULT_POINT_3D_LAYER = 13
     private const val DEFAULT_LINE_3D_LAYER = 12
+    private const val DEFAULT_CURVE_3D_LAYER = 12
     private const val DEFAULT_POLYGON_3D_LAYER = 12
     private const val DEFAULT_MESH_3D_LAYER = 12
     private const val DEFAULT_FACE_3D_LAYER = 12

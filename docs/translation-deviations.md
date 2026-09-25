@@ -1171,6 +1171,12 @@ practical.
 - Statistics filters `NaN` values before sorting percentile and boxplot data.
   Upstream filters after sorting, which makes results depend on the
   JavaScript engine's sort behavior when the comparator receives `NaN`.
+- `Curve3D.projectCoords` returns
+  `GMResult.Err(ParametricProjectionUnavailable)` until
+  `src/math/nlp.js -> Nlp.FindMinimum` is translated. JSXGraph uses COBYLA
+  for this method. Kotlin deliberately does not substitute Brent or another
+  one-dimensional minimizer because that would silently change upstream
+  projection semantics.
 
 ## Safety Guards
 
