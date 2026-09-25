@@ -1075,7 +1075,12 @@ private fun DrawScope.drawSceneText(
             letterSpacing = 0.sp,
         ),
     )
-    val anchor = metrics.toScreen(text.coordinates.toOffset())
+    val coordinates =
+        text.ticks3DLabel?.resolvePosition(
+            cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
+            cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
+        ) ?: text.coordinates
+    val anchor = metrics.toScreen(coordinates.toOffset())
     drawText(
         textLayoutResult = layout,
         topLeft = textTopLeft(

@@ -778,27 +778,62 @@ practical.
   array-centered rotations retain the upstream nonnumeric classification even
   when all entries are numbers. Transformed Text/Image rendering remains
   pending.
-- The bounded `GeometryElement3D`/`View3D`/`Point3D` lifecycle follows
-  `src/3d/element3d.js`, `src/3d/view3d.js`, and `src/3d/point3d.js`.
+- The bounded
+  `GeometryElement3D`/`View3D`/`Point3D`/`Line3D`/`Plane3D`/`Face3D`/
+  `Polyhedron3D` lifecycle and the ordinary-Curve Mesh3D factory follow
+  `src/3d/element3d.js`, `src/3d/view3d.js`, `src/3d/point3d.js`,
+  `src/3d/linspace3d.js`, `src/3d/box3d.js`, `src/3d/face3d.js`, and
+  `src/3d/polyhedron3d.js`.
   Kotlin preserves parallel and central projection, numeric and homogeneous
-  coordinates, function reevaluation, Point3D transformation binding,
-  `applyOnce`, the ordinary 2D interaction proxy, cube clamping,
-  registration, dependency updates, and removal. Malformed View3D dimensions,
-  malformed Point3D parents, duplicate IDs, and coordinate/transformation
-  evaluation failures cross public boundaries as `GMResult.Err` instead of
-  throwing from array indexing or dynamic JavaScript calls.
+  coordinates, function reevaluation, 3D transformation binding, `applyOnce`,
+  ordinary 2D Point/Segment/Curve proxies, cube clamping, Line3D endpoint
+  clipping, Plane3D Hesse normals and finite outlines, fully infinite
+  plane/box clipping, registration, dependency updates, and removal. Malformed
+  View3D dimensions, malformed 3D parents, duplicate IDs, and
+  coordinate/transformation evaluation failures cross public boundaries as
+  `GMResult.Err` instead of throwing from array indexing or dynamic JavaScript
+  calls.
 - JSXGraph renders and drags Point3D through an ordinary Point proxy. Kotlin
   keeps the same owner/proxy lifecycle but materializes the proxy coordinates
   directly into the platform-independent scene, so Compose requires no 3D
-  renderer or platform-specific runtime. Axes, planes, camera controls,
-  shaders, depth ordering, Point3D gliders and animations, and the remaining
-  View3D/Point3D APIs are still pending.
+  renderer or platform-specific runtime. Line3D uses projected Point3D
+  endpoints and a Segment proxy. Plane3D materializes its source-mapped
+  outline Curve and, for finite wireframe ranges, owns the upstream Mesh3D
+  Curve. Direct and Plane-owned Mesh3D preserve 3D/4D point input, normalized
+  directions, dynamic ranges, both sampled line families, NaN path separators,
+  and official default style. Kotlin rejects non-positive/non-finite step
+  widths and grids above the bounded Curve point budget before entering the
+  sampling loops; upstream JavaScript can instead loop indefinitely or exhaust
+  memory.
+- Face3D preserves the shared Polyhedron vertex maps, face closure rule,
+  normals, projected coordinates, averaged `zIndex`, cyclic
+  `fillColorArray`, per-face overrides, HSL angle/depth shaders, and ordinary
+  Curve proxy lifecycle from `src/3d/face3d.js`. Polyhedron3D preserves direct
+  and transformed parent forms, Point-backed, function-valued, and
+  homogeneous vertices, face ownership, update and transform forwarding,
+  removal, and `toSTL` output from `src/3d/polyhedron3d.js`. Kotlin adds
+  bounded vertex/face/curve-point checks and atomic rollback. Scene assembly
+  sorts contiguous faces within each Polyhedron by ascending local `zIndex`;
+  global View3D `depthOrder` and layer redistribution remain pending.
+- `src/3d/box3d.js` `createAxis3D` is translated as the upstream Line3D
+  wrapper. The core `Axes3D` composition creates the three main axes where
+  applicable, six axis planes, and twelve face axes for `center`, `border`,
+  and `none`; `border` also creates its three Ticks3D curves and numeric
+  Text3D labels. View3D factory creation owns this composition and removes it
+  with the View. JSON and JessieCode expand explicit Axes3D and automatic
+  `border`/`none` axes into scene elements when unsupported rear shader planes
+  are hidden or replaced by wireframes. The centered origin intersection is
+  still unresolved, so public `center` creation returns a structured error
+  and rolls back the View instead of silently omitting `O`.
 - JSXGraph `1.13.3` leaves both
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
-  registers the upstream `view3d`, `point3d`, and `transform3d` creator route
-  but does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
-  property access that the baseline does not expose.
+  registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe,
+  `mesh3d`, `axis3d`, `polyhedron3d`, and `transform3d` creator routes but
+  does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
+  property access that the baseline does not expose. The centered Axes3D
+  origin, Plane3D shader/colormap/color-array surface modes, camera controls,
+  Point3D gliders and animations, and the remaining 3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix

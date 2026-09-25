@@ -683,6 +683,58 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "spatial_lines_planes",
+            title = "Spatial lines and planes",
+            scenario = "A parallel View3D projects bounded Line3D, Plane3D outline and Mesh3D wireframe, and Axis3D proxies.",
+            source = SPATIAL_LINES_PLANES_SOURCE,
+            features = setOf(
+                "construction-document",
+                "view3d",
+                "line3d",
+                "plane3d",
+                "mesh3d",
+                "axis3d",
+                "wireframe",
+                "parallel-projection",
+                "proxy-segment",
+                "proxy-curve",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
+            id = "polyhedron3d_faces",
+            title = "Polyhedron3D faces",
+            scenario = "A parallel View3D projects a six-face Polyhedron3D with cyclic colors, a per-face override, and depth ordering.",
+            source = POLYHEDRON_3D_FACES_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "view3d",
+                "polyhedron3d",
+                "face3d",
+                "parallel-projection",
+                "proxy-curve",
+                "per-face-attributes",
+                "depth-order",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
+            id = "view3d_default_axes",
+            title = "View3D default axes",
+            scenario = "A parallel View3D factory creates border axes, Ticks3D curves, and numeric labels.",
+            source = VIEW3D_DEFAULT_AXES_SOURCE,
+            features = setOf(
+                "construction-document",
+                "view3d",
+                "default-axes",
+                "axes3d",
+                "ticks3d",
+                "text3d",
+                "parallel-projection",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "function_coordinate_points",
             title = "Function coordinate points",
             scenario = "Array, scalar, and homogeneous JessieCode functions constrain Points from one draggable driver.",
@@ -2289,6 +2341,191 @@ private const val POINT3D_PROJECTION_SOURCE: String = """
         "strokeWidth": 3,
         "fixed": true,
         "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val SPATIAL_LINES_PLANES_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": true,
+  "grid": true,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "view",
+      "type": "view3d",
+      "parents": [
+        [-5, -4],
+        [8, 7],
+        [[-5, 5], [-4, 6], [-3, 7]]
+      ],
+      "attributes": {
+        "name": "",
+        "projection": "parallel",
+        "axesPosition": "none",
+        "xPlaneRear": {"visible": false},
+        "yPlaneRear": {"visible": false},
+        "zPlaneRear": {"visible": false},
+        "depthOrder": {"enabled": false},
+        "az": {"slider": {"visible": false, "start": 1}},
+        "el": {"slider": {"visible": false, "start": 0.3}},
+        "bank": {"slider": {"visible": false, "start": 0}}
+      }
+    },
+    {
+      "id": "plane",
+      "type": "plane3d",
+      "parents": [
+        "view",
+        [1, 2, 2],
+        [1, 0, 0],
+        [0, 1, 1],
+        [-2, 3],
+        [-1, 2]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "type": "wireframe",
+        "strokeColor": "#16877A",
+        "strokeWidth": 3,
+        "fillColor": "none",
+        "fillOpacity": 0,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "line",
+      "type": "line3d",
+      "parents": [
+        "view",
+        [1, 2, 2],
+        [2, -1, 3]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#D9553F",
+        "strokeWidth": 4,
+        "straightFirst": true,
+        "straightLast": true,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "axis",
+      "type": "axis3d",
+      "parents": [
+        "view",
+        [-5, 6, -3],
+        [5, 6, -3]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "strokeColor": "#246BCE",
+        "strokeWidth": 3,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val POLYHEDRON_3D_FACES_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [8, 7],\n  [[-5, 5], [-4, 6], [-3, 7]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false >>,\n  yPlaneRear: << visible: false >>,\n  zPlaneRear: << visible: false >>,\n  depthOrder: << enabled: true >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nsolid = polyhedron3d(\n  view,\n  [\n    [-3, -3, -3], [3, -3, -3],\n    [3, 3, -3], [-3, 3, -3],\n    [-3, -3, 3], [3, -3, 3],\n    [3, 3, 3], [-3, 3, 3]\n  ],\n  [\n    [[0, 1, 2, 3], << fillColor: \"#009E73\", fillOpacity: 0.62 >>],\n    [0, 1, 5, 4],\n    [1, 2, 6, 5],\n    [2, 3, 7, 6],\n    [3, 0, 4, 7],\n    [4, 5, 6, 7]\n  ]\n) <<\n  name: \"\", fillColorArray: [\"#56B4E9\", \"#E69F00\"],\n  strokeColor: \"#49545D\", strokeWidth: 2,\n  fillOpacity: 0.48, layer: 12,\n  fixed: true, highlight: false,\n  shader: << enabled: false >>\n>>;"
+}
+"""
+
+private const val VIEW3D_DEFAULT_AXES_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-8, 8, 8, -8],
+  "axis": false,
+  "grid": false,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "view",
+      "type": "view3d",
+      "parents": [
+        [-5, -4],
+        [8, 7],
+        [[-5, 5], [-4, 6], [-3, 7]]
+      ],
+      "attributes": {
+        "name": "",
+        "projection": "parallel",
+        "axesPosition": "border",
+        "xAxisBorder": {
+          "name": "",
+          "withLabel": false,
+          "strokeColor": "#D9553F",
+          "strokeWidth": 2,
+          "ticks3d": {
+            "strokeColor": "#D9553F",
+            "drawLabels": true,
+            "label": {
+              "anchorX": "middle",
+              "anchorY": "middle"
+            }
+          }
+        },
+        "yAxisBorder": {
+          "name": "",
+          "withLabel": false,
+          "strokeColor": "#16877A",
+          "strokeWidth": 2,
+          "ticks3d": {
+            "strokeColor": "#16877A",
+            "drawLabels": true,
+            "label": {
+              "anchorX": "middle",
+              "anchorY": "middle"
+            }
+          }
+        },
+        "zAxisBorder": {
+          "name": "",
+          "withLabel": false,
+          "strokeColor": "#246BCE",
+          "strokeWidth": 2,
+          "ticks3d": {
+            "strokeColor": "#246BCE",
+            "drawLabels": true,
+            "label": {
+              "anchorX": "middle",
+              "anchorY": "middle"
+            }
+          }
+        },
+        "xPlaneRear": {"visible": false},
+        "xPlaneFront": {"visible": false},
+        "yPlaneRear": {"visible": false},
+        "yPlaneFront": {"visible": false},
+        "zPlaneRear": {"visible": false},
+        "zPlaneFront": {"visible": false},
+        "depthOrder": {"enabled": false},
+        "az": {"slider": {"visible": false, "start": 1}},
+        "el": {"slider": {"visible": false, "start": 0.3}},
+        "bank": {"slider": {"visible": false, "start": 0}}
       }
     }
   ]

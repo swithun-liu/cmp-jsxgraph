@@ -120,8 +120,8 @@ private val roadmapPhases = listOf(
             "Common utilities",
             "2D & 3D transform kernels",
         ),
-        nextTitle = "View3D object lifecycle",
-        nextDetail = "Point3D construction, binding and Compose projection",
+        nextTitle = "3D integration gaps",
+        nextDetail = "Centered Axes3D origin, Plane3D surfaces and global depth ordering",
         exitGate = "Common behavior tests pass across JVM, iOS Simulator, and Wasm.",
     ),
     RoadmapPhase(
@@ -146,12 +146,12 @@ private val roadmapPhases = listOf(
         progress = 0.70f,
         accent = GeometryAmber,
         completedItems = listOf(
-            "Points, lines & segments",
+            "2D/3D points, lines & segments",
             "Circles & intersections",
-            "Polygons, arcs & sectors",
+            "Polygons, arcs, sectors & plane outlines",
         ),
-        nextTitle = "Constructions",
-        nextDetail = "Transformations and remaining dynamic element factories",
+        nextTitle = "3D surfaces & depth",
+        nextDetail = "Complete Plane3D surfaces and View3D-wide ordering",
         exitGate = "Element construction and update behavior matches JSXGraph 1.13.3.",
     ),
     RoadmapPhase(
@@ -864,7 +864,7 @@ private fun DashboardFooter() {
             )
         }
         Text(
-            text = "Updated Sep 20",
+            text = "Updated Sep 25",
             color = DashboardMuted,
             style = MaterialTheme.typography.bodySmall,
             fontFamily = FontFamily.Monospace,

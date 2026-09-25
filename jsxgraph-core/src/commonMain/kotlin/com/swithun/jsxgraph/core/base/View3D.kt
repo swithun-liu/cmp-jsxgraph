@@ -8,11 +8,13 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.Numerics
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
@@ -68,6 +70,10 @@ internal class View3D private constructor(
 ) {
     internal val objects = linkedMapOf<String, GeometryElement3D>()
     internal val elementsByName = linkedMapOf<String, GeometryElement3D>()
+
+    // JSXGraph: src/3d/view3d.js -> View3D constructor / createView3D.
+    internal var defaultAxes: Axes3D? = null
+        private set
 
     internal val angles = Angles(
         az = azimuth,
@@ -313,6 +319,51 @@ internal class View3D private constructor(
         z: Double,
     ): DoubleArray = project3DTo2D(doubleArrayOf(1.0, x, y, z))
 
+    // JSXGraph: src/3d/view3d.js -> View3D.getMesh.
+    internal fun getMesh(
+        function: (u: Double, v: Double) -> DoubleArray,
+        intervalU: DoubleArray,
+        intervalV: DoubleArray,
+    ): CurveDataUpdate {
+        val stepsU = intervalU[2]
+        val stepsV = intervalV[2]
+        val deltaU = (intervalU[1] - intervalU[0]) / stepsU
+        val deltaV = (intervalV[1] - intervalV[0]) / stepsV
+        val lastU = floor(stepsU).toInt()
+        val lastV = floor(stepsV).toInt()
+        val dataX = mutableListOf<Double>()
+        val dataY = mutableListOf<Double>()
+
+        for (indexU in 0..lastU) {
+            val u = intervalU[0] + deltaU * indexU
+            for (indexV in 0..lastV) {
+                val v = intervalV[0] + deltaV * indexV
+                val projected = project3DTo2D(function(u, v))
+                dataX += projected[1]
+                dataY += projected[2]
+            }
+            dataX += Double.NaN
+            dataY += Double.NaN
+        }
+
+        for (indexV in 0..lastV) {
+            val v = intervalV[0] + deltaV * indexV
+            for (indexU in 0..lastU) {
+                val u = intervalU[0] + deltaU * indexU
+                val projected = project3DTo2D(function(u, v))
+                dataX += projected[1]
+                dataY += projected[2]
+            }
+            dataX += Double.NaN
+            dataY += Double.NaN
+        }
+
+        return CurveDataUpdate(
+            x = dataX.toDoubleArray(),
+            y = dataY.toDoubleArray(),
+        )
+    }
+
     // JSXGraph: src/3d/view3d.js -> _getW0.
     private fun getW0(
         matrix: Array<DoubleArray>,
@@ -550,6 +601,64 @@ internal class View3D private constructor(
             point[3] < bbox3D[2][1] + Mat.eps
     }
 
+    // JSXGraph: src/3d/view3d.js -> intersectionPlanePlane.
+    internal fun intersectionPlanePlane(
+        firstNormal: DoubleArray,
+        firstDistance: Double,
+        firstVector1: DoubleArray,
+        firstVector2: DoubleArray,
+        secondNormal: DoubleArray,
+        secondDistance: Double,
+        secondVector1: DoubleArray,
+        secondVector2: DoubleArray,
+    ): Array<DoubleArray?> {
+        val thirdNormal = Mat.crossProduct(
+            firstNormal.copyOfRange(1, 4),
+            secondNormal.copyOfRange(1, 4),
+        ).let { direction ->
+            doubleArrayOf(
+                0.0,
+                direction[0],
+                direction[1],
+                direction[2],
+            )
+        }
+        val point = Geometry.meet3Planes(
+            firstNormal = firstNormal,
+            firstDistance = firstDistance,
+            secondNormal = secondNormal,
+            secondDistance = secondDistance,
+            thirdNormal = thirdNormal,
+            thirdDistance = 0.0,
+        )
+        val direction = Geometry.meetPlanePlane(
+            firstVector = firstVector1,
+            secondVector = firstVector2,
+            thirdVector = secondVector1,
+            fourthVector = secondVector2,
+        )
+        val result = arrayOfNulls<DoubleArray>(2)
+        val positiveRatio = intersectionLineCube(
+            point = point,
+            direction = direction,
+            ratio = Double.POSITIVE_INFINITY,
+        )
+        val positivePoint = Mat.axpy(positiveRatio, direction, point)
+        if (isInCube(positivePoint)) {
+            result[0] = positivePoint
+        }
+        val negativeRatio = intersectionLineCube(
+            point = point,
+            direction = direction,
+            ratio = Double.NEGATIVE_INFINITY,
+        )
+        val negativePoint = Mat.axpy(negativeRatio, direction, point)
+        if (isInCube(negativePoint)) {
+            result[1] = negativePoint
+        }
+        return result
+    }
+
     internal fun setAngles(
         azimuth: Double,
         elevation: Double,
@@ -560,6 +669,35 @@ internal class View3D private constructor(
         angles.bank = bank
         prepareUpdate()
         return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> createView3D.
+    internal fun createDefaultAxes(
+        axesPosition: String = "center",
+        planeTypes: Map<String, String> = emptyMap(),
+        ticksAttributes: Map<String, Axes3DTicksAttributes> = emptyMap(),
+        needsRegularUpdate: Boolean = true,
+    ): GMResult<Axes3D, Axes3DError> =
+        when (
+            val result = Axes3D.create(
+                view = this,
+                axesPosition = axesPosition,
+                planeTypes = planeTypes,
+                ticksAttributes = ticksAttributes,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> {
+                defaultAxes = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+
+    override fun remove(): GeometryElement {
+        defaultAxes?.let(board::removeObject)
+        defaultAxes = null
+        return super.remove()
     }
 
     private fun solveOrNonFinite(

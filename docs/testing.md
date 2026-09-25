@@ -85,10 +85,20 @@ node tools/upstream-fixtures/view3d-point3d.mjs
 The fixture covers parallel and central camera matrices, forward and inverse
 projection helpers, cube clipping, numeric, homogeneous, array-function, and
 scalar-function Point3D coordinates, transformed Point3D binding and
-`applyOnce`, 2D proxy movement, registration, removal, and malformed parent
-forms. It is the official source of truth for the bounded Kotlin translation;
-axes, planes, camera controls, shaders, depth ordering, gliders, animations,
-and the complete 3D API remain outside this slice.
+`applyOnce`, Line3D, Plane3D, direct and Plane-owned Mesh3D, Axis3D, Ticks3D,
+explicit Axes3D, automatic `view.defaultAxes`, direct and transformed
+Polyhedron3D/Face3D, 2D proxy movement, registration, removal, and malformed
+parent forms. Its automatic-axes
+snapshot records the official `none` and `border` role lists, non-null member
+counts, View registration, and default tick-label counts. Its Polyhedron3D
+snapshot records three faces over four vertex keys, Point-backed, function,
+and homogeneous vertices, a four-point closed triangular proxy with green
+`0.5` fill and `4px` stroke, an unclosed two-point proxy, transformed
+coordinates `[1, 3, -1, 6]`, and dynamic base/transformed updates. It is the
+official source of truth for this bounded Kotlin translation; the centered
+origin intersection, Plane3D shader/colormap/color-array surface modes, global
+View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
+Stable qualification, and the complete 3D API remain outside this slice.
 
 Capture the official direct-function Point lifecycle and the observed
 Midpoint function-parent rejection:
@@ -1116,8 +1126,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 79 cases:
-30 generated production scenarios followed by 49 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 82 cases:
+30 generated production scenarios followed by 52 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1136,6 +1146,15 @@ raw JessieCode source.
 The focused `point3d_projection` case uses the same ordered construction
 document on both renderers and projects its Point3D elements through the
 ordinary 2D scene consumed by Compose.
+The focused `spatial_lines_planes` case likewise uses one construction
+document for bounded Line3D, a finite Plane3D outline with its visible Mesh3D
+wireframe, and Axis3D.
+The focused `polyhedron3d_faces` case uses one JessieCode source for six
+Face3D Curve proxies with cyclic colors, a per-face override, and local depth
+ordering.
+The focused `view3d_default_axes` case uses one View3D construction document
+whose factory expands border Axes3D, Ticks3D, and Text3D labels in both
+renderers.
 `arc_compositions` uses the same ordered construction document on both
 renderers because the official combined JessieCode form crashes before
 producing a Board. A focused case is added only after the native
@@ -1152,7 +1171,7 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest same-source workbench evidence (2026-09-20):
+Latest same-source workbench evidence (2026-09-25):
 
 `Compact` is the scheduled `390 x 844` profile unless a case paragraph records
 a different reviewed viewport; the new BisectorLines evidence uses
@@ -1201,6 +1220,9 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `function_circle_radius` | 0.987261 | 0.975137 |
 | `transformed_points` | 0.986656 | 0.972766 |
 | `point3d_projection` | 0.986505 | 0.972805 |
+| `spatial_lines_planes` | 0.987328 | 0.975225 |
+| `polyhedron3d_faces` | 0.987380 | 0.984777 |
+| `view3d_default_axes` | 0.986921 | 0.977686 |
 | `function_coordinate_points` | 0.986724 | 0.973162 |
 | `parallel_constructions` | 0.986754 | 0.973271 |
 | `line_arrows` | 0.987817 | 0.981850 |
@@ -1509,6 +1531,38 @@ source Point3D's constant-z plane, updated the transformed Point3D, and scored
 `0.986588` and `0.972885`, respectively. All four contact sheets passed manual
 review for marker position, dependency updates, clipping, overlap, and blank
 output. This remains a focused preview outside the 30-case Stable corpus.
+The same upstream lifecycle fixture now records Line3D two-Point,
+point/direction/range, copied-direction, transformed, coordinate-projection,
+and screen-projection behavior; Plane3D finite, three-Point, transformed,
+normal-form, outline, and parametric-projection behavior; finite Plane-owned
+and direct Mesh3D sampling, default style, parent relationships, and
+projection; the Axis3D wrapper; and the complete official Axes3D role list,
+including its three Ticks3D members. The automatic default-axes snapshot
+further proves that official
+`none` has 19 role keys and 18 non-null View members, while `border` has 25
+role keys, 24 non-null members, 21 direct View registrations, and three
+Board-owned Ticks3D members with 11 labels each. Kotlin JVM tests cover the
+translated Line3D, Plane3D, Mesh3D, Ticks3D, Text3D, Axes3D, Face3D, and
+Polyhedron3D lifecycles.
+The focused `spatial_lines_planes` capture scored `0.987328` on Desktop and
+`0.975225` on Compact. Both contact sheets passed manual review for the closed
+Plane3D outline, both visible Mesh3D line families, Line3D clipping, Axis3D
+arrow direction, layering, overlap, blank output, and viewport clipping.
+The focused `view3d_default_axes` capture verifies automatic border
+Axes3D scene expansion, three Ticks3D curves, and 33 labels. It scored
+`0.986921` on Desktop and `0.977686` on Compact; both contact sheets passed
+manual review for tick endpoints, label order and placement, axis direction,
+clipping, overlap, and blank output.
+The focused `polyhedron3d_faces` capture verifies six projected Face3D Curve
+proxies, cyclic colors, a per-face override, translucent fills, borders, and
+ascending `zIndex` ordering within one Polyhedron. It scored `0.987380` on
+Desktop and `0.984777` on Compact; both contact sheets passed manual review
+for geometry, face closure, transparent overlays, borders, overlap, clipping,
+and blank output. The local ordering test deliberately supplies near/far
+faces in reverse and verifies that the scene emits them in ascending depth.
+Together with the official lifecycle fixture, this raises the development
+corpus to 82 cases while the independently qualified 30-case Stable corpus
+remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous
 normalization, and non-draggable constrained Points. After dragging the shared

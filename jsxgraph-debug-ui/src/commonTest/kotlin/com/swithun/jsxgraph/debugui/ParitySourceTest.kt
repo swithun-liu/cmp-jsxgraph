@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(79, cases.size)
+        assertEquals(82, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            49,
+            52,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -1942,9 +1942,18 @@ class ParitySourceTest {
         val session = assertIs<
             JsxGraphParitySession.ConstructionDocument
             >(paritySession).session
+        assertEquals(24, session.scene.elements.size)
         assertEquals(
             listOf("source3d", "homogeneous3d", "transformed3d"),
-            session.scene.elements.map(JsxGraphSceneElement::id),
+            session.scene.elements
+                .map(JsxGraphSceneElement::id)
+                .filter {
+                    it in setOf(
+                        "source3d",
+                        "homogeneous3d",
+                        "transformed3d",
+                    )
+                },
         )
 
         val source = point(session.scene, "source3d")
@@ -1981,6 +1990,83 @@ class ParitySourceTest {
         assertNotEquals(
             transformedBefore,
             point(moved, "transformed3d").coordinates,
+        )
+    }
+
+    @Test
+    fun spatialLinesPlanesFocusedCaseIncludesVisibleMesh3D() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("spatial_lines_planes"),
+        ).value
+        assertTrue("mesh3d" in parityCase.features)
+
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+        val mesh = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Curve>()
+            .single { curve ->
+                curve.points.size == 58 &&
+                    curve.style.strokeColor ==
+                    JsxGraphColor(154, 154, 154)
+            }
+
+        assertTrue(mesh.style.visible)
+        assertEquals(0.6, mesh.style.strokeOpacity)
+        assertEquals(12, mesh.style.layer)
+    }
+
+    @Test
+    fun view3DDefaultAxesFocusedCaseExpandsTicksAndLabels() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("view3d_default_axes"),
+        ).value
+        val input = assertIs<GMResult.Ok<JsxGraphParityInput>>(
+            parseParityInput(parityCase.source),
+        ).value
+        assertIs<JsxGraphParityInput.ConstructionDocument>(input)
+
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+        val lines =
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Line>()
+        val curves =
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Curve>()
+        val ticks = curves.filter { curve -> curve.ticks3D != null }
+        val labels =
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Text>()
+
+        assertEquals(60, scene.elements.size)
+        assertEquals(15, lines.size)
+        assertEquals(3, lines.count { line -> line.style.visible })
+        assertEquals(12, curves.size)
+        assertEquals(3, ticks.size)
+        assertEquals(
+            3,
+            curves.count {
+                it.style.strokeColor == JsxGraphColor(154, 154, 154)
+            },
+        )
+        assertTrue(ticks.all { curve -> curve.points.size == 33 })
+        assertEquals(33, labels.size)
+        assertEquals(
+            mapOf(
+                "-5" to 1,
+                "-4" to 2,
+                "-3" to 3,
+                "-2" to 3,
+                "-1" to 3,
+                "0" to 3,
+                "1" to 3,
+                "2" to 3,
+                "3" to 3,
+                "4" to 3,
+                "5" to 3,
+                "6" to 2,
+                "7" to 1,
+            ),
+            labels.groupingBy { label -> label.content }.eachCount(),
         )
     }
 

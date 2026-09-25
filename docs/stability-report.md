@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **49 development parity scenarios.** These remain focused regression
+3. **52 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -153,9 +153,32 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 `0.972805` on Compact before movement. After dragging the free Point3D proxy,
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
-All four contact sheets passed manual review. This changes the development
-workbench count to 30/49 but does not change the independently qualified
-30-case, 60-screenshot Stable corpus.
+All four contact sheets passed manual review. The development workbench now
+contains 30 production and 52 focused cases, but this does not change the
+independently qualified 30-case, 60-screenshot Stable corpus.
+The focused `spatial_lines_planes` fixture adds same-source Line3D, a finite
+Plane3D outline with its visible Mesh3D wireframe, and Axis3D evidence. Its
+static captures scored `0.987328` on Desktop and `0.975225` on Compact. Both
+contact sheets passed manual review for closed outline geometry, both Mesh3D
+line families, line clipping, axis arrow direction, layering, overlap, blank
+output, and viewport clipping. This remains outside the Stable production
+corpus.
+The focused `view3d_default_axes` fixture verifies factory-owned border
+Axes3D expansion, three Ticks3D curves, and 33 numeric labels from the same
+construction document. Static captures scored `0.986921` on Desktop and
+`0.977686` on Compact. Both contact sheets passed manual review for tick
+endpoints, label order and placement, axis direction, clipping, overlap, and
+blank output. This remains outside the Stable production corpus.
+The focused `polyhedron3d_faces` fixture verifies six Face3D Curve proxies,
+cyclic colors, a per-face override, translucent fills, borders, and ascending
+local face-depth ordering from one JessieCode source. Static captures scored
+`0.987380` on Desktop and `0.984777` on Compact. Both contact sheets passed
+manual review for projected geometry, face closure, transparent overlays,
+borders, overlap, clipping, and blank output. The official lifecycle fixture
+also records a three-face/four-key definition, a four-point closed triangular
+face with green `0.5` fill and `4px` stroke, an unclosed two-point face,
+transformed coordinates, and dynamic base/transformed updates. This evidence
+remains outside the Stable production corpus.
 The focused function-coordinate Point fixture scored `0.986724` on Desktop
 and `0.973162` on Compact before movement. After dragging its shared driver
 from `(-3,-2)` to `(-1,1)`, the function-array, scalar-function, and

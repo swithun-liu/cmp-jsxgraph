@@ -25,6 +25,12 @@
  * createParallelogram / createRegularPolygon,
  * src/base/text.js -> createText,
  * src/base/transformation.js -> createTransform,
+ * src/3d/point3d.js -> createPoint3D,
+ * src/3d/linspace3d.js -> createLine3D / createPlane3D,
+ * src/3d/box3d.js -> createAxis3D,
+ * src/3d/ticks3d.js -> createTicks3D,
+ * src/3d/text3d.js -> createText3D,
+ * src/3d/polyhedron3d.js -> createPolyhedron3D,
  * src/element/arc.js -> createArc / createSemicircle /
  * createCircumcircleArc / createMinorArc / createMajorArc,
  * src/element/sector.js -> createSector / createAngle /
@@ -42,6 +48,9 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.AngleRadius
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.ArcError
+import com.swithun.jsxgraph.core.base.Axes3D
+import com.swithun.jsxgraph.core.base.Axes3DError
+import com.swithun.jsxgraph.core.base.Axes3DTicksAttributes
 import com.swithun.jsxgraph.core.base.BisectorLine
 import com.swithun.jsxgraph.core.base.BisectorLineAttributes
 import com.swithun.jsxgraph.core.base.BisectorLines
@@ -67,6 +76,9 @@ import com.swithun.jsxgraph.core.base.CurveVectorFieldComponentFunction
 import com.swithun.jsxgraph.core.base.CurveVectorFieldFunction
 import com.swithun.jsxgraph.core.base.Ellipse
 import com.swithun.jsxgraph.core.base.EllipseError
+import com.swithun.jsxgraph.core.base.Face3DAttributes
+import com.swithun.jsxgraph.core.base.Face3DLightAttributes
+import com.swithun.jsxgraph.core.base.Face3DShaderAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Hyperbola
 import com.swithun.jsxgraph.core.base.HyperbolaError
@@ -76,9 +88,20 @@ import com.swithun.jsxgraph.core.base.IntersectionError
 import com.swithun.jsxgraph.core.base.IntersectionIndexSource
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.base.Line3D
+import com.swithun.jsxgraph.core.base.Line3DArrayEvaluator
+import com.swithun.jsxgraph.core.base.Line3DCoordinateValue
+import com.swithun.jsxgraph.core.base.Line3DDirectionSource
+import com.swithun.jsxgraph.core.base.Line3DDynamicError
+import com.swithun.jsxgraph.core.base.Line3DError
+import com.swithun.jsxgraph.core.base.Line3DScalarEvaluator
 import com.swithun.jsxgraph.core.base.LineError
 import com.swithun.jsxgraph.core.base.MidpointError
 import com.swithun.jsxgraph.core.base.MidpointPoint
+import com.swithun.jsxgraph.core.base.Mesh3D
+import com.swithun.jsxgraph.core.base.Mesh3DError
+import com.swithun.jsxgraph.core.base.Mesh3DPointSource
+import com.swithun.jsxgraph.core.base.Mesh3DVectorSource
 import com.swithun.jsxgraph.core.base.Normal
 import com.swithun.jsxgraph.core.base.NormalError
 import com.swithun.jsxgraph.core.base.OrthogonalConstructionError
@@ -103,12 +126,19 @@ import com.swithun.jsxgraph.core.base.Point3DScalarEvaluator
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Parabola
 import com.swithun.jsxgraph.core.base.ParabolaError
+import com.swithun.jsxgraph.core.base.Plane3D
+import com.swithun.jsxgraph.core.base.Plane3DDirectionSource
+import com.swithun.jsxgraph.core.base.Plane3DError
 import com.swithun.jsxgraph.core.base.PointReflectionError
 import com.swithun.jsxgraph.core.base.PointReflections
 import com.swithun.jsxgraph.core.base.PolePoint
 import com.swithun.jsxgraph.core.base.PolePointError
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.PolygonError
+import com.swithun.jsxgraph.core.base.Polyhedron3D
+import com.swithun.jsxgraph.core.base.Polyhedron3DError
+import com.swithun.jsxgraph.core.base.Polyhedron3DFaceInput
+import com.swithun.jsxgraph.core.base.Polyhedron3DVertexSource
 import com.swithun.jsxgraph.core.base.RegularPolygon
 import com.swithun.jsxgraph.core.base.RegularPolygonError
 import com.swithun.jsxgraph.core.base.RadicalAxis
@@ -116,7 +146,12 @@ import com.swithun.jsxgraph.core.base.RadicalAxisError
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.SectorError
 import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.base.Text3D
+import com.swithun.jsxgraph.core.base.Text3DError
 import com.swithun.jsxgraph.core.base.TextError
+import com.swithun.jsxgraph.core.base.Ticks3D
+import com.swithun.jsxgraph.core.base.Ticks3DError
+import com.swithun.jsxgraph.core.base.Ticks3DPointSource
 import com.swithun.jsxgraph.core.base.Tangent
 import com.swithun.jsxgraph.core.base.TangentError
 import com.swithun.jsxgraph.core.base.TangentTo
@@ -164,8 +199,40 @@ internal sealed interface JessieCodeCreatorError {
         val error: View3DError,
     ) : JessieCodeCreatorError
 
+    data class View3DDefaultAxesFactory(
+        val error: Axes3DError,
+    ) : JessieCodeCreatorError
+
     data class Point3DFactory(
         val error: Point3DError,
+    ) : JessieCodeCreatorError
+
+    data class Line3DFactory(
+        val error: Line3DError,
+    ) : JessieCodeCreatorError
+
+    data class Axes3DFactory(
+        val error: Axes3DError,
+    ) : JessieCodeCreatorError
+
+    data class Plane3DFactory(
+        val error: Plane3DError,
+    ) : JessieCodeCreatorError
+
+    data class Mesh3DFactory(
+        val error: Mesh3DError,
+    ) : JessieCodeCreatorError
+
+    data class Polyhedron3DFactory(
+        val error: Polyhedron3DError,
+    ) : JessieCodeCreatorError
+
+    data class Ticks3DFactory(
+        val error: Ticks3DError,
+    ) : JessieCodeCreatorError
+
+    data class Text3DFactory(
+        val error: Text3DError,
     ) : JessieCodeCreatorError
 
     data class PolePointFactory(
@@ -313,6 +380,76 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createPoint3D(board, parents, attributes, location)
+        },
+        "line3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createLine3D(board, parents, attributes, location)
+        },
+        "axis3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createLine3D(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+                creatorName = "axis3d",
+            )
+        },
+        "axes3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createAxes3D(board, parents, attributes, location)
+        },
+        "ticks3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createTicks3D(board, parents, attributes, location)
+        },
+        "text3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createText3D(board, parents, attributes, location)
+        },
+        "plane3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createPlane3D(board, parents, attributes, location)
+        },
+        "mesh3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createMesh3D(board, parents, attributes, location)
+        },
+        "polyhedron3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createPolyhedron3D(board, parents, attributes, location)
         },
         "polepoint" to JessieCodeCreator {
                 board,
@@ -1407,7 +1544,17 @@ internal object NativeJessieCodeCreators {
                 location = location,
             )
         }
-        return when (
+        val axesAttributes = when (
+            val result = axes3DAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val view = when (
             val result = View3D.create(
                 board = resolvedBoard,
                 lowerLeftCorner = lowerLeftCorner,
@@ -1424,14 +1571,35 @@ internal object NativeJessieCodeCreators {
                 needsRegularUpdate = identity.needsRegularUpdate,
             )
         ) {
-            is GMResult.Ok -> element(result.value)
-            is GMResult.Err -> failure(
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.View3DFactory(
                     result.error,
                 ),
                 location = location,
             )
+        }
+        return when (
+            val result = view.createDefaultAxes(
+                axesPosition = axesAttributes.axesPosition,
+                planeTypes = axesAttributes.planeTypes,
+                ticksAttributes = axesAttributes.ticksAttributes,
+                needsRegularUpdate =
+                    axesAttributes.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(view)
+            is GMResult.Err -> {
+                resolvedBoard.removeObject(view)
+                failure(
+                    creatorName = creatorName,
+                    error =
+                        JessieCodeCreatorError
+                            .View3DDefaultAxesFactory(result.error),
+                    location = location,
+                )
+            }
         }
     }
 
@@ -1613,6 +1781,7 @@ internal object NativeJessieCodeCreators {
     private fun point3DCoordinateValue(
         value: JessieCodeRuntimeValue,
         location: JessieCodeAstLocation,
+        creatorName: String = "point3d",
     ): GMResult<Point3DCoordinateValue, JessieCodeRuntimeError> =
         when (value) {
             is JessieCodeRuntimeValue.NumberValue ->
@@ -1654,7 +1823,7 @@ internal object NativeJessieCodeCreators {
                     ),
                 )
             else -> invalidAttribute(
-                creatorName = "point3d",
+                creatorName = creatorName,
                 attribute = "parents",
                 expected = "numbers or zero-argument functions",
                 actual = value,
@@ -1707,6 +1876,2717 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = "point3d",
                 error = JessieCodeCreatorError.Point3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    // JSXGraph: src/3d/linspace3d.js -> createLine3D.
+    private fun createLine3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+        creatorName: String = "line3d",
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val lineParents = parents.drop(1)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "fixed",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val straightFirst = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "straightfirst",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val straightLast = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "straightlast",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (lineParents.size in 2..3) {
+            val baseLine =
+                resolveElement(resolvedBoard, lineParents[0]) as? Line3D
+            val transformations =
+                transformationReferences(lineParents[1])
+            if (baseLine != null && transformations != null) {
+                val range = if (lineParents.size == 3) {
+                    when (
+                        val result = line3DRange(
+                            value = lineParents[2],
+                            location = location,
+                            creatorName = creatorName,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value.values
+                        is GMResult.Err -> return result
+                    }
+                } else {
+                    null
+                }
+                return line3DResult(
+                    result =
+                        if (range == null) {
+                            Line3D.create(
+                                view = view,
+                                baseLine = baseLine,
+                                transformations = transformations,
+                                id = identity.id,
+                                name = identity.name,
+                                needsRegularUpdate =
+                                    identity.needsRegularUpdate,
+                                fixed = fixed,
+                            )
+                        } else {
+                            Line3D.create(
+                                view = view,
+                                baseLine = baseLine,
+                                transformations = transformations,
+                                rangeSource = range,
+                                id = identity.id,
+                                name = identity.name,
+                                needsRegularUpdate =
+                                    identity.needsRegularUpdate,
+                                fixed = fixed,
+                            )
+                        },
+                    location = location,
+                    creatorName = creatorName,
+                )
+            }
+        }
+
+        val isTwoPointForm =
+            lineParents.size == 2 &&
+                (
+                    resolveElement(
+                        resolvedBoard,
+                        lineParents[1],
+                    ) is Point3D ||
+                        lineParents[1] is JessieCodeRuntimeValue.ArrayValue ||
+                        lineParents[1] is JessieCodeRuntimeValue.FunctionValue
+                    )
+        if (isTwoPointForm) {
+            val first = when (
+                val result = provideLine3DPoint(
+                    board = resolvedBoard,
+                    view = view,
+                    value = lineParents[0],
+                    attributes = attributes,
+                    role = "point1",
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val second = when (
+                val result = provideLine3DPoint(
+                    board = resolvedBoard,
+                    view = view,
+                    value = lineParents[1],
+                    attributes = attributes,
+                    role = "point2",
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    discardProvidedPoint3D(resolvedBoard, first)
+                    return result
+                }
+            }
+            return line3DResult(
+                result = Line3D.create(
+                    view = view,
+                    point1 = first.point,
+                    point2 = second.point,
+                    ownsPoint1 = first.owned,
+                    ownsPoint2 = second.owned,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    fixed = fixed,
+                ),
+                location = location,
+                creatorName = creatorName,
+            )
+        }
+
+        if (lineParents.size !in 2..3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val definingPoint = when (
+            val result = provideLine3DPoint(
+                board = resolvedBoard,
+                view = view,
+                value = lineParents[0],
+                attributes = attributes,
+                role = "point",
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val direction = when (
+            val result = line3DDirection(
+                board = resolvedBoard,
+                value = lineParents[1],
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                discardProvidedPoint3D(resolvedBoard, definingPoint)
+                return result
+            }
+        }
+        val range = if (lineParents.size == 3) {
+            when (
+                val result = line3DRange(
+                    value = lineParents[2],
+                    location = location,
+                            creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    discardProvidedPoint3D(resolvedBoard, definingPoint)
+                    return result
+                }
+            }
+        } else {
+            ParsedLine3DValues(
+                values = listOf(
+                    Line3DCoordinateValue.Numeric(
+                        Double.NEGATIVE_INFINITY,
+                    ),
+                    Line3DCoordinateValue.Numeric(
+                        Double.POSITIVE_INFINITY,
+                    ),
+                ),
+                dependencies = emptyList(),
+            )
+        }
+        return line3DResult(
+            result = Line3D.create(
+                view = view,
+                point = definingPoint.point,
+                directionSource = direction.source,
+                rangeSource = range.values,
+                ownsPoint = definingPoint.owned,
+                dependencies =
+                    direction.dependencies + range.dependencies,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            ),
+            location = location,
+            creatorName = creatorName,
+        )
+    }
+
+    private fun provideLine3DPoint(
+        board: Board,
+        view: View3D,
+        value: JessieCodeRuntimeValue,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        role: String,
+        location: JessieCodeAstLocation,
+        creatorName: String = "line3d",
+    ): GMResult<ProvidedLine3DPoint, JessieCodeRuntimeError> {
+        val existing = resolveElement(board, value) as? Point3D
+        if (existing != null) {
+            return GMResult.Ok(
+                ProvidedLine3DPoint(
+                    point = existing,
+                    owned = false,
+                ),
+            )
+        }
+        val identity = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = role,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val pointResult = when (value) {
+            is JessieCodeRuntimeValue.FunctionValue ->
+                Point3D.create(
+                    view = view,
+                    coordinateSource =
+                        Point3DCoordinateSource.Function(
+                            point3DArrayEvaluator(
+                                function = value,
+                                location = location,
+                            ),
+                        ),
+                    dependencies = value.dependencies.values,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    fixed = identity.fixed,
+                )
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                if (value.values.size !in setOf(3, 4)) {
+                    return invalidAttribute(
+                        creatorName = creatorName,
+                        attribute = role,
+                        expected = "Point3D or 3D/4D coordinate array",
+                        actual = value,
+                        location = location,
+                    )
+                }
+                val coordinates = mutableListOf<Point3DCoordinateValue>()
+                val dependencies = linkedMapOf<String, GeometryElement>()
+                for (coordinate in value.values) {
+                    when (
+                        val result = point3DCoordinateValue(
+                            value = coordinate,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> coordinates += result.value
+                        is GMResult.Err -> return result
+                    }
+                    if (
+                        coordinate is
+                            JessieCodeRuntimeValue.FunctionValue
+                    ) {
+                        dependencies.putAll(coordinate.dependencies)
+                    }
+                }
+                Point3D.create(
+                    view = view,
+                    coordinateSource =
+                        Point3DCoordinateSource.Values(coordinates),
+                    dependencies = dependencies.values,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    fixed = identity.fixed,
+                )
+            }
+            else -> return invalidAttribute(
+                creatorName = creatorName,
+                attribute = role,
+                expected = "Point3D, coordinate array, or function",
+                actual = value,
+                location = location,
+            )
+        }
+        return when (pointResult) {
+            is GMResult.Ok -> GMResult.Ok(
+                ProvidedLine3DPoint(
+                    point = pointResult.value,
+                    owned = true,
+                ),
+            )
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.Point3DFactory(
+                    pointResult.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph: src/3d/box3d.js -> createAxes3D.
+    private fun createAxes3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "axes3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 1) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val axesAttributes = when (
+            val result = axes3DAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Axes3D.create(
+                view = view,
+                axesPosition = axesAttributes.axesPosition,
+                planeTypes = axesAttributes.planeTypes,
+                ticksAttributes = axesAttributes.ticksAttributes,
+                needsRegularUpdate =
+                    axesAttributes.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                JessieCodeRuntimeValue.CompositionReference(result.value),
+            )
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.Axes3DFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    private fun axes3DAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedAxes3DAttributes, JessieCodeRuntimeError> {
+        val axesPosition = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "axesposition",
+                default = "center",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val planeTypes = linkedMapOf<String, String>()
+        for (role in AXES_3D_PLANE_ROLES) {
+            val nested = when (
+                val result = nestedObjectAttribute(
+                    creatorName = creatorName,
+                    attributes = attributes,
+                    name = role.lowercase(),
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val defaultType =
+                if (role.endsWith("Front")) "wireframe" else "shader"
+            planeTypes[role] = when (
+                val result = stringAttribute(
+                    creatorName = creatorName,
+                    attributes = nested,
+                    name = "type",
+                    default = defaultType,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value.lowercase()
+                is GMResult.Err -> return result
+            }
+        }
+        val ticksAttributes = linkedMapOf<String, Axes3DTicksAttributes>()
+        for (direction in listOf("x", "y", "z")) {
+            val axisRole = "${direction}AxisBorder"
+            val axis = when (
+                val result = nestedObjectAttribute(
+                    creatorName = creatorName,
+                    attributes = attributes,
+                    name = axisRole.lowercase(),
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val ticks = when (
+                val result = nestedObjectAttribute(
+                    creatorName = creatorName,
+                    attributes = axis,
+                    name = "ticks3d",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val ticksDistance = when (
+                val result = numberAttribute(
+                    creatorName = creatorName,
+                    attributes = ticks,
+                    name = "ticksdistance",
+                    default = 1.0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val majorHeight = when (
+                val result = numberAttribute(
+                    creatorName = creatorName,
+                    attributes = ticks,
+                    name = "majorheight",
+                    default = 10.0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val drawLabels = when (
+                val result = booleanAttribute(
+                    creatorName = creatorName,
+                    attributes = ticks,
+                    name = "drawlabels",
+                    default = true,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val tickEndingsValue = ticks.properties["tickendings"]
+            val tickEndings =
+                if (
+                    tickEndingsValue == null ||
+                    tickEndingsValue ===
+                    JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    doubleArrayOf(0.0, 1.0)
+                } else {
+                    numericArray(tickEndingsValue)
+                        ?: return invalidAttribute(
+                            creatorName = creatorName,
+                            attribute =
+                                "${axisRole.lowercase()}." +
+                                    "ticks3d.tickendings",
+                            expected = "array of two numbers",
+                            actual = tickEndingsValue,
+                            location = location,
+                        )
+                }
+            ticksAttributes["${axisRole}Ticks"] =
+                Axes3DTicksAttributes(
+                    ticksDistance = ticksDistance,
+                    tickEndings = tickEndings,
+                    majorHeight = majorHeight,
+                    drawLabels = drawLabels,
+                )
+        }
+        val needsRegularUpdate = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "needsregularupdate",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ParsedAxes3DAttributes(
+                axesPosition = axesPosition,
+                planeTypes = planeTypes,
+                ticksAttributes = ticksAttributes,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+        )
+    }
+
+    // JSXGraph: src/3d/ticks3d.js -> createTicks3D.
+    private fun createTicks3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "ticks3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 5) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val point = when (
+            val result = ticks3DPointSource(
+                value = parents[1],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val direction1 = when (
+            val result = ticks3DValues(
+                value = parents[2],
+                attribute = "direction1",
+                count = 3,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val length = (
+            parents[3] as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return invalidAttribute(
+            creatorName = creatorName,
+            attribute = "length",
+            expected = "number",
+            actual = parents[3],
+            location = location,
+        )
+        val direction2 = when (
+            val result = ticks3DValues(
+                value = parents[4],
+                attribute = "direction2",
+                count = 3,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticksDistance = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "ticksdistance",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val majorHeight = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "majorheight",
+                default = 10.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val tickEndingsValue = attributes.properties["tickendings"]
+        val tickEndings =
+            if (
+                tickEndingsValue == null ||
+                tickEndingsValue === JessieCodeRuntimeValue.UndefinedValue
+            ) {
+                doubleArrayOf(0.0, 1.0)
+            } else {
+                numericArray(tickEndingsValue)
+                    ?: return invalidAttribute(
+                        creatorName = creatorName,
+                        attribute = "tickendings",
+                        expected = "array of two numbers",
+                        actual = tickEndingsValue,
+                        location = location,
+                    )
+            }
+        val drawLabels = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "drawlabels",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Ticks3D.create(
+                view = view,
+                pointSource = point.source,
+                direction1 = direction1.values,
+                length = length,
+                direction2 = direction2.values,
+                ticksDistance = ticksDistance,
+                tickEndings = tickEndings,
+                majorHeight = majorHeight,
+                drawLabels = drawLabels,
+                dependencies =
+                    point.dependencies +
+                        direction1.dependencies +
+                        direction2.dependencies,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.Ticks3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    private fun ticks3DPointSource(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedTicks3DPoint, JessieCodeRuntimeError> {
+        if (value is JessieCodeRuntimeValue.FunctionValue) {
+            return GMResult.Ok(
+                ParsedTicks3DPoint(
+                    source = Ticks3DPointSource.Function(
+                        line3DArrayEvaluator(value, location),
+                    ),
+                    dependencies = value.dependencies.values.toList(),
+                ),
+            )
+        }
+        return when (
+            val result = ticks3DValues(
+                value = value,
+                attribute = "point",
+                count = 3,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                ParsedTicks3DPoint(
+                    source = Ticks3DPointSource.Values(
+                        result.value.values,
+                    ),
+                    dependencies = result.value.dependencies,
+                ),
+            )
+            is GMResult.Err -> result
+        }
+    }
+
+    private fun ticks3DValues(
+        value: JessieCodeRuntimeValue,
+        attribute: String,
+        count: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedLine3DValues, JessieCodeRuntimeError> {
+        val creatorName = "ticks3d"
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = creatorName,
+                attribute = attribute,
+                expected = "array of $count values",
+                actual = value,
+                location = location,
+            )
+        if (array.values.size != count) {
+            return invalidAttribute(
+                creatorName = creatorName,
+                attribute = attribute,
+                expected = "array of $count values",
+                actual = value,
+                location = location,
+            )
+        }
+        val values = mutableListOf<Line3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (coordinate in array.values) {
+            when (
+                val result = line3DCoordinateValue(
+                    value = coordinate,
+                    attribute = attribute,
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+            if (coordinate is JessieCodeRuntimeValue.FunctionValue) {
+                dependencies.putAll(coordinate.dependencies)
+            }
+        }
+        return GMResult.Ok(
+            ParsedLine3DValues(
+                values = values,
+                dependencies = dependencies.values.toList(),
+            ),
+        )
+    }
+
+    // JSXGraph: src/3d/text3d.js -> createText3D.
+    private fun createText3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "text3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val coordinateValues: List<JessieCodeRuntimeValue>
+        val contentValue: JessieCodeRuntimeValue
+        when (parents.size) {
+            3 -> {
+                val coordinateParent = parents[1]
+                if (coordinateParent is JessieCodeRuntimeValue.FunctionValue) {
+                    val identity = when (
+                        val result = creatorAttributes(
+                            creatorName,
+                            attributes,
+                            location,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    return createText3DResult(
+                        view = view,
+                        coordinateSource =
+                            Point3DCoordinateSource.Function(
+                                point3DArrayEvaluator(
+                                    coordinateParent,
+                                    location,
+                                ),
+                            ),
+                        dependencies =
+                            coordinateParent.dependencies.values,
+                        contentValue = parents[2],
+                        identity = identity,
+                        location = location,
+                    )
+                }
+                coordinateValues = (
+                    coordinateParent as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values ?: return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                )
+                contentValue = parents[2]
+            }
+            5 -> {
+                coordinateValues = parents.subList(1, 4)
+                contentValue = parents[4]
+            }
+            else -> return unsupported(creatorName, parents, location)
+        }
+        if (coordinateValues.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val coordinates = mutableListOf<Point3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (value in coordinateValues) {
+            when (
+                val result = point3DCoordinateValue(
+                    value = value,
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> coordinates += result.value
+                is GMResult.Err -> return result
+            }
+            if (value is JessieCodeRuntimeValue.FunctionValue) {
+                dependencies.putAll(value.dependencies)
+            }
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return createText3DResult(
+            view = view,
+            coordinateSource =
+                Point3DCoordinateSource.Values(coordinates),
+            dependencies = dependencies.values,
+            contentValue = contentValue,
+            identity = identity,
+            location = location,
+        )
+    }
+
+    private fun createText3DResult(
+        view: View3D,
+        coordinateSource: Point3DCoordinateSource,
+        dependencies: Iterable<GeometryElement>,
+        contentValue: JessieCodeRuntimeValue,
+        identity: CreatorAttributes,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val content = when (contentValue) {
+            is JessieCodeRuntimeValue.StringValue -> contentValue.value
+            is JessieCodeRuntimeValue.NumberValue ->
+                JsNumberFormat.compact(contentValue.value)
+            else -> return invalidAttribute(
+                creatorName = "text3d",
+                attribute = "text",
+                expected = "string or number",
+                actual = contentValue,
+                location = location,
+            )
+        }
+        return when (
+            val result = Text3D.create(
+                view = view,
+                coordinateSource = coordinateSource,
+                content = content,
+                dependencies = dependencies,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "text3d",
+                error = JessieCodeCreatorError.Text3DFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    private fun line3DDirection(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+        creatorName: String = "line3d",
+    ): GMResult<ParsedLine3DDirection, JessieCodeRuntimeError> {
+        val line = resolveElement(board, value) as? Line3D
+        if (line != null) {
+            return GMResult.Ok(
+                ParsedLine3DDirection(
+                    source = Line3DDirectionSource.Line(line),
+                    dependencies = listOf(line),
+                ),
+            )
+        }
+        if (value is JessieCodeRuntimeValue.FunctionValue) {
+            return GMResult.Ok(
+                ParsedLine3DDirection(
+                    source = Line3DDirectionSource.Function(
+                        line3DArrayEvaluator(
+                            function = value,
+                            location = location,
+                        ),
+                    ),
+                    dependencies = value.dependencies.values.toList(),
+                ),
+            )
+        }
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "direction",
+                expected = "Line3D, function, or 3D/4D vector",
+                actual = value,
+                location = location,
+            )
+        if (array.values.size !in setOf(3, 4)) {
+            return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "direction",
+                expected = "array of three or four values",
+                actual = value,
+                location = location,
+            )
+        }
+        val values = mutableListOf<Line3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (coordinate in array.values) {
+            when (
+                val result = line3DCoordinateValue(
+                    value = coordinate,
+                    attribute = "direction",
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+            if (coordinate is JessieCodeRuntimeValue.FunctionValue) {
+                dependencies.putAll(coordinate.dependencies)
+            }
+        }
+        return GMResult.Ok(
+            ParsedLine3DDirection(
+                source = Line3DDirectionSource.Values(values),
+                dependencies = dependencies.values.toList(),
+            ),
+        )
+    }
+
+    private fun line3DRange(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+        creatorName: String = "line3d",
+    ): GMResult<ParsedLine3DValues, JessieCodeRuntimeError> {
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "range",
+                expected = "array of two values",
+                actual = value,
+                location = location,
+            )
+        if (array.values.size != 2) {
+            return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "range",
+                expected = "array of two values",
+                actual = value,
+                location = location,
+            )
+        }
+        val values = mutableListOf<Line3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (rangeValue in array.values) {
+            when (
+                val result = line3DCoordinateValue(
+                    value = rangeValue,
+                    attribute = "range",
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+            if (rangeValue is JessieCodeRuntimeValue.FunctionValue) {
+                dependencies.putAll(rangeValue.dependencies)
+            }
+        }
+        return GMResult.Ok(
+            ParsedLine3DValues(
+                values = values,
+                dependencies = dependencies.values.toList(),
+            ),
+        )
+    }
+
+    private fun line3DCoordinateValue(
+        value: JessieCodeRuntimeValue,
+        attribute: String,
+        location: JessieCodeAstLocation,
+        creatorName: String = "line3d",
+    ): GMResult<Line3DCoordinateValue, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(
+                    Line3DCoordinateValue.Numeric(value.value),
+                )
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(
+                    Line3DCoordinateValue.Dynamic(
+                        Line3DScalarEvaluator {
+                            when (
+                                val result =
+                                    value.externalCallable.call(
+                                        arguments = emptyList(),
+                                        location = location,
+                                    )
+                            ) {
+                                is GMResult.Err -> GMResult.Err(
+                                    Line3DDynamicError.Rejected(
+                                        result.error.toString(),
+                                    ),
+                                )
+                                is GMResult.Ok -> {
+                                    val number = result.value as?
+                                        JessieCodeRuntimeValue.NumberValue
+                                    if (number != null) {
+                                        GMResult.Ok(number.value)
+                                    } else {
+                                        GMResult.Err(
+                                            Line3DDynamicError.Rejected(
+                                                "Expected number, got " +
+                                                    typeName(result.value),
+                                            ),
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                    ),
+                )
+            else -> invalidAttribute(
+                creatorName = creatorName,
+                attribute = attribute,
+                expected = "numbers or zero-argument functions",
+                actual = value,
+                location = location,
+            )
+        }
+
+    private fun line3DArrayEvaluator(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): Line3DArrayEvaluator =
+        Line3DArrayEvaluator {
+            when (
+                val result = function.externalCallable.call(
+                    arguments = emptyList(),
+                    location = location,
+                )
+            ) {
+                is GMResult.Err -> GMResult.Err(
+                    Line3DDynamicError.Rejected(
+                        result.error.toString(),
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val values = (
+                        result.value as?
+                            JessieCodeRuntimeValue.ArrayValue
+                        )?.values
+                    val coordinates = values?.let(::numericRuntimeArray)
+                    if (coordinates != null) {
+                        GMResult.Ok(coordinates)
+                    } else {
+                        GMResult.Err(
+                            Line3DDynamicError.Rejected(
+                                "Expected numeric direction array, got " +
+                                    typeName(result.value),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+
+    private fun line3DResult(
+        result: GMResult<Line3D, Line3DError>,
+        location: JessieCodeAstLocation,
+        creatorName: String = "line3d",
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.Line3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    private fun discardProvidedPoint3D(
+        board: Board,
+        point: ProvidedLine3DPoint,
+    ) {
+        if (point.owned) {
+            board.removeObject(point.point)
+        }
+    }
+
+    // JSXGraph: src/3d/polyhedron3d.js -> createPolyhedron3D.
+    private fun createPolyhedron3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "polyhedron3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fillColors = when (
+            val result = polyhedron3DFillColors(
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val base = resolveElement(resolvedBoard, parents[1])
+            as? Polyhedron3D
+        if (base != null) {
+            val transformations = transformationReferences(parents[2])
+                ?: return unsupported(creatorName, parents, location)
+            val faceAttributes = mutableListOf<Face3DAttributes>()
+            for (faceNumber in base.faces.indices) {
+                when (
+                    val result = polyhedron3DFaceAttributes(
+                        overall = attributes,
+                        faceSpecific = null,
+                        cyclicFillColor = fillColors
+                            .takeIf(List<String>::isNotEmpty)
+                            ?.let { it[faceNumber % it.size] },
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> faceAttributes += result.value
+                    is GMResult.Err -> return result
+                }
+            }
+            return polyhedron3DResult(
+                result = Polyhedron3D.create(
+                    view = view,
+                    base = base,
+                    transformations = transformations,
+                    faceAttributes = faceAttributes,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                ),
+                location = location,
+            )
+        }
+
+        val vertices = when (
+            val result = polyhedron3DVertices(
+                board = resolvedBoard,
+                value = parents[1],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val faces = when (
+            val result = polyhedron3DFaces(
+                value = parents[2],
+                attributes = attributes,
+                fillColors = fillColors,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return polyhedron3DResult(
+            result = Polyhedron3D.create(
+                view = view,
+                vertices = vertices.sources,
+                faceInputs = faces,
+                dependencies = vertices.dependencies,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+            location = location,
+        )
+    }
+
+    private fun polyhedron3DResult(
+        result: GMResult<Polyhedron3D, Polyhedron3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "polyhedron3d",
+                error = JessieCodeCreatorError.Polyhedron3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+
+    private fun polyhedron3DVertices(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedPolyhedron3DVertices, JessieCodeRuntimeError> {
+        val entries = when (value) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                value.values.mapIndexed { index, vertex ->
+                    index.toString() to vertex
+                }
+            is JessieCodeRuntimeValue.ObjectValue ->
+                value.properties.entries.map { it.key to it.value }
+            else -> return invalidAttribute(
+                creatorName = "polyhedron3d",
+                attribute = "vertices",
+                expected = "array or object",
+                actual = value,
+                location = location,
+            )
+        }
+        val sources = linkedMapOf<String, Polyhedron3DVertexSource>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for ((key, vertex) in entries) {
+            val point = resolveElement(board, vertex) as? Point3D
+            if (point != null) {
+                sources[key] = Polyhedron3DVertexSource.Point(point)
+                dependencies[point.id] = point
+                continue
+            }
+            if (vertex is JessieCodeRuntimeValue.FunctionValue) {
+                sources[key] = Polyhedron3DVertexSource.Function(
+                    line3DArrayEvaluator(vertex, location),
+                )
+                dependencies.putAll(vertex.dependencies)
+                continue
+            }
+            val parsed = when (
+                val result = polyhedron3DVertexValues(
+                    value = vertex,
+                    key = key,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            sources[key] = Polyhedron3DVertexSource.Values(parsed.values)
+            for (dependency in parsed.dependencies) {
+                dependencies[dependency.id] = dependency
+            }
+        }
+        return GMResult.Ok(
+            ParsedPolyhedron3DVertices(
+                sources = sources,
+                dependencies = dependencies.values.toList(),
+            ),
+        )
+    }
+
+    private fun polyhedron3DVertexValues(
+        value: JessieCodeRuntimeValue,
+        key: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedLine3DValues, JessieCodeRuntimeError> {
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = "polyhedron3d",
+                attribute = "vertices.$key",
+                expected =
+                    "Point3D, point reference, function, or array of " +
+                        "three or four values",
+                actual = value,
+                location = location,
+            )
+        if (array.values.size !in setOf(3, 4)) {
+            return invalidAttribute(
+                creatorName = "polyhedron3d",
+                attribute = "vertices.$key",
+                expected = "array of three or four values",
+                actual = value,
+                location = location,
+            )
+        }
+        val values = mutableListOf<Line3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (coordinate in array.values) {
+            when (
+                val result = line3DCoordinateValue(
+                    value = coordinate,
+                    attribute = "vertices.$key",
+                    location = location,
+                    creatorName = "polyhedron3d",
+                )
+            ) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+            if (coordinate is JessieCodeRuntimeValue.FunctionValue) {
+                dependencies.putAll(coordinate.dependencies)
+            }
+        }
+        return GMResult.Ok(
+            ParsedLine3DValues(
+                values = values,
+                dependencies = dependencies.values.toList(),
+            ),
+        )
+    }
+
+    private fun polyhedron3DFaces(
+        value: JessieCodeRuntimeValue,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        fillColors: List<String>,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<Polyhedron3DFaceInput>, JessieCodeRuntimeError> {
+        val faces = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = "polyhedron3d",
+                attribute = "faces",
+                expected = "array",
+                actual = value,
+                location = location,
+            )
+        val inputs = mutableListOf<Polyhedron3DFaceInput>()
+        for ((faceNumber, faceValue) in faces.values.withIndex()) {
+            val face = faceValue as? JessieCodeRuntimeValue.ArrayValue
+                ?: return invalidAttribute(
+                    creatorName = "polyhedron3d",
+                    attribute = "faces[$faceNumber]",
+                    expected = "array",
+                    actual = faceValue,
+                    location = location,
+                )
+            val first = face.values.getOrNull(0)
+            val second = face.values.getOrNull(1)
+            val hasFaceAttributes =
+                face.values.size == 2 &&
+                    first is JessieCodeRuntimeValue.ArrayValue &&
+                    second is JessieCodeRuntimeValue.ObjectValue
+            val vertexValues =
+                if (hasFaceAttributes) {
+                    first.values
+                } else {
+                    face.values
+                }
+            val faceSpecific =
+                if (hasFaceAttributes) {
+                    second
+                } else {
+                    null
+                }
+            val vertexKeys = mutableListOf<String>()
+            for (vertexValue in vertexValues) {
+                val key = when (vertexValue) {
+                    is JessieCodeRuntimeValue.StringValue ->
+                        vertexValue.value
+                    is JessieCodeRuntimeValue.NumberValue ->
+                        vertexValue.value
+                            .takeIf(Double::isFinite)
+                            ?.let(JsNumberFormat::compact)
+                    else -> null
+                } ?: return invalidAttribute(
+                    creatorName = "polyhedron3d",
+                    attribute = "faces[$faceNumber]",
+                    expected = "array of finite numbers or strings",
+                    actual = vertexValue,
+                    location = location,
+                )
+                vertexKeys += key
+            }
+            val faceAttributes = when (
+                val result = polyhedron3DFaceAttributes(
+                    overall = attributes,
+                    faceSpecific = faceSpecific,
+                    cyclicFillColor = fillColors
+                        .takeIf(List<String>::isNotEmpty)
+                        ?.let { it[faceNumber % it.size] },
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            inputs += Polyhedron3DFaceInput(
+                vertexKeys = vertexKeys,
+                attributes = faceAttributes,
+            )
+        }
+        return GMResult.Ok(inputs)
+    }
+
+    private fun polyhedron3DFillColors(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<String>, JessieCodeRuntimeError> {
+        val value = attributes.properties["fillcolorarray"]
+            ?: return GMResult.Ok(listOf("white", "black"))
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return GMResult.Ok(listOf("white", "black"))
+        }
+        val colors = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = "polyhedron3d",
+                attribute = "fillcolorarray",
+                expected = "array of strings",
+                actual = value,
+                location = location,
+            )
+        val result = mutableListOf<String>()
+        for (color in colors.values) {
+            val string = (color as? JessieCodeRuntimeValue.StringValue)?.value
+                ?: return invalidAttribute(
+                    creatorName = "polyhedron3d",
+                    attribute = "fillcolorarray",
+                    expected = "array of strings",
+                    actual = color,
+                    location = location,
+                )
+            result += string
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun polyhedron3DFaceAttributes(
+        overall: JessieCodeRuntimeValue.ObjectValue,
+        faceSpecific: JessieCodeRuntimeValue.ObjectValue?,
+        cyclicFillColor: String?,
+        location: JessieCodeAstLocation,
+    ): GMResult<Face3DAttributes, JessieCodeRuntimeError> {
+        val properties = linkedMapOf<String, JessieCodeRuntimeValue>()
+        properties.putAll(
+            overall.properties.filterKeys {
+                it !in setOf("id", "name", "fillcolorarray")
+            },
+        )
+        if (cyclicFillColor != null) {
+            properties["fillcolor"] =
+                JessieCodeRuntimeValue.StringValue(cyclicFillColor)
+        }
+        if (faceSpecific != null) {
+            val normalized = lowercaseAttributeObject(faceSpecific)
+            for ((key, value) in normalized.properties) {
+                properties[key] =
+                    if (
+                        key == "shader" &&
+                        properties[key] is JessieCodeRuntimeValue.ObjectValue &&
+                        value is JessieCodeRuntimeValue.ObjectValue
+                    ) {
+                        mergeFace3DNestedAttributes(
+                            properties.getValue(key) as
+                                JessieCodeRuntimeValue.ObjectValue,
+                            value,
+                        )
+                    } else {
+                        value
+                    }
+            }
+        }
+        val merged = JessieCodeRuntimeValue.ObjectValue(properties)
+        val unsupported = merged.properties.keys.firstOrNull {
+            it !in FACE_3D_ATTRIBUTES
+        }
+        if (unsupported != null) {
+            return failure(
+                creatorName = "polyhedron3d",
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = unsupported,
+                    actual = "unsupported Face3D attribute",
+                ),
+                location = location,
+            )
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = "polyhedron3d",
+                attributes = merged,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val shader = when (
+            val result = face3DShaderAttributes(merged, location)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            Face3DAttributes(
+                id = identity.id,
+                name = identity.name ?: "",
+                needsRegularUpdate = identity.needsRegularUpdate,
+                visible = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "visible",
+                        true,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                strokeColor = when (
+                    val result = stringAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "strokecolor",
+                        "#0072b2",
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                fillColor = when (
+                    val result = stringAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "fillcolor",
+                        "yellow",
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                strokeWidth = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "strokewidth",
+                        1.0,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                strokeOpacity = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "strokeopacity",
+                        1.0,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                fillOpacity = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "fillopacity",
+                        0.4,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                layer = when (
+                    val result = integerAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "layer",
+                        12,
+                        0,
+                        Int.MAX_VALUE,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                fixed = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "fixed",
+                        false,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                highlight = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "highlight",
+                        false,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                withLabel = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "withlabel",
+                        false,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                dash = when (
+                    val result = integerAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "dash",
+                        0,
+                        0,
+                        7,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                dashScale = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "dashscale",
+                        false,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                lineCap = when (
+                    val result = stringAttribute(
+                        "polyhedron3d",
+                        merged,
+                        "linecap",
+                        "round",
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                shader = shader,
+            ),
+        )
+    }
+
+    private fun face3DShaderAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Face3DShaderAttributes, JessieCodeRuntimeError> {
+        val shader = when (
+            val result = nestedObjectAttribute(
+                creatorName = "polyhedron3d",
+                attributes = attributes,
+                name = "shader",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        shader.properties.keys.firstOrNull {
+            it !in FACE_3D_SHADER_ATTRIBUTES
+        }?.let { unsupported ->
+            return failure(
+                creatorName = "polyhedron3d",
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "shader.$unsupported",
+                    actual = "unsupported Face3D shader attribute",
+                ),
+                location = location,
+            )
+        }
+        val light = when (
+            val result = nestedObjectAttribute(
+                creatorName = "polyhedron3d",
+                attributes = shader,
+                name = "light",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        light.properties.keys.firstOrNull {
+            it !in FACE_3D_LIGHT_ATTRIBUTES
+        }?.let { unsupported ->
+            return failure(
+                creatorName = "polyhedron3d",
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "shader.light.$unsupported",
+                    actual = "unsupported Face3D light attribute",
+                ),
+                location = location,
+            )
+        }
+        val lightAttributes = Face3DLightAttributes(
+            type = when (
+                val result = integerAttribute(
+                    "polyhedron3d",
+                    light,
+                    "type",
+                    1,
+                    1,
+                    3,
+                    location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            },
+            azimuth = when (
+                val result = numberAttribute(
+                    "polyhedron3d",
+                    light,
+                    "az",
+                    -45.0,
+                    location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            },
+            elevation = when (
+                val result = numberAttribute(
+                    "polyhedron3d",
+                    light,
+                    "el",
+                    20.0,
+                    location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            },
+            bank = when (
+                val result = numberAttribute(
+                    "polyhedron3d",
+                    light,
+                    "bank",
+                    0.0,
+                    location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            },
+            direction = when (
+                val result = integerAttribute(
+                    "polyhedron3d",
+                    light,
+                    "dir",
+                    -1,
+                    -1,
+                    1,
+                    location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            },
+        )
+        return GMResult.Ok(
+            Face3DShaderAttributes(
+                enabled = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "enabled",
+                        false,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                fixed = when (
+                    val result = booleanAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "fixed",
+                        true,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                type = when (
+                    val result = stringAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "type",
+                        "angle",
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                hue = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "hue",
+                        60.0,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                saturation = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "saturation",
+                        90.0,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                minimumLightness = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "minlightness",
+                        30.0,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                maximumLightness = when (
+                    val result = numberAttribute(
+                        "polyhedron3d",
+                        shader,
+                        "maxlightness",
+                        90.0,
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                },
+                light = lightAttributes,
+            ),
+        )
+    }
+
+    private fun lowercaseAttributeObject(
+        value: JessieCodeRuntimeValue.ObjectValue,
+    ): JessieCodeRuntimeValue.ObjectValue =
+        JessieCodeRuntimeValue.ObjectValue(
+            value.properties.map { (name, child) ->
+                name.lowercase() to
+                    if (child is JessieCodeRuntimeValue.ObjectValue) {
+                        lowercaseAttributeObject(child)
+                    } else {
+                        child
+                    }
+            }.toMap(),
+        )
+
+    private fun mergeFace3DNestedAttributes(
+        base: JessieCodeRuntimeValue.ObjectValue,
+        override: JessieCodeRuntimeValue.ObjectValue,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        val properties = base.properties.toMutableMap()
+        for ((key, value) in override.properties) {
+            properties[key] =
+                if (
+                    key == "light" &&
+                    properties[key] is JessieCodeRuntimeValue.ObjectValue &&
+                    value is JessieCodeRuntimeValue.ObjectValue
+                ) {
+                    val baseLight =
+                        properties.getValue(key) as
+                            JessieCodeRuntimeValue.ObjectValue
+                    JessieCodeRuntimeValue.ObjectValue(
+                        baseLight.properties + value.properties,
+                    )
+                } else {
+                    value
+                }
+        }
+        return JessieCodeRuntimeValue.ObjectValue(properties)
+    }
+
+    // JSXGraph: src/3d/box3d.js -> createMesh3D.
+    private fun createMesh3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "mesh3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 6) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point = when (
+            val result = mesh3DPoint(
+                board = resolvedBoard,
+                value = parents[1],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val direction1 = when (
+            val result = mesh3DVector(
+                value = parents[2],
+                attribute = "direction1",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val direction2 = when (
+            val result = mesh3DVector(
+                value = parents[3],
+                attribute = "direction2",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rangeU = when (
+            val result = line3DRange(
+                value = parents[4],
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rangeV = when (
+            val result = line3DRange(
+                value = parents[5],
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val stepWidthU = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "stepwidthu",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val stepWidthV = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "stepwidthv",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val dependencies = buildList {
+            addAll(point.dependencies)
+            addAll(direction1.dependencies)
+            addAll(direction2.dependencies)
+            addAll(rangeU.dependencies)
+            addAll(rangeV.dependencies)
+        }
+        return when (
+            val result = Mesh3D.create(
+                view = view,
+                pointSource = point.source,
+                direction1Source = direction1.source,
+                direction2Source = direction2.source,
+                rangeUSource = rangeU.values,
+                rangeVSource = rangeV.values,
+                stepWidthU = stepWidthU,
+                stepWidthV = stepWidthV,
+                dependencies = dependencies,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.Mesh3DFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    private fun mesh3DPoint(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedMesh3DPoint, JessieCodeRuntimeError> {
+        val point = resolveElement(board, value) as? Point3D
+        if (point != null) {
+            return GMResult.Ok(
+                ParsedMesh3DPoint(
+                    source = Mesh3DPointSource.Point(point),
+                    dependencies = listOf(point),
+                ),
+            )
+        }
+        if (value is JessieCodeRuntimeValue.FunctionValue) {
+            return GMResult.Ok(
+                ParsedMesh3DPoint(
+                    source = Mesh3DPointSource.Function(
+                        line3DArrayEvaluator(value, location),
+                    ),
+                    dependencies = value.dependencies.values.toList(),
+                ),
+            )
+        }
+        val parsed = when (
+            val result = mesh3DValues(
+                value = value,
+                attribute = "point",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ParsedMesh3DPoint(
+                source = Mesh3DPointSource.Values(parsed.values),
+                dependencies = parsed.dependencies,
+            ),
+        )
+    }
+
+    private fun mesh3DVector(
+        value: JessieCodeRuntimeValue,
+        attribute: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedMesh3DVector, JessieCodeRuntimeError> {
+        if (value is JessieCodeRuntimeValue.FunctionValue) {
+            return GMResult.Ok(
+                ParsedMesh3DVector(
+                    source = Mesh3DVectorSource.Function(
+                        line3DArrayEvaluator(value, location),
+                    ),
+                    dependencies = value.dependencies.values.toList(),
+                ),
+            )
+        }
+        val parsed = when (
+            val result = mesh3DValues(
+                value = value,
+                attribute = attribute,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ParsedMesh3DVector(
+                source = Mesh3DVectorSource.Values(parsed.values),
+                dependencies = parsed.dependencies,
+            ),
+        )
+    }
+
+    private fun mesh3DValues(
+        value: JessieCodeRuntimeValue,
+        attribute: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedLine3DValues, JessieCodeRuntimeError> {
+        val array = value as? JessieCodeRuntimeValue.ArrayValue
+            ?: return invalidAttribute(
+                creatorName = "mesh3d",
+                attribute = attribute,
+                expected = "function or array of three or four values",
+                actual = value,
+                location = location,
+            )
+        if (array.values.size !in setOf(3, 4)) {
+            return invalidAttribute(
+                creatorName = "mesh3d",
+                attribute = attribute,
+                expected = "array of three or four values",
+                actual = value,
+                location = location,
+            )
+        }
+        val values = mutableListOf<Line3DCoordinateValue>()
+        val dependencies = linkedMapOf<String, GeometryElement>()
+        for (coordinate in array.values) {
+            when (
+                val result = line3DCoordinateValue(
+                    value = coordinate,
+                    attribute = attribute,
+                    location = location,
+                    creatorName = "mesh3d",
+                )
+            ) {
+                is GMResult.Ok -> values += result.value
+                is GMResult.Err -> return result
+            }
+            if (coordinate is JessieCodeRuntimeValue.FunctionValue) {
+                dependencies.putAll(coordinate.dependencies)
+            }
+        }
+        return GMResult.Ok(
+            ParsedLine3DValues(
+                values = values,
+                dependencies = dependencies.values.toList(),
+            ),
+        )
+    }
+
+    // JSXGraph: src/3d/linspace3d.js -> createPlane3D.
+    private fun createPlane3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "plane3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val view = parents.firstOrNull()?.let {
+            resolveElement(resolvedBoard, it)
+        } as? View3D ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val planeParents = parents.drop(1)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "fixed",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val planeType = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "type",
+                default = "shader",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value.lowercase()
+            is GMResult.Err -> return result
+        }
+        val meshAttributes = when (
+            val value = attributes.properties["mesh3d"]
+        ) {
+            null, JessieCodeRuntimeValue.UndefinedValue ->
+                JessieCodeRuntimeValue.ObjectValue(emptyMap())
+            is JessieCodeRuntimeValue.ObjectValue -> value
+            else -> return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "mesh3d",
+                expected = "object",
+                actual = value,
+                location = location,
+            )
+        }
+        val meshStepWidthU = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = meshAttributes,
+                name = "stepwidthu",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val meshStepWidthV = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = meshAttributes,
+                name = "stepwidthv",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val threePointsAttribute = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "threepoints",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (planeParents.size in 2..4) {
+            val basePlane =
+                resolveElement(resolvedBoard, planeParents[0]) as? Plane3D
+            val transformations = transformationReferences(planeParents[1])
+            if (basePlane != null && transformations != null) {
+                val rangeU = if (planeParents.size >= 3) {
+                    when (
+                        val result = line3DRange(
+                            value = planeParents[2],
+                            location = location,
+                            creatorName = creatorName,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                } else {
+                    defaultPlane3DRange()
+                }
+                val rangeV = if (planeParents.size >= 4) {
+                    when (
+                        val result = line3DRange(
+                            value = planeParents[3],
+                            location = location,
+                            creatorName = creatorName,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                } else {
+                    defaultPlane3DRange()
+                }
+                return plane3DResult(
+                    result = Plane3D.create(
+                        view = view,
+                        basePlane = basePlane,
+                        transformations = transformations,
+                        rangeUSource = rangeU.values,
+                        rangeVSource = rangeV.values,
+                        dependencies =
+                            rangeU.dependencies + rangeV.dependencies,
+                        planeType = planeType,
+                        meshStepWidthU = meshStepWidthU,
+                        meshStepWidthV = meshStepWidthV,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate =
+                            identity.needsRegularUpdate,
+                        fixed = fixed,
+                    ),
+                    location = location,
+                )
+            }
+        }
+
+        val threePointForm =
+            planeParents.size >= 3 &&
+                (
+                    threePointsAttribute ||
+                        resolveElement(
+                            resolvedBoard,
+                            planeParents[1],
+                        ) is Point3D ||
+                        resolveElement(
+                            resolvedBoard,
+                            planeParents[2],
+                        ) is Point3D
+                    )
+        if (threePointForm) {
+            if (planeParents.size !in 3..5) {
+                return unsupported(creatorName, parents, location)
+            }
+            val providedPoints = mutableListOf<ProvidedLine3DPoint>()
+            for (index in 0 until 3) {
+                val provided = when (
+                    val result = provideLine3DPoint(
+                        board = resolvedBoard,
+                        view = view,
+                        value = planeParents[index],
+                        attributes = attributes,
+                        role = "point${index + 1}",
+                        location = location,
+                        creatorName = creatorName,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        for (point in providedPoints) {
+                            discardProvidedPoint3D(resolvedBoard, point)
+                        }
+                        return result
+                    }
+                }
+                providedPoints += provided
+            }
+            val rangeU = if (planeParents.size >= 4) {
+                when (
+                    val result = line3DRange(
+                        value = planeParents[3],
+                        location = location,
+                        creatorName = creatorName,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        for (point in providedPoints) {
+                            discardProvidedPoint3D(resolvedBoard, point)
+                        }
+                        return result
+                    }
+                }
+            } else {
+                defaultPlane3DRange()
+            }
+            val rangeV = if (planeParents.size >= 5) {
+                when (
+                    val result = line3DRange(
+                        value = planeParents[4],
+                        location = location,
+                        creatorName = creatorName,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        for (point in providedPoints) {
+                            discardProvidedPoint3D(resolvedBoard, point)
+                        }
+                        return result
+                    }
+                }
+            } else {
+                defaultPlane3DRange()
+            }
+            return plane3DResult(
+                result = Plane3D.create(
+                    view = view,
+                    point1 = providedPoints[0].point,
+                    point2 = providedPoints[1].point,
+                    point3 = providedPoints[2].point,
+                    ownsPoint1 = providedPoints[0].owned,
+                    ownsPoint2 = providedPoints[1].owned,
+                    ownsPoint3 = providedPoints[2].owned,
+                    rangeUSource = rangeU.values,
+                    rangeVSource = rangeV.values,
+                    dependencies =
+                        rangeU.dependencies + rangeV.dependencies,
+                    planeType = planeType,
+                    meshStepWidthU = meshStepWidthU,
+                    meshStepWidthV = meshStepWidthV,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    fixed = fixed,
+                ),
+                location = location,
+            )
+        }
+
+        if (planeParents.size !in 3..5) {
+            return unsupported(creatorName, parents, location)
+        }
+        val definingPoint = when (
+            val result = provideLine3DPoint(
+                board = resolvedBoard,
+                view = view,
+                value = planeParents[0],
+                attributes = attributes,
+                role = "point",
+                location = location,
+                creatorName = creatorName,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val firstDirection = when (
+            val result = plane3DDirection(
+                board = resolvedBoard,
+                value = planeParents[1],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                discardProvidedPoint3D(resolvedBoard, definingPoint)
+                return result
+            }
+        }
+        val secondDirection = when (
+            val result = plane3DDirection(
+                board = resolvedBoard,
+                value = planeParents[2],
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                discardProvidedPoint3D(resolvedBoard, definingPoint)
+                return result
+            }
+        }
+        val rangeU = if (planeParents.size >= 4) {
+            when (
+                val result = line3DRange(
+                    value = planeParents[3],
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    discardProvidedPoint3D(resolvedBoard, definingPoint)
+                    return result
+                }
+            }
+        } else {
+            defaultPlane3DRange()
+        }
+        val rangeV = if (planeParents.size >= 5) {
+            when (
+                val result = line3DRange(
+                    value = planeParents[4],
+                    location = location,
+                    creatorName = creatorName,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    discardProvidedPoint3D(resolvedBoard, definingPoint)
+                    return result
+                }
+            }
+        } else {
+            defaultPlane3DRange()
+        }
+        return plane3DResult(
+            result = Plane3D.create(
+                view = view,
+                point = definingPoint.point,
+                direction1Source = firstDirection.source,
+                direction2Source = secondDirection.source,
+                rangeUSource = rangeU.values,
+                rangeVSource = rangeV.values,
+                ownsPoint = definingPoint.owned,
+                dependencies =
+                    firstDirection.dependencies +
+                        secondDirection.dependencies +
+                        rangeU.dependencies +
+                        rangeV.dependencies,
+                planeType = planeType,
+                meshStepWidthU = meshStepWidthU,
+                meshStepWidthV = meshStepWidthV,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            ),
+            location = location,
+        )
+    }
+
+    private fun plane3DDirection(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedPlane3DDirection, JessieCodeRuntimeError> =
+        when (
+            val result = line3DDirection(
+                board = board,
+                value = value,
+                location = location,
+                creatorName = "plane3d",
+            )
+        ) {
+            is GMResult.Err -> result
+            is GMResult.Ok -> GMResult.Ok(
+                ParsedPlane3DDirection(
+                    source = when (val source = result.value.source) {
+                        is Line3DDirectionSource.Points ->
+                            Plane3DDirectionSource.Points(
+                                source.point1,
+                                source.point2,
+                            )
+                        is Line3DDirectionSource.Line ->
+                            Plane3DDirectionSource.Line(source.line)
+                        is Line3DDirectionSource.Values ->
+                            Plane3DDirectionSource.Values(source.values)
+                        is Line3DDirectionSource.Function ->
+                            Plane3DDirectionSource.Function(source.evaluator)
+                    },
+                    dependencies = result.value.dependencies,
+                ),
+            )
+        }
+
+    private fun defaultPlane3DRange(): ParsedLine3DValues =
+        ParsedLine3DValues(
+            values = listOf(
+                Line3DCoordinateValue.Numeric(Double.NEGATIVE_INFINITY),
+                Line3DCoordinateValue.Numeric(Double.POSITIVE_INFINITY),
+            ),
+            dependencies = emptyList(),
+        )
+
+    private fun plane3DResult(
+        result: GMResult<Plane3D, Plane3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "plane3d",
+                error = JessieCodeCreatorError.Plane3DFactory(
                     result.error,
                 ),
                 location = location,
@@ -9280,6 +12160,94 @@ internal object NativeJessieCodeCreators {
         val needsRegularUpdate: Boolean,
         val fixed: Boolean = false,
     )
+
+    private data class ParsedAxes3DAttributes(
+        val axesPosition: String,
+        val planeTypes: Map<String, String>,
+        val ticksAttributes: Map<String, Axes3DTicksAttributes>,
+        val needsRegularUpdate: Boolean,
+    )
+
+    private data class ProvidedLine3DPoint(
+        val point: Point3D,
+        val owned: Boolean,
+    )
+
+    private data class ParsedLine3DDirection(
+        val source: Line3DDirectionSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedPlane3DDirection(
+        val source: Plane3DDirectionSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedMesh3DPoint(
+        val source: Mesh3DPointSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedMesh3DVector(
+        val source: Mesh3DVectorSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedPolyhedron3DVertices(
+        val sources: LinkedHashMap<String, Polyhedron3DVertexSource>,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private data class ParsedTicks3DPoint(
+        val source: Ticks3DPointSource,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private val AXES_3D_PLANE_ROLES = listOf(
+        "xPlaneRear",
+        "xPlaneFront",
+        "yPlaneRear",
+        "yPlaneFront",
+        "zPlaneRear",
+        "zPlaneFront",
+    )
+
+    private data class ParsedLine3DValues(
+        val values: List<Line3DCoordinateValue>,
+        val dependencies: List<GeometryElement>,
+    )
+
+    private val FACE_3D_ATTRIBUTES = setOf(
+        "id",
+        "name",
+        "needsregularupdate",
+        "visible",
+        "strokecolor",
+        "fillcolor",
+        "strokewidth",
+        "strokeopacity",
+        "fillopacity",
+        "layer",
+        "fixed",
+        "highlight",
+        "withlabel",
+        "dash",
+        "dashscale",
+        "linecap",
+        "shader",
+    )
+    private val FACE_3D_SHADER_ATTRIBUTES = setOf(
+        "enabled",
+        "fixed",
+        "type",
+        "hue",
+        "saturation",
+        "minlightness",
+        "maxlightness",
+        "light",
+    )
+    private val FACE_3D_LIGHT_ATTRIBUTES =
+        setOf("type", "az", "el", "bank", "dir")
 
     private fun CreatorAttributes.toTangentToIdentity(): TangentToIdentity =
         TangentToIdentity(

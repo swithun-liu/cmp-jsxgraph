@@ -19,6 +19,7 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Platform-independent output of the translated Board and element factories.
@@ -231,6 +232,123 @@ data class JsxGraphVectorField(
         takeIf { x.isFinite() && y.isFinite() }
 }
 
+data class JsxGraphProjection3D(
+    val matrix3D: List<List<Double>>,
+    val central: Boolean,
+    val viewPortTransform: List<List<Double>>?,
+) {
+    fun project(point: List<Double>): JsxGraphPoint2D? {
+        if (point.size != 3 || matrix3D.size != 3) {
+            return null
+        }
+        val homogeneous = listOf(1.0, point[0], point[1], point[2])
+        val projected = matrix3D.map { row ->
+            if (row.size != homogeneous.size) {
+                return null
+            }
+            row.indices.sumOf { index -> row[index] * homogeneous[index] }
+        }.toMutableList()
+        if (central) {
+            if (projected[0] == 0.0) {
+                return null
+            }
+            projected[1] /= projected[0]
+            projected[2] /= projected[0]
+            projected[0] = 1.0
+            val viewport = viewPortTransform ?: return null
+            if (viewport.size != 3) {
+                return null
+            }
+            val transformed = viewport.map { row ->
+                if (row.size != 3) {
+                    return null
+                }
+                row.indices.sumOf { index -> row[index] * projected[index] }
+            }
+            return JsxGraphPoint2D(
+                x = transformed[1],
+                y = transformed[2],
+            ).finiteOrNull()
+        }
+        return JsxGraphPoint2D(
+            x = projected[1],
+            y = projected[2],
+        ).finiteOrNull()
+    }
+
+    private fun JsxGraphPoint2D.finiteOrNull(): JsxGraphPoint2D? =
+        takeIf { x.isFinite() && y.isFinite() }
+}
+
+/**
+ * Viewport-dependent geometry for Ticks3D.
+ *
+ * JSXGraph specifies majorHeight in CSS pixels, so the final 3D endpoints
+ * cannot be resolved until the renderer knows its pixel-to-user-unit scale.
+ */
+data class JsxGraphTicks3D(
+    val tickBases3D: List<List<Double>>,
+    val direction2: List<Double>,
+    val tickEndings: List<Double>,
+    val majorHeight: Double,
+    val projection: JsxGraphProjection3D,
+) {
+    fun resolvePoints(
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): List<JsxGraphPoint2D?> {
+        if (direction2.size != 3 || tickEndings.size != 2) {
+            return emptyList()
+        }
+        val scale = sqrt(cssPixelsPerUnitX * cssPixelsPerUnitY)
+        val height = majorHeight / scale
+        val startOffset = height * -tickEndings[0]
+        val endOffset = height * tickEndings[1]
+        val points = mutableListOf<JsxGraphPoint2D?>()
+        for (base in tickBases3D) {
+            if (base.size != 3) {
+                continue
+            }
+            points += projection.project(
+                List(3) { index ->
+                    base[index] + startOffset * direction2[index]
+                },
+            )
+            points += projection.project(
+                List(3) { index ->
+                    base[index] + endOffset * direction2[index]
+                },
+            )
+            points += null
+        }
+        return points
+    }
+}
+
+data class JsxGraphTicks3DLabel(
+    val tickBase3D: List<Double>,
+    val direction2: List<Double>,
+    val positiveEnding: Double,
+    val majorHeight: Double,
+    val projection: JsxGraphProjection3D,
+) {
+    fun resolvePosition(
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): JsxGraphPoint2D? {
+        if (tickBase3D.size != 3 || direction2.size != 3) {
+            return null
+        }
+        val scale = sqrt(cssPixelsPerUnitX * cssPixelsPerUnitY)
+        val offset = majorHeight / scale * positiveEnding * 2.0
+        return projection.project(
+            List(3) { index ->
+                tickBase3D[index] + offset * direction2[index]
+            },
+        )
+    }
+}
+
 sealed interface JsxGraphSceneElement {
     val id: String
     val name: String
@@ -277,6 +395,7 @@ sealed interface JsxGraphSceneElement {
         val autoRadiusAngle: JsxGraphAutoRadiusAngle? = null,
         val boxPlot: JsxGraphBoxPlot? = null,
         val vectorField: JsxGraphVectorField? = null,
+        val ticks3D: JsxGraphTicks3D? = null,
     ) : JsxGraphSceneElement {
         fun resolvePoints(
             cssPixelsPerUnitX: Double,
@@ -288,6 +407,10 @@ sealed interface JsxGraphSceneElement {
                     cssPixelsPerUnitY = cssPixelsPerUnitY,
                 )
                 ?: vectorField?.resolvePoints(
+                    cssPixelsPerUnitX = cssPixelsPerUnitX,
+                    cssPixelsPerUnitY = cssPixelsPerUnitY,
+                )
+                ?: ticks3D?.resolvePoints(
                     cssPixelsPerUnitX = cssPixelsPerUnitX,
                     cssPixelsPerUnitY = cssPixelsPerUnitY,
                 )
@@ -314,5 +437,6 @@ sealed interface JsxGraphSceneElement {
         val fontSize: Double,
         val anchorX: String,
         val anchorY: String,
+        val ticks3DLabel: JsxGraphTicks3DLabel? = null,
     ) : JsxGraphSceneElement
 }

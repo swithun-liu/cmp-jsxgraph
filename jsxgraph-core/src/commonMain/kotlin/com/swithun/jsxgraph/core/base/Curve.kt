@@ -91,7 +91,38 @@ internal sealed interface CurveError {
         val elementType: String,
         val curveType: String?,
     ) : CurveError
+
+    data class DataUpdate(
+        val error: CurveDataUpdateError,
+    ) : CurveError
 }
+
+internal sealed interface CurveDataUpdateError {
+    data class Face3D(
+        val error: Face3DError,
+    ) : CurveDataUpdateError
+
+    data class Ticks3D(
+        val error: Ticks3DError,
+    ) : CurveDataUpdateError
+
+    data class Mesh3D(
+        val error: Mesh3DError,
+    ) : CurveDataUpdateError
+}
+
+internal data class CurveDataUpdate(
+    val x: DoubleArray,
+    val y: DoubleArray,
+)
+
+internal fun interface CurveDataUpdater {
+    fun update(): GMResult<CurveDataUpdate, CurveDataUpdateError>
+}
+
+internal data class CurveMesh3DDefinition(
+    var requestedPointCount: Long = 0L,
+)
 
 private data class CurveBooleanDefinition(
     val subject: GeometryElement,
@@ -557,6 +588,10 @@ internal class Curve private constructor(
         get() = hyperbolaDefinition != null
     internal val isParabola: Boolean
         get() = parabolaDefinition != null
+    internal val isTicks3D: Boolean
+        get() = ticks3DDefinition != null
+    internal val isMesh3D: Boolean
+        get() = mesh3DDefinition != null
     internal val center: Point?
         get() =
             ellipseDefinition?.center
@@ -584,9 +619,15 @@ internal class Curve private constructor(
         get() = parabolaDefinition?.directrix
     internal val inherits = mutableListOf<GeometryElement>()
     internal val subs = linkedMapOf<String, GeometryElement>()
+    private var dataUpdater: CurveDataUpdater? = null
+    internal var ticks3DDefinition: Ticks3DDefinition? = null
+        private set
+    internal var mesh3DDefinition: CurveMesh3DDefinition? = null
+        private set
 
     internal fun requestedPointCount(): Long? =
-        vectorFieldDefinition?.requestedPointCount
+        mesh3DDefinition?.requestedPointCount
+            ?: vectorFieldDefinition?.requestedPointCount
             ?: inequalityDefinition?.requestedPointCount
             ?: combDefinition?.requestedPointCount
             ?: stepDefinition?.xTerm?.length?.let { sourceCount ->
@@ -620,6 +661,17 @@ internal class Curve private constructor(
 
     // JSXGraph: src/base/curve.js -> updateCurve
     internal fun updateCurve(): GMResult<Curve, CurveError> {
+        dataUpdater?.let { updater ->
+            when (val result = updater.update()) {
+                is GMResult.Ok -> {
+                    dataX = result.value.x.copyOf()
+                    dataY = result.value.y.copyOf()
+                }
+                is GMResult.Err -> return GMResult.Err(
+                    CurveError.DataUpdate(result.error),
+                )
+            }
+        }
         val clipping = booleanDefinition
         if (clipping != null) {
             return when (
@@ -1752,6 +1804,34 @@ internal class Curve private constructor(
             )
         }
         numberPoints = xData.size
+    }
+
+    // JSXGraph: src/base/curve.js -> updateDataArray assignment;
+    // src/3d/linspace3d.js -> Plane3D element2D.updateDataArray.
+    internal fun replaceData(
+        xData: DoubleArray,
+        yData: DoubleArray,
+    ): Curve {
+        dataX = xData.copyOf()
+        dataY = yData.copyOf()
+        replaceDataPoints(
+            xData = dataX ?: DoubleArray(0),
+            yData = dataY ?: DoubleArray(0),
+        )
+        evaluationError = null
+        return this
+    }
+
+    // JSXGraph: src/base/curve.js -> updateDataArray assignment.
+    internal fun setDataUpdater(
+        updater: CurveDataUpdater,
+        ticks3D: Ticks3DDefinition? = null,
+        mesh3D: CurveMesh3DDefinition? = null,
+    ): Curve {
+        dataUpdater = updater
+        ticks3DDefinition = ticks3D
+        mesh3DDefinition = mesh3D
+        return this
     }
 
     internal fun minX(): Double = evaluateMinimum().valueOrNaN()
