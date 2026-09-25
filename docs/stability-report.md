@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **53 development parity scenarios.** These remain focused regression
+3. **54 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -154,7 +154,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 53 focused cases, but this does not change the
+contains 30 production and 54 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `spatial_lines_planes` fixture adds same-source Line3D, a finite
 Plane3D outline with its visible Mesh3D wireframe, and Axis3D evidence. Its
@@ -185,6 +185,13 @@ also records a three-face/four-key definition, a four-point closed triangular
 face with green `0.5` fill and `4px` stroke, an unclosed two-point face,
 transformed coordinates, and dynamic base/transformed updates. This evidence
 remains outside the Stable production corpus.
+The focused `plane3d_surfaces` fixture verifies finite Plane3D rectangle and
+triangle tiling, cyclic color arrays, HSL shader fills, and height colormaps.
+Static captures scored `0.987317` on Desktop and `0.984636` on Compact. Both
+contact sheets passed manual review for topology, face closure, colors,
+transparency, borders, depth ordering, overlap, clipping, and blank output.
+The official fixture additionally records the `10 x 10` Axes3D rear-plane
+surface defaults. This evidence remains outside the Stable production corpus.
 The focused function-coordinate Point fixture scored `0.986724` on Desktop
 and `0.973162` on Compact before movement. After dragging its shared driver
 from `(-3,-2)` to `(-1,1)`, the function-array, scalar-function, and

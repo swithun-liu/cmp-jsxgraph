@@ -254,6 +254,196 @@ class Plane3DTest {
     }
 
     @Test
+    fun finiteSurfaceUsesOfficialRectangleAndTriangleTiling() {
+        val board = createBoard()
+        val view = createView(board)
+        val origin = point(view, doubleArrayOf(0.0, 0.0, 0.0), "origin")
+        val rectangle = plane(
+            Plane3D.create(
+                view = view,
+                point = origin,
+                direction1Source = values(1.0, 0.0, 0.0),
+                direction2Source = values(0.0, 1.0, 0.0),
+                rangeUSource = range(-2.0, 2.0),
+                rangeVSource = range(-1.0, 1.0),
+                planeType = "colorarray",
+                surfaceAttributes = Plane3DSurfaceAttributes(
+                    stepsU = 2,
+                    stepsV = 1,
+                    fillColorArray = listOf("#ff0000", "#0000ff"),
+                ),
+                id = "rectangle",
+                name = "",
+            ),
+        )
+        val triangle = plane(
+            Plane3D.create(
+                view = view,
+                point = origin,
+                direction1Source = values(1.0, 0.0, 0.0),
+                direction2Source = values(0.0, 1.0, 0.0),
+                rangeUSource = range(-2.0, 2.0),
+                rangeVSource = range(-1.0, 1.0),
+                planeType = "shader",
+                surfaceAttributes = Plane3DSurfaceAttributes(
+                    tiling = "triangle",
+                    stepsU = 2,
+                    stepsV = 2,
+                ),
+                id = "triangle",
+                name = "",
+            ),
+        )
+
+        board.fullUpdate()
+
+        val rectangleSurface = requireNotNull(rectangle.surface3D)
+        assertEquals(6, rectangleSurface.definition.vertices.size)
+        assertEquals(2, rectangleSurface.numberFaces)
+        assertEquals(
+            listOf("3", "4", "1", "0"),
+            rectangleSurface.definition.faceKeys[0],
+        )
+        assertEquals(
+            listOf("#ff0000", "#0000ff"),
+            rectangleSurface.faces.map(Face3D::resolvedFillColor),
+        )
+        assertEquals(0, rectangle.outline2D.points.size)
+
+        val triangleSurface = requireNotNull(triangle.surface3D)
+        assertEquals(10, triangleSurface.definition.vertices.size)
+        assertEquals(11, triangleSurface.numberFaces)
+        assertEquals(
+            listOf("3", "4", "0"),
+            triangleSurface.definition.faceKeys[0],
+        )
+        assertEquals(
+            triangleSurface.definition.faceKeys[4],
+            triangleSurface.definition.faceKeys[5],
+        )
+        assertTrue(
+            triangleSurface.faces.all {
+                it.faceAttributes.shader.enabled
+            },
+        )
+    }
+
+    @Test
+    fun colormapAndDynamicVerticesFollowPlaneUpdates() {
+        val board = createBoard()
+        val view = createView(board)
+        val first = point(view, doubleArrayOf(0.0, 0.0, 0.0), "first")
+        val second = point(view, doubleArrayOf(2.0, 0.0, 0.0), "second")
+        val third = point(view, doubleArrayOf(0.0, 2.0, 0.0), "third")
+        val plane = plane(
+            Plane3D.create(
+                view = view,
+                point1 = first,
+                point2 = second,
+                point3 = third,
+                rangeUSource = range(0.0, 1.0),
+                rangeVSource = range(0.0, 1.0),
+                planeType = "colormap",
+                surfaceAttributes = Plane3DSurfaceAttributes(
+                    stepsU = 1,
+                    stepsV = 1,
+                    colormap = Plane3DColormapAttributes(
+                        minimumHeight = -1.0,
+                        minimumHue = 240.0,
+                        maximumHeight = 1.0,
+                        maximumHue = 0.0,
+                        saturation = 1.0,
+                        value = 1.0,
+                    ),
+                ),
+                id = "colormap",
+                name = "",
+            ),
+        )
+
+        board.fullUpdate()
+
+        val surface = requireNotNull(plane.surface3D)
+        assertEquals("#00ff00", surface.faces.single().resolvedFillColor())
+        assertContentEquals(
+            doubleArrayOf(1.0, 2.0, 2.0, 0.0),
+            surface.definition.coords.getValue("3"),
+        )
+
+        assertIs<GMResult.Ok<Point3D>>(
+            second.setPosition(doubleArrayOf(3.0, 0.0, 1.0)),
+        )
+        assertIs<GMResult.Ok<Point3D>>(
+            third.setPosition(doubleArrayOf(0.0, 4.0, 1.0)),
+        )
+        board.fullUpdate()
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 3.0, 4.0, 2.0),
+            surface.definition.coords.getValue("3"),
+        )
+        assertEquals("#ff0000", surface.faces.single().resolvedFillColor())
+    }
+
+    @Test
+    fun surfaceRemovalAndLimitsAreSafe() {
+        val board = createBoard()
+        val view = createView(board)
+        val origin = point(view, doubleArrayOf(0.0, 0.0, 0.0), "origin")
+        val plane = plane(
+            Plane3D.create(
+                view = view,
+                point = origin,
+                direction1Source = values(1.0, 0.0, 0.0),
+                direction2Source = values(0.0, 1.0, 0.0),
+                rangeUSource = range(-1.0, 1.0),
+                rangeVSource = range(-1.0, 1.0),
+                surfaceAttributes = Plane3DSurfaceAttributes(
+                    stepsU = 2,
+                    stepsV = 2,
+                ),
+                id = "surface",
+                name = "",
+            ),
+        )
+        val surface = requireNotNull(plane.surface3D)
+        val surfaceId = surface.id
+        val faceIds = surface.faces.map(Face3D::id)
+        val curveIds = surface.faces.map { it.curve2D.id }
+
+        board.removeObject(plane)
+
+        assertNull(board.elementById(surfaceId))
+        for (id in faceIds + curveIds) {
+            assertNull(board.elementById(id))
+        }
+        assertIs<GMResult.Err<Plane3DError.InvalidSurfaceSteps>>(
+            Plane3D.create(
+                view = view,
+                point = origin,
+                direction1Source = values(1.0, 0.0, 0.0),
+                direction2Source = values(0.0, 1.0, 0.0),
+                rangeUSource = range(-1.0, 1.0),
+                rangeVSource = range(-1.0, 1.0),
+                surfaceAttributes = Plane3DSurfaceAttributes(stepsU = 0),
+            ),
+        )
+        assertIs<GMResult.Err<Plane3DError.SurfaceVertexLimitExceeded>>(
+            Plane3D.create(
+                view = view,
+                point = origin,
+                direction1Source = values(1.0, 0.0, 0.0),
+                direction2Source = values(0.0, 1.0, 0.0),
+                rangeUSource = range(-1.0, 1.0),
+                rangeVSource = range(-1.0, 1.0),
+                surfaceAttributes = Plane3DSurfaceAttributes(
+                    stepsU = Int.MAX_VALUE,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun malformedInputsReturnStructuredErrors() {
         val view = createView(createBoard())
         val point = point(view, doubleArrayOf(0.0, 0.0, 0.0), "point")

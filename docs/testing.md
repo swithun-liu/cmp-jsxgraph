@@ -95,11 +95,19 @@ hidden center `O` Intersection's coordinates and dependency metadata. Its Polyhe
 snapshot records three faces over four vertex keys, Point-backed, function,
 and homogeneous vertices, a four-point closed triangular proxy with green
 `0.5` fill and `4px` stroke, an unclosed two-point proxy, transformed
-coordinates `[1, 3, -1, 6]`, and dynamic base/transformed updates. It is the
-official source of truth for this bounded Kotlin translation; Plane3D
-shader/colormap/color-array surface modes, global
-View3D `depthOrder`/layer configuration, camera controls, gliders, animations,
-Stable qualification, and the complete 3D API remain outside this slice.
+coordinates `[1, 3, -1, 6]`, and dynamic base/transformed updates.
+
+Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
+colormap, and Axes3D rear-plane defaults:
+
+```bash
+node tools/upstream-fixtures/plane3d-surfaces.mjs
+```
+
+These fixtures are the official source of truth for this bounded Kotlin
+translation. Global View3D `depthOrder`/layer configuration, camera controls,
+gliders, animations, Stable qualification, and the complete 3D API remain
+outside this slice.
 
 Capture the official direct-function Point lifecycle and the observed
 Midpoint function-parent rejection:
@@ -1127,8 +1135,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 83 cases:
-30 generated production scenarios followed by 53 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 84 cases:
+30 generated production scenarios followed by 54 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1150,6 +1158,9 @@ ordinary 2D scene consumed by Compose.
 The focused `spatial_lines_planes` case likewise uses one construction
 document for bounded Line3D, a finite Plane3D outline with its visible Mesh3D
 wireframe, and Axis3D.
+The focused `plane3d_surfaces` case uses one construction document for exact
+rectangle and triangle tiling, cyclic color-array fills, HSL shading, and
+height colormaps.
 The focused `polyhedron3d_faces` case uses one JessieCode source for six
 Face3D Curve proxies with cyclic colors, a per-face override, and local depth
 ordering.
@@ -1225,6 +1236,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `transformed_points` | 0.986656 | 0.972766 |
 | `point3d_projection` | 0.986505 | 0.972805 |
 | `spatial_lines_planes` | 0.987328 | 0.975225 |
+| `plane3d_surfaces` | 0.987317 | 0.984636 |
 | `polyhedron3d_faces` | 0.987380 | 0.984777 |
 | `view3d_default_axes` | 0.986921 | 0.977686 |
 | `view3d_center_axes` | 0.989085 | 0.986061 |
@@ -1556,6 +1568,12 @@ The focused `spatial_lines_planes` capture scored `0.987328` on Desktop and
 `0.975225` on Compact. Both contact sheets passed manual review for the closed
 Plane3D outline, both visible Mesh3D line families, Line3D clipping, Axis3D
 arrow direction, layering, overlap, blank output, and viewport clipping.
+The focused `plane3d_surfaces` capture verifies six rectangular color-array
+faces, the upstream triangular topology, HSL shader colors, height colormap
+colors, and an empty ordinary Plane outline. It scored `0.987317` on Desktop
+and `0.984636` on Compact; both contact sheets passed manual review for
+topology, closure, colors, transparency, borders, depth ordering, overlap,
+clipping, and blank output.
 The focused `view3d_default_axes` capture verifies automatic border
 Axes3D scene expansion, three Ticks3D curves, and 33 labels. It scored
 `0.986921` on Desktop and `0.977686` on Compact; both contact sheets passed
@@ -1574,7 +1592,7 @@ for geometry, face closure, transparent overlays, borders, overlap, clipping,
 and blank output. The local ordering test deliberately supplies near/far
 faces in reverse and verifies that the scene emits them in ascending depth.
 Together with the official lifecycle fixture, this raises the development
-corpus to 83 cases while the independently qualified 30-case Stable corpus
+corpus to 84 cases while the independently qualified 30-case Stable corpus
 remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

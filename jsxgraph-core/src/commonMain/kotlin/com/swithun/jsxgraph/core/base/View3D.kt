@@ -675,6 +675,8 @@ internal class View3D private constructor(
     internal fun createDefaultAxes(
         axesPosition: String = "center",
         planeTypes: Map<String, String> = emptyMap(),
+        planeSurfaceAttributes:
+            Map<String, Plane3DSurfaceAttributes> = emptyMap(),
         ticksAttributes: Map<String, Axes3DTicksAttributes> = emptyMap(),
         needsRegularUpdate: Boolean = true,
     ): GMResult<Axes3D, Axes3DError> =
@@ -683,6 +685,7 @@ internal class View3D private constructor(
                 view = this,
                 axesPosition = axesPosition,
                 planeTypes = planeTypes,
+                planeSurfaceAttributes = planeSurfaceAttributes,
                 ticksAttributes = ticksAttributes,
                 needsRegularUpdate = needsRegularUpdate,
             )

@@ -54,10 +54,7 @@ class Axes3DTest {
 
         assertEquals("axes3d", axes.elType)
         assertEquals(24, axes.objects.size)
-        assertEquals(
-            setOf(Axes3D.PLANE_SURFACE_GAP),
-            axes.unsupportedFeatures,
-        )
+        assertEquals(emptySet(), axes.unsupportedFeatures)
 
         val xAxis = assertIs<Line3D>(axes.member("xAxisBorder"))
         assertContentEquals(
@@ -86,6 +83,21 @@ class Axes3DTest {
         )
         assertContentEquals(doubleArrayOf(-4.0, 6.0), xRear.evaluatedRangeU)
         assertContentEquals(doubleArrayOf(-3.0, 7.0), xRear.evaluatedRangeV)
+        val xRearSurface = requireNotNull(xRear.surface3D)
+        assertEquals(100, xRearSurface.numberFaces)
+        assertEquals(
+            listOf("#e7e7e7"),
+            xRearSurface.faces
+                .map { it.faceAttributes.fillColor }
+                .distinct(),
+        )
+        assertTrue(
+            xRearSurface.faces.all {
+                it.faceAttributes.shader.type == "zIndex" &&
+                    it.faceAttributes.shader.minimumLightness == 65.0 &&
+                    it.faceAttributes.shader.maximumLightness == 98.0
+            },
+        )
 
         val faceAxis = assertIs<Line3D>(
             axes.member("xPlaneRearYAxis"),
@@ -118,10 +130,7 @@ class Axes3DTest {
             ),
         ).value
         assertEquals(22, center.objects.size)
-        assertEquals(
-            setOf(Axes3D.PLANE_SURFACE_GAP),
-            center.unsupportedFeatures,
-        )
+        assertEquals(emptySet(), center.unsupportedFeatures)
         val xAxis = assertIs<Line3D>(center.member("xAxis"))
         val yAxis = assertIs<Line3D>(center.member("yAxis"))
         val origin = assertIs<IntersectionPoint>(center.member("O"))
@@ -150,10 +159,7 @@ class Axes3DTest {
             ),
         ).value
         assertEquals(18, none.objects.size)
-        assertEquals(
-            setOf(Axes3D.PLANE_SURFACE_GAP),
-            none.unsupportedFeatures,
-        )
+        assertEquals(emptySet(), none.unsupportedFeatures)
         assertNull(none.member("xAxis"))
     }
 

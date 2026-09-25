@@ -134,13 +134,14 @@ internal class Axes3D private constructor(
 
     internal companion object {
         private const val AXES_3D_ELEMENT_TYPE = "axes3d"
-        internal const val PLANE_SURFACE_GAP = "mesh3d/polyhedron3d"
 
         // JSXGraph: src/3d/box3d.js -> createAxes3D.
         internal fun create(
             view: View3D,
             axesPosition: String = "center",
             planeTypes: Map<String, String> = emptyMap(),
+            planeSurfaceAttributes:
+                Map<String, Plane3DSurfaceAttributes> = emptyMap(),
             ticksAttributes: Map<String, Axes3DTicksAttributes> =
                 emptyMap(),
             needsRegularUpdate: Boolean = true,
@@ -383,7 +384,19 @@ internal class Axes3D private constructor(
                                 front[secondDirection],
                             ),
                             ownsPoint = true,
-                            planeType = planeTypes[role] ?: "shader",
+                            planeType = planeTypes[role]
+                                ?: if (role.endsWith("Rear")) {
+                                    "shader"
+                                } else {
+                                    "wireframe"
+                                },
+                            surfaceAttributes =
+                                planeSurfaceAttributes[role]
+                                    ?: Plane3DSurfaceAttributes
+                                        .axes3DDefaults(
+                                            visible =
+                                                role.endsWith("Rear"),
+                                        ),
                             name = "",
                             needsRegularUpdate = needsRegularUpdate,
                             fixed = true,
@@ -447,7 +460,7 @@ internal class Axes3D private constructor(
                 Axes3D(
                     members = members,
                     axesPosition = normalizedPosition,
-                    unsupportedFeatures = setOf(PLANE_SURFACE_GAP),
+                    unsupportedFeatures = emptySet(),
                 ),
             )
         }

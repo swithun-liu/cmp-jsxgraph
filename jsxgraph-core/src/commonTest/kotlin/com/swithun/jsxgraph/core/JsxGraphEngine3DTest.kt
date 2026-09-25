@@ -47,7 +47,7 @@ class JsxGraphEngine3DTest {
             ),
         ).value
 
-        assertEquals(27, scene.elements.size)
+        assertEquals(327, scene.elements.size)
         assertEquals(
             3,
             scene.elements.filterIsInstance<JsxGraphSceneElement.Curve>()
@@ -315,6 +315,244 @@ class JsxGraphEngine3DTest {
     }
 
     @Test
+    fun documentCreatesAllFinitePlane3DSurfaceModes() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                finitePlane3DSurfaceSource(
+                    """
+                    {
+                      "id": "colors",
+                      "type": "plane3d",
+                      "parents": [
+                        "view",
+                        [0, 0, -2],
+                        [1, 0, 0],
+                        [0, 1, 0],
+                        [-2, 2],
+                        [-1, 1]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "type": "colorarray",
+                        "stepsU": 2,
+                        "stepsV": 1,
+                        "polyhedron": {
+                          "strokeColor": "#123456",
+                          "strokeWidth": 0.25,
+                          "fillOpacity": 0.75,
+                          "fillColorArray": ["#ff0000", "#0000ff"]
+                        }
+                      }
+                    },
+                    {
+                      "id": "shader",
+                      "type": "plane3d",
+                      "parents": [
+                        "view",
+                        [0, 0, 0],
+                        [1, 0, 0],
+                        [0, 1, 0],
+                        [-2, 2],
+                        [-1, 1]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "type": "shader",
+                        "tiling": "triangle",
+                        "stepsU": 2,
+                        "stepsV": 2,
+                        "polyhedron": {
+                          "fillColorArray": ["#ff0000"],
+                          "shader": {
+                            "hue": 120,
+                            "saturation": 100,
+                            "minLightness": 50,
+                            "maxLightness": 50
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "id": "colormap",
+                      "type": "plane3d",
+                      "parents": [
+                        "view",
+                        [0, 0, 0],
+                        [1, 0, 0],
+                        [0, 1, 0],
+                        [-1, 1],
+                        [-1, 1]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "type": "colormap",
+                        "stepsU": 1,
+                        "stepsV": 1,
+                        "colormap": {
+                          "min": [-1, 240],
+                          "max": [1, 0],
+                          "s": 1,
+                          "v": 1
+                        }
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+        val curves = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Curve>()
+
+        for (id in listOf("colors", "shader", "colormap")) {
+            assertEquals(0, curves.single { it.id == id }.points.size)
+        }
+        val colorArrayFaces = curves.filter {
+            it.style.fillColor in setOf(
+                JsxGraphColor(255, 0, 0),
+                JsxGraphColor(0, 0, 255),
+            )
+        }
+        assertEquals(2, colorArrayFaces.size)
+        assertEquals(
+            setOf(JsxGraphColor(255, 0, 0), JsxGraphColor(0, 0, 255)),
+            colorArrayFaces.map { it.style.fillColor }.toSet(),
+        )
+        assertTrue(colorArrayFaces.all { it.points.size == 5 })
+        assertTrue(
+            colorArrayFaces.all {
+                it.style.strokeColor == JsxGraphColor(18, 52, 86) &&
+                    it.style.strokeWidth == 0.25 &&
+                    it.style.fillOpacity == 0.75
+            },
+        )
+
+        val greenFaces = curves.filter {
+            it.style.fillColor == JsxGraphColor(0, 255, 0)
+        }
+        assertEquals(12, greenFaces.size)
+        assertEquals(11, greenFaces.count { it.points.size == 4 })
+        assertEquals(1, greenFaces.count { it.points.size == 5 })
+    }
+
+    @Test
+    fun plane3DSurfaceRejectsMalformedAttributesAndHonorsLimits() {
+        val malformedShader = JsxGraphEngine.parse(
+            finitePlane3DSurfaceSource(
+                """
+                {
+                  "id": "plane",
+                  "type": "plane3d",
+                  "parents": [
+                    "view",
+                    [0, 0, 0],
+                    [1, 0, 0],
+                    [0, 1, 0],
+                    [-1, 1],
+                    [-1, 1]
+                  ],
+                  "attributes": {
+                    "type": "shader",
+                    "polyhedron": {
+                      "shader": {"light": {"watts": 1}}
+                    }
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+        val malformedError = assertIs<
+            GMResult.Err<JsxGraphDocumentError.ElementCreation>
+            >(malformedShader).error
+        assertTrue(malformedError.reason.contains("shader.light.watts"))
+
+        val source = finitePlane3DSurfaceSource(
+            """
+            {
+              "id": "plane",
+              "type": "plane3d",
+              "parents": [
+                "view",
+                [0, 0, 0],
+                [1, 0, 0],
+                [0, 1, 0],
+                [-1, 1],
+                [-1, 1]
+              ],
+              "attributes": {
+                "type": "colorarray",
+                "stepsU": 2,
+                "stepsV": 1
+              }
+            }
+            """.trimIndent(),
+            axesAttributes = HIDDEN_TRIANGLE_AXES_JSON,
+        )
+        assertEquals(
+            JsxGraphDocumentError.CurvePointLimitExceeded(
+                objectIndex = 1,
+                id = "plane",
+                limit = 4,
+                actual = 5,
+            ),
+            assertIs<GMResult.Err<JsxGraphDocumentError>>(
+                JsxGraphEngine.parse(
+                    source,
+                    limits = JsxGraphEngineLimits(maxCurvePoints = 4),
+                ),
+            ).error,
+        )
+        assertEquals(
+            JsxGraphDocumentError.PolygonVertexLimitExceeded(
+                objectIndex = 1,
+                id = "plane",
+                limit = 3,
+                actual = 4,
+            ),
+            assertIs<GMResult.Err<JsxGraphDocumentError>>(
+                JsxGraphEngine.parse(
+                    source,
+                    limits = JsxGraphEngineLimits(
+                        maxPolygonVertices = 3,
+                    ),
+                ),
+            ).error,
+        )
+        val objectLimit = assertIs<
+            GMResult.Err<JsxGraphDocumentError.ObjectLimitExceeded>
+            >(
+            JsxGraphEngine.parse(
+                finitePlane3DSurfaceSource(
+                    """
+                    {
+                      "id": "plane",
+                      "type": "plane3d",
+                      "parents": [
+                        "view",
+                        [0, 0, 0],
+                        [1, 0, 0],
+                        [0, 1, 0],
+                        [-1, 1],
+                        [-1, 1]
+                      ],
+                      "attributes": {
+                        "type": "colorarray",
+                        "stepsU": 2,
+                        "stepsV": 1
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+                limits = JsxGraphEngineLimits(maxObjects = 26),
+            ),
+        ).error
+        assertEquals(26, objectLimit.limit)
+        assertEquals(27, objectLimit.actual)
+    }
+
+    @Test
     fun documentCreatesDirectMesh3DAndEnforcesItsPointLimit() {
         val source =
             """
@@ -545,7 +783,7 @@ class JsxGraphEngine3DTest {
             result.toString(),
         ).value
 
-        assertEquals(25, scene.elements.size)
+        assertEquals(325, scene.elements.size)
         assertEquals(
             15,
             scene.elements.filterIsInstance<JsxGraphSceneElement.Line>().size,
@@ -601,7 +839,7 @@ class JsxGraphEngine3DTest {
             result.toString(),
         ).value
 
-        assertEquals(46, scene.elements.size)
+        assertEquals(646, scene.elements.size)
         assertEquals(
             27,
             scene.elements.filterIsInstance<JsxGraphSceneElement.Line>().size,
@@ -644,7 +882,7 @@ class JsxGraphEngine3DTest {
         assertEquals(
             JsxGraphDocumentError.ObjectLimitExceeded(
                 limit = 23,
-                actual = 60,
+                actual = 360,
             ),
             assertIs<GMResult.Err<JsxGraphDocumentError>>(result).error,
         )
@@ -873,6 +1111,88 @@ class JsxGraphEngine3DTest {
                 }
                 """.trimIndent()
         }
+
+        fun finitePlane3DSurfaceSource(
+            objects: String,
+            axesAttributes: String = HIDDEN_WIREFRAME_AXES_JSON,
+        ): String =
+            """
+            {
+              "boundingBox": [-8, 8, 8, -8],
+              "objects": [
+                {
+                  "id": "view",
+                  "type": "view3d",
+                  "parents": [
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "projection": "parallel",
+                    $axesAttributes
+                  }
+                },
+                $objects
+              ]
+            }
+            """.trimIndent()
+
+        val HIDDEN_WIREFRAME_AXES_JSON =
+            """
+            "axesPosition": "none",
+            "xPlaneRear": {"visible": false, "type": "wireframe"},
+            "yPlaneRear": {"visible": false, "type": "wireframe"},
+            "zPlaneRear": {"visible": false, "type": "wireframe"}
+            """.trimIndent()
+
+        val HIDDEN_TRIANGLE_AXES_JSON =
+            """
+            "axesPosition": "none",
+            "xPlaneRear": {
+              "visible": false,
+              "type": "colorarray",
+              "tiling": "triangle",
+              "stepsU": 1,
+              "stepsV": 1
+            },
+            "xPlaneFront": {
+              "visible": false,
+              "type": "colorarray",
+              "tiling": "triangle",
+              "stepsU": 1,
+              "stepsV": 1
+            },
+            "yPlaneRear": {
+              "visible": false,
+              "type": "colorarray",
+              "tiling": "triangle",
+              "stepsU": 1,
+              "stepsV": 1
+            },
+            "yPlaneFront": {
+              "visible": false,
+              "type": "colorarray",
+              "tiling": "triangle",
+              "stepsU": 1,
+              "stepsV": 1
+            },
+            "zPlaneRear": {
+              "visible": false,
+              "type": "colorarray",
+              "tiling": "triangle",
+              "stepsU": 1,
+              "stepsV": 1
+            },
+            "zPlaneFront": {
+              "visible": false,
+              "type": "colorarray",
+              "tiling": "triangle",
+              "stepsU": 1,
+              "stepsV": 1
+            }
+            """.trimIndent()
 
         val SOURCE =
             """

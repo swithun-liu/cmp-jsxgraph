@@ -127,8 +127,10 @@ import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Parabola
 import com.swithun.jsxgraph.core.base.ParabolaError
 import com.swithun.jsxgraph.core.base.Plane3D
+import com.swithun.jsxgraph.core.base.Plane3DColormapAttributes
 import com.swithun.jsxgraph.core.base.Plane3DDirectionSource
 import com.swithun.jsxgraph.core.base.Plane3DError
+import com.swithun.jsxgraph.core.base.Plane3DSurfaceAttributes
 import com.swithun.jsxgraph.core.base.PointReflectionError
 import com.swithun.jsxgraph.core.base.PointReflections
 import com.swithun.jsxgraph.core.base.PolePoint
@@ -1584,6 +1586,8 @@ internal object NativeJessieCodeCreators {
             val result = view.createDefaultAxes(
                 axesPosition = axesAttributes.axesPosition,
                 planeTypes = axesAttributes.planeTypes,
+                planeSurfaceAttributes =
+                    axesAttributes.planeSurfaceAttributes,
                 ticksAttributes = axesAttributes.ticksAttributes,
                 needsRegularUpdate =
                     axesAttributes.needsRegularUpdate,
@@ -2286,6 +2290,8 @@ internal object NativeJessieCodeCreators {
                 view = view,
                 axesPosition = axesAttributes.axesPosition,
                 planeTypes = axesAttributes.planeTypes,
+                planeSurfaceAttributes =
+                    axesAttributes.planeSurfaceAttributes,
                 ticksAttributes = axesAttributes.ticksAttributes,
                 needsRegularUpdate =
                     axesAttributes.needsRegularUpdate,
@@ -2320,6 +2326,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> return result
         }
         val planeTypes = linkedMapOf<String, String>()
+        val planeSurfaceAttributes =
+            linkedMapOf<String, Plane3DSurfaceAttributes>()
         for (role in AXES_3D_PLANE_ROLES) {
             val nested = when (
                 val result = nestedObjectAttribute(
@@ -2334,7 +2342,7 @@ internal object NativeJessieCodeCreators {
             }
             val defaultType =
                 if (role.endsWith("Front")) "wireframe" else "shader"
-            planeTypes[role] = when (
+            val planeType = when (
                 val result = stringAttribute(
                     creatorName = creatorName,
                     attributes = nested,
@@ -2345,6 +2353,24 @@ internal object NativeJessieCodeCreators {
             ) {
                 is GMResult.Ok -> result.value.lowercase()
                 is GMResult.Err -> return result
+            }
+            planeTypes[role] = planeType
+            if (planeType != "wireframe") {
+                val defaults = Plane3DSurfaceAttributes.axes3DDefaults(
+                    visible = role.endsWith("Rear"),
+                )
+                planeSurfaceAttributes[role] = when (
+                    val result = plane3DSurfaceAttributes(
+                        attributes = nested,
+                        location = location,
+                        defaults = defaults,
+                        planeVisibleDefault =
+                            defaults.faceAttributes.visible,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
             }
         }
         val ticksAttributes = linkedMapOf<String, Axes3DTicksAttributes>()
@@ -2452,6 +2478,7 @@ internal object NativeJessieCodeCreators {
             ParsedAxes3DAttributes(
                 axesPosition = axesPosition,
                 planeTypes = planeTypes,
+                planeSurfaceAttributes = planeSurfaceAttributes,
                 ticksAttributes = ticksAttributes,
                 needsRegularUpdate = needsRegularUpdate,
             )
@@ -4222,6 +4249,20 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value.lowercase()
             is GMResult.Err -> return result
         }
+        val surfaceAttributes =
+            if (planeType == "wireframe") {
+                Plane3DSurfaceAttributes()
+            } else {
+                when (
+                    val result = plane3DSurfaceAttributes(
+                        attributes = attributes,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
         val meshAttributes = when (
             val value = attributes.properties["mesh3d"]
         ) {
@@ -4318,6 +4359,7 @@ internal object NativeJessieCodeCreators {
                         planeType = planeType,
                         meshStepWidthU = meshStepWidthU,
                         meshStepWidthV = meshStepWidthV,
+                        surfaceAttributes = surfaceAttributes,
                         id = identity.id,
                         name = identity.name,
                         needsRegularUpdate =
@@ -4423,6 +4465,7 @@ internal object NativeJessieCodeCreators {
                     planeType = planeType,
                     meshStepWidthU = meshStepWidthU,
                     meshStepWidthV = meshStepWidthV,
+                    surfaceAttributes = surfaceAttributes,
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -4526,6 +4569,7 @@ internal object NativeJessieCodeCreators {
                 planeType = planeType,
                 meshStepWidthU = meshStepWidthU,
                 meshStepWidthV = meshStepWidthV,
+                surfaceAttributes = surfaceAttributes,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -4533,6 +4577,351 @@ internal object NativeJessieCodeCreators {
             ),
             location = location,
         )
+    }
+
+    private fun plane3DSurfaceAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+        defaults: Plane3DSurfaceAttributes =
+            Plane3DSurfaceAttributes(),
+        planeVisibleDefault: Boolean = true,
+    ): GMResult<Plane3DSurfaceAttributes, JessieCodeRuntimeError> {
+        val creatorName = "plane3d"
+        val tiling = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "tiling",
+                default = defaults.tiling,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value.lowercase()
+            is GMResult.Err -> return result
+        }
+        val stepsU = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "stepsu",
+                default = defaults.stepsU,
+                minimum = 1,
+                maximum = Polyhedron3D.MAX_VERTEX_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val stepsV = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "stepsv",
+                default = defaults.stepsV,
+                minimum = 1,
+                maximum = Polyhedron3D.MAX_VERTEX_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val planeVisible = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "visible",
+                default = planeVisibleDefault,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val configuredPolyhedron = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "polyhedron",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val defaultFace = defaults.faceAttributes
+        val defaultLightAttributes = defaultFace.shader.light
+        val defaultLight = JessieCodeRuntimeValue.ObjectValue(
+            mapOf(
+                "type" to JessieCodeRuntimeValue.NumberValue(
+                    defaultLightAttributes.type.toDouble(),
+                ),
+                "az" to JessieCodeRuntimeValue.NumberValue(
+                    defaultLightAttributes.azimuth,
+                ),
+                "el" to JessieCodeRuntimeValue.NumberValue(
+                    defaultLightAttributes.elevation,
+                ),
+                "bank" to JessieCodeRuntimeValue.NumberValue(
+                    defaultLightAttributes.bank,
+                ),
+                "dir" to JessieCodeRuntimeValue.NumberValue(
+                    defaultLightAttributes.direction.toDouble(),
+                ),
+            ),
+        )
+        val defaultShader = JessieCodeRuntimeValue.ObjectValue(
+            mapOf(
+                "enabled" to JessieCodeRuntimeValue.BooleanValue(
+                    defaultFace.shader.enabled,
+                ),
+                "fixed" to JessieCodeRuntimeValue.BooleanValue(
+                    defaultFace.shader.fixed,
+                ),
+                "type" to JessieCodeRuntimeValue.StringValue(
+                    defaultFace.shader.type,
+                ),
+                "hue" to JessieCodeRuntimeValue.NumberValue(
+                    defaultFace.shader.hue,
+                ),
+                "saturation" to JessieCodeRuntimeValue.NumberValue(
+                    defaultFace.shader.saturation,
+                ),
+                "minlightness" to
+                    JessieCodeRuntimeValue.NumberValue(
+                        defaultFace.shader.minimumLightness,
+                    ),
+                "maxlightness" to
+                    JessieCodeRuntimeValue.NumberValue(
+                        defaultFace.shader.maximumLightness,
+                    ),
+                "light" to defaultLight,
+            ),
+        )
+        val effectiveProperties =
+            linkedMapOf<String, JessieCodeRuntimeValue>(
+                "visible" to
+                    JessieCodeRuntimeValue.BooleanValue(planeVisible),
+                "layer" to JessieCodeRuntimeValue.NumberValue(12.0),
+                "strokecolor" to JessieCodeRuntimeValue.StringValue(
+                    defaultFace.strokeColor,
+                ),
+                "fillcolor" to JessieCodeRuntimeValue.StringValue(
+                    defaultFace.fillColor,
+                ),
+                "strokewidth" to
+                    JessieCodeRuntimeValue.NumberValue(
+                        defaultFace.strokeWidth,
+                    ),
+                "strokeopacity" to JessieCodeRuntimeValue.NumberValue(
+                    defaultFace.strokeOpacity,
+                ),
+                "fillopacity" to
+                    JessieCodeRuntimeValue.NumberValue(
+                        defaultFace.fillOpacity,
+                    ),
+                "fixed" to JessieCodeRuntimeValue.BooleanValue(
+                    defaultFace.fixed,
+                ),
+                "highlight" to JessieCodeRuntimeValue.BooleanValue(
+                    defaultFace.highlight,
+                ),
+                "withlabel" to JessieCodeRuntimeValue.BooleanValue(
+                    defaultFace.withLabel,
+                ),
+                "dash" to JessieCodeRuntimeValue.NumberValue(
+                    defaultFace.dash.toDouble(),
+                ),
+                "dashscale" to JessieCodeRuntimeValue.BooleanValue(
+                    defaultFace.dashScale,
+                ),
+                "linecap" to JessieCodeRuntimeValue.StringValue(
+                    defaultFace.lineCap,
+                ),
+                "fillcolorarray" to
+                    JessieCodeRuntimeValue.ArrayValue(
+                        defaults.fillColorArray.map(
+                            JessieCodeRuntimeValue::StringValue,
+                        ),
+                    ),
+                "shader" to defaultShader,
+            )
+        for ((key, value) in configuredPolyhedron.properties) {
+            effectiveProperties[key] =
+                when {
+                    key == "visible" &&
+                        value is JessieCodeRuntimeValue.StringValue &&
+                        value.value.lowercase() == "inherit" ->
+                        JessieCodeRuntimeValue.BooleanValue(planeVisible)
+                    key == "shader" &&
+                        value is JessieCodeRuntimeValue.ObjectValue ->
+                        mergeFace3DNestedAttributes(defaultShader, value)
+                    else -> value
+                }
+        }
+        val effectivePolyhedron =
+            JessieCodeRuntimeValue.ObjectValue(effectiveProperties)
+        val fillColors = when (
+            val result = polyhedron3DFillColors(
+                attributes = effectivePolyhedron,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val faceAttributes = when (
+            val result = polyhedron3DFaceAttributes(
+                overall = effectivePolyhedron,
+                faceSpecific = null,
+                cyclicFillColor = null,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val colormap = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "colormap",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        colormap.properties.keys.firstOrNull {
+            it !in PLANE_3D_COLORMAP_ATTRIBUTES
+        }?.let { unsupported ->
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "colormap.$unsupported",
+                    actual = "unsupported Plane3D colormap attribute",
+                ),
+                location = location,
+            )
+        }
+        val minimum = when (
+            val result = plane3DColormapRange(
+                attributes = colormap,
+                name = "min",
+                default = doubleArrayOf(
+                    defaults.colormap.minimumHeight,
+                    defaults.colormap.minimumHue,
+                ),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val maximum = when (
+            val result = plane3DColormapRange(
+                attributes = colormap,
+                name = "max",
+                default = doubleArrayOf(
+                    defaults.colormap.maximumHeight,
+                    defaults.colormap.maximumHue,
+                ),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val saturation = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = colormap,
+                name = "s",
+                default = defaults.colormap.saturation,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val value = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = colormap,
+                name = "v",
+                default = defaults.colormap.value,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            Plane3DSurfaceAttributes(
+                tiling = tiling,
+                stepsU = stepsU,
+                stepsV = stepsV,
+                fillColorArray = fillColors,
+                faceAttributes = faceAttributes,
+                colormap = Plane3DColormapAttributes(
+                    minimumHeight = minimum[0],
+                    minimumHue = minimum[1],
+                    maximumHeight = maximum[0],
+                    maximumHue = maximum[1],
+                    saturation = saturation,
+                    value = value,
+                ),
+            ),
+        )
+    }
+
+    private fun plane3DColormapRange(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: DoubleArray,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val value = attributes.properties[name]
+            ?: return GMResult.Ok(default)
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return GMResult.Ok(default)
+        }
+        val values = (value as? JessieCodeRuntimeValue.ArrayValue)?.values
+            ?: return invalidAttribute(
+                creatorName = "plane3d",
+                attribute = "colormap.$name",
+                expected = "array of two numbers",
+                actual = value,
+                location = location,
+            )
+        if (values.size != 2) {
+            return failure(
+                creatorName = "plane3d",
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "colormap.$name",
+                    actual = "array of ${values.size} values",
+                ),
+                location = location,
+            )
+        }
+        val result = DoubleArray(2)
+        for (index in values.indices) {
+            val number =
+                (values[index] as? JessieCodeRuntimeValue.NumberValue)
+                    ?.value
+            if (number == null || !number.isFinite()) {
+                return invalidAttribute(
+                    creatorName = "plane3d",
+                    attribute = "colormap.$name",
+                    expected = "array of two finite numbers",
+                    actual = values[index],
+                    location = location,
+                )
+            }
+            result[index] = number
+        }
+        return GMResult.Ok(result)
     }
 
     private fun plane3DDirection(
@@ -12164,6 +12553,8 @@ internal object NativeJessieCodeCreators {
     private data class ParsedAxes3DAttributes(
         val axesPosition: String,
         val planeTypes: Map<String, String>,
+        val planeSurfaceAttributes:
+            Map<String, Plane3DSurfaceAttributes>,
         val ticksAttributes: Map<String, Axes3DTicksAttributes>,
         val needsRegularUpdate: Boolean,
     )
@@ -12248,6 +12639,8 @@ internal object NativeJessieCodeCreators {
     )
     private val FACE_3D_LIGHT_ATTRIBUTES =
         setOf("type", "az", "el", "bank", "dir")
+    private val PLANE_3D_COLORMAP_ATTRIBUTES =
+        setOf("min", "max", "s", "v")
 
     private fun CreatorAttributes.toTangentToIdentity(): TangentToIdentity =
         TangentToIdentity(

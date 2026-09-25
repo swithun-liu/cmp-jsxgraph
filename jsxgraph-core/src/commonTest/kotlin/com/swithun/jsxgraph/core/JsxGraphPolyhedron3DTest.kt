@@ -148,7 +148,7 @@ class JsxGraphPolyhedron3DTest {
                 JsxGraphEngineLimits(maxObjects = 22),
             ),
         ).error
-        assertEquals(23, objectsError.actual)
+        assertEquals(26, objectsError.actual)
 
         val curveError = assertIs<
             GMResult.Err<JsxGraphDocumentError.CurvePointLimitExceeded>
@@ -403,17 +403,17 @@ class JsxGraphPolyhedron3DTest {
         val HIDDEN_DEFAULT_AXES_JSON =
             """
             "axesPosition": "none",
-            "xPlaneRear": {"visible": false},
-            "yPlaneRear": {"visible": false},
-            "zPlaneRear": {"visible": false}
+            "xPlaneRear": {"visible": false, "type": "wireframe"},
+            "yPlaneRear": {"visible": false, "type": "wireframe"},
+            "zPlaneRear": {"visible": false, "type": "wireframe"}
             """.trimIndent()
 
         val HIDDEN_DEFAULT_AXES_ATTRIBUTES =
             """
             axesPosition: "none",
-            xPlaneRear: << visible: false >>,
-            yPlaneRear: << visible: false >>,
-            zPlaneRear: << visible: false >>
+            xPlaneRear: << visible: false, type: "wireframe" >>,
+            yPlaneRear: << visible: false, type: "wireframe" >>,
+            zPlaneRear: << visible: false, type: "wireframe" >>
             """.trimIndent()
     }
 }

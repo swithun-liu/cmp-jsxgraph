@@ -702,6 +702,26 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "plane3d_surfaces",
+            title = "Plane3D surfaces",
+            scenario = "Finite planes use rectangle color arrays, triangle shading, and height colormaps.",
+            source = PLANE_3D_SURFACES_SOURCE,
+            features = setOf(
+                "construction-document",
+                "view3d",
+                "plane3d",
+                "polyhedron3d",
+                "face3d",
+                "rectangle-tiling",
+                "triangle-tiling",
+                "color-array",
+                "shader",
+                "colormap",
+                "parallel-projection",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "polyhedron3d_faces",
             title = "Polyhedron3D faces",
             scenario = "A parallel View3D projects a six-face Polyhedron3D with cyclic colors, a per-face override, and depth ordering.",
@@ -2299,9 +2319,9 @@ private const val POINT3D_PROJECTION_SOURCE: String = """
         "name": "",
         "projection": "parallel",
         "axesPosition": "none",
-        "xPlaneRear": {"visible": false},
-        "yPlaneRear": {"visible": false},
-        "zPlaneRear": {"visible": false},
+        "xPlaneRear": {"visible": false, "type": "wireframe"},
+        "yPlaneRear": {"visible": false, "type": "wireframe"},
+        "zPlaneRear": {"visible": false, "type": "wireframe"},
         "depthOrder": {"enabled": false},
         "az": {"slider": {"visible": false, "start": 1}},
         "el": {"slider": {"visible": false, "start": 0.3}},
@@ -2383,9 +2403,9 @@ private const val SPATIAL_LINES_PLANES_SOURCE: String = """
         "name": "",
         "projection": "parallel",
         "axesPosition": "none",
-        "xPlaneRear": {"visible": false},
-        "yPlaneRear": {"visible": false},
-        "zPlaneRear": {"visible": false},
+        "xPlaneRear": {"visible": false, "type": "wireframe"},
+        "yPlaneRear": {"visible": false, "type": "wireframe"},
+        "zPlaneRear": {"visible": false, "type": "wireframe"},
         "depthOrder": {"enabled": false},
         "az": {"slider": {"visible": false, "start": 1}},
         "el": {"slider": {"visible": false, "start": 0.3}},
@@ -2455,6 +2475,127 @@ private const val SPATIAL_LINES_PLANES_SOURCE: String = """
 }
 """
 
+private const val PLANE_3D_SURFACES_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-6, 5, 6, -5],
+  "axis": false,
+  "grid": false,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "view",
+      "type": "view3d",
+      "parents": [
+        [-5, -4],
+        [8, 7],
+        [[-5, 5], [-4, 6], [-3, 7]]
+      ],
+      "attributes": {
+        "name": "",
+        "projection": "parallel",
+        "axesPosition": "none",
+        "xPlaneRear": {"visible": false, "type": "wireframe"},
+        "yPlaneRear": {"visible": false, "type": "wireframe"},
+        "zPlaneRear": {"visible": false, "type": "wireframe"},
+        "depthOrder": {"enabled": true},
+        "az": {"slider": {"visible": false, "start": 1}},
+        "el": {"slider": {"visible": false, "start": 0.3}},
+        "bank": {"slider": {"visible": false, "start": 0}}
+      }
+    },
+    {
+      "id": "colors",
+      "type": "plane3d",
+      "parents": [
+        "view",
+        [0, 0, -2],
+        [1, 0, 0],
+        [0, 1, 0],
+        [-4, -0.5],
+        [-2, 2]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "type": "colorarray",
+        "stepsU": 3,
+        "stepsV": 2,
+        "polyhedron": {
+          "strokeColor": "#49545D",
+          "strokeWidth": 0.6,
+          "fillOpacity": 0.82,
+          "fillColorArray": ["#56B4E9", "#E69F00"]
+        }
+      }
+    },
+    {
+      "id": "shader",
+      "type": "plane3d",
+      "parents": [
+        "view",
+        [0, 0, 0],
+        [1, 0, 0],
+        [0, 1, 0],
+        [-1.5, 1.5],
+        [-2, 2]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "type": "shader",
+        "tiling": "triangle",
+        "stepsU": 3,
+        "stepsV": 3,
+        "polyhedron": {
+          "strokeColor": "#49545D",
+          "strokeWidth": 0.5,
+          "fillOpacity": 0.82,
+          "fillColorArray": ["#D9553F"],
+          "shader": {
+            "hue": 145,
+            "saturation": 65,
+            "minLightness": 38,
+            "maxLightness": 72,
+            "light": {"dir": 0}
+          }
+        }
+      }
+    },
+    {
+      "id": "colormap",
+      "type": "plane3d",
+      "parents": [
+        "view",
+        [3, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+        [-2, 2],
+        [-2, 2]
+      ],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "type": "colormap",
+        "stepsU": 2,
+        "stepsV": 3,
+        "polyhedron": {
+          "strokeColor": "#49545D",
+          "strokeWidth": 0.6,
+          "fillOpacity": 0.82
+        },
+        "colormap": {
+          "min": [-2, 220],
+          "max": [2, 0],
+          "s": 0.78,
+          "v": 0.92
+        }
+      }
+    }
+  ]
+}
+"""
+
 private const val POLYHEDRON_3D_FACES_SOURCE: String = """
 {
   "schemaVersion": 1,
@@ -2466,7 +2607,7 @@ private const val POLYHEDRON_3D_FACES_SOURCE: String = """
     "grid": false,
     "keepAspectRatio": true
   },
-  "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [8, 7],\n  [[-5, 5], [-4, 6], [-3, 7]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false >>,\n  yPlaneRear: << visible: false >>,\n  zPlaneRear: << visible: false >>,\n  depthOrder: << enabled: true >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nsolid = polyhedron3d(\n  view,\n  [\n    [-3, -3, -3], [3, -3, -3],\n    [3, 3, -3], [-3, 3, -3],\n    [-3, -3, 3], [3, -3, 3],\n    [3, 3, 3], [-3, 3, 3]\n  ],\n  [\n    [[0, 1, 2, 3], << fillColor: \"#009E73\", fillOpacity: 0.62 >>],\n    [0, 1, 5, 4],\n    [1, 2, 6, 5],\n    [2, 3, 7, 6],\n    [3, 0, 4, 7],\n    [4, 5, 6, 7]\n  ]\n) <<\n  name: \"\", fillColorArray: [\"#56B4E9\", \"#E69F00\"],\n  strokeColor: \"#49545D\", strokeWidth: 2,\n  fillOpacity: 0.48, layer: 12,\n  fixed: true, highlight: false,\n  shader: << enabled: false >>\n>>;"
+  "source": "use jxgbox;\nview = view3d(\n  [-5, -4],\n  [8, 7],\n  [[-5, 5], [-4, 6], [-3, 7]]\n) <<\n  id: \"view\", name: \"\", projection: \"parallel\",\n  axesPosition: \"none\",\n  xPlaneRear: << visible: false, type: \"wireframe\" >>,\n  yPlaneRear: << visible: false, type: \"wireframe\" >>,\n  zPlaneRear: << visible: false, type: \"wireframe\" >>,\n  depthOrder: << enabled: true >>,\n  az: << slider: << visible: false, start: 1 >> >>,\n  el: << slider: << visible: false, start: 0.3 >> >>,\n  bank: << slider: << visible: false, start: 0 >> >>\n>>;\nsolid = polyhedron3d(\n  view,\n  [\n    [-3, -3, -3], [3, -3, -3],\n    [3, 3, -3], [-3, 3, -3],\n    [-3, -3, 3], [3, -3, 3],\n    [3, 3, 3], [-3, 3, 3]\n  ],\n  [\n    [[0, 1, 2, 3], << fillColor: \"#009E73\", fillOpacity: 0.62 >>],\n    [0, 1, 5, 4],\n    [1, 2, 6, 5],\n    [2, 3, 7, 6],\n    [3, 0, 4, 7],\n    [4, 5, 6, 7]\n  ]\n) <<\n  name: \"\", fillColorArray: [\"#56B4E9\", \"#E69F00\"],\n  strokeColor: \"#49545D\", strokeWidth: 2,\n  fillOpacity: 0.48, layer: 12,\n  fixed: true, highlight: false,\n  shader: << enabled: false >>\n>>;"
 }
 """
 
@@ -2532,11 +2673,11 @@ private const val VIEW3D_DEFAULT_AXES_SOURCE: String = """
             }
           }
         },
-        "xPlaneRear": {"visible": false},
+        "xPlaneRear": {"visible": false, "type": "wireframe"},
         "xPlaneFront": {"visible": false},
-        "yPlaneRear": {"visible": false},
+        "yPlaneRear": {"visible": false, "type": "wireframe"},
         "yPlaneFront": {"visible": false},
-        "zPlaneRear": {"visible": false},
+        "zPlaneRear": {"visible": false, "type": "wireframe"},
         "zPlaneFront": {"visible": false},
         "depthOrder": {"enabled": false},
         "az": {"slider": {"visible": false, "start": 1}},
@@ -2591,11 +2732,11 @@ private const val VIEW3D_CENTER_AXES_SOURCE: String = """
           "visible": true,
           "withLabel": true
         },
-        "xPlaneRear": {"visible": false},
+        "xPlaneRear": {"visible": false, "type": "wireframe"},
         "xPlaneFront": {"visible": false},
-        "yPlaneRear": {"visible": false},
+        "yPlaneRear": {"visible": false, "type": "wireframe"},
         "yPlaneFront": {"visible": false},
-        "zPlaneRear": {"visible": false},
+        "zPlaneRear": {"visible": false, "type": "wireframe"},
         "zPlaneFront": {"visible": false},
         "depthOrder": {"enabled": false},
         "az": {"slider": {"visible": false, "start": 1}},

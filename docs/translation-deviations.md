@@ -799,12 +799,16 @@ practical.
   renderer or platform-specific runtime. Line3D uses projected Point3D
   endpoints and a Segment proxy. Plane3D materializes its source-mapped
   outline Curve and, for finite wireframe ranges, owns the upstream Mesh3D
-  Curve. Direct and Plane-owned Mesh3D preserve 3D/4D point input, normalized
-  directions, dynamic ranges, both sampled line families, NaN path separators,
-  and official default style. Kotlin rejects non-positive/non-finite step
-  widths and grids above the bounded Curve point budget before entering the
-  sampling loops; upstream JavaScript can instead loop indefinitely or exhaust
-  memory.
+  Curve. Finite non-wireframe Plane3D modes replace the outline data with an
+  owned Polyhedron3D using the exact upstream rectangle or triangle tiling;
+  cyclic color arrays, HSL shaders, height colormaps, dynamic vertices, and
+  Axes3D rear-plane defaults are preserved. Direct and Plane-owned Mesh3D
+  preserve 3D/4D point input, normalized directions, dynamic ranges, both
+  sampled line families, NaN path separators, and official default style.
+  Kotlin rejects non-positive/non-finite step widths and grids above the
+  bounded Curve point, surface vertex, or surface face budgets before entering
+  the sampling loops; upstream JavaScript can instead loop indefinitely or
+  exhaust memory.
 - Face3D preserves the shared Polyhedron vertex maps, face closure rule,
   normals, projected coordinates, averaged `zIndex`, cyclic
   `fillColorArray`, per-face overrides, HSL angle/depth shaders, and ordinary
@@ -821,20 +825,20 @@ practical.
   and `none`; `border` also creates its three Ticks3D curves and numeric
   Text3D labels. View3D factory creation owns this composition and removes it
   with the View. JSON and JessieCode expand explicit Axes3D and automatic
-  `center`/`border`/`none` axes into scene elements when unsupported rear
-  shader planes are hidden or replaced by wireframes. The centered `O`
+  `center`/`border`/`none` axes into scene elements, including the official
+  visible 10-by-10 rear shader planes. The centered `O`
   preserves the JSXGraph `1.13.3` fallback through the Line3D default
   `stdform`: it is a hidden, non-real `intersection` at homogeneous
   `[0,0,0]`, parented by the x/y Line3D members.
 - JSXGraph `1.13.3` leaves both
   `Type.copyMethodMap(JXG.View3D, { /* TODO */ })` and
   `Type.copyMethodMap(JXG.Point3D, { /* TODO */ })` empty. Kotlin therefore
-  registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe,
-  `mesh3d`, `axis3d`, `polyhedron3d`, and `transform3d` creator routes but
+  registers the upstream `view3d`, `point3d`, `line3d`, `plane3d` wireframe
+  and finite surface, `mesh3d`, `axis3d`, `polyhedron3d`, and `transform3d`
+  creator routes but
   does not invent JessieCode `view.create(...)` or Point3D `X`/`Y`/`Z`
-  property access that the baseline does not expose. Plane3D
-  shader/colormap/color-array surface modes, camera controls,
-  Point3D gliders and animations, and the remaining 3D APIs are still pending.
+  property access that the baseline does not expose. Camera controls, Point3D
+  gliders and animations, and the remaining 3D APIs are still pending.
 - JSXGraph `1.13.3` requires four `affine` parameters but calls
   `Type.createEvalFunction` with a count of nine, which fails while reading the
   fifth missing parameter. Kotlin implements the documented 2x2 affine matrix

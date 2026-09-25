@@ -43,16 +43,19 @@ qualification batches pass.
   translate, three- and four-parameter scale, rotate/rotateX/rotateY/rotateZ,
   affine, affinematrix, generic, and matrix forms with scalar, vector,
   JessieCode, and structured dynamic evaluation.
-- View3D, Point3D, Line3D, Plane3D wireframe, Mesh3D, Axis3D, Face3D, and
-  Polyhedron3D: the bounded lifecycle from `src/3d/element3d.js`,
+- View3D, Point3D, Line3D, Plane3D wireframe and finite surfaces, Mesh3D,
+  Axis3D, Face3D, and Polyhedron3D: the bounded lifecycle from
+  `src/3d/element3d.js`,
   `src/3d/view3d.js`, `src/3d/point3d.js`, `src/3d/linspace3d.js`,
   `src/3d/box3d.js`, `src/3d/face3d.js`, `src/3d/polyhedron3d.js`,
   `src/base/transformation.js`, and `src/options3d.js` is translated. It
   covers View3D registration and selection, parallel and central camera
   matrices, forward/inverse projection helpers, cube bounds, dynamic 3D
   coordinates/vectors/ranges, ordinary 2D proxies, Line3D and Plane3D
-  transforms, finite plane outlines and Mesh3D wireframes, fully infinite
-  plane/box clipping, projected Text3D, Ticks3D curves and labels, automatic
+  transforms, finite plane outlines and Mesh3D wireframes, exact
+  rectangle/triangle surface tiling, cyclic color arrays, HSL shaders,
+  height colormaps, fully infinite plane/box clipping, projected Text3D,
+  Ticks3D curves and labels, automatic
   `border`/`none` View3D axes, explicit Axes3D scene expansion, direct and
   transformed Polyhedron3D creators, Point-backed/function-valued/homogeneous
   vertices, cyclic and per-face styles, HSL Face3D shaders, local ascending
@@ -60,13 +63,12 @@ qualification batches pass.
   JSON and JessieCode entry points, resource limits, rollback, and structured
   failures. Official lifecycle fixtures and focused JVM tests pass. Point3D
   has focused static plus proxy-drag visual parity; Line3D, finite Plane3D
-  with its visible Mesh3D, Axis3D, automatic border axes, and Polyhedron3D
-  have focused Desktop/Compact static parity.
+  with its visible Mesh3D, Plane3D surface modes, Axis3D, automatic border
+  axes, and Polyhedron3D have focused Desktop/Compact static parity.
 - Still pending around transforms and 3D: transformed Text/Image and general
   element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
-  null-clone defect, Plane3D shader/colormap/color-array surface modes,
-  global View3D
-  `depthOrder`/layer configuration, camera controls, Point3D gliders and
+  null-clone defect, global View3D `depthOrder`/layer configuration, camera
+  controls, Point3D gliders and
   animations, Stable qualification, and the remaining 3D APIs.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.

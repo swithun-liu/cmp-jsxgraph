@@ -693,6 +693,34 @@ object JsxGraphEngine {
                                         )
                                     created += expanded
                                     creationCount += expanded.size
+                                } else if (creatorName == "plane3d") {
+                                    val plane = value.element as? Plane3D
+                                    if (plane == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native plane3d creator " +
+                                                        "returned an " +
+                                                        "unexpected element.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
+                                    created += CreatedSourceElement(
+                                        source = source,
+                                        element = plane,
+                                    )
+                                    val expanded =
+                                        plane.surface3D?.let { surface ->
+                                            polyhedron3DCreatedSourceElements(
+                                                source = source.copy(
+                                                    index = source.index + 1,
+                                                ),
+                                                polyhedron = surface,
+                                            )
+                                        }.orEmpty()
+                                    created += expanded
+                                    creationCount += 1 + expanded.size
                                 } else if (creatorName == "tangentto") {
                                     val line = value.element as? Line
                                     if (line == null) {
@@ -1142,7 +1170,7 @@ object JsxGraphEngine {
                     attributes = attributes,
                 )
             creatorName == "plane3d" ->
-                runtimePlaneMeshPointCount(
+                runtimePlaneMaximumCurvePointCount(
                     board = board,
                     parents = parents,
                     attributes = attributes,
@@ -1325,6 +1353,12 @@ object JsxGraphEngine {
                 runtimePolyhedron3DMaximumFaceVertexCount(
                     board = board,
                     parents = parents,
+                )
+            creatorName == "plane3d" ->
+                runtimePlaneMaximumFaceVertexCount(
+                    board = board,
+                    parents = parents,
+                    attributes = attributes,
                 )
             creatorName == "regularpolygon" -> {
                 val numericCount = (
@@ -1628,30 +1662,48 @@ object JsxGraphEngine {
     private fun axes3DCreatedSourceElements(
         source: ParsedObject,
         axes: Axes3D,
-    ): List<CreatedSourceElement> =
-        axes.objectsList.mapIndexed { offset, element ->
+    ): List<CreatedSourceElement> = buildList {
+        var offset = 0
+        for (element in axes.objectsList) {
             val role = axes.memberRole(element) ?: element.id
             val attributes = axes3DMemberAttributes(
                 source = source,
                 role = role,
                 element = element,
             )
-            CreatedSourceElement(
-                source = ParsedObject(
-                    index = source.index + offset,
-                    id = element.id,
-                    type = when {
-                        element is Curve && element.isTicks3D -> "ticks3d"
-                        element is Plane3D -> "plane3d"
-                        element is Line3D -> "axis3d"
-                        else -> element.elType
-                    },
-                    parents = JsonArray(emptyList()),
-                    attributes = attributes,
-                ),
-                element = element,
+            val memberSource = ParsedObject(
+                index = source.index + offset,
+                id = element.id,
+                type = when {
+                    element is Curve && element.isTicks3D -> "ticks3d"
+                    element is Plane3D -> "plane3d"
+                    element is Line3D -> "axis3d"
+                    else -> element.elType
+                },
+                parents = JsonArray(emptyList()),
+                attributes = attributes,
             )
+            add(
+                CreatedSourceElement(
+                    source = memberSource,
+                    element = element,
+                ),
+            )
+            offset += sceneElementOutputCount(element)
+            if (element is Plane3D) {
+                element.surface3D?.let { surface ->
+                    val expanded = polyhedron3DCreatedSourceElements(
+                        source = memberSource.copy(
+                            index = source.index + offset,
+                        ),
+                        polyhedron = surface,
+                    )
+                    addAll(expanded)
+                    offset += expanded.size
+                }
+            }
         }
+    }
 
     // JSXGraph: src/3d/polyhedron3d.js -> createPolyhedron3D.
     private fun polyhedron3DCreatedSourceElements(
@@ -1683,7 +1735,7 @@ object JsxGraphEngine {
                 "visible" to JsonPrimitive(attributes.visible),
                 "strokecolor" to JsonPrimitive(attributes.strokeColor),
                 "fillcolor" to JsonPrimitive(
-                    face.shadedFillColor() ?: attributes.fillColor,
+                    face.resolvedFillColor(),
                 ),
                 "strokewidth" to JsonPrimitive(attributes.strokeWidth),
                 "strokeopacity" to JsonPrimitive(attributes.strokeOpacity),
@@ -2330,6 +2382,26 @@ object JsxGraphEngine {
                     source = sourceObject,
                     polyhedron = polyhedron,
                 )
+            } else if (sourceObject.type == "plane3d") {
+                val plane = element as? Plane3D
+                    ?: return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = sourceObject.index,
+                            id = sourceObject.id,
+                            type = sourceObject.type,
+                            reason =
+                                "creator did not return a Plane3D",
+                        ),
+                    )
+                created += CreatedSourceElement(sourceObject, plane)
+                plane.surface3D?.let { surface ->
+                    created += polyhedron3DCreatedSourceElements(
+                        source = sourceObject.copy(
+                            index = sourceObject.index + 1,
+                        ),
+                        polyhedron = surface,
+                    )
+                }
             } else {
                 created += CreatedSourceElement(sourceObject, element)
             }
@@ -2688,23 +2760,6 @@ object JsxGraphEngine {
                     return GMResult.Err(
                         attributes.elementCreation(
                             lifecycleError.toString(),
-                        ),
-                    )
-                }
-                val planeType = when (
-                    val result = attributes.string(
-                        name = "type",
-                        default = element.planeType,
-                    )
-                ) {
-                    is GMResult.Ok -> result.value.lowercase()
-                    is GMResult.Err -> return result
-                }
-                if (style.visible && planeType != "wireframe") {
-                    return GMResult.Err(
-                        attributes.unsupportedValue(
-                            attribute = "type",
-                            value = planeType,
                         ),
                     )
                 }
@@ -3927,7 +3982,7 @@ object JsxGraphEngine {
                 attributes = sourceObject.attributes,
             ).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         } else if (sourceObject.type == "plane3d") {
-            jsonPlaneMeshPointCount(sourceObject)
+            jsonPlaneMaximumCurvePointCount(sourceObject)
                 .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
         } else if (sourceObject.type == "ticks3d") {
             val length = (
@@ -4183,6 +4238,33 @@ object JsxGraphEngine {
         )
     }
 
+    private fun runtimePlaneMaximumCurvePointCount(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long? =
+        runtimePlaneMeshPointCount(board, parents, attributes)
+            ?: runtimePlaneMaximumFaceVertexCount(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+            )?.toInt()?.let(::polyhedron3DCurvePointCount)
+
+    private fun runtimePlaneMaximumFaceVertexCount(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long? {
+        if (!runtimePlaneCreatesSurface(board, parents, attributes)) {
+            return null
+        }
+        val tiling = (
+            attributes.properties["tiling"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: "rectangle"
+        return if (tiling.lowercase() == "triangle") 3L else 4L
+    }
+
     private fun runtimeMeshPointCount(
         rangeU: JessieCodeRuntimeValue?,
         rangeV: JessieCodeRuntimeValue?,
@@ -4254,6 +4336,26 @@ object JsxGraphEngine {
             rangeV = source.parents.getOrNull(5),
             attributes = meshAttributes,
         )
+    }
+
+    private fun jsonPlaneMaximumCurvePointCount(
+        source: ParsedObject,
+    ): Long =
+        jsonPlaneMeshPointCount(source).takeIf { it > 0L }
+            ?: polyhedron3DCurvePointCount(
+                jsonPlaneMaximumFaceVertexCount(source),
+            )
+
+    private fun jsonPlaneMaximumFaceVertexCount(
+        source: ParsedObject,
+    ): Int {
+        if (!jsonPlaneCreatesSurface(source)) {
+            return 0
+        }
+        val tiling = (
+            source.attributes["tiling"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content ?: "rectangle"
+        return if (tiling.lowercase() == "triangle") 3 else 4
     }
 
     private fun jsonMeshPointCount(
@@ -4378,12 +4480,21 @@ object JsxGraphEngine {
             sourceObject.type != "polygonalchain" &&
             sourceObject.type != "parallelogram" &&
             sourceObject.type != "regularpolygon" &&
-            sourceObject.type != "polyhedron3d"
+            sourceObject.type != "polyhedron3d" &&
+            sourceObject.type != "plane3d"
         ) {
             return GMResult.Ok(Unit)
         }
-        if (sourceObject.type == "polyhedron3d") {
-            val actual = jsonPolyhedron3DMaximumFaceVertexCount(sourceObject)
+        if (
+            sourceObject.type == "polyhedron3d" ||
+            sourceObject.type == "plane3d"
+        ) {
+            val actual =
+                if (sourceObject.type == "polyhedron3d") {
+                    jsonPolyhedron3DMaximumFaceVertexCount(sourceObject)
+                } else {
+                    jsonPlaneMaximumFaceVertexCount(sourceObject)
+                }
             return if (actual > limit) {
                 GMResult.Err(
                     JsxGraphDocumentError.PolygonVertexLimitExceeded(
@@ -4759,6 +4870,7 @@ object JsxGraphEngine {
             is Plane3D -> buildList {
                 add(element.outline2D)
                 element.mesh3D?.let(::add)
+                element.surface3D?.faces?.mapTo(this, Face3D::curve2D)
             }
             else -> emptyList()
         }
@@ -5010,6 +5122,52 @@ object JsxGraphEngine {
                     val result = validateNestedAttributes(
                         name = "mesh3d",
                         supported = MESH_3D_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = validateNestedAttributes(
+                        name = "polyhedron",
+                        supported = POLYHEDRON_3D_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                val polyhedron = when (val result = nested("polyhedron")) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = polyhedron.validateNestedAttributes(
+                        name = "shader",
+                        supported = FACE_3D_SHADER_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                val shader = when (
+                    val result = polyhedron.nested("shader")
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = shader.validateNestedAttributes(
+                        name = "light",
+                        supported = FACE_3D_LIGHT_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = validateNestedAttributes(
+                        name = "colormap",
+                        supported = PLANE_3D_COLORMAP_ATTRIBUTES,
                     )
                 ) {
                     is GMResult.Ok -> Unit
@@ -5824,6 +5982,8 @@ object JsxGraphEngine {
         "point2",
         "point3",
         "mesh3d",
+        "polyhedron",
+        "colormap",
     )
     private val ARROW_HEAD_ATTRIBUTES = setOf(
         "type",
@@ -5851,6 +6011,8 @@ object JsxGraphEngine {
             setOf("stepwidthu", "stepwidthv")
     private val FACE_3D_ATTRIBUTES =
         COMMON_ATTRIBUTES + setOf("linecap", "shader")
+    private val POLYHEDRON_3D_ATTRIBUTES =
+        FACE_3D_ATTRIBUTES + setOf("fillcolorarray")
     private val FACE_3D_SHADER_ATTRIBUTES = setOf(
         "enabled",
         "fixed",
@@ -5863,6 +6025,8 @@ object JsxGraphEngine {
     )
     private val FACE_3D_LIGHT_ATTRIBUTES =
         setOf("type", "az", "el", "bank", "dir")
+    private val PLANE_3D_COLORMAP_ATTRIBUTES =
+        setOf("min", "max", "s", "v")
     private val TICKS_3D_ATTRIBUTES = setOf(
         "ticksdistance",
         "majorheight",
@@ -5954,14 +6118,20 @@ object JsxGraphEngine {
                     )?.value,
                 labelCount =
                     runtimeAxes3DLabelCount(attributes, boundingBox),
-                meshCount = runtimeAxes3DMeshCount(attributes),
+                planeChildCount =
+                    runtimeAxes3DPlaneChildCount(attributes),
             )
         }
-        if (
-            creatorName == "plane3d" &&
-            runtimePlaneCreatesMesh(board, parents, attributes)
-        ) {
-            return 2
+        if (creatorName == "plane3d") {
+            val childCount = when {
+                runtimePlaneCreatesMesh(board, parents, attributes) -> 1L
+                runtimePlaneCreatesSurface(board, parents, attributes) ->
+                    runtimePlaneSurfaceFaceCount(attributes)
+                else -> 0L
+            }
+            return (1L + childCount)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
         }
         if (creatorName == "polyhedron3d") {
             return runtimePolyhedron3DFaceVertexCounts(board, parents)
@@ -6000,14 +6170,20 @@ object JsxGraphEngine {
                     attributes = source.attributes,
                     boundingBox = viewSource?.let(::jsonView3DBoundingBox),
                 ),
-                meshCount = jsonAxes3DMeshCount(source.attributes),
+                planeChildCount =
+                    jsonAxes3DPlaneChildCount(source.attributes),
             )
         }
-        if (
-            source.type == "plane3d" &&
-            jsonPlaneCreatesMesh(source, objectsById)
-        ) {
-            return 2
+        if (source.type == "plane3d") {
+            val childCount = when {
+                jsonPlaneCreatesMesh(source, objectsById) -> 1L
+                jsonPlaneCreatesSurface(source) ->
+                    jsonPlaneSurfaceFaceCount(source.attributes)
+                else -> 0L
+            }
+            return (1L + childCount)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
         }
         if (source.type == "polyhedron3d") {
             return jsonPolyhedron3DFaceCount(
@@ -6046,43 +6222,66 @@ object JsxGraphEngine {
     private fun axes3DSceneElementCount(
         axesPosition: String?,
         labelCount: Long,
-        meshCount: Int,
+        planeChildCount: Long,
     ): Int {
         val memberCount = when (axesPosition?.lowercase() ?: "center") {
             "none" -> 18
             "center" -> 22
             else -> 24
         }
-        return (memberCount.toLong() + labelCount + meshCount)
+        return (memberCount.toLong() + labelCount + planeChildCount)
             .coerceAtMost(Int.MAX_VALUE.toLong())
             .toInt()
     }
 
-    private fun runtimeAxes3DMeshCount(
+    private fun runtimeAxes3DPlaneChildCount(
         attributes: JessieCodeRuntimeValue.ObjectValue,
-    ): Int =
-        AXES_3D_PLANE_ROLES.count { role ->
-            val configured = (
+    ): Long =
+        AXES_3D_PLANE_ROLES.sumOf { role ->
+            val planeAttributes =
                 attributes.properties[role.lowercase()] as?
                     JessieCodeRuntimeValue.ObjectValue
-                )?.properties?.get("type") as?
-                JessieCodeRuntimeValue.StringValue
+                    ?: JessieCodeRuntimeValue.ObjectValue(emptyMap())
+            val configured =
+                planeAttributes.properties["type"] as?
+                    JessieCodeRuntimeValue.StringValue
             val defaultType =
                 if (role.endsWith("Rear")) "shader" else "wireframe"
-            (configured?.value ?: defaultType).lowercase() == "wireframe"
+            if (
+                (configured?.value ?: defaultType).lowercase() ==
+                "wireframe"
+            ) {
+                1L
+            } else {
+                runtimePlaneSurfaceFaceCount(
+                    attributes = planeAttributes,
+                    defaultSteps = 10,
+                )
+            }
         }
 
-    private fun jsonAxes3DMeshCount(attributes: JsonObject): Int =
-        AXES_3D_PLANE_ROLES.count { role ->
-            val configured = (
+    private fun jsonAxes3DPlaneChildCount(
+        attributes: JsonObject,
+    ): Long =
+        AXES_3D_PLANE_ROLES.sumOf { role ->
+            val planeAttributes =
                 attributes[role.lowercase()] as? JsonObject
-                )?.get("type") as? JsonPrimitive
+                    ?: JsonObject(emptyMap())
+            val configured =
+                planeAttributes["type"] as? JsonPrimitive
             val defaultType =
                 if (role.endsWith("Rear")) "shader" else "wireframe"
-            (
+            val type =
                 configured?.takeIf(JsonPrimitive::isString)?.content
                     ?: defaultType
-                ).lowercase() == "wireframe"
+            if (type.lowercase() == "wireframe") {
+                1L
+            } else {
+                jsonPlaneSurfaceFaceCount(
+                    attributes = planeAttributes,
+                    defaultSteps = 10,
+                )
+            }
         }
 
     private fun runtimePlaneCreatesMesh(
@@ -6113,6 +6312,82 @@ object JsxGraphEngine {
         }
         return runtimeFiniteRange(parents[rangeIndexes.first]) &&
             runtimeFiniteRange(parents[rangeIndexes.second])
+    }
+
+    private fun runtimePlaneCreatesSurface(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Boolean {
+        val type = (
+            attributes.properties["type"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: "shader"
+        if (type.lowercase() == "wireframe") {
+            return false
+        }
+        val rangeIndexes = when {
+            parents.size == 6 -> 4 to 5
+            parents.size == 5 &&
+                (
+                    (
+                        parents[1] as?
+                            JessieCodeRuntimeValue.ElementReference
+                        )?.element is Plane3D ||
+                        (
+                            parents[1] as?
+                                JessieCodeRuntimeValue.StringValue
+                            )?.value?.let { board?.select(it) } is Plane3D
+                    ) -> 3 to 4
+            else -> return false
+        }
+        return runtimeFiniteRange(parents[rangeIndexes.first]) &&
+            runtimeFiniteRange(parents[rangeIndexes.second])
+    }
+
+    private fun runtimePlaneSurfaceFaceCount(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        defaultSteps: Int = 6,
+    ): Long {
+        val stepsU = runtimePositiveIntegerAttribute(
+            attributes = attributes,
+            name = "stepsu",
+            default = defaultSteps,
+        ) ?: return 0L
+        val stepsV = runtimePositiveIntegerAttribute(
+            attributes = attributes,
+            name = "stepsv",
+            default = defaultSteps,
+        ) ?: return 0L
+        val tiling = (
+            attributes.properties["tiling"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: "rectangle"
+        return planeSurfaceFaceCount(
+            tiling = tiling,
+            stepsU = stepsU,
+            stepsV = stepsV,
+        )
+    }
+
+    private fun runtimePositiveIntegerAttribute(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: Int,
+    ): Int? {
+        val value = attributes.properties[name]
+            ?: return default
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return default
+        }
+        val number = (value as? JessieCodeRuntimeValue.NumberValue)?.value
+            ?: return null
+        val integer = number.toInt()
+        return integer.takeIf {
+            number.isFinite() &&
+                integer.toDouble() == number &&
+                integer > 0
+        }
     }
 
     private fun runtimeFiniteRange(
@@ -6155,6 +6430,79 @@ object JsxGraphEngine {
         }
         return jsonFiniteRange(source.parents[rangeIndexes.first]) &&
             jsonFiniteRange(source.parents[rangeIndexes.second])
+    }
+
+    private fun jsonPlaneCreatesSurface(
+        source: ParsedObject,
+    ): Boolean {
+        val type = (
+            source.attributes["type"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content ?: "shader"
+        if (type.lowercase() == "wireframe") {
+            return false
+        }
+        val rangeIndexes = when (source.parents.size) {
+            6 -> 4 to 5
+            5 -> 3 to 4
+            else -> return false
+        }
+        return jsonFiniteRange(source.parents[rangeIndexes.first]) &&
+            jsonFiniteRange(source.parents[rangeIndexes.second])
+    }
+
+    private fun jsonPlaneSurfaceFaceCount(
+        attributes: JsonObject,
+        defaultSteps: Int = 6,
+    ): Long {
+        val stepsU = jsonPositiveIntegerAttribute(
+            attributes = attributes,
+            name = "stepsu",
+            default = defaultSteps,
+        ) ?: return 0L
+        val stepsV = jsonPositiveIntegerAttribute(
+            attributes = attributes,
+            name = "stepsv",
+            default = defaultSteps,
+        ) ?: return 0L
+        val tiling = (
+            attributes["tiling"] as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content ?: "rectangle"
+        return planeSurfaceFaceCount(
+            tiling = tiling,
+            stepsU = stepsU,
+            stepsV = stepsV,
+        )
+    }
+
+    private fun jsonPositiveIntegerAttribute(
+        attributes: JsonObject,
+        name: String,
+        default: Int,
+    ): Int? {
+        val number = (attributes[name] as? JsonPrimitive)?.doubleOrNull
+            ?: return if (name in attributes) null else default
+        val integer = number.toInt()
+        return integer.takeIf {
+            number.isFinite() &&
+                integer.toDouble() == number &&
+                integer > 0
+        }
+    }
+
+    private fun planeSurfaceFaceCount(
+        tiling: String,
+        stepsU: Int,
+        stepsV: Int,
+    ): Long {
+        val horizontal = stepsU.toLong()
+        val vertical = stepsV.toLong()
+        if (tiling.lowercase() != "triangle") {
+            return horizontal * vertical
+        }
+        val oddRows = (vertical + 1L) / 2L
+        val evenRows = vertical / 2L
+        return oddRows * (2L * (horizontal + 1L)) +
+            evenRows * (2L * horizontal + 1L)
     }
 
     private fun jsonFiniteRange(value: JsonElement): Boolean {

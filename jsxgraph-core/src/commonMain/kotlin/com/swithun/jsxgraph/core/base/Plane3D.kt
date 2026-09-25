@@ -33,6 +33,59 @@ internal sealed interface Plane3DDirectionSource {
     ) : Plane3DDirectionSource
 }
 
+internal data class Plane3DColormapAttributes(
+    val minimumHeight: Double = -5.0,
+    val minimumHue: Double = 190.0,
+    val maximumHeight: Double = 5.0,
+    val maximumHue: Double = 0.0,
+    val saturation: Double = 0.9,
+    val value: Double = 0.9,
+)
+
+internal data class Plane3DSurfaceAttributes(
+    val tiling: String = "rectangle",
+    val stepsU: Int = 6,
+    val stepsV: Int = 6,
+    val fillColorArray: List<String> = listOf("white", "#0072b2"),
+    val faceAttributes: Face3DAttributes = Face3DAttributes(
+        strokeWidth = 0.1,
+        fillOpacity = 0.8,
+        shader = Face3DShaderAttributes(
+            minimumLightness = 55.0,
+        ),
+    ),
+    val colormap: Plane3DColormapAttributes =
+        Plane3DColormapAttributes(),
+) {
+    internal companion object {
+        // JSXGraph: src/options3d.js -> axes3d.{x,y,z}Plane{Rear,Front}.
+        internal fun axes3DDefaults(
+            visible: Boolean,
+        ): Plane3DSurfaceAttributes =
+            Plane3DSurfaceAttributes(
+                stepsU = 10,
+                stepsV = 10,
+                fillColorArray = listOf("#e7e7e7"),
+                faceAttributes = Face3DAttributes(
+                    visible = visible,
+                    strokeColor = "#cccccc",
+                    strokeWidth = 0.5,
+                    strokeOpacity = 0.7,
+                    fillOpacity = 0.3,
+                    shader = Face3DShaderAttributes(
+                        enabled = true,
+                        fixed = true,
+                        type = "zIndex",
+                        hue = 0.0,
+                        saturation = 0.0,
+                        minimumLightness = 65.0,
+                        maximumLightness = 98.0,
+                    ),
+                ),
+            )
+    }
+}
+
 internal sealed interface Plane3DError {
     data class ParentViewMismatch(
         val parentIndex: Int,
@@ -94,6 +147,25 @@ internal sealed interface Plane3DError {
     data class Mesh3DFactory(
         val error: Mesh3DError,
     ) : Plane3DError
+
+    data class InvalidSurfaceSteps(
+        val axis: String,
+        val count: Int,
+    ) : Plane3DError
+
+    data class SurfaceVertexLimitExceeded(
+        val count: Long,
+        val maximum: Int,
+    ) : Plane3DError
+
+    data class SurfaceFaceLimitExceeded(
+        val count: Long,
+        val maximum: Int,
+    ) : Plane3DError
+
+    data class Polyhedron3DFactory(
+        val error: Polyhedron3DError,
+    ) : Plane3DError
 }
 
 /**
@@ -144,6 +216,8 @@ internal class Plane3D private constructor(
     internal lateinit var outline2D: Curve
         private set
     internal var mesh3D: Curve? = null
+        private set
+    internal var surface3D: Polyhedron3D? = null
         private set
     internal var directionEvaluationError: Plane3DError? = null
         private set
@@ -276,7 +350,7 @@ internal class Plane3D private constructor(
             }
         dataX = DoubleArray(projected.size) { projected[it][1] }
         dataY = DoubleArray(projected.size) { projected[it][2] }
-        if (this::outline2D.isInitialized) {
+        if (this::outline2D.isInitialized && !usesSurfaceMapping) {
             outline2D.replaceData(dataX, dataY)
         }
         return this
@@ -773,6 +847,8 @@ internal class Plane3D private constructor(
             planeType: String = DEFAULT_PLANE_TYPE,
             meshStepWidthU: Double = 1.0,
             meshStepWidthV: Double = 1.0,
+            surfaceAttributes: Plane3DSurfaceAttributes =
+                Plane3DSurfaceAttributes(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -791,6 +867,7 @@ internal class Plane3D private constructor(
                 planeType = planeType,
                 meshStepWidthU = meshStepWidthU,
                 meshStepWidthV = meshStepWidthV,
+                surfaceAttributes = surfaceAttributes,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -813,6 +890,8 @@ internal class Plane3D private constructor(
             planeType: String = DEFAULT_PLANE_TYPE,
             meshStepWidthU: Double = 1.0,
             meshStepWidthV: Double = 1.0,
+            surfaceAttributes: Plane3DSurfaceAttributes =
+                Plane3DSurfaceAttributes(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -843,6 +922,7 @@ internal class Plane3D private constructor(
                 planeType = planeType,
                 meshStepWidthU = meshStepWidthU,
                 meshStepWidthV = meshStepWidthV,
+                surfaceAttributes = surfaceAttributes,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -861,6 +941,8 @@ internal class Plane3D private constructor(
             planeType: String = DEFAULT_PLANE_TYPE,
             meshStepWidthU: Double = 1.0,
             meshStepWidthV: Double = 1.0,
+            surfaceAttributes: Plane3DSurfaceAttributes =
+                Plane3DSurfaceAttributes(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -916,6 +998,7 @@ internal class Plane3D private constructor(
                     planeType = planeType,
                     meshStepWidthU = meshStepWidthU,
                     meshStepWidthV = meshStepWidthV,
+                    surfaceAttributes = surfaceAttributes,
                     id = id,
                     name = name,
                     needsRegularUpdate = needsRegularUpdate,
@@ -951,6 +1034,7 @@ internal class Plane3D private constructor(
             planeType: String,
             meshStepWidthU: Double,
             meshStepWidthV: Double,
+            surfaceAttributes: Plane3DSurfaceAttributes,
             id: String,
             name: String?,
             needsRegularUpdate: Boolean,
@@ -1032,8 +1116,18 @@ internal class Plane3D private constructor(
             val outline = when (
                 val result = Curve.createData(
                     board = view.board,
-                    dataX = plane.dataX,
-                    dataY = plane.dataY,
+                    dataX =
+                        if (plane.usesSurfaceMapping) {
+                            DoubleArray(0)
+                        } else {
+                            plane.dataX
+                        },
+                    dataY =
+                        if (plane.usesSurfaceMapping) {
+                            DoubleArray(0)
+                        } else {
+                            plane.dataY
+                        },
                     name = "",
                     needsRegularUpdate = needsRegularUpdate,
                 )
@@ -1103,11 +1197,361 @@ internal class Plane3D private constructor(
                 plane.mesh3D = mesh
                 plane.addChild(mesh)
                 outline.inherits += mesh
+            } else if (plane.usesSurfaceMapping) {
+                val definition = when (
+                    val result = planeSurfaceDefinition(
+                        plane = plane,
+                        attributes = surfaceAttributes,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        view.board.removeObject(plane)
+                        cleanupOwnedPoints(view, ownedPoints)
+                        return result
+                    }
+                }
+                val faceInputs = definition.second.mapIndexed {
+                        faceNumber,
+                        vertexKeys,
+                    ->
+                    Polyhedron3DFaceInput(
+                        vertexKeys = vertexKeys,
+                        attributes = planeSurfaceFaceAttributes(
+                            planeType = planeType,
+                            surfaceAttributes = surfaceAttributes,
+                            faceNumber = faceNumber,
+                        ),
+                    )
+                }
+                val surface = when (
+                    val result = Polyhedron3D.create(
+                        view = view,
+                        vertices = definition.first,
+                        faceInputs = faceInputs,
+                        dependencies = listOf(plane),
+                        name = "",
+                        needsRegularUpdate = needsRegularUpdate,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        view.board.removeObject(plane)
+                        cleanupOwnedPoints(view, ownedPoints)
+                        return GMResult.Err(
+                            Plane3DError.Polyhedron3DFactory(result.error),
+                        )
+                    }
+                }
+                surface.setParents(listOf(plane))
+                plane.surface3D = surface
             }
             plane.isDraggable = !fixed
             plane.prepareUpdate().update()
             outline.prepareUpdate().update()
             return GMResult.Ok(plane)
+        }
+
+        // JSXGraph: src/math/tiling.js -> triangulation /
+        // rectangulation, as used by src/3d/linspace3d.js ->
+        // createPlane3D.
+        private fun planeSurfaceDefinition(
+            plane: Plane3D,
+            attributes: Plane3DSurfaceAttributes,
+        ): GMResult<
+            Pair<
+                LinkedHashMap<String, Polyhedron3DVertexSource>,
+                List<List<String>>,
+                >,
+            Plane3DError,
+            > {
+            if (attributes.stepsU <= 0) {
+                return GMResult.Err(
+                    Plane3DError.InvalidSurfaceSteps(
+                        axis = "u",
+                        count = attributes.stepsU,
+                    ),
+                )
+            }
+            if (attributes.stepsV <= 0) {
+                return GMResult.Err(
+                    Plane3DError.InvalidSurfaceSteps(
+                        axis = "v",
+                        count = attributes.stepsV,
+                    ),
+                )
+            }
+            val triangular =
+                attributes.tiling.lowercase() == TRIANGLE_TILING
+            val oddRows = (attributes.stepsV.toLong() + 1L) / 2L
+            val rowCount = attributes.stepsV.toLong() + 1L
+            val vertexCount =
+                rowCount * (attributes.stepsU.toLong() + 1L) +
+                    if (triangular) oddRows else 0L
+            val faceCount =
+                if (triangular) {
+                    val oddFaceRows =
+                        (attributes.stepsV.toLong() + 1L) / 2L
+                    val evenFaceRows =
+                        attributes.stepsV.toLong() / 2L
+                    oddFaceRows *
+                        (2L * (attributes.stepsU.toLong() + 1L)) +
+                        evenFaceRows *
+                        (2L * attributes.stepsU.toLong() + 1L)
+                } else {
+                    attributes.stepsU.toLong() *
+                        attributes.stepsV.toLong()
+                }
+            if (vertexCount > Polyhedron3D.MAX_VERTEX_COUNT) {
+                return GMResult.Err(
+                    Plane3DError.SurfaceVertexLimitExceeded(
+                        count = vertexCount,
+                        maximum = Polyhedron3D.MAX_VERTEX_COUNT,
+                    ),
+                )
+            }
+            if (faceCount > Polyhedron3D.MAX_FACE_COUNT) {
+                return GMResult.Err(
+                    Plane3DError.SurfaceFaceLimitExceeded(
+                        count = faceCount,
+                        maximum = Polyhedron3D.MAX_FACE_COUNT,
+                    ),
+                )
+            }
+            return if (triangular) {
+                triangularSurfaceDefinition(plane, attributes)
+            } else {
+                rectangularSurfaceDefinition(plane, attributes)
+            }
+        }
+
+        private fun rectangularSurfaceDefinition(
+            plane: Plane3D,
+            attributes: Plane3DSurfaceAttributes,
+        ): GMResult<
+            Pair<
+                LinkedHashMap<String, Polyhedron3DVertexSource>,
+                List<List<String>>,
+                >,
+            Plane3DError,
+            > {
+            val vertices =
+                linkedMapOf<String, Polyhedron3DVertexSource>()
+            val faces = mutableListOf<List<String>>()
+            for (row in 0..attributes.stepsV) {
+                for (column in 0..attributes.stepsU) {
+                    val index = vertices.size
+                    vertices[index.toString()] = planeSurfaceVertex(
+                        plane = plane,
+                        column = column.toDouble(),
+                        row = row,
+                        stepsU = attributes.stepsU,
+                        stepsV = attributes.stepsV,
+                    )
+                    if (column > 0 && row > 0) {
+                        val last = vertices.size - 1
+                        faces += listOf(
+                            (last - 1).toString(),
+                            last.toString(),
+                            (last - 1 - attributes.stepsU).toString(),
+                            (last - 2 - attributes.stepsU).toString(),
+                        )
+                    }
+                }
+            }
+            return GMResult.Ok(vertices to faces)
+        }
+
+        private fun triangularSurfaceDefinition(
+            plane: Plane3D,
+            attributes: Plane3DSurfaceAttributes,
+        ): GMResult<
+            Pair<
+                LinkedHashMap<String, Polyhedron3DVertexSource>,
+                List<List<String>>,
+                >,
+            Plane3DError,
+            > {
+            val vertices =
+                linkedMapOf<String, Polyhedron3DVertexSource>()
+            val faces = mutableListOf<List<String>>()
+            for (row in 0..attributes.stepsV) {
+                val lastColumn =
+                    if (row % 2 == 0) {
+                        attributes.stepsU
+                    } else {
+                        attributes.stepsU + 1
+                    }
+                for (column in 0..lastColumn) {
+                    val shiftedColumn =
+                        if (row % 2 == 1) {
+                            when {
+                                column == lastColumn ->
+                                    (column - 1).toDouble()
+                                column > 0 -> column - 0.5
+                                else -> column.toDouble()
+                            }
+                        } else {
+                            column.toDouble()
+                        }
+                    vertices[vertices.size.toString()] =
+                        planeSurfaceVertex(
+                            plane = plane,
+                            column = shiftedColumn,
+                            row = row,
+                            stepsU = attributes.stepsU,
+                            stepsV = attributes.stepsV,
+                        )
+                    if (row > 0) {
+                        val last = vertices.size - 1
+                        if (row % 2 == 1) {
+                            if (column > 0) {
+                                val first = listOf(
+                                    (last - 1).toString(),
+                                    last.toString(),
+                                    (
+                                        last -
+                                            2 -
+                                            attributes.stepsU
+                                        ).toString(),
+                                )
+                                faces += first
+                                faces +=
+                                    if (column < lastColumn) {
+                                        listOf(
+                                            last.toString(),
+                                            (
+                                                last -
+                                                    1 -
+                                                    attributes.stepsU
+                                                ).toString(),
+                                            (
+                                                last -
+                                                    2 -
+                                                    attributes.stepsU
+                                                ).toString(),
+                                        )
+                                    } else {
+                                        first
+                                    }
+                            }
+                        } else {
+                            if (column > 0) {
+                                faces += listOf(
+                                    last.toString(),
+                                    (
+                                        last -
+                                            2 -
+                                            attributes.stepsU
+                                        ).toString(),
+                                    (last - 1).toString(),
+                                )
+                            }
+                            faces += listOf(
+                                last.toString(),
+                                (
+                                    last -
+                                        1 -
+                                        attributes.stepsU
+                                    ).toString(),
+                                (
+                                    last -
+                                        2 -
+                                        attributes.stepsU
+                                    ).toString(),
+                            )
+                        }
+                    }
+                }
+            }
+            return GMResult.Ok(vertices to faces)
+        }
+
+        private fun planeSurfaceVertex(
+            plane: Plane3D,
+            column: Double,
+            row: Int,
+            stepsU: Int,
+            stepsV: Int,
+        ): Polyhedron3DVertexSource =
+            Polyhedron3DVertexSource.Function(
+                Line3DArrayEvaluator {
+                    val u =
+                        plane.evaluatedRangeU[0] +
+                            column *
+                            (
+                                plane.evaluatedRangeU[1] -
+                                    plane.evaluatedRangeU[0]
+                                ) / stepsU
+                    val v =
+                        plane.evaluatedRangeV[0] +
+                            row *
+                            (
+                                plane.evaluatedRangeV[1] -
+                                    plane.evaluatedRangeV[0]
+                                ) / stepsV
+                    GMResult.Ok(plane.F(u, v).copyOfRange(1, 4))
+                },
+            )
+
+        private fun planeSurfaceFaceAttributes(
+            planeType: String,
+            surfaceAttributes: Plane3DSurfaceAttributes,
+            faceNumber: Int,
+        ): Face3DAttributes {
+            val base = surfaceAttributes.faceAttributes
+            if (planeType.lowercase() == COLORMAP_PLANE_TYPE) {
+                val colormap = surfaceAttributes.colormap
+                return base.copy(
+                    shader = base.shader.copy(enabled = false),
+                    fillColorEvaluator = Face3DFillColorEvaluator { face ->
+                        var height = 0.0
+                        val keys =
+                            face.polyhedron.faceKeys[face.faceNumber]
+                        for (key in keys) {
+                            height += face.polyhedron.coords[key]?.get(3)
+                                ?: Double.NaN
+                        }
+                        if (keys.isNotEmpty()) {
+                            height /= keys.size
+                        }
+                        val hue =
+                            colormap.minimumHue +
+                                (
+                                    height - colormap.minimumHeight
+                                    ) * (
+                                    colormap.maximumHue -
+                                        colormap.minimumHue
+                                    ) / (
+                                    colormap.maximumHeight -
+                                        colormap.minimumHeight
+                                    )
+                        if (hue.isFinite()) {
+                            Face3DColor.hsvToHex(
+                                hue = hue,
+                                saturation = colormap.saturation,
+                                value = colormap.value,
+                            )
+                        } else {
+                            base.fillColor
+                        }
+                    },
+                )
+            }
+            val fillColors = surfaceAttributes.fillColorArray
+            return base.copy(
+                fillColor =
+                    if (fillColors.isEmpty()) {
+                        base.fillColor
+                    } else {
+                        fillColors[faceNumber % fillColors.size]
+                    },
+                shader = base.shader.copy(
+                    enabled =
+                        planeType.lowercase() == SHADER_PLANE_TYPE,
+                ),
+                fillColorEvaluator = null,
+            )
         }
 
         private fun validatePoint(
@@ -1193,5 +1637,8 @@ internal class Plane3D private constructor(
 
         private const val DEFAULT_PLANE_TYPE = "shader"
         private const val WIREFRAME_PLANE_TYPE = "wireframe"
+        private const val SHADER_PLANE_TYPE = "shader"
+        private const val COLORMAP_PLANE_TYPE = "colormap"
+        private const val TRIANGLE_TILING = "triangle"
     }
 }

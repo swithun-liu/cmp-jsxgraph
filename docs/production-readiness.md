@@ -38,23 +38,25 @@ document path continues to reject that compound return explicitly.
 Ordered construction documents now expose 2D `transform` IDs to subsequent
 transformed Points. The source-mapped 4x4 Transformation kernel covers every
 JSXGraph `1.13.3` 3D matrix form with official numerical fixture evidence;
-the bounded `View3D`, `Point3D`, `Line3D`, Plane3D wireframe, `Mesh3D`,
-`Axis3D`, `Face3D`, `Polyhedron3D`, and `transform3d` lifecycle now has
+the bounded `View3D`, `Point3D`, `Line3D`, Plane3D wireframe and finite
+surfaces, `Mesh3D`, `Axis3D`, `Face3D`, `Polyhedron3D`, and `transform3d`
+lifecycle now has
 source-mapped construction, projection, 2D proxy rendering, transformation
 binding, update/removal, structured-error, official-fixture, and focused JVM
 evidence. Point3D additionally has drag and `applyOnce` parity evidence;
-Line3D, finite Plane3D outlines with visible Mesh3D wireframes, Axis3D, and
-Polyhedron3D have focused Desktop/Compact static parity evidence. Text3D,
-Ticks3D, explicit Axes3D scene expansion, and automatic `center`/`border`/`none`
-View3D axes now have bounded JSON/JessieCode creation and resource accounting.
+Line3D, finite Plane3D outlines with visible Mesh3D wireframes, finite
+Plane3D rectangle/triangle surfaces with cyclic colors, HSL shaders, and
+height colormaps, Axis3D, and Polyhedron3D have focused Desktop/Compact static
+parity evidence. Text3D, Ticks3D, explicit Axes3D scene expansion, and
+automatic `center`/`border`/`none` View3D axes now have bounded JSON/JessieCode
+creation and resource accounting.
 The Polyhedron3D slice accepts direct and transformed creators, Point-backed,
 function-valued, and homogeneous vertices, cyclic `fillColorArray` plus
 per-face overrides, HSL Face3D shaders, ordinary Curve proxies, and ascending
 face `zIndex` ordering within each Polyhedron. This 3D preview remains outside
-the qualified Stable scope. Plane3D shader/colormap/color-array surface modes,
-global View3D `depthOrder`/layer
-configuration, camera controls, Point3D gliders and animations, and the
-remaining 3D APIs are still pending.
+the qualified Stable scope. Global View3D `depthOrder`/layer configuration,
+camera controls, Point3D gliders and animations, and the remaining 3D APIs are
+still pending.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.
 Intersection and OtherIntersection now have source-mapped Line/Segment/Circle,

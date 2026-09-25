@@ -48,6 +48,87 @@ internal data class Face3DShaderAttributes(
     val light: Face3DLightAttributes = Face3DLightAttributes(),
 )
 
+internal fun interface Face3DFillColorEvaluator {
+    fun evaluate(face: Face3D): String
+}
+
+internal object Face3DColor {
+    fun hsvToHex(
+        hue: Double,
+        saturation: Double,
+        value: Double,
+    ): String {
+        if (
+            !hue.isFinite() ||
+            !saturation.isFinite() ||
+            !value.isFinite()
+        ) {
+            return "#000000"
+        }
+        val lightness = value * (1.0 - saturation / 2.0)
+        val hslSaturation =
+            if (lightness == 0.0 || lightness == 1.0) {
+                0.0
+            } else {
+                (value - lightness) /
+                    minOf(lightness, 1.0 - lightness)
+            }
+        return hslToHex(
+            hue = hue,
+            saturation = hslSaturation * 100.0,
+            lightness = lightness * 100.0,
+        )
+    }
+
+    fun hslToHex(
+        hue: Double,
+        saturation: Double,
+        lightness: Double,
+    ): String {
+        if (
+            !hue.isFinite() ||
+            !saturation.isFinite() ||
+            !lightness.isFinite()
+        ) {
+            return "#000000"
+        }
+        val normalizedHue = ((hue % 360.0) + 360.0) % 360.0 / 360.0
+        val normalizedSaturation =
+            (saturation / 100.0).coerceIn(0.0, 1.0)
+        val normalizedLightness =
+            (lightness / 100.0).coerceIn(0.0, 1.0)
+        val chroma =
+            (1.0 - abs(2.0 * normalizedLightness - 1.0)) *
+                normalizedSaturation
+        val hueSection = normalizedHue * 6.0
+        val secondary =
+            chroma * (1.0 - abs(hueSection % 2.0 - 1.0))
+        val (red, green, blue) = when {
+            hueSection < 1.0 -> Triple(chroma, secondary, 0.0)
+            hueSection < 2.0 -> Triple(secondary, chroma, 0.0)
+            hueSection < 3.0 -> Triple(0.0, chroma, secondary)
+            hueSection < 4.0 -> Triple(0.0, secondary, chroma)
+            hueSection < 5.0 -> Triple(secondary, 0.0, chroma)
+            else -> Triple(chroma, 0.0, secondary)
+        }
+        val match = normalizedLightness - chroma / 2.0
+        return "#%02x%02x%02x".formatHex(
+            (255.0 * (red + match)).roundToInt().coerceIn(0, 255),
+            (255.0 * (green + match)).roundToInt().coerceIn(0, 255),
+            (255.0 * (blue + match)).roundToInt().coerceIn(0, 255),
+        )
+    }
+
+    private fun String.formatHex(
+        red: Int,
+        green: Int,
+        blue: Int,
+    ): String =
+        replaceFirst("%02x", red.toString(16).padStart(2, '0'))
+            .replaceFirst("%02x", green.toString(16).padStart(2, '0'))
+            .replaceFirst("%02x", blue.toString(16).padStart(2, '0'))
+}
+
 internal data class Face3DAttributes(
     val id: String = "",
     val name: String? = "",
@@ -66,6 +147,7 @@ internal data class Face3DAttributes(
     val dashScale: Boolean = false,
     val lineCap: String = "round",
     val shader: Face3DShaderAttributes = Face3DShaderAttributes(),
+    val fillColorEvaluator: Face3DFillColorEvaluator? = null,
 )
 
 internal data class Polyhedron3DFaceInput(
@@ -389,6 +471,11 @@ internal class Face3D internal constructor(
      * Resolves the color mutation performed by Face3D.shader into a CSS hex
      * color so the portable scene does not depend on a browser CSS parser.
      */
+    internal fun resolvedFillColor(): String =
+        shadedFillColor()
+            ?: faceAttributes.fillColorEvaluator?.evaluate(this)
+            ?: faceAttributes.fillColor
+
     internal fun shadedFillColor(): String? {
         val shader = faceAttributes.shader
         if (!shader.enabled) {
@@ -443,7 +530,7 @@ internal class Face3D internal constructor(
                             shader.minimumLightness
                         ) * ratio
             }
-        return hslToHex(
+        return Face3DColor.hslToHex(
             hue = shader.hue,
             saturation = shader.saturation,
             lightness = lightness,
@@ -536,47 +623,6 @@ internal class Face3D internal constructor(
             matrix,
         )
     }
-
-    private fun hslToHex(
-        hue: Double,
-        saturation: Double,
-        lightness: Double,
-    ): String {
-        val normalizedHue = ((hue % 360.0) + 360.0) % 360.0 / 360.0
-        val normalizedSaturation =
-            (saturation / 100.0).coerceIn(0.0, 1.0)
-        val normalizedLightness =
-            (lightness / 100.0).coerceIn(0.0, 1.0)
-        val chroma =
-            (1.0 - abs(2.0 * normalizedLightness - 1.0)) *
-                normalizedSaturation
-        val hueSection = normalizedHue * 6.0
-        val secondary =
-            chroma * (1.0 - abs(hueSection % 2.0 - 1.0))
-        val (red, green, blue) = when {
-            hueSection < 1.0 -> Triple(chroma, secondary, 0.0)
-            hueSection < 2.0 -> Triple(secondary, chroma, 0.0)
-            hueSection < 3.0 -> Triple(0.0, chroma, secondary)
-            hueSection < 4.0 -> Triple(0.0, secondary, chroma)
-            hueSection < 5.0 -> Triple(secondary, 0.0, chroma)
-            else -> Triple(chroma, 0.0, secondary)
-        }
-        val match = normalizedLightness - chroma / 2.0
-        return "#%02x%02x%02x".formatHex(
-            (255.0 * (red + match)).roundToInt().coerceIn(0, 255),
-            (255.0 * (green + match)).roundToInt().coerceIn(0, 255),
-            (255.0 * (blue + match)).roundToInt().coerceIn(0, 255),
-        )
-    }
-
-    private fun String.formatHex(
-        red: Int,
-        green: Int,
-        blue: Int,
-    ): String =
-        replaceFirst("%02x", red.toString(16).padStart(2, '0'))
-            .replaceFirst("%02x", green.toString(16).padStart(2, '0'))
-            .replaceFirst("%02x", blue.toString(16).padStart(2, '0'))
 
     internal companion object {
         private const val FACE_3D_ID_PREFIX = "face3d"

@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(83, cases.size)
+        assertEquals(84, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            53,
+            54,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -1942,7 +1942,7 @@ class ParitySourceTest {
         val session = assertIs<
             JsxGraphParitySession.ConstructionDocument
             >(paritySession).session
-        assertEquals(24, session.scene.elements.size)
+        assertEquals(27, session.scene.elements.size)
         assertEquals(
             listOf("source3d", "homogeneous3d", "transformed3d"),
             session.scene.elements
@@ -2017,6 +2017,35 @@ class ParitySourceTest {
     }
 
     @Test
+    fun plane3DSurfacesFocusedCaseCoversEveryFiniteSurfaceMode() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("plane3d_surfaces"),
+        ).value
+        assertTrue("rectangle-tiling" in parityCase.features)
+        assertTrue("triangle-tiling" in parityCase.features)
+        assertTrue("shader" in parityCase.features)
+        assertTrue("colormap" in parityCase.features)
+
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+        val curves =
+            scene.elements.filterIsInstance<JsxGraphSceneElement.Curve>()
+        for (id in listOf("colors", "shader", "colormap")) {
+            assertEquals(0, curves.single { it.id == id }.points.size)
+        }
+        val visibleFaces = curves.filter {
+            it.style.visible && it.points.size in setOf(4, 5)
+        }
+        assertEquals(35, visibleFaces.size)
+        assertEquals(23, visibleFaces.count { it.points.size == 4 })
+        assertEquals(12, visibleFaces.count { it.points.size == 5 })
+        assertTrue(
+            visibleFaces.map { it.style.fillColor }.distinct().size >= 5,
+        )
+    }
+
+    @Test
     fun view3DDefaultAxesFocusedCaseExpandsTicksAndLabels() {
         val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
             JsxGraphParityCorpus.find("view3d_default_axes"),
@@ -2037,13 +2066,13 @@ class ParitySourceTest {
         val labels =
             scene.elements.filterIsInstance<JsxGraphSceneElement.Text>()
 
-        assertEquals(60, scene.elements.size)
+        assertEquals(63, scene.elements.size)
         assertEquals(15, lines.size)
         assertEquals(3, lines.count { line -> line.style.visible })
-        assertEquals(12, curves.size)
+        assertEquals(15, curves.size)
         assertEquals(3, ticks.size)
         assertEquals(
-            3,
+            6,
             curves.count {
                 it.style.strokeColor == JsxGraphColor(154, 154, 154)
             },
@@ -2093,10 +2122,10 @@ class ParitySourceTest {
             .filterIsInstance<JsxGraphSceneElement.Point>()
             .single()
 
-        assertEquals(25, scene.elements.size)
+        assertEquals(28, scene.elements.size)
         assertEquals(15, lines.size)
         assertEquals(3, lines.count { line -> line.style.visible })
-        assertEquals(9, curves.size)
+        assertEquals(12, curves.size)
         assertTrue(curves.none { curve -> curve.style.visible })
         assertFalse(origin.style.visible)
         assertFalse(origin.draggable)
