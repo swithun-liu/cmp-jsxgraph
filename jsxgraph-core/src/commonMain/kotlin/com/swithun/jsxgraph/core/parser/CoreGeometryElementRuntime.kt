@@ -37,6 +37,15 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
         when (element) {
+            is Polygon ->
+                element.slopeTriangleDefinition?.let {
+                    number(it.Slope())
+                } ?: GMResult.Err(
+                    JessieCodeRuntimeError.ElementValueUnavailable(
+                        elementId = element.id,
+                        location = location,
+                    ),
+                )
             is Slider -> number(element.Value())
             is Arc -> number(element.Value())
             is Sector -> number(element.Value())
@@ -74,6 +83,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             return it
         }
         resolveCurveProperty(element, property)?.let {
+            return it
+        }
+        resolveSlopeTriangleProperty(element, property, location)?.let {
             return it
         }
         resolvePolygonProperty(element, property, location)?.let {
@@ -366,6 +378,68 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 function("boundingBox") { _, _ ->
                     GMResult.Ok(array(polygon.bounds()))
                 }
+            else -> unavailable(polygon, property, location)
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/slopetriangle.js ->
+    // extendInstanceMethodMap.
+    private fun resolveSlopeTriangleProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val polygon = element as? Polygon ?: return null
+        val definition = polygon.slopeTriangleDefinition ?: return null
+        return when (property) {
+            "tangent" -> elementReference(definition.tangent)
+            "glider" -> elementReference(definition.glider)
+            "basepoint" -> elementReference(definition.basePoint)
+            "baseline" -> elementReference(definition.baseLine)
+            "toppoint" -> elementReference(definition.topPoint)
+            "borderHorizontal" ->
+                elementReference(definition.borderHorizontal)
+            "borderVertical" ->
+                elementReference(definition.borderVertical)
+            "borderParallel" ->
+                elementReference(definition.borderParallel)
+            "label" -> elementReference(definition.label)
+            "V", "Value", "Slope" ->
+                numberFunction("Slope", definition::Slope)
+            "DeltaX" ->
+                numberFunction("DeltaX", definition::DeltaX)
+            "DeltaY" ->
+                numberFunction("DeltaY", definition::DeltaY)
+            "Direction" ->
+                function("Direction") { _, _ ->
+                    GMResult.Ok(array(definition.Direction()))
+                }
+            "getAngle", "Angle" -> function("getAngle") {
+                    arguments,
+                    _,
+                ->
+                val unit = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.StringValue
+                    )?.value
+                if (unit == null) {
+                    number(definition.getAngle())
+                } else {
+                    when (val result = definition.getAngle(unit)) {
+                        is GMResult.Ok -> number(result.value)
+                        is GMResult.Err -> GMResult.Ok(
+                            JessieCodeRuntimeValue.UndefinedValue,
+                        )
+                    }
+                }
+            }
+            "subs" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    polygon.subs.mapValues { (_, child) ->
+                        JessieCodeRuntimeValue.ElementReference(child)
+                    },
+                ),
+            )
             else -> unavailable(polygon, property, location)
         }
     }

@@ -204,6 +204,10 @@ import com.swithun.jsxgraph.core.base.SliderAttributes
 import com.swithun.jsxgraph.core.base.SliderElementAttributes
 import com.swithun.jsxgraph.core.base.SliderError
 import com.swithun.jsxgraph.core.base.SliderPointAttributes
+import com.swithun.jsxgraph.core.base.SlopeTriangle
+import com.swithun.jsxgraph.core.base.SlopeTriangleAttributes
+import com.swithun.jsxgraph.core.base.SlopeTriangleElementAttributes
+import com.swithun.jsxgraph.core.base.SlopeTriangleError
 import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Surface3DArrayEvaluator
 import com.swithun.jsxgraph.core.base.Surface3DAttributes
@@ -272,6 +276,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class SliderFactory(
         val error: SliderError,
+    ) : JessieCodeCreatorError
+
+    data class SlopeTriangleFactory(
+        val error: SlopeTriangleError,
     ) : JessieCodeCreatorError
 
     data class View3DFactory(
@@ -537,6 +545,14 @@ internal object NativeJessieCodeCreators {
         },
         "slider" to JessieCodeCreator { board, parents, attributes, location ->
             createSlider(board, parents, attributes, location)
+        },
+        "slopetriangle" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createSlopeTriangle(board, parents, attributes, location)
         },
         "point3d" to JessieCodeCreator {
                 board,
@@ -2171,6 +2187,260 @@ internal object NativeJessieCodeCreators {
             )
             is GMResult.Err -> result
         }
+    }
+
+    // JSXGraph 1.13.3: src/element/slopetriangle.js ->
+    // createSlopeTriangle.
+    private fun createSlopeTriangle(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "slopetriangle"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val resolvedParents = parents.map { parent ->
+            resolveElement(resolvedBoard, parent)
+                ?: return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val basePoint = when (
+            val result = slopeTriangleElementAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "basepoint",
+                defaultName = "",
+                defaultFixed = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val baseLine = when (
+            val result = slopeTriangleElementAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "baseline",
+                defaultName = "",
+                defaultFixed = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val glider = when (
+            val result = slopeTriangleElementAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "glider",
+                defaultName = null,
+                defaultFixed = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val topPoint = when (
+            val result = slopeTriangleElementAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "toppoint",
+                defaultName = "",
+                defaultFixed = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val tangent = when (
+            val result = slopeTriangleElementAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "tangent",
+                defaultName = "",
+                defaultFixed = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val label = when (
+            val result = slopeTriangleElementAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "label",
+                defaultName = null,
+                defaultFixed = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val digits = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "digits",
+                default = 2,
+                minimum = 0,
+                maximum = 100,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showPrefix = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "showprefix",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showSuffix = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "showsuffix",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val prefix = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "prefix",
+                default = "",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val suffix = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "suffix",
+                default = "",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        return when (
+            val result = SlopeTriangle.create(
+                board = resolvedBoard,
+                parents = resolvedParents,
+                attributes = SlopeTriangleAttributes(
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    basePoint = basePoint,
+                    baseLine = baseLine,
+                    glider = glider,
+                    topPoint = topPoint,
+                    tangent = tangent,
+                    label = label,
+                    digits = digits,
+                    showPrefix = showPrefix,
+                    showSuffix = showSuffix,
+                    prefix = prefix,
+                    suffix = suffix,
+                ),
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.SlopeTriangleFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    private fun slopeTriangleElementAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        defaultName: String?,
+        defaultFixed: Boolean,
+        location: JessieCodeAstLocation,
+    ): GMResult<SlopeTriangleElementAttributes, JessieCodeRuntimeError> {
+        val nested = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = name,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = nested,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = nested,
+                name = "fixed",
+                default = defaultFixed,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            SlopeTriangleElementAttributes(
+                id = identity.id,
+                name = identity.name ?: defaultName,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            ),
+        )
     }
 
     private fun sliderTicksAttributes(

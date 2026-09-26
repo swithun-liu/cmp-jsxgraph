@@ -98,6 +98,16 @@ practical.
   later producing invalid geometry. Kotlin validates first and rolls back any
   staged helper creation atomically. Baseline-click movement and locale label
   formatting are not translated.
+- `createSlopeTriangle` accepts the upstream `[Tangent]`, `[Glider]`, and
+  `[Line, Point]` forms within the translated Line/Segment-backed Glider
+  subset. The Polygon owns the same helper graph and removes its private
+  Tangent only for the one-Glider form. Kotlin rejects duplicate helper IDs
+  and rolls back every staged element atomically; JSXGraph `1.13.3` can
+  overwrite the Board registry entry without throwing. Fixed numeric
+  `digits`, prefix/suffix visibility, dynamic slope labels, and the official
+  10 CSS-pixel label offset are translated. `digits: auto`/`none`, locale
+  formatting, `formatValue`, function-valued visual attributes, hit testing,
+  and the complete mutation API remain pending.
 - `Intersection` currently translates
   `src/base/point.js -> createIntersectionPoint` and
   `src/math/geometry.js -> intersectionFunction` for Line/Segment/Circle,
@@ -729,8 +739,8 @@ practical.
   because the core runtime has no logging side channel.
 - JessieCode geometry values cross the interpreter through
   `JessieCodeElementRuntime`. This preserves board object identity while the
-  full upstream `methodMap`, visual-property, and generic `Value()` contracts
-  are still untranslated.
+  remaining upstream `methodMap`, visual-property, and generic `Value()`
+  contracts are still untranslated.
 - Static JessieCode dependency discovery preserves the upstream reverse child
   traversal and direct-name / `$()` / `$value()` lookup behavior. It uses an
   explicit traversal stack and returns `GMResult.Err(MissingExplicitElement)`
@@ -770,8 +780,10 @@ practical.
 - The translated JessieCode built-ins now include coordinate access,
   Line/Circle/Polygon measurements, names, angles, binomial/GCD, `randint`,
   `IfThen`, recursive `eval`, and `remove`. `V`/`Value` delegates to
-  `JessieCodeElementRuntime`, including Slider value semantics; Slider also
-  exposes its range setters and helper references, and Glider exposes
+  `JessieCodeElementRuntime`, including Slider value and SlopeTriangle slope
+  semantics; SlopeTriangle also exposes its official slope, angle, delta,
+  direction, helper, and border method-map entries. Slider exposes its range
+  setters and helper references, and Glider exposes
   `setPosition`/`setGliderPosition`. Area and perimeter accept Circle and
   Polygon. `randint` uses an injectable `RandomSource`; its default remains
   nondeterministic.

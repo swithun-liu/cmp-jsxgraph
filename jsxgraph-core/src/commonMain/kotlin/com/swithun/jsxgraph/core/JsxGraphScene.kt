@@ -1515,6 +1515,7 @@ sealed interface JsxGraphSceneElement {
         val fontSize: Double,
         val anchorX: String,
         val anchorY: String,
+        val screenOffset: JsxGraphPoint2D = JsxGraphPoint2D(0.0, 0.0),
         val ticks3DLabel: JsxGraphTicks3DLabel? = null,
     ) : JsxGraphSceneElement
 

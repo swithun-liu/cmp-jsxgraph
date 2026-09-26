@@ -97,6 +97,9 @@ internal class Text private constructor(
     private val digits: Int = digits
     internal var contentEvaluationError: TextError? = null
         private set
+    // JSXGraph: src/base/text.js -> relativeCoords. Stored in CSS pixels and
+    // resolved by the platform renderer after the user-coordinate transform.
+    internal var screenOffset: DoubleArray = doubleArrayOf(0.0, 0.0)
 
     init {
         elType = TEXT_ELEMENT_TYPE

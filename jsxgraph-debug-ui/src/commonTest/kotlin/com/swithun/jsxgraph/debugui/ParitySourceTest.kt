@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(98, cases.size)
+        assertEquals(99, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            68,
+            69,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -60,6 +60,40 @@ class ParitySourceTest {
         assertIs<GMResult.Err<String>>(
             JsxGraphParityCorpus.find("missing_case"),
         )
+    }
+
+    @Test
+    fun slopeTriangleFocusedCaseExpandsDefaultArrowsAndOffsetLabel() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("slope_triangle"),
+        ).value
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+
+        assertEquals(14, scene.elements.size)
+        val triangle = assertIs<JsxGraphSceneElement.Polygon>(
+            scene.elements.single { element -> element.id == "triangle" },
+        )
+        assertEquals(JsxGraphColor(255, 0, 0), triangle.style.fillColor)
+        assertEquals(0.4, triangle.style.fillOpacity)
+        assertFalse(triangle.withLines)
+        assertEquals(
+            2,
+            scene.elements
+                .filterIsInstance<JsxGraphSceneElement.Line>()
+                .count { line -> line.lastArrow != null },
+        )
+
+        val label = assertIs<JsxGraphSceneElement.Text>(
+            scene.elements.single { element ->
+                element is JsxGraphSceneElement.Text
+            },
+        )
+        assertEquals("m=0.500!", label.content)
+        assertEquals(JsxGraphPoint2D(1.0, 0.25), label.coordinates)
+        assertEquals(JsxGraphPoint2D(10.0, 0.0), label.screenOffset)
+        assertEquals(JsxGraphColor(180, 67, 53), label.style.strokeColor)
     }
 
     @Test

@@ -6,6 +6,7 @@
  * src/base/image.js -> Image / createImage,
  * src/base/ticks.js -> createHatchmark,
  * src/element/slider.js -> createSlider,
+ * src/element/slopetriangle.js -> createSlopeTriangle,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
@@ -27,6 +28,7 @@ import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Hatch
+import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
@@ -880,6 +882,29 @@ object JsxGraphEngine {
                                             ),
                                             slider = slider,
                                         )
+                                    created += expanded
+                                    creationCount += expanded.size
+                                } else if (creatorName == "slopetriangle") {
+                                    val polygon = value.element as? Polygon
+                                    val expanded = polygon?.let {
+                                        slopeTriangleCreatedSourceElements(
+                                            source = source.copy(
+                                                index = creationCount,
+                                            ),
+                                            polygon = it,
+                                        )
+                                    }
+                                    if (expanded == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native slopetriangle " +
+                                                        "creator returned an " +
+                                                        "incomplete polygon.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
                                     created += expanded
                                     creationCount += expanded.size
                                 } else {
@@ -2088,6 +2113,191 @@ object JsxGraphEngine {
         return result
     }
 
+    // JSXGraph 1.13.3: src/element/slopetriangle.js ->
+    // createSlopeTriangle; src/options.js -> slopetriangle.
+    private fun slopeTriangleCreatedSourceElements(
+        source: ParsedObject,
+        polygon: Polygon,
+    ): List<CreatedSourceElement>? {
+        val definition = polygon.slopeTriangleDefinition ?: return null
+        val triangleVisible = (
+            source.attributes["visible"] as? JsonPrimitive
+            )?.booleanOrNull ?: true
+
+        fun helperAttributes(
+            role: String,
+            defaults: Map<String, JsonElement>,
+            removed: Set<String> = emptySet(),
+        ): JsonObject {
+            val result = nestedAttributes(
+                attributes = source.attributes,
+                name = role,
+                defaults = defaults,
+            ).toMutableMap()
+            if (
+                (result["visible"] as? JsonPrimitive)
+                    ?.content == "inherit"
+            ) {
+                result["visible"] = JsonPrimitive(triangleVisible)
+            }
+            removed.forEach(result::remove)
+            return JsonObject(result)
+        }
+
+        val hiddenPointDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(false),
+            "withlabel" to JsonPrimitive(false),
+        )
+        val borderDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(triangleVisible),
+            "withlabel" to JsonPrimitive(false),
+            "lastarrow" to JsonObject(
+                mapOf(
+                    "type" to JsonPrimitive(1),
+                    "size" to JsonPrimitive(6),
+                ),
+            ),
+        )
+        val borders = source.attributes["borders"] as? JsonObject
+        fun borderAttributes(lastArrow: Boolean): JsonObject {
+            val result = linkedMapOf<String, JsonElement>()
+            result.putAll(borderDefaults)
+            result.putAll(borders.orEmpty())
+            result.remove("ids")
+            if (!lastArrow) {
+                result["lastarrow"] = JsonPrimitive(false)
+            }
+            return JsonObject(result)
+        }
+
+        val result = mutableListOf<CreatedSourceElement>()
+        fun add(
+            element: GeometryElement,
+            type: String,
+            attributes: JsonObject,
+        ) {
+            result += CreatedSourceElement(
+                source = ParsedObject(
+                    index = source.index + result.size,
+                    id = element.id,
+                    type = type,
+                    parents = JsonArray(emptyList()),
+                    attributes = attributes,
+                ),
+                element = element,
+            )
+        }
+
+        if (definition.isPrivateTangent) {
+            add(
+                element = definition.tangent,
+                type = "tangent",
+                attributes = helperAttributes(
+                    role = "tangent",
+                    defaults = mapOf(
+                        "visible" to JsonPrimitive(false),
+                        "withlabel" to JsonPrimitive(false),
+                    ),
+                ),
+            )
+        }
+        add(
+            element = definition.basePoint,
+            type = "point",
+            attributes = helperAttributes(
+                role = "basepoint",
+                defaults = hiddenPointDefaults,
+            ),
+        )
+        add(
+            element = definition.baseLine,
+            type = "line",
+            attributes = helperAttributes(
+                role = "baseline",
+                defaults = mapOf(
+                    "visible" to JsonPrimitive(false),
+                    "withlabel" to JsonPrimitive(false),
+                ),
+            ),
+        )
+        add(
+            element = definition.glider,
+            type = "glider",
+            attributes = helperAttributes(
+                role = "glider",
+                defaults = hiddenPointDefaults + (
+                    "fixed" to JsonPrimitive(true)
+                    ),
+            ),
+        )
+        add(
+            element = definition.topPoint,
+            type = "point",
+            attributes = helperAttributes(
+                role = "toppoint",
+                defaults = hiddenPointDefaults,
+            ),
+        )
+        add(
+            element = definition.borderVertical,
+            type = "segment",
+            attributes = borderAttributes(lastArrow = true),
+        )
+        add(
+            element = definition.borderParallel,
+            type = "segment",
+            attributes = borderAttributes(lastArrow = false),
+        )
+        add(
+            element = definition.borderHorizontal,
+            type = "segment",
+            attributes = borderAttributes(lastArrow = true),
+        )
+
+        val polygonAttributes = linkedMapOf<String, JsonElement>(
+            "fillcolor" to JsonPrimitive("#ff0000"),
+            "fillopacity" to JsonPrimitive(0.4),
+        )
+        polygonAttributes.putAll(
+            source.attributes.filterKeys { name ->
+                name in COMMON_ATTRIBUTES ||
+                    name in POLYGON_ATTRIBUTES
+            },
+        )
+        add(
+            element = polygon,
+            type = "slopetriangle",
+            attributes = JsonObject(polygonAttributes),
+        )
+
+        val labelDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(triangleVisible),
+            "withlabel" to JsonPrimitive(false),
+            "strokecolor" to JsonPrimitive("#000000"),
+            "anchorx" to JsonPrimitive("left"),
+            "anchory" to JsonPrimitive("middle"),
+            "digits" to (
+                source.attributes["digits"] ?: JsonPrimitive(2)
+                ),
+        )
+        add(
+            element = definition.label,
+            type = "text",
+            attributes = helperAttributes(
+                role = "label",
+                defaults = labelDefaults,
+                removed = setOf(
+                    "position",
+                    "showprefix",
+                    "showsuffix",
+                    "prefix",
+                    "suffix",
+                ),
+            ),
+        )
+        return result
+    }
+
     // JSXGraph 1.13.3: src/base/line.js -> createAxis defaultTicks.
     private fun axisCreatedSourceElements(
         source: ParsedObject,
@@ -3132,6 +3342,24 @@ object JsxGraphEngine {
                     source = sourceObject,
                     slider = slider,
                 )
+            } else if (sourceObject.type == "slopetriangle") {
+                val polygon = element as? Polygon
+                val expanded = polygon?.let {
+                    slopeTriangleCreatedSourceElements(
+                        source = sourceObject,
+                        polygon = it,
+                    )
+                } ?: return GMResult.Err(
+                    JsxGraphDocumentError.ElementCreation(
+                        objectIndex = sourceObject.index,
+                        id = sourceObject.id,
+                        type = sourceObject.type,
+                        reason =
+                            "creator did not return a complete " +
+                                "SlopeTriangle Polygon",
+                    ),
+                )
+                created += expanded
             } else if (sourceObject.type == "polyhedron3d") {
                 val polyhedron = element as? Polyhedron3D
                     ?: return GMResult.Err(
@@ -4387,7 +4615,9 @@ object JsxGraphEngine {
                         fillOpacity = 1.0,
                         layer = DEFAULT_POLYGON_BORDER_LAYER,
                     ),
-                    withLines = element.withLines,
+                    withLines =
+                        element.withLines &&
+                            element.slopeTriangleDefinition == null,
                     isClosed = isClosed,
                 )
             }
@@ -4549,6 +4779,10 @@ object JsxGraphEngine {
                     fontSize = fontSize,
                     anchorX = anchorX,
                     anchorY = anchorY,
+                    screenOffset = JsxGraphPoint2D(
+                        x = text.screenOffset[0],
+                        y = text.screenOffset[1],
+                    ),
                     ticks3DLabel = ticks3DLabel,
                 )
             }
@@ -8397,6 +8631,7 @@ object JsxGraphEngine {
             "tangentto" -> 3
             "axis", "grid" -> 2
             "slider" -> 7
+            "slopetriangle" -> 9
             in NON_SCENE_CREATORS -> 0
             else -> 1
         }
@@ -8428,6 +8663,15 @@ object JsxGraphEngine {
             return 5 +
                 if (withLabel) 1 else 0 +
                 if (withTicks) 1 else 0
+        }
+        if (creatorName == "slopetriangle") {
+            val firstParent = when (val value = parents.firstOrNull()) {
+                is JessieCodeRuntimeValue.ElementReference -> value.element
+                is JessieCodeRuntimeValue.StringValue ->
+                    board?.select(value.value)
+                else -> null
+            }
+            return if (firstParent is Glider) 10 else 9
         }
         if (creatorName == "axes3d" || creatorName == "view3d") {
             val boundingBox = when (creatorName) {
@@ -8506,6 +8750,12 @@ object JsxGraphEngine {
             return 5 +
                 if (withLabel) 1 else 0 +
                 if (withTicks) 1 else 0
+        }
+        if (source.type == "slopetriangle") {
+            val parentId = (
+                source.parents.firstOrNull() as? JsonPrimitive
+                )?.takeIf(JsonPrimitive::isString)?.content
+            return if (objectsById[parentId]?.type == "glider") 10 else 9
         }
         if (source.type == "axes3d" || source.type == "view3d") {
             val viewSource = if (source.type == "view3d") {

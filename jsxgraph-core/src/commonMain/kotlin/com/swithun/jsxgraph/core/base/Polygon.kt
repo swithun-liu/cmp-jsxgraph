@@ -58,8 +58,12 @@ internal class Polygon private constructor(
     internal val vertices = vertices.toMutableList()
     internal val borders = mutableListOf<Line>()
     internal var implicitVertices: List<Point> = ownedVertices.toList()
+    internal val subs = linkedMapOf<String, GeometryElement>()
+    internal val inherits = mutableListOf<GeometryElement>()
     // JSXGraph: src/base/polygon.js -> createParallelogram.parallelPoint
     internal var parallelPoint: ParallelPoint? = null
+    // JSXGraph: src/element/slopetriangle.js -> createSlopeTriangle.
+    internal var slopeTriangleDefinition: SlopeTriangleDefinition? = null
 
     init {
         if (
@@ -73,10 +77,19 @@ internal class Polygon private constructor(
     }
 
     // JSXGraph: src/base/polygon.js -> update
-    override fun update(fromParent: Boolean): Polygon = this
+    override fun update(fromParent: Boolean): Polygon {
+        slopeTriangleDefinition?.updateLabel()
+        return this
+    }
 
     override fun updateRenderer(): Polygon {
         needsUpdate = false
+        return this
+    }
+
+    // JSXGraph: src/element/slopetriangle.js -> removeSlopeTriangle.
+    override fun remove(): GeometryElement {
+        slopeTriangleDefinition?.remove()
         return this
     }
 
@@ -175,7 +188,7 @@ internal class Polygon private constructor(
                 for (borderIndex in 0 until borderCount) {
                     val firstIndex = (borderIndex + 1) % borderCount
                     val border = when (
-                        val result = Line.create(
+                        val result = Line.createSegment(
                             board = board,
                             point1 = polygon.vertices[firstIndex],
                             point2 = polygon.vertices[firstIndex + 1],

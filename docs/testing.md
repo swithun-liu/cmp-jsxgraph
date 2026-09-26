@@ -331,6 +331,13 @@ labels, ticks, removal, and rejected parent forms:
 node tools/upstream-fixtures/glider-slider.mjs
 ```
 
+Capture the official SlopeTriangle parent forms, helper and border order,
+method map, dynamic slope/label updates, removal ownership, and failures:
+
+```bash
+node tools/upstream-fixtures/slope-triangle.mjs
+```
+
 Capture the official StepFunction expansion, missing-Y behavior, retained
 source-array mutation, zero-arity function parents, and invalid arity:
 
@@ -1304,8 +1311,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 98 cases:
-30 generated production scenarios followed by 68 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 99 cases:
+30 generated production scenarios followed by 69 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1318,6 +1325,7 @@ separate demo schema into handwritten native geometry. The focused
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
 `ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`, `glider_slider`,
+`slope_triangle`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1398,6 +1406,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `hatch_2d` | 0.988453 | 0.984529 |
 | `image_2d` | 0.985178 | 0.985329 |
 | `glider_slider` | 0.987490 | 0.980515 |
+| `slope_triangle` | 0.982474 | 0.966707 |
 | `step_functions` | 0.987344 | 0.975382 |
 | `polygons` | 0.986562 | 0.973171 |
 | `polygonal_chains` | 0.986474 | 0.972464 |
@@ -1928,10 +1937,22 @@ structured failures, and atomic rollback. Circle, Curve, Polygon, Ticks,
 Turtle, Point, transformed-slide, attractor, animation, baseline-click, and
 locale behavior remain unsupported. This is a focused preview outside the
 30-case Stable corpus.
-Together with the two-dimensional Ticks/Axis/Grid/Hatch/Image/Glider/Slider,
+The focused `slope_triangle` capture uses one JessieCode source for the
+Tangent parent form. It scored `0.982474` on Desktop and `0.966707` on
+Compact. Both contact sheets passed nonblank/browser checks and manual review
+for the default red fill, horizontal and vertical arrowheads, arrowless
+parallel edge, `m=0.500!` label content, 10 CSS-pixel label offset, clipping,
+overlap, and Native/Official agreement. The official fixture and common tests
+additionally cover all three parent forms, helper order and identity, dynamic
+updates, the method map, cleanup, resource accounting, structured failures,
+and atomic rollback. Automatic/none digits, locale and `formatValue`,
+function-valued visual attributes, hit testing, and complete APIs remain
+pending. This is a focused preview outside the 30-case Stable corpus.
+Together with the two-dimensional
+Ticks/Axis/Grid/Hatch/Image/Glider/Slider/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 98 cases while the independently
+the development corpus now contains 99 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

@@ -211,6 +211,22 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "slope_triangle",
+            title = "Slope triangle",
+            scenario = "A Segment tangent drives the default filled triangle, arrows, and slope label.",
+            source = SLOPE_TRIANGLE_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "slopetriangle",
+                "tangent",
+                "glider",
+                "polygon",
+                "line-arrows",
+                "label-offset",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "step_functions",
             title = "Step functions",
             scenario = "Static arrays exercise rising, falling, repeated, and mismatched step data.",
@@ -1641,6 +1657,21 @@ private const val GLIDER_SLIDER_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\ntrack = segment([-5, 3.5], [5, 2]) << id: \"track\", name: \"\", withLabel: false, strokeColor: \"#A8ADB3\", strokeWidth: 2, fixed: true, highlight: false >>;\nprobe = glider(-1, 5, track) << id: \"probe\", name: \"\", withLabel: false, size: 7, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false >>;\ncontinuous = slider([-5, 0.8], [2.5, 0.8], [-10, 2.5, 10]) << id: \"continuous\", name: \"a\", size: 7, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false, baseline: << id: \"continuousBase\", strokeColor: \"#A8ADB3\", strokeWidth: 2 >>, highline: << id: \"continuousHigh\", strokeColor: \"#D55E3F\", strokeWidth: 4 >>, ticks: << id: \"continuousTicks\", strokeColor: \"#6F7780\", majorHeight: 8 >>, label: << id: \"continuousLabel\", fontSize: 14, strokeColor: \"#B44335\" >> >>;\ndiscrete = slider([-5, -2.3], [2.5, -2.3], [0, 6, 12]) << id: \"discrete\", name: \"n\", size: 8, snapWidth: 2, withTicks: false, suffixLabel: \"n = \", postLabel: \" steps\", strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false, baseline: << id: \"discreteBase\", strokeColor: \"#A8ADB3\", strokeWidth: 2 >>, highline: << id: \"discreteHigh\", strokeColor: \"#009E73\", strokeWidth: 5 >>, label: << id: \"discreteLabel\", fontSize: 14, strokeColor: \"#0072B2\" >> >>;"
+}
+"""
+
+private const val SLOPE_TRIANGLE_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nA = point(-4, -2) << id: \"A\", name: \"\", withLabel: false, size: 6, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: false, highlight: false >>;\nB = point(4, 2) << id: \"B\", name: \"\", withLabel: false, size: 7, strokeColor: \"#246BCE\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false >>;\nsource = segment(A, B) << id: \"source\", name: \"\", withLabel: false, strokeColor: \"#6F7780\", strokeWidth: 3, fixed: true, highlight: false >>;\nsourceGlider = glider(0, 0, source) << id: \"sourceGlider\", name: \"\", withLabel: false, size: 7, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false >>;\nsourceTangent = tangent(source, sourceGlider) << id: \"sourceTangent\", name: \"\", withLabel: false, strokeColor: \"#A8ADB3\", strokeWidth: 2, dash: 2, fixed: true, highlight: false >>;\ntriangle = slopetriangle(sourceTangent) << id: \"triangle\", name: \"\", digits: 3, prefix: \"m=\", suffix: \"!\", fixed: true, highlight: false, basepoint: << id: \"triangleBase\", name: \"\" >>, baseline: << id: \"triangleBaseline\", name: \"\" >>, glider: << id: \"triangleGlider\", name: \"\" >>, toppoint: << id: \"triangleTop\", name: \"\" >>, label: << fontSize: 16, strokeColor: \"#B44335\" >> >>;"
 }
 """
 

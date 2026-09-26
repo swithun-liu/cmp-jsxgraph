@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 98 source-controlled cases: 30 independent production scenarios and
-68 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 99 source-controlled cases: 30 independent production scenarios and
+69 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -36,6 +36,7 @@ Focused direct links remain available for cases such as
 [2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
 [2D images](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=image_2d),
 [Glider and Slider](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=glider_slider),
+[SlopeTriangle](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=slope_triangle),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
 [Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
@@ -523,6 +524,18 @@ fixture passes at `0.987490`/`0.980515`. Circle, Curve, Polygon, Ticks, Turtle,
 Point, transformed-slide, attractor, animation, baseline-click, locale, and
 complete mutation behavior remain unsupported. This bounded slice remains
 outside the 30-case Stable corpus.
+
+SlopeTriangle translates
+`src/element/slopetriangle.js -> createSlopeTriangle` for a Tangent, a
+Line/Segment-backed Glider with an owned private Tangent, or a Line plus Point.
+It preserves helper creation order and ownership, finite Polygon borders,
+horizontal/vertical arrows, the non-arrow parallel edge, `subs`/`inherits`,
+`Value`/`V`/`Slope`/`Angle`/`getAngle`/`DeltaX`/`DeltaY`/`Direction`, dynamic
+numeric labels, and atomic staged rollback. Compose applies the official
+10 CSS-pixel label offset at the final viewport. The focused Desktop/Compact
+fixture passes at `0.982474`/`0.966707`. `digits: auto`/`none`, locale and
+`formatValue`, function-valued visual attributes, hit testing, complete APIs,
+an independent production case, and Stable qualification remain pending.
 
 StepFunction translates `src/base/curve.js -> createStepfunction`. It retains
 the two source terms, rebuilds `dataX`/`dataY` on each regular Board update,

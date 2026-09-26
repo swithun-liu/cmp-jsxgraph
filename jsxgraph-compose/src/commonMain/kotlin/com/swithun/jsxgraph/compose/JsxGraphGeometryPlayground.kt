@@ -1482,7 +1482,11 @@ private fun DrawScope.drawSceneText(
             cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
             cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
         ) ?: text.coordinates
-    val anchor = metrics.toScreen(coordinates.toOffset())
+    val anchor = metrics.toScreen(coordinates.toOffset()) +
+        Offset(
+            x = text.screenOffset.x.toFloat().dp.toPx(),
+            y = text.screenOffset.y.toFloat().dp.toPx(),
+        )
     drawText(
         textLayoutResult = layout,
         topLeft = textTopLeft(

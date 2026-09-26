@@ -166,6 +166,18 @@ qualification batches pass.
   Turtle, Point, transformed-slide, attractor, animation, baseline-click,
   locale, independent production cases, and Stable qualification remain
   pending.
+- SlopeTriangle: `src/element/slopetriangle.js -> createSlopeTriangle` now
+  covers `[Tangent]`, `[Glider]`, and `[Line, Point]` parents for the translated
+  Line/Segment-backed Glider subset. It preserves the optional private Tangent,
+  helper and Polygon-border order, helper ownership/removal, `subs`/`inherits`,
+  finite Segment borders, default arrows and fill, the read-only method map,
+  dynamic fixed-digit label content, and final-viewport 10 CSS-pixel label
+  offset. Native JessieCode and construction documents enforce complete scene
+  accounting and atomic rollback. Core, creator, document/session, official
+  fixture, and focused Desktop/Compact static parity gates pass.
+  `digits: auto`/`none`, locale and `formatValue`, function-valued visual
+  attributes, hit testing, complete APIs, independent production cases, and
+  Stable qualification remain pending.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point

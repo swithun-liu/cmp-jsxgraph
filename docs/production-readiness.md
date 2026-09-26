@@ -134,6 +134,15 @@ failures. Their focused Desktop/Compact parity scores are `0.987490` and
 `0.980515`. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed-slide,
 attractor, animation, baseline-click, locale, complete mutation, and
 independent Stable qualification remain pending.
+SlopeTriangle now has source-mapped Tangent, Glider, and Line/Point parent
+forms within that translated subset. It preserves private-Tangent ownership,
+helper and border order, finite Segment borders, default fill/arrows,
+`subs`/`inherits`, the read-only slope/angle/delta/direction method map,
+dynamic fixed-digit labels, final-viewport 10 CSS-pixel label offset, bounded
+scene expansion, and structured atomic failures. Its focused
+Desktop/Compact parity scores are `0.982474` and `0.966707`. Automatic/none
+digits, locale and `formatValue`, function-valued visual attributes, complete
+APIs, and independent Stable qualification remain pending.
 PolygonalChain now has source-mapped wrapper construction, official border
 ordering, open vertices and Segment border rendering, explicit/helper Point
 ownership and removal, JSON/JessieCode vertex limits, and focused static plus
