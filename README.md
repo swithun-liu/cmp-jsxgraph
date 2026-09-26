@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 99 source-controlled cases: 30 independent production scenarios and
-69 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 100 source-controlled cases: 30 independent production scenarios and
+70 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -36,6 +36,7 @@ Focused direct links remain available for cases such as
 [2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
 [2D images](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=image_2d),
 [Glider and Slider](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=glider_slider),
+[Curve Gliders](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve_glider),
 [SlopeTriangle](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=slope_triangle),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
@@ -513,21 +514,25 @@ Desktop/Compact fixture passes at
 dragging, hit testing, arbitrary transformation mutation, non-data-URI
 loading, and the complete Image API remain pending.
 
-Glider and Slider translate the finite-coordinate Line/Segment branch of
+Glider translates the finite-coordinate Line/Segment and ordinary,
+untransformed Curve branches of
 `src/base/point.js -> createGlider`,
 `src/base/coordselement.js -> updateGlider/updateGliderFromParent`, and
+`src/math/geometry.js -> projectCoordsToCurve`; Slider additionally translates
 `src/element/slider.js -> createSlider`. Native JessieCode and construction
-documents support projected and clamped Gliders plus Slider helper ownership,
-labels, ticks, `snapWidth`, `snapValues`, `Value`, `setValue`, `setMin`, and
-`setMax`; staged failures roll back atomically. The focused Desktop/Compact
-fixture passes at `0.987490`/`0.980515`. Circle, Curve, Polygon, Ticks, Turtle,
-Point, transformed-slide, attractor, animation, baseline-click, locale, and
-complete mutation behavior remain unsupported. This bounded slice remains
-outside the 30-case Stable corpus.
+documents support projected and clamped Line Gliders, FunctionGraph,
+parametric-Curve, and data-Plot Gliders, plus Slider helper ownership, labels,
+ticks, `snapWidth`, `snapValues`, `Value`, `setValue`, `setMin`, and `setMax`;
+staged failures roll back atomically. The Line/Slider focused fixture passes at
+`0.987490`/`0.980515`, and the Curve Glider fixture passes at
+`0.986233`/`0.977524`. Circle, Conic, Polygon, Ticks, Turtle, Point,
+transformed-slide, attractor, animation, baseline-click, locale, and complete
+mutation behavior remain unsupported. This bounded slice remains outside the
+30-case Stable corpus.
 
 SlopeTriangle translates
 `src/element/slopetriangle.js -> createSlopeTriangle` for a Tangent, a
-Line/Segment-backed Glider with an owned private Tangent, or a Line plus Point.
+translated Glider with an owned private Tangent, or a Line plus Point.
 It preserves helper creation order and ownership, finite Polygon borders,
 horizontal/vertical arrows, the non-arrow parallel edge, `subs`/`inherits`,
 `Value`/`V`/`Slope`/`Angle`/`getAngle`/`DeltaX`/`DeltaY`/`Direction`, dynamic

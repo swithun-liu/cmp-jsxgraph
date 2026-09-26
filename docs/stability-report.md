@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **69 development parity scenarios.** These remain focused regression
+3. **70 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -182,9 +182,23 @@ geometry, point styling, ticks, complete labels, helper visibility, clipping,
 overlap, and blank output. Official fixtures and common tests additionally
 cover parent movement, endpoint clamping, `snapValues`, value mutation, helper
 identity/order, cleanup, resource accounting, and atomic rollback. Circle,
-Curve, Polygon, Ticks, Turtle, Point, transformed-slide, attractor, animation,
+Polygon, Ticks, Turtle, Point, transformed-slide, attractor, animation,
 baseline-click, and locale behavior remain pending. This evidence remains
 outside the 30-case Stable production corpus.
+The focused `curve_glider` fixture verifies FunctionGraph and degree-one
+data-Plot Gliders from one JessieCode source. Static captures scored
+`0.986233` on Desktop and `0.977524` on Compact. After dragging the Plot
+Glider across multiple segments, both renderers preserved its projected
+parameter and scored `0.986150` and `0.977598`, respectively. All four
+contact sheets passed nonblank/browser checks and manual review for curve
+shape, projected Point position, movement, styling, clipping, and overlap.
+The official fixture and common tests additionally cover true parametric
+Curves, the two-stage drag-versus-parent update state, `setGliderPosition`,
+dynamic evaluation failures, cleanup, cross-Board and Conic rejection,
+resource accounting, and atomic duplicate-ID rollback. Circle, Conic,
+Polygon, Ticks, Turtle, Point, transformed-slide, attractor, animation, and
+the remaining Glider APIs remain pending. This evidence remains outside the
+30-case Stable production corpus.
 The focused `slope_triangle` fixture verifies a Segment Tangent parent,
 official default red fill, horizontal and vertical arrowheads, the arrowless
 parallel edge, and a fixed-digit prefix/suffix label with its 10 CSS-pixel
@@ -209,7 +223,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 69 focused cases, but this does not change the
+contains 30 production and 70 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary

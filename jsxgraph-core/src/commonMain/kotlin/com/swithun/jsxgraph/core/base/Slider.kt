@@ -137,7 +137,7 @@ internal class Slider private constructor(
     name = name,
     needsRegularUpdate = needsRegularUpdate,
     fixed = fixed,
-    line = line,
+    slideElement = line,
     snapWidth = snapWidth,
     snapValues = snapValues,
     snapValueDistance = snapValueDistance,

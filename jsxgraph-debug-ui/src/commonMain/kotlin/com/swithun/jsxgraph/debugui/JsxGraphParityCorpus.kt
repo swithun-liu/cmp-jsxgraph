@@ -211,6 +211,20 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "curve_glider",
+            title = "Curve gliders",
+            scenario = "FunctionGraph and data Plot gliders project onto the same-source curves.",
+            source = CURVE_GLIDER_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "glider",
+                "functiongraph",
+                "data-plot",
+                "curve-projection",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "slope_triangle",
             title = "Slope triangle",
             scenario = "A Segment tangent drives the default filled triangle, arrows, and slope label.",
@@ -1657,6 +1671,21 @@ private const val GLIDER_SLIDER_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\ntrack = segment([-5, 3.5], [5, 2]) << id: \"track\", name: \"\", withLabel: false, strokeColor: \"#A8ADB3\", strokeWidth: 2, fixed: true, highlight: false >>;\nprobe = glider(-1, 5, track) << id: \"probe\", name: \"\", withLabel: false, size: 7, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false >>;\ncontinuous = slider([-5, 0.8], [2.5, 0.8], [-10, 2.5, 10]) << id: \"continuous\", name: \"a\", size: 7, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false, baseline: << id: \"continuousBase\", strokeColor: \"#A8ADB3\", strokeWidth: 2 >>, highline: << id: \"continuousHigh\", strokeColor: \"#D55E3F\", strokeWidth: 4 >>, ticks: << id: \"continuousTicks\", strokeColor: \"#6F7780\", majorHeight: 8 >>, label: << id: \"continuousLabel\", fontSize: 14, strokeColor: \"#B44335\" >> >>;\ndiscrete = slider([-5, -2.3], [2.5, -2.3], [0, 6, 12]) << id: \"discrete\", name: \"n\", size: 8, snapWidth: 2, withTicks: false, suffixLabel: \"n = \", postLabel: \" steps\", strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false, baseline: << id: \"discreteBase\", strokeColor: \"#A8ADB3\", strokeWidth: 2 >>, highline: << id: \"discreteHigh\", strokeColor: \"#009E73\", strokeWidth: 5 >>, label: << id: \"discreteLabel\", fontSize: 14, strokeColor: \"#0072B2\" >> >>;"
+}
+"""
+
+private const val CURVE_GLIDER_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ngraph = functiongraph(\"0.18 * x * x + 1.2\", -5, 5) << id: \"graph\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 96, strokeColor: \"#0072B2\", strokeWidth: 3, fixed: true, highlight: false >>;\ngraphProbe = glider(2.2, 4.2, graph) << id: \"graphProbe\", name: \"\", withLabel: false, size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 3, fixed: false, highlight: false >>;\nplot = curve([-5, -3, -1, 1, 3, 5], [-3.2, -1.0, -2.2, 1.8, 0.4, 2.6]) << id: \"plot\", name: \"\", withLabel: false, strokeColor: \"#009E73\", strokeWidth: 3, dash: 2, fixed: true, highlight: false >>;\nplotProbe = glider(-0.2, -0.2, plot) << id: \"plotProbe\", name: \"\", withLabel: false, size: 8, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false >>;"
 }
 """
 

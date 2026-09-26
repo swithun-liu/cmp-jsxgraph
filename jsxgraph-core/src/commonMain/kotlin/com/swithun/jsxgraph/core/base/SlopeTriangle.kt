@@ -441,7 +441,7 @@ internal object SlopeTriangle {
                 val tangent = when (
                     val result = Tangent.create(
                         board = board,
-                        firstParent = parent.line,
+                        firstParent = parent.slideElement,
                         secondParent = parent,
                         id = attributes.tangent.id,
                         name = attributes.tangent.name,

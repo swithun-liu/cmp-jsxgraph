@@ -637,6 +637,17 @@ function readInteractionTrace() {
                 right: 9,
                 bottom: -5
             }
+        },
+        curve_glider_plot_drag: {
+            caseId: "curve_glider",
+            from: {x: -0.04, y: -0.28},
+            to: {x: 4.2, y: -1.0},
+            boundingBox: {
+                left: -6,
+                top: 5,
+                right: 6,
+                bottom: -5
+            }
         }
     };
     const trace = traces[name];

@@ -86,28 +86,37 @@ practical.
   invalid scene geometry is rolled back atomically. Point events, hover
   styling, multi-pointer gestures, keyboard movement, object dragging, pan,
   zoom, grid/Point snapping, remaining Glider hosts, groups, and persistent
-  transformations remain pending. Line/Segment-backed Gliders and Sliders
-  use this Point interaction path.
-- `createGlider` currently accepts only registered, finite-coordinate Line or
-  Segment hosts. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed
-  slide objects, attractors, and animation remain explicit structured
-  failures. JSXGraph `1.13.3` also accepts a Point as a slide object, while
-  Kotlin deliberately rejects that unimplemented branch. Slider requires
-  exactly two coordinates for each endpoint and three finite range values;
-  upstream can register partial helper state for malformed range input before
-  later producing invalid geometry. Kotlin validates first and rolls back any
-  staged helper creation atomically. Baseline-click movement and locale label
-  formatting are not translated.
+  transformations remain pending. Line/Segment-backed Gliders, ordinary
+  Curve-backed Gliders, and Sliders use this Point interaction path.
+- `createGlider` accepts registered, finite-coordinate Line/Segment hosts and
+  registered, ordinary untransformed non-Conic Curves. FunctionGraph,
+  true-parametric Curve, and data-Plot hosts reuse the translated
+  `Geometry.projectCoordsToCurve` path; direct drag uses the current position
+  as its numerical seed, FunctionGraph initialization uses the supplied x
+  coordinate, and parent updates retain the stored relative parameter. The
+  upstream two-stage `needsUpdateFromParent` transition after a direct drag is
+  preserved. Dynamic Curve evaluation and projection failures return
+  structured `GliderError` values, and failed creation leaves no registered
+  Point or dependency edge. Circle, Conic, Polygon, Ticks, Turtle, Point,
+  transformed slide objects, attractors, and animation remain explicit
+  structured failures. JSXGraph `1.13.3` also accepts a Point as a slide
+  object, while Kotlin deliberately rejects that unimplemented branch. Slider
+  requires exactly two coordinates for each endpoint and three finite range
+  values; upstream can register partial helper state for malformed range input
+  before later producing invalid geometry. Kotlin validates first and rolls
+  back any staged helper creation atomically. Baseline-click movement and
+  locale label formatting are not translated.
 - `createSlopeTriangle` accepts the upstream `[Tangent]`, `[Glider]`, and
-  `[Line, Point]` forms within the translated Line/Segment-backed Glider
-  subset. The Polygon owns the same helper graph and removes its private
-  Tangent only for the one-Glider form. Kotlin rejects duplicate helper IDs
-  and rolls back every staged element atomically; JSXGraph `1.13.3` can
-  overwrite the Board registry entry without throwing. Fixed numeric
-  `digits`, prefix/suffix visibility, dynamic slope labels, and the official
-  10 CSS-pixel label offset are translated. `digits: auto`/`none`, locale
-  formatting, `formatValue`, function-valued visual attributes, hit testing,
-  and the complete mutation API remain pending.
+  `[Line, Point]` forms within the translated Glider/Tangent subset, including
+  Line/Segment-backed Gliders and ordinary Curve-backed Gliders through the
+  translated Curve Tangent path. The Polygon owns the same helper graph and
+  removes its private Tangent only for the one-Glider form. Kotlin rejects
+  duplicate helper IDs and rolls back every staged element atomically;
+  JSXGraph `1.13.3` can overwrite the Board registry entry without throwing.
+  Fixed numeric `digits`, prefix/suffix visibility, dynamic slope labels, and
+  the official 10 CSS-pixel label offset are translated. `digits: auto`/`none`,
+  locale formatting, `formatValue`, function-valued visual attributes, hit
+  testing, and the complete mutation API remain pending.
 - `Intersection` currently translates
   `src/base/point.js -> createIntersectionPoint` and
   `src/math/geometry.js -> intersectionFunction` for Line/Segment/Circle,

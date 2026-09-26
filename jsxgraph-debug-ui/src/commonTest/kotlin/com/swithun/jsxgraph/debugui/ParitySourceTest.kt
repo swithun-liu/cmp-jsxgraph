@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(99, cases.size)
+        assertEquals(100, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            69,
+            70,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -59,6 +59,42 @@ class ParitySourceTest {
         )
         assertIs<GMResult.Err<String>>(
             JsxGraphParityCorpus.find("missing_case"),
+        )
+    }
+
+    @Test
+    fun curveGliderFocusedCaseProjectsBothCurveKinds() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("curve_glider"),
+        ).value
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+
+        val graphProbe = assertIs<JsxGraphSceneElement.Point>(
+            scene.elements.single { element ->
+                element.id == "graphProbe"
+            },
+        )
+        assertNotEquals(
+            JsxGraphPoint2D(2.2, 4.2),
+            graphProbe.coordinates,
+        )
+
+        val plotProbe = assertIs<JsxGraphSceneElement.Point>(
+            scene.elements.single { element ->
+                element.id == "plotProbe"
+            },
+        )
+        assertEquals(
+            -0.04,
+            plotProbe.coordinates.x,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            -0.28,
+            plotProbe.coordinates.y,
+            absoluteTolerance = 1.0e-12,
         )
     }
 

@@ -4935,6 +4935,13 @@ object JsxGraphEngine {
                 )
             }
         }
+        if (element is Glider) {
+            element.evaluationError?.let { error ->
+                return GMResult.Err(
+                    attributes.elementCreation(error.toString()),
+                )
+            }
+        }
         val isReal = element.isReal
         val coordinates =
             if (isReal) {

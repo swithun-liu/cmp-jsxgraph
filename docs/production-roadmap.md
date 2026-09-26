@@ -153,26 +153,32 @@ qualification batches pass.
   tests, and focused Desktop/Compact static parity gates pass. Dragging, hit
   testing, arbitrary transform mutation, non-data-URI loading, complete APIs,
   independent production cases, and Stable qualification remain pending.
-- Glider/Slider: the finite-coordinate Line/Segment branch of
+- Glider/Slider: the finite-coordinate Line/Segment and ordinary untransformed
+  non-Conic Curve branches of
   `src/base/point.js -> createGlider`,
   `src/base/coordselement.js -> updateGlider/updateGliderFromParent`, and
-  `src/element/slider.js -> createSlider` now covers projection, finite-end
-  clamping, parent updates, direct position updates, helper ownership/removal,
-  labels, ticks, `snapWidth`, `snapValues`, and the Slider value/mutation
-  method map. Native JessieCode and construction documents expand Slider into
-  the official helper order with bounded object accounting and atomic
-  rollback. Core, creator, document/session, official fixture, and focused
-  Desktop/Compact static parity gates pass. Circle, Curve, Polygon, Ticks,
-  Turtle, Point, transformed-slide, attractor, animation, baseline-click,
-  locale, independent production cases, and Stable qualification remain
-  pending.
+  `src/math/geometry.js -> projectCoordsToCurve`, plus
+  `src/element/slider.js -> createSlider` now cover Line projection and
+  finite-end clamping; FunctionGraph, true-parametric Curve, and data-Plot
+  projection; parent updates and relative-parameter preservation; direct
+  position updates; structured Curve evaluation/projection failures; helper
+  ownership/removal; labels; ticks; `snapWidth`; `snapValues`; and the Slider
+  value/mutation method map. Native JessieCode and construction documents
+  expand Slider into the official helper order with bounded object accounting
+  and atomic rollback. Core, creator, document/session, official fixtures, and
+  focused Desktop/Compact static parity gates pass. The Curve Glider fixture
+  scores `0.986233`/`0.977524` statically and `0.986150`/`0.977598` after a
+  data-Plot drag. Circle, Conic, Polygon, Ticks, Turtle, Point,
+  transformed-slide, attractor, animation, baseline-click, locale, independent
+  production cases, and Stable qualification remain pending.
 - SlopeTriangle: `src/element/slopetriangle.js -> createSlopeTriangle` now
   covers `[Tangent]`, `[Glider]`, and `[Line, Point]` parents for the translated
-  Line/Segment-backed Glider subset. It preserves the optional private Tangent,
-  helper and Polygon-border order, helper ownership/removal, `subs`/`inherits`,
-  finite Segment borders, default arrows and fill, the read-only method map,
-  dynamic fixed-digit label content, and final-viewport 10 CSS-pixel label
-  offset. Native JessieCode and construction documents enforce complete scene
+  Glider/Tangent subset, including ordinary Curve-backed Gliders through the
+  Curve Tangent path. It preserves the optional private Tangent, helper and
+  Polygon-border order, helper ownership/removal, `subs`/`inherits`, finite
+  Segment borders, default arrows and fill, the read-only method map, dynamic
+  fixed-digit label content, and final-viewport 10 CSS-pixel label offset.
+  Native JessieCode and construction documents enforce complete scene
   accounting and atomic rollback. Core, creator, document/session, official
   fixture, and focused Desktop/Compact static parity gates pass.
   `digits: auto`/`none`, locale and `formatValue`, function-valued visual
