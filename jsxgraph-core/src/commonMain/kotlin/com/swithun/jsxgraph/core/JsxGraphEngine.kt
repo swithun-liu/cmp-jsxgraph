@@ -3,6 +3,7 @@
  * Upstream: src/base/board.js -> create,
  * src/jxg.js -> registerElement,
  * src/base/element.js -> visual properties,
+ * src/base/image.js -> Image / createImage,
  * src/base/ticks.js -> createHatchmark,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality
@@ -25,6 +26,7 @@ import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Hatch
+import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Line3D
@@ -87,6 +89,7 @@ data class JsxGraphEngineLimits(
     val maxCurvePoints: Int = 10_000,
     val maxPolygonVertices: Int = 10_000,
     val maxTextLength: Int = 100_000,
+    val maxImageSourceLength: Int = 1_000_000,
 )
 
 sealed interface JsxGraphDocumentError {
@@ -190,6 +193,16 @@ sealed interface JsxGraphDocumentError {
     ) : JsxGraphDocumentError {
         override val message: String =
             "objects[$objectIndex] '$id' text length $actual exceeds limit $limit"
+    }
+
+    data class ImageSourceLengthLimitExceeded(
+        val objectIndex: Int,
+        val id: String,
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' image source length $actual exceeds limit $limit"
     }
 
     data class DuplicateObjectId(
@@ -1002,6 +1015,8 @@ object JsxGraphEngine {
                     objects = active.map(CreatedSourceElement::source),
                 ),
                 created = active,
+                maxCurvePoints = limits.maxCurvePoints,
+                maxImageSourceLength = limits.maxImageSourceLength,
             )
         }
         val dynamicCurveLimitError = {
@@ -1225,6 +1240,8 @@ object JsxGraphEngine {
                 "maxPolygonVertices must be positive"
             limits.maxTextLength < 0 ->
                 "maxTextLength must not be negative"
+            limits.maxImageSourceLength < 0 ->
+                "maxImageSourceLength must not be negative"
             else -> null
         }
         return invalid?.let(
@@ -1556,6 +1573,26 @@ object JsxGraphEngine {
                     resource = "text length",
                     limit = limits.maxTextLength,
                     requestedSize = requestedTextLength.toLong(),
+                    location = location,
+                )
+            }
+        }
+        if (creatorName == "image") {
+            val requestedImageSourceLength = when (
+                val source = parents.firstOrNull()
+            ) {
+                is JessieCodeRuntimeValue.StringValue ->
+                    source.value.length
+                else -> 0
+            }
+            if (
+                requestedImageSourceLength >
+                limits.maxImageSourceLength
+            ) {
+                return JessieCodeRuntimeError.ResourceLimitExceeded(
+                    resource = "image source length",
+                    limit = limits.maxImageSourceLength,
+                    requestedSize = requestedImageSourceLength.toLong(),
                     location = location,
                 )
             }
@@ -2918,6 +2955,7 @@ object JsxGraphEngine {
                 document = document,
                 created = created,
                 maxCurvePoints = limits.maxCurvePoints,
+                maxImageSourceLength = limits.maxImageSourceLength,
             )
         ) {
             is GMResult.Ok -> result.value
@@ -2952,6 +2990,8 @@ object JsxGraphEngine {
                         document = document,
                         created = created,
                         maxCurvePoints = limits.maxCurvePoints,
+                        maxImageSourceLength =
+                            limits.maxImageSourceLength,
                     )
                 },
             ),
@@ -3018,12 +3058,29 @@ object JsxGraphEngine {
         document: ParsedDocument,
         created: List<CreatedSourceElement>,
         maxCurvePoints: Int? = null,
+        maxImageSourceLength: Int? = null,
     ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
         val sceneElements = mutableListOf<JsxGraphSceneElement>()
         val effectiveVisibilityByElement =
             mutableMapOf<GeometryElement, Boolean>()
         for (sourceElement in depthOrderedSourceElements(created)) {
             val curve = sourceElement.element as? Curve
+            val image = sourceElement.element as? Image
+            if (
+                image != null &&
+                maxImageSourceLength != null &&
+                image.url.length > maxImageSourceLength
+            ) {
+                return GMResult.Err(
+                    JsxGraphDocumentError
+                        .ImageSourceLengthLimitExceeded(
+                            objectIndex = sourceElement.source.index,
+                            id = image.id,
+                            limit = maxImageSourceLength,
+                            actual = image.url.length,
+                        ),
+                )
+            }
             if (maxCurvePoints != null) {
                 for (
                     usage in sourceCurvePointUsages(
@@ -4256,6 +4313,61 @@ object JsxGraphEngine {
                 )
             }
 
+            is Image -> {
+                element.coordinateEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                element.transformationEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                element.urlEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                element.sizeEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                val renderSpan = element.renderSpan
+                if (
+                    renderSpan.size != 3 ||
+                    renderSpan.any { vector ->
+                        vector.size != 3 ||
+                            vector.any { value -> !value.isFinite() }
+                    } ||
+                    !element.W().isFinite() ||
+                    !element.H().isFinite()
+                ) {
+                    return GMResult.Err(attributes.nonFiniteGeometry())
+                }
+                JsxGraphSceneElement.Image(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    source = element.url,
+                    anchor = JsxGraphPoint2D(
+                        x = renderSpan[0][1],
+                        y = renderSpan[0][2],
+                    ),
+                    widthVector = JsxGraphPoint2D(
+                        x = renderSpan[1][1],
+                        y = renderSpan[1][2],
+                    ),
+                    heightVector = JsxGraphPoint2D(
+                        x = renderSpan[2][1],
+                        y = renderSpan[2][2],
+                    ),
+                    userWidth = element.W(),
+                    userHeight = element.H(),
+                )
+            }
+
             else -> return GMResult.Err(
                 JsxGraphDocumentError.UnsupportedElementType(
                     objectIndex = source.index,
@@ -4771,6 +4883,15 @@ object JsxGraphEngine {
                 val result = validateTextLengthLimit(
                     sourceObject,
                     limits.maxTextLength,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            when (
+                val result = validateImageSourceLength(
+                    sourceObject,
+                    limits.maxImageSourceLength,
                 )
             ) {
                 is GMResult.Ok -> Unit
@@ -5981,6 +6102,30 @@ object JsxGraphEngine {
         }
     }
 
+    private fun validateImageSourceLength(
+        sourceObject: ParsedObject,
+        limit: Int,
+    ): GMResult<Unit, JsxGraphDocumentError> {
+        if (sourceObject.type != "image") {
+            return GMResult.Ok(Unit)
+        }
+        val source = sourceObject.parents.firstOrNull() as? JsonPrimitive
+            ?: return GMResult.Ok(Unit)
+        val actual = if (source.isString) source.content.length else 0
+        return if (actual > limit) {
+            GMResult.Err(
+                JsxGraphDocumentError.ImageSourceLengthLimitExceeded(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    limit = limit,
+                    actual = actual,
+                ),
+            )
+        } else {
+            GMResult.Ok(Unit)
+        }
+    }
+
     private fun runtimeAttributes(
         sourceObject: ParsedObject,
     ): GMResult<JessieCodeRuntimeValue.ObjectValue, JsxGraphDocumentError> {
@@ -6082,6 +6227,8 @@ object JsxGraphEngine {
                 "maxPolygonVertices must be positive"
             limits.maxTextLength <= 0 ->
                 "maxTextLength must be positive"
+            limits.maxImageSourceLength <= 0 ->
+                "maxImageSourceLength must be positive"
             else -> null
         }
         return invalid?.let(JsxGraphDocumentError::InvalidLimits)
@@ -6537,6 +6684,7 @@ object JsxGraphEngine {
                                     else -> emptySet()
                                 }
                         is Text3D, is Text -> TEXT_ATTRIBUTES
+                        is Image -> IMAGE_ATTRIBUTES
                         else -> emptySet()
                     } +
                     additionalAttributes
@@ -7350,6 +7498,7 @@ object JsxGraphEngine {
                 is Point3D -> DEFAULT_POINT_3D_LAYER
                 is Point -> DEFAULT_POINT_LAYER
                 is Text3D, is Text -> DEFAULT_TEXT_LAYER
+                is Image -> DEFAULT_ELEMENT_LAYER
                 is Arc -> DEFAULT_ARC_LAYER
                 is Ticks -> DEFAULT_TICKS_LAYER
                 is Line ->
@@ -8769,6 +8918,9 @@ object JsxGraphEngine {
         "usekatex",
         "useasciimathml",
         "tofraction",
+    )
+    private val IMAGE_ATTRIBUTES = setOf(
+        "rotate",
     )
     private val TEXT_ANCHOR_X_VALUES =
         setOf("left", "middle", "right")

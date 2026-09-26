@@ -182,6 +182,20 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "image_2d",
+            title = "2D images",
+            scenario = "Opaque and rotated translucent data-URI images share one source.",
+            source = IMAGE_2D_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "image",
+                "data-uri",
+                "rotation",
+                "fill-opacity",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "step_functions",
             title = "Step functions",
             scenario = "Static arrays exercise rising, falling, repeated, and mismatched step data.",
@@ -1582,6 +1596,21 @@ private const val GRID_2D_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nxAxis = axis([-5, 0], [5, 0]) << id: \"xAxis\", name: \"\", visible: false, ticks: << id: \"xTicks\", name: \"\", ticksDistance: 2, minorTicks: 1, insertTicks: false >> >>;\nyAxis = axis([0, -4], [0, 4]) << id: \"yAxis\", name: \"\", visible: false, ticks: << id: \"yTicks\", name: \"\", ticksDistance: 2, minorTicks: 2, insertTicks: false >> >>;\nmesh = grid(xAxis, yAxis) <<\n  id: \"mesh\", name: \"\", theme: 6,\n  majorStep: \"auto\", minorElements: \"auto\",\n  includeBoundaries: false,\n  strokeColor: \"#6F7780\", strokeWidth: 1.5,\n  major: <<\n    strokeColor: \"#D55E00\", strokeOpacity: 0.9\n  >>,\n  minor: <<\n    id: \"meshMinor\", name: \"\",\n    strokeColor: \"#0072B2\", strokeOpacity: 0.65\n  >>\n>>;"
+}
+"""
+
+private const val IMAGE_2D_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-7, 5, 7, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nasset = \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAANUlEQVR4AWTKMQ0AIAxE0cvJQEA1sKGAIIYNpeAAF21ubX/yts9n5tL2dyFSHKdD7lyQcgQAAAD//1xY61AAAAAGSURBVAMAl9QOAxv/U6sAAAAASUVORK5CYII=\";\nplain = image(asset, [-6, -4], [4, 3]) << id: \"plainImage\", name: \"\", fixed: true, highlight: false >>;\nrotated = image(asset, [0, -2], [4, 3]) << id: \"rotatedImage\", name: \"\", rotate: 25, fillOpacity: 0.72, fixed: true, highlight: false >>;"
 }
 """
 

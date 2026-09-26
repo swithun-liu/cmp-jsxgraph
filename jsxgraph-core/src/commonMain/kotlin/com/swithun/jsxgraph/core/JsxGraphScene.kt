@@ -3,7 +3,8 @@
  * Upstream: src/base/board.js -> create,
  * src/base/element.js -> visual properties,
  * src/base/point.js, src/base/line.js, src/base/circle.js,
- * src/base/curve.js, src/base/polygon.js, src/base/text.js
+ * src/base/curve.js, src/base/polygon.js, src/base/text.js,
+ * src/base/image.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -1515,5 +1516,17 @@ sealed interface JsxGraphSceneElement {
         val anchorX: String,
         val anchorY: String,
         val ticks3DLabel: JsxGraphTicks3DLabel? = null,
+    ) : JsxGraphSceneElement
+
+    data class Image(
+        override val id: String,
+        override val name: String,
+        override val style: JsxGraphElementStyle,
+        val source: String,
+        val anchor: JsxGraphPoint2D,
+        val widthVector: JsxGraphPoint2D,
+        val heightVector: JsxGraphPoint2D,
+        val userWidth: Double,
+        val userHeight: Double,
     ) : JsxGraphSceneElement
 }

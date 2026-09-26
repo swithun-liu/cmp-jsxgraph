@@ -2,7 +2,7 @@
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> resolveProperty and the methodMap
  * declarations in src/base/coordselement.js, line.js, circle.js, curve.js,
- * polygon.js, and text.js
+ * polygon.js, text.js, and image.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -16,6 +16,7 @@ import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
@@ -79,6 +80,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             return it
         }
         resolveTextProperty(element, property, location)?.let {
+            return it
+        }
+        resolveImageProperty(element, property, location)?.let {
             return it
         }
         resolveCoordsProperty(element, property, location)?.let {
@@ -505,6 +509,95 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                             ),
                         )
                     }
+                }
+            }
+            else -> null
+        }
+    }
+
+    // JSXGraph: src/base/image.js -> methodMap / setSize.
+    private fun resolveImageProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val image = element as? Image ?: return null
+        return when (property) {
+            "W", "Width" -> numberFunction("W", image::W)
+            "H", "Height" -> numberFunction("H", image::H)
+            "setSize" -> function("setSize") {
+                    arguments,
+                    callLocation,
+                ->
+                if (arguments.size != 2) {
+                    return@function GMResult.Err(
+                        JessieCodeRuntimeError.InvalidArgumentCount(
+                            functionName = "setSize",
+                            expected = "2",
+                            actual = arguments.size,
+                            location = callLocation,
+                        ),
+                    )
+                }
+                val terms = mutableListOf<JessieCodeCoordinateFunction>()
+                for ((index, value) in arguments.withIndex()) {
+                    when (value) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            terms += JessieCodeNumericCoordinateFunction(
+                                value.value,
+                            )
+                        is JessieCodeRuntimeValue.StringValue -> {
+                            when (
+                                val result =
+                                    JessieCodeExpressionFunction.compile(
+                                        source = value.value,
+                                        board = image.board,
+                                    )
+                            ) {
+                                is GMResult.Ok -> terms += result.value
+                                is GMResult.Err -> return@function GMResult.Err(
+                                    JessieCodeRuntimeError
+                                        .ElementMethodUnavailable(
+                                            elementId = image.id,
+                                            method = "setSize",
+                                            reason =
+                                                "size[$index]: " +
+                                                    result.error,
+                                            location = callLocation,
+                                        ),
+                                )
+                            }
+                        }
+                        is JessieCodeRuntimeValue.FunctionValue ->
+                            terms += JessieCodeRuntimeCoordinateFunction(
+                                function = value,
+                                location = callLocation,
+                                returnsCoordinateArray = false,
+                            )
+                        else -> return@function invalidArgumentType(
+                            functionName = "setSize",
+                            argumentIndex = index,
+                            expected = "number, string, or function",
+                            actual = value,
+                            location = callLocation,
+                        )
+                    }
+                }
+                when (val result = image.setSize(terms)) {
+                    is GMResult.Ok -> {
+                        image.board.update()
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.ElementReference(image),
+                        )
+                    }
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = image.id,
+                            method = "setSize",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
                 }
             }
             else -> null

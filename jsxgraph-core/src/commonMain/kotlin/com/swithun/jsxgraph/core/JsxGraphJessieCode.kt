@@ -44,6 +44,7 @@ data class JsxGraphJessieCodeLimits(
     val maxCurvePoints: Int = 10_000,
     val maxPolygonVertices: Int = 10_000,
     val maxTextLength: Int = 100_000,
+    val maxImageSourceLength: Int = 1_000_000,
 )
 
 data class JsxGraphJessieCodeSourceRange(

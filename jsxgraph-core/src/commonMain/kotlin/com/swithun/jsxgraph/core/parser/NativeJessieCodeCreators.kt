@@ -25,6 +25,7 @@
  * src/base/polygon.js -> createPolygon / createPolygonalChain /
  * createParallelogram / createRegularPolygon,
  * src/base/text.js -> createText,
+ * src/base/image.js -> createImage,
  * src/base/transformation.js -> createTransform,
  * src/3d/point3d.js -> createPoint3D,
  * src/3d/linspace3d.js -> createLine3D / createIntersectionLine3D /
@@ -117,6 +118,8 @@ import com.swithun.jsxgraph.core.base.GeometryElement3D
 import com.swithun.jsxgraph.core.base.Hatch
 import com.swithun.jsxgraph.core.base.Hyperbola
 import com.swithun.jsxgraph.core.base.HyperbolaError
+import com.swithun.jsxgraph.core.base.Image
+import com.swithun.jsxgraph.core.base.ImageError
 import com.swithun.jsxgraph.core.base.IncenterPoint
 import com.swithun.jsxgraph.core.base.IncircleCircle
 import com.swithun.jsxgraph.core.base.IntersectionCircle3D
@@ -428,6 +431,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class TextFactory(
         val error: TextError,
+    ) : JessieCodeCreatorError
+
+    data class ImageFactory(
+        val error: ImageError,
     ) : JessieCodeCreatorError
 
     data class ArcFactory(
@@ -1486,6 +1493,9 @@ internal object NativeJessieCodeCreators {
         },
         "text" to JessieCodeCreator { board, parents, attributes, location ->
             createText(board, parents, attributes, location)
+        },
+        "image" to JessieCodeCreator { board, parents, attributes, location ->
+            createImage(board, parents, attributes, location)
         },
     )
 
@@ -14287,6 +14297,193 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = "text",
                 error = JessieCodeCreatorError.TextFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph: src/base/image.js -> createImage;
+    // src/utils/type.js -> createFunction.
+    private fun createImage(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "image"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val urlTerm = when (val value = parents[0]) {
+            is JessieCodeRuntimeValue.StringValue ->
+                JessieCodeConstantCoordinateFunction(value)
+            is JessieCodeRuntimeValue.FunctionValue ->
+                JessieCodeRuntimeCoordinateFunction(
+                    function = value,
+                    location = location,
+                    returnsCoordinateArray = false,
+                )
+            else -> return unsupported(creatorName, parents, location)
+        }
+        val coordinateValues = (
+            parents[1] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(creatorName, parents, location)
+        val sizeValues = (
+            parents[2] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(creatorName, parents, location)
+        if (
+            coordinateValues.size !in 1..3 ||
+            (
+                coordinateValues.size == 1 &&
+                    coordinateValues[0] !is
+                    JessieCodeRuntimeValue.FunctionValue
+                ) ||
+            sizeValues.size != 2
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+
+        val coordinateTerms =
+            mutableListOf<JessieCodeCoordinateFunction>()
+        for ((index, value) in coordinateValues.withIndex()) {
+            when (value) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    coordinateTerms +=
+                        JessieCodeNumericCoordinateFunction(value.value)
+                is JessieCodeRuntimeValue.StringValue -> {
+                    when (
+                        val result = JessieCodeExpressionFunction.compile(
+                            source = value.value,
+                            board = resolvedBoard,
+                        )
+                    ) {
+                        is GMResult.Ok -> coordinateTerms += result.value
+                        is GMResult.Err -> return failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError.ImageFactory(
+                                ImageError.CoordinateExpressionCompile(
+                                    coordinateIndex = index,
+                                    error = result.error,
+                                ),
+                            ),
+                            location = location,
+                        )
+                    }
+                }
+                is JessieCodeRuntimeValue.FunctionValue ->
+                    coordinateTerms += JessieCodeRuntimeCoordinateFunction(
+                        function = value,
+                        location = location,
+                        returnsCoordinateArray =
+                            coordinateValues.size == 1,
+                    )
+                else -> return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                )
+            }
+        }
+
+        val sizeTerms = mutableListOf<JessieCodeCoordinateFunction>()
+        for ((index, value) in sizeValues.withIndex()) {
+            when (value) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    sizeTerms +=
+                        JessieCodeNumericCoordinateFunction(value.value)
+                is JessieCodeRuntimeValue.StringValue -> {
+                    when (
+                        val result = JessieCodeExpressionFunction.compile(
+                            source = value.value,
+                            board = resolvedBoard,
+                        )
+                    ) {
+                        is GMResult.Ok -> sizeTerms += result.value
+                        is GMResult.Err -> return failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError.ImageFactory(
+                                ImageError.SizeExpressionCompile(
+                                    sizeIndex = index,
+                                    error = result.error,
+                                ),
+                            ),
+                            location = location,
+                        )
+                    }
+                }
+                is JessieCodeRuntimeValue.FunctionValue ->
+                    sizeTerms += JessieCodeRuntimeCoordinateFunction(
+                        function = value,
+                        location = location,
+                        returnsCoordinateArray = false,
+                    )
+                else -> return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                )
+            }
+        }
+        val rotation = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "rotate",
+                default = 0.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val numericCoordinates = coordinateValues.mapNotNull {
+            (it as? JessieCodeRuntimeValue.NumberValue)?.value
+        }
+        val result =
+            if (numericCoordinates.size == coordinateValues.size) {
+                Image.create(
+                    board = resolvedBoard,
+                    urlTerm = urlTerm,
+                    coordinates = numericCoordinates.toDoubleArray(),
+                    sizeTerms = sizeTerms,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    rotationDegrees = rotation,
+                )
+            } else {
+                Image.createConstrained(
+                    board = resolvedBoard,
+                    urlTerm = urlTerm,
+                    coordinateFunctions = coordinateTerms,
+                    sizeTerms = sizeTerms,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    rotationDegrees = rotation,
+                )
+            }
+        return when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.ImageFactory(result.error),
                 location = location,
             )
         }

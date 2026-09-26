@@ -541,6 +541,15 @@ class GeneratedStressTest {
                     }
                 is JsxGraphSceneElement.Text ->
                     assertFinitePoint(caseIndex, element.id, element.coordinates)
+                is JsxGraphSceneElement.Image -> {
+                    assertFinitePoint(caseIndex, element.id, element.anchor)
+                    assertFinitePoint(caseIndex, element.id, element.widthVector)
+                    assertFinitePoint(caseIndex, element.id, element.heightVector)
+                    assertTrue(
+                        element.userWidth.isFinite() &&
+                            element.userHeight.isFinite(),
+                    )
+                }
             }
         }
     }

@@ -80,8 +80,9 @@ qualification batches pass.
   IntersectionCircle3D, Sphere3D,
   Surface3D, and Polyhedron3D have focused
   Desktop/Compact static parity.
-- Still pending around transforms and 3D: transformed Text/Image and general
-  element rendering, dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
+- Still pending around transforms and 3D: transformed Text, arbitrary
+  post-construction Image transform mutation, and general element rendering,
+  dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
   null-clone defect, global View3D `depthOrder`/layer configuration, camera
   controls, Point3D gliders and
   animations, Stable qualification, plus remaining 3D APIs.
@@ -140,6 +141,18 @@ qualification batches pass.
   parity gates pass. Default Board-axis fallback, runtime attribute mutation,
   hit testing, independent production cases, complete APIs, and Stable
   qualification remain pending.
+- Image: `src/base/image.js -> Image/createImage`,
+  `src/base/element.js -> addRotation`, and the Canvas renderer path now cover
+  static data sources in JSON and native JessieCode, plus function-valued
+  sources, coordinates, and dimensions in native JessieCode. Absolute pixel
+  sizing for negative dimensions, `W`/`H`/`setSize`, opacity, the exact
+  five-transform rotation chain, bounded source lengths, Scene snapshots, and
+  affine Compose drawing are translated. The default resolver decodes bounded
+  base64 image data URIs without network or filesystem access; applications
+  explicitly supply any external-resource resolver. Official fixture, common
+  tests, and focused Desktop/Compact static parity gates pass. Dragging, hit
+  testing, arbitrary transform mutation, non-data-URI loading, complete APIs,
+  independent production cases, and Stable qualification remain pending.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point

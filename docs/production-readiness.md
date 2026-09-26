@@ -115,6 +115,17 @@ geometry, pre-allocation limits, and atomic rollback. Its focused
 Desktop/Compact parity scores are `0.988817` and `0.980518`. Default
 Board-axis fallback, runtime mutation, hit testing, complete APIs, and
 independent Stable qualification remain pending.
+Image now has source-mapped `Image/createImage`, update, size, span,
+`setSize`, and five-transform rotation behavior. JSON and native JessieCode
+support static sources; native JessieCode also supports function-valued
+sources, coordinates, and dimensions. Negative-size pixel semantics, bounded
+construction, Scene snapshots, and affine Compose rendering are covered by
+official fixtures and common tests. The default resolver accepts bounded
+base64 image data URIs only; callers explicitly own network or
+application-resource loading. Its focused Desktop/Compact parity scores are
+`0.985178` and `0.985329`. Dragging, hit testing, arbitrary transform mutation,
+non-data-URI loading, complete APIs, and independent Stable qualification
+remain pending.
 PolygonalChain now has source-mapped wrapper construction, official border
 ordering, open vertices and Segment border rendering, explicit/helper Point
 ownership and removal, JSON/JessieCode vertex limits, and focused static plus

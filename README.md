@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 96 source-controlled cases: 30 independent production scenarios and
-66 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 97 source-controlled cases: 30 independent production scenarios and
+67 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -34,6 +34,7 @@ Focused direct links remain available for cases such as
 [2D axes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=axis_2d),
 [2D grids](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=grid_2d),
 [2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
+[2D images](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=image_2d),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
 [Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
@@ -496,6 +497,19 @@ back both Curves atomically. The focused Desktop/Compact fixture passes at
 `0.988817`/`0.980518`. It remains outside the 30-case Stable corpus while
 default Board-axis fallback, runtime attribute mutation, hit testing, and the
 complete Grid API remain pending.
+
+Image translates `src/base/image.js -> Image/createImage`, the
+`src/base/element.js -> addRotation` chain, and Canvas image transforms.
+Static data sources are available through JSON and native JessieCode;
+JessieCode additionally supports function-valued sources, coordinates, and
+sizes. Negative-size pixel semantics, `W`/`H`/`setSize`, opacity, and rotation
+are translated. Core owns only the source and user-space geometry; Compose
+resolves bounded base64 image data URIs by default, while callers explicitly
+provide any network or application-resource resolver. The focused
+Desktop/Compact fixture passes at
+`0.985178`/`0.985329`. It remains outside the 30-case Stable corpus while
+dragging, hit testing, arbitrary transformation mutation, non-data-URI
+loading, and the complete Image API remain pending.
 
 StepFunction translates `src/base/curve.js -> createStepfunction`. It retains
 the two source terms, rebuilds `dataX`/`dataY` on each regular Board update,

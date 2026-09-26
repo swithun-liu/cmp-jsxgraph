@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(96, cases.size)
+        assertEquals(97, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            66,
+            67,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -88,6 +88,30 @@ class ParitySourceTest {
         assertIs<com.swithun.jsxgraph.core.JsxGraphTicksParent2D.Curve>(
             hatches.getValue("curveMarks").definition.parent,
         )
+    }
+
+    @Test
+    fun imageFocusedCasePreservesSourcesGeometryAndOpacity() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("image_2d"),
+        ).value
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+        val images = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Image>()
+            .associateBy(JsxGraphSceneElement.Image::id)
+
+        assertEquals(setOf("plainImage", "rotatedImage"), images.keys)
+        val plain = images.getValue("plainImage")
+        val rotated = images.getValue("rotatedImage")
+        assertTrue(plain.source.startsWith("data:image/png;base64,"))
+        assertEquals(plain.source, rotated.source)
+        assertEquals(JsxGraphPoint2D(-6.0, -4.0), plain.anchor)
+        assertEquals(JsxGraphPoint2D(4.0, 0.0), plain.widthVector)
+        assertEquals(JsxGraphPoint2D(0.0, 3.0), plain.heightVector)
+        assertNotEquals(plain.widthVector, rotated.widthVector)
+        assertEquals(0.72, rotated.style.fillOpacity)
     }
 
     @Test

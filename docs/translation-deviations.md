@@ -27,7 +27,7 @@ practical.
   PolePoint, Circle/Point,
   Line/Point, and
   Curve/Point Tangent, Polar, Circle/Point TangentTo and PolarLine, Ellipse,
-  Hyperbola, Parabola, Text, Arc,
+  Hyperbola, Parabola, Text, Image, Arc,
   CircumcircleArc, MinorArc, MajorArc, Sector, CircumcircleSector, MinorSector,
   MajorSector, Angle, NonreflexAngle, and ReflexAngle through the translated
   native registry and then snapshots the resulting Board elements into a
@@ -35,10 +35,11 @@ practical.
   point faces, labels, Curve/Arc/Sector arrows, and plotting modes
   return `JsxGraphDocumentError` instead of being ignored.
 - Construction documents are limited by source length, JSON depth, JSON value
-  count, object count, points per Curve, vertices per Polygon, and characters
-  per Text. JSON and factory failures are converted to `GMResult.Err`; object
-  IDs are required and duplicate IDs are rejected. Colors currently accept CSS
-  hex forms plus a small named-color subset. Top-level
+  count, object count, points per Curve, vertices per Polygon, characters per
+  Text, and characters per Image source. JSON and factory failures are
+  converted to `GMResult.Err`; object IDs are required and duplicate IDs are
+  rejected. Colors currently accept CSS hex forms plus a small named-color
+  subset. Top-level
   Point/Line/Arrow/Segment/Circle/Midpoint/OrthogonalProjection/
   PerpendicularPoint/Perpendicular/PerpendicularSegment/ParallelPoint/Parallel/
   ArrowParallel/Curve/CurveIntersection/CurveUnion/CurveDifference/
@@ -46,7 +47,7 @@ practical.
   Parallelogram/RegularPolygon/RadicalAxis/PolePoint/
   Circle-Line-or-Curve-Point Tangent-Polar/
   Circle-Point TangentTo/PolarLine/Ellipse/Hyperbola/Parabola/
-  Text/Arc/Arc-composition/
+  Text/Image/Arc/Arc-composition/
   Sector/Sector-composition/
   Angle defaults match the translated JSXGraph `1.13.3` subset; helper Points
   created from
@@ -66,8 +67,8 @@ practical.
   Polygon fill, border, and implicit-vertex items. This preserves the observed
   Point-over-Arc and Polygon sub-element order. Nested Polygon
   `vertices`/`borders` visual attributes, runtime layer mutation, custom
-  Grid/Axis/Ticks layers, traces, images, and untranslated renderer objects
-  remain pending; this is not a claim of complete renderer-layer parity.
+  Grid/Axis/Ticks layers, traces, and untranslated renderer objects remain
+  pending; this is not a claim of complete renderer-layer parity.
 - Supported Point, Line, Circle, Curve, and Polygon-border strokes accept the
   integer `dash` values `0..7` from
   `src/renderer/abstract.js -> dashArray`. `dashScale: true` scales every
@@ -562,6 +563,14 @@ practical.
   measured bounds, and hit testing return structured errors or remain
   unavailable. Compose always draws text on Canvas; accepted `html` and
   `internal` display modes are equivalent for this plain-text subset.
+- The translated Image subset stores only its source string and user-space
+  geometry in core. Compose resolves the source through a caller-supplied
+  `JsxGraphImageResolver`; the default resolver accepts only bounded
+  `data:image/*;base64` input, performs no network or filesystem access, and
+  returns structured unsupported-source, size, syntax, configuration, or
+  decode failures. Applications that need URLs or packaged resources own that
+  policy explicitly. The source-length and decoded-byte limits are additional
+  safety boundaries not present in JSXGraph `1.13.3`.
 - JessieCode tokenization and the translated expression parser return
   `GMResult.Err` when configured source-length, token-count, AST-node, or
   AST-depth limits are exceeded. The upstream generated lexer and Jison parser
@@ -788,8 +797,9 @@ practical.
   Dynamic transforms remain available through `bindTo`, which is the working
   upstream route. Array-backed `affinematrix`/`matrix` transforms and
   array-centered rotations retain the upstream nonnumeric classification even
-  when all entries are numbers. Transformed Text/Image rendering remains
-  pending.
+  when all entries are numbers. Image construction-time `rotate` uses the
+  translated five-transform `addRotation` chain. Transformed Text and arbitrary
+  post-construction Image transformation-list mutation remain pending.
 - The bounded
   `GeometryElement3D`/`View3D`/`Point3D`/`Line3D`/`Plane3D`/`Curve3D`/
   `Circle3D`/`Face3D`/`Polygon3D`/`Polyhedron3D` lifecycle and the

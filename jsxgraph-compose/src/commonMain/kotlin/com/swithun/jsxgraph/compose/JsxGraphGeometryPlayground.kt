@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
@@ -267,10 +270,42 @@ fun JsxGraphScenePreview(
     scene: JsxGraphScene,
     modifier: Modifier = Modifier,
     onPointDrag: ((String, JsxGraphPoint2D) -> Unit)? = null,
+    imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
+    onImageError: (JsxGraphImageLoadError) -> Unit = {},
 ) {
     val textMeasurer = rememberTextMeasurer()
     val currentScene by rememberUpdatedState(scene)
     val currentOnPointDrag by rememberUpdatedState(onPointDrag)
+    val currentOnImageError by rememberUpdatedState(onImageError)
+    val imageSources = scene.elements
+        .filterIsInstance<JsxGraphSceneElement.Image>()
+        .associate { image -> image.id to image.source }
+    val resolvedImages = remember(imageSources, imageResolver) {
+        val resolvedBySource = mutableMapOf<
+            String,
+            GMResult<ImageBitmap, JsxGraphImageResolveError>,
+            >()
+        imageSources.mapValues { (_, source) ->
+            resolvedBySource.getOrPut(source) {
+                imageResolver.resolve(source)
+            }
+        }
+    }
+    LaunchedEffect(resolvedImages) {
+        for (element in scene.elements) {
+            val image = element as? JsxGraphSceneElement.Image ?: continue
+            val result = resolvedImages[image.id] ?: continue
+            if (result is GMResult.Err) {
+                currentOnImageError(
+                    JsxGraphImageLoadError(
+                        elementId = image.id,
+                        source = image.source,
+                        error = result.error,
+                    ),
+                )
+            }
+        }
+    }
     val axisFontFamily = FontFamily(
         Font(
             resource = Res.font.arimo_regular,
@@ -381,6 +416,16 @@ fun JsxGraphScenePreview(
                                 textMeasurer = textMeasurer,
                                 fontFamily = axisFontFamily,
                             )
+                        is JsxGraphSceneElement.Image -> {
+                            val result = resolvedImages[element.id]
+                            if (result is GMResult.Ok) {
+                                drawSceneImage(
+                                    image = element,
+                                    bitmap = result.value,
+                                    metrics = metrics,
+                                )
+                            }
+                        }
                     }
                 }
                 is JsxGraphSceneRenderItem.PolygonFill ->
@@ -412,6 +457,8 @@ fun JsxGraphBoard(
     modifier: Modifier = Modifier,
     onInteractionStateChange: (JsxGraphInteractionState) -> Unit = {},
     onInteractionError: (JsxGraphInteractionError) -> Unit = {},
+    imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
+    onImageError: (JsxGraphImageLoadError) -> Unit = {},
 ) {
     var scene by remember(session) {
         mutableStateOf(session.scene)
@@ -421,6 +468,8 @@ fun JsxGraphBoard(
     JsxGraphScenePreview(
         scene = scene,
         modifier = modifier,
+        imageResolver = imageResolver,
+        onImageError = onImageError,
         onPointDrag = { id, coordinates ->
             when (val result = session.movePoint(id, coordinates)) {
                 is com.swithun.jsxgraph.core.GMResult.Ok -> {
@@ -439,6 +488,8 @@ fun JsxGraphBoard(
     session: JsxGraphJessieCodeSession,
     modifier: Modifier = Modifier,
     onInteractionError: (JsxGraphInteractionError) -> Unit = {},
+    imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
+    onImageError: (JsxGraphImageLoadError) -> Unit = {},
 ) {
     var scene by remember(session) {
         mutableStateOf(session.scene)
@@ -447,6 +498,8 @@ fun JsxGraphBoard(
     JsxGraphScenePreview(
         scene = scene,
         modifier = modifier,
+        imageResolver = imageResolver,
+        onImageError = onImageError,
         onPointDrag = { id, coordinates ->
             when (val result = session.movePoint(id, coordinates)) {
                 is com.swithun.jsxgraph.core.GMResult.Ok ->
@@ -1440,6 +1493,72 @@ private fun DrawScope.drawSceneText(
             anchorY = text.anchorY,
         ),
     )
+}
+
+internal data class JsxGraphImageScreenGeometry(
+    val topLeft: Offset,
+    val horizontal: Offset,
+    val vertical: Offset,
+)
+
+// JSXGraph: src/renderer/canvas.js -> updateImage / transformRect.
+internal fun imageScreenGeometry(
+    image: JsxGraphSceneElement.Image,
+    metrics: BoardMetrics,
+): JsxGraphImageScreenGeometry {
+    val anchor = metrics.toScreen(image.anchor.toOffset())
+    val horizontalCorner = metrics.toScreen(
+        Offset(
+            x = (image.anchor.x + image.widthVector.x).toFloat(),
+            y = (image.anchor.y + image.widthVector.y).toFloat(),
+        ),
+    )
+    val verticalCorner = metrics.toScreen(
+        Offset(
+            x = (image.anchor.x + image.heightVector.x).toFloat(),
+            y = (image.anchor.y + image.heightVector.y).toFloat(),
+        ),
+    )
+    val horizontal = horizontalCorner - anchor
+    val upward = verticalCorner - anchor
+    return JsxGraphImageScreenGeometry(
+        topLeft = anchor + upward,
+        horizontal = horizontal,
+        vertical = -upward,
+    )
+}
+
+// JSXGraph: src/renderer/canvas.js -> updateImage.
+private fun DrawScope.drawSceneImage(
+    image: JsxGraphSceneElement.Image,
+    bitmap: ImageBitmap,
+    metrics: BoardMetrics,
+) {
+    if (bitmap.width <= 0 || bitmap.height <= 0) {
+        return
+    }
+    val geometry = imageScreenGeometry(image, metrics)
+    val matrix = Matrix()
+    matrix[0, 0] = geometry.horizontal.x / bitmap.width
+    matrix[0, 1] = geometry.horizontal.y / bitmap.width
+    matrix[1, 0] = geometry.vertical.x / bitmap.height
+    matrix[1, 1] = geometry.vertical.y / bitmap.height
+    matrix[3, 0] = geometry.topLeft.x
+    matrix[3, 1] = geometry.topLeft.y
+    val paint = Paint().apply {
+        alpha = image.style.fillOpacity.toFloat()
+    }
+    drawContext.canvas.save()
+    try {
+        drawContext.canvas.concat(matrix)
+        drawContext.canvas.drawImage(
+            image = bitmap,
+            topLeftOffset = Offset.Zero,
+            paint = paint,
+        )
+    } finally {
+        drawContext.canvas.restore()
+    }
 }
 
 internal fun textTopLeft(

@@ -215,6 +215,20 @@ class ProductionCorpusTest {
                         "$caseId/${element.id} has empty text",
                     )
                 }
+                is JsxGraphSceneElement.Image -> {
+                    assertFinitePoint(caseId, element.id, element.anchor)
+                    assertFinitePoint(caseId, element.id, element.widthVector)
+                    assertFinitePoint(caseId, element.id, element.heightVector)
+                    assertTrue(
+                        element.userWidth.isFinite() &&
+                            element.userHeight.isFinite(),
+                        "$caseId/${element.id} has invalid image size",
+                    )
+                    assertTrue(
+                        element.source.isNotEmpty(),
+                        "$caseId/${element.id} has empty image source",
+                    )
+                }
             }
         }
     }
