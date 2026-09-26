@@ -107,6 +107,14 @@ StepFunction now has source-mapped `updateDataArray` expansion, retained
 JessieCode array identity, missing-Y path breaks, JSON/JessieCode resource
 checks on expanded output size, and focused Desktop/Compact same-source
 parity. It remains outside the independent Stable corpus.
+Grid now has source-mapped `createGrid` construction as linked major/minor
+Curves, themes `0..6`, all documented faces, user/`px`/`%`/`fr` spacing,
+square forcing, boundary and zero-axis controls, explicit Axis-derived
+automatic spacing, persistent-session snapshots, viewport-resolved Compose
+geometry, pre-allocation limits, and atomic rollback. Its focused
+Desktop/Compact parity scores are `0.988817` and `0.980518`. Default
+Board-axis fallback, runtime mutation, hit testing, complete APIs, and
+independent Stable qualification remain pending.
 PolygonalChain now has source-mapped wrapper construction, official border
 ordering, open vertices and Segment border rendering, explicit/helper Point
 ownership and removal, JSON/JessieCode vertex limits, and focused static plus

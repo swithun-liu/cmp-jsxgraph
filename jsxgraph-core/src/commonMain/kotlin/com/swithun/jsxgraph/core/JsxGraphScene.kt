@@ -1441,6 +1441,7 @@ sealed interface JsxGraphSceneElement {
         val vectorField: JsxGraphVectorField? = null,
         val vectorField3D: JsxGraphVectorField3D? = null,
         val ticks3D: JsxGraphTicks3D? = null,
+        val grid: JsxGraphGrid2D? = null,
     ) : JsxGraphSceneElement {
         fun resolvePoints(
             cssPixelsPerUnitX: Double,
@@ -1464,6 +1465,33 @@ sealed interface JsxGraphSceneElement {
                     cssPixelsPerUnitY = cssPixelsPerUnitY,
                 )
                 ?: points
+
+        fun resolvePoints(
+            visibleLeft: Double,
+            visibleTop: Double,
+            visibleRight: Double,
+            visibleBottom: Double,
+            cssPixelsPerUnitX: Double,
+            cssPixelsPerUnitY: Double,
+        ): List<JsxGraphPoint2D?> =
+            grid?.let { definition ->
+                when (
+                    val result = definition.resolve(
+                        visibleLeft = visibleLeft,
+                        visibleTop = visibleTop,
+                        visibleRight = visibleRight,
+                        visibleBottom = visibleBottom,
+                        cssPixelsPerUnitX = cssPixelsPerUnitX,
+                        cssPixelsPerUnitY = cssPixelsPerUnitY,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.points
+                    is GMResult.Err -> emptyList()
+                }
+            } ?: resolvePoints(
+                    cssPixelsPerUnitX = cssPixelsPerUnitX,
+                    cssPixelsPerUnitY = cssPixelsPerUnitY,
+                )
     }
 
     data class Polygon(

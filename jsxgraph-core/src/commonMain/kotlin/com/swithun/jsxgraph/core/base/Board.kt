@@ -43,6 +43,7 @@ internal class Board(
             DEFAULT_CANVAS_WIDTH * (1.0 + CURVE_DOMAIN_PADDING) -
                 originX
             ) / (unitX * zoomX),
+    internal val maxCurvePoints: Int = 10_000,
 ) {
     internal class Origin(
         val usrCoords: DoubleArray,
@@ -64,6 +65,8 @@ internal class Board(
     internal val objects = linkedMapOf<String, GeometryElement>()
     internal val objectsList = mutableListOf<GeometryElement>()
     internal val elementsByName = linkedMapOf<String, GeometryElement>()
+    // JSXGraph 1.13.3: src/base/board.js -> Board constructor / grids.
+    internal val grids = mutableListOf<Curve>()
     internal var numObjects: Int = 0
         private set
 
@@ -267,6 +270,14 @@ internal class Board(
         for (element in elements.toList()) {
             removeElement(element, saveMethod)
         }
+        update()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> removeGrids.
+    internal fun removeGrids(): Board {
+        removeObjects(grids.toList())
+        grids.clear()
         update()
         return this
     }

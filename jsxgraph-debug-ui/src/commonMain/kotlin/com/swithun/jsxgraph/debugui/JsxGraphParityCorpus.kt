@@ -167,6 +167,21 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "grid_2d",
+            title = "2D grid",
+            scenario = "Axis-driven theme-six circles and minor points share one source.",
+            source = GRID_2D_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "grid",
+                "axis-parent",
+                "major-grid",
+                "minor-grid",
+                "grid-theme",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "step_functions",
             title = "Step functions",
             scenario = "Static arrays exercise rising, falling, repeated, and mismatched step data.",
@@ -1552,6 +1567,21 @@ private const val HATCH_2D_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\ntopLine = segment([-5, 3], [5, 3]) << id: \"topLine\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 2, fixed: true, highlight: false >>;\ndefaultMarks = hatch(topLine, 3) << id: \"defaultMarks\", name: \"\", fixed: true, highlight: false >>;\ndiagonal = segment([-5, 0.2], [5, 2.2]) << id: \"diagonal\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 2, fixed: true, highlight: false >>;\nshiftedMarks = hatch(diagonal, 5) << id: \"shiftedMarks\", name: \"\", anchor: 0.35, ticksDistance: 0.65, face: \">\", majorHeight: 18, strokeColor: \"#D55E00\", strokeWidth: 3, fixed: true, highlight: false >>;\ncurve = functiongraph(\"0.12 * x * x - 3\", -5, 5) << id: \"curve\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 200, strokeColor: \"#009E73\", strokeWidth: 3, fixed: true, highlight: false >>;\ncurveMarks = hash(curve, 4) << id: \"curveMarks\", name: \"\", ticksDistance: 1.4, face: \"<\", majorHeight: 18, strokeColor: \"#7B4EA3\", strokeWidth: 3, fixed: true, highlight: false >>;"
+}
+"""
+
+private const val GRID_2D_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nxAxis = axis([-5, 0], [5, 0]) << id: \"xAxis\", name: \"\", visible: false, ticks: << id: \"xTicks\", name: \"\", ticksDistance: 2, minorTicks: 1, insertTicks: false >> >>;\nyAxis = axis([0, -4], [0, 4]) << id: \"yAxis\", name: \"\", visible: false, ticks: << id: \"yTicks\", name: \"\", ticksDistance: 2, minorTicks: 2, insertTicks: false >> >>;\nmesh = grid(xAxis, yAxis) <<\n  id: \"mesh\", name: \"\", theme: 6,\n  majorStep: \"auto\", minorElements: \"auto\",\n  includeBoundaries: false,\n  strokeColor: \"#6F7780\", strokeWidth: 1.5,\n  major: <<\n    strokeColor: \"#D55E00\", strokeOpacity: 0.9\n  >>,\n  minor: <<\n    id: \"meshMinor\", name: \"\",\n    strokeColor: \"#0072B2\", strokeOpacity: 0.65\n  >>\n>>;"
 }
 """
 

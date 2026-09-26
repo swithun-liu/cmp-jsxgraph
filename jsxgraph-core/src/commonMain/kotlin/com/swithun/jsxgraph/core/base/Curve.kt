@@ -16,6 +16,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphGrid2D
 import com.swithun.jsxgraph.core.math.Clip
 import com.swithun.jsxgraph.core.math.ClipBooleanOperation
 import com.swithun.jsxgraph.core.math.ClipError
@@ -559,7 +560,8 @@ internal class Curve private constructor(
     internal val points = mutableListOf<Coords>()
     internal var numberPoints: Int = 0
         private set
-    internal val bezierDegree: Int = 1
+    internal var bezierDegree: Int = 1
+        private set
     internal var evaluationError: CurveError? = null
         private set
     internal val isBooleanComposition: Boolean
@@ -588,6 +590,8 @@ internal class Curve private constructor(
         get() = hyperbolaDefinition != null
     internal val isParabola: Boolean
         get() = parabolaDefinition != null
+    internal val isGrid: Boolean
+        get() = gridDefinition != null
     internal val isTicks3D: Boolean
         get() = ticks3DDefinition != null
     internal val isMesh3D: Boolean
@@ -619,6 +623,10 @@ internal class Curve private constructor(
         get() = parabolaDefinition?.directrix
     internal val inherits = mutableListOf<GeometryElement>()
     internal val subs = linkedMapOf<String, GeometryElement>()
+    internal var gridDefinition: JsxGraphGrid2D? = null
+        private set
+    internal var minorGrid: Curve? = null
+    internal var majorGrid: Curve? = null
     private var dataUpdater: CurveDataUpdater? = null
     internal var ticks3DDefinition: Ticks3DDefinition? = null
         private set
@@ -1831,6 +1839,19 @@ internal class Curve private constructor(
         dataUpdater = updater
         ticks3DDefinition = ticks3D
         mesh3DDefinition = mesh3D
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/element/grid.js -> createGrid.
+    internal fun configureGrid(
+        definition: JsxGraphGrid2D,
+        bezierDegree: Int,
+    ): Curve {
+        gridDefinition = definition
+        this.bezierDegree = bezierDegree
+        type = Const.OBJECT_TYPE_GRID
+        elType = "grid"
+        isDraggable = false
         return this
     }
 

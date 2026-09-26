@@ -538,6 +538,7 @@ object JsxGraphEngine {
                         boardOptions.boundingBox.right -
                             boardOptions.boundingBox.left
                         ) * CURVE_DOMAIN_PADDING,
+            maxCurvePoints = limits.maxCurvePoints,
         )
         val created = mutableListOf<CreatedSourceElement>()
         var creationCount = 0
@@ -798,6 +799,27 @@ object JsxGraphEngine {
                                     if (expanded == null) {
                                         return@JessieCodeCreator invalidTangentToResult(
                                             location,
+                                        )
+                                    }
+                                    created += expanded
+                                    creationCount += expanded.size
+                                } else if (creatorName == "grid") {
+                                    val major = value.element as? Curve
+                                    val expanded = major?.let {
+                                        gridCreatedSourceElements(
+                                            source = source,
+                                            major = it,
+                                        )
+                                    }
+                                    if (expanded == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native grid creator " +
+                                                        "returned an " +
+                                                        "incomplete grid.",
+                                                location = location,
+                                            ),
                                         )
                                     }
                                     created += expanded
@@ -1830,6 +1852,186 @@ object JsxGraphEngine {
         )
     }
 
+    // JSXGraph 1.13.3: src/element/grid.js -> majorGrid / minorGrid;
+    // src/options.js -> grid / grid.themes.
+    private fun gridCreatedSourceElements(
+        source: ParsedObject,
+        major: Curve,
+    ): List<CreatedSourceElement>? {
+        val minor = major.minorGrid ?: return null
+        if (major.gridDefinition == null || minor.gridDefinition == null) {
+            return null
+        }
+        val effective = effectiveGridAttributes(source.attributes)
+        return listOf(
+            CreatedSourceElement(
+                source = source.copy(
+                    attributes = flattenedGridAttributes(
+                        effective = effective,
+                        role = "major",
+                        id = major.id,
+                        name = major.name,
+                    ),
+                ),
+                element = major,
+            ),
+            CreatedSourceElement(
+                source = source.copy(
+                    index = source.index + 1,
+                    id = minor.id,
+                    type = "grid",
+                    parents = JsonArray(emptyList()),
+                    attributes = flattenedGridAttributes(
+                        effective = effective,
+                        role = "minor",
+                        id = minor.id,
+                        name = minor.name,
+                    ),
+                ),
+                element = minor,
+            ),
+        )
+    }
+
+    private fun effectiveGridAttributes(source: JsonObject): JsonObject {
+        fun jsonObject(vararg values: Pair<String, JsonElement>): JsonObject =
+            JsonObject(linkedMapOf(*values))
+
+        val effective = linkedMapOf<String, JsonElement>(
+            "majorstep" to JsonPrimitive("auto"),
+            "minorelements" to JsonPrimitive(0),
+            "forcesquare" to JsonPrimitive(false),
+            "includeboundaries" to JsonPrimitive(false),
+            "strokecolor" to JsonPrimitive("#c0c0c0"),
+            "strokewidth" to JsonPrimitive(1),
+            "strokeopacity" to JsonPrimitive(0.5),
+            "fillcolor" to JsonPrimitive("none"),
+            "fillopacity" to JsonPrimitive(1),
+            "layer" to JsonPrimitive(DEFAULT_GRID_LAYER),
+            "major" to jsonObject(
+                "size" to JsonPrimitive(5),
+                "face" to JsonPrimitive("line"),
+                "margin" to JsonPrimitive(0),
+                "drawzero" to JsonPrimitive(true),
+                "polygonvertices" to JsonPrimitive(6),
+            ),
+            "minor" to jsonObject(
+                "visible" to JsonPrimitive("inherit"),
+                "size" to JsonPrimitive(3),
+                "face" to JsonPrimitive("point"),
+                "margin" to JsonPrimitive(0),
+                "drawzero" to JsonPrimitive(true),
+                "polygonvertices" to JsonPrimitive(6),
+            ),
+        )
+        val theme = (
+            source["theme"] as? JsonPrimitive
+            )?.let { primitive ->
+                primitive.intOrNull
+                    ?: primitive.doubleOrNull?.toInt()
+            } ?: 0
+        val themeValues = when (theme) {
+            1 -> mapOf(
+                "forcesquare" to JsonPrimitive("min"),
+                "major" to jsonObject(
+                    "face" to JsonPrimitive("line"),
+                ),
+            )
+            2 -> mapOf(
+                "minorelements" to JsonPrimitive("auto"),
+                "major" to jsonObject(
+                    "face" to JsonPrimitive("line"),
+                ),
+                "minor" to jsonObject(
+                    "face" to JsonPrimitive("point"),
+                    "size" to JsonPrimitive(3),
+                ),
+            )
+            3 -> mapOf(
+                "minorelements" to JsonPrimitive("auto"),
+                "major" to jsonObject(
+                    "face" to JsonPrimitive("line"),
+                ),
+                "minor" to jsonObject(
+                    "face" to JsonPrimitive("line"),
+                    "strokeopacity" to JsonPrimitive(0.25),
+                ),
+            )
+            4 -> mapOf(
+                "minorelements" to JsonPrimitive("auto"),
+                "major" to jsonObject(
+                    "face" to JsonPrimitive("line"),
+                ),
+                "minor" to jsonObject(
+                    "face" to JsonPrimitive("+"),
+                    "size" to JsonPrimitive("95%"),
+                ),
+            )
+            5 -> mapOf(
+                "minorelements" to JsonPrimitive("auto"),
+                "major" to jsonObject(
+                    "face" to JsonPrimitive("+"),
+                    "size" to JsonPrimitive(10),
+                    "strokeopacity" to JsonPrimitive(1),
+                ),
+                "minor" to jsonObject(
+                    "face" to JsonPrimitive("point"),
+                    "size" to JsonPrimitive(3),
+                ),
+            )
+            6 -> mapOf(
+                "minorelements" to JsonPrimitive("auto"),
+                "major" to jsonObject(
+                    "face" to JsonPrimitive("circle"),
+                    "size" to JsonPrimitive(8),
+                    "fillcolor" to JsonPrimitive("#c0c0c0"),
+                ),
+                "minor" to jsonObject(
+                    "face" to JsonPrimitive("point"),
+                    "size" to JsonPrimitive(3),
+                ),
+            )
+            else -> emptyMap()
+        }
+        mergeGridJson(effective, source)
+        mergeGridJson(effective, themeValues)
+        return JsonObject(effective)
+    }
+
+    private fun mergeGridJson(
+        target: MutableMap<String, JsonElement>,
+        source: Map<String, JsonElement>,
+    ) {
+        for ((name, value) in source) {
+            val targetObject = target[name] as? JsonObject
+            val sourceObject = value as? JsonObject
+            if (targetObject != null && sourceObject != null) {
+                val nested = targetObject.toMutableMap()
+                mergeGridJson(nested, sourceObject)
+                target[name] = JsonObject(nested)
+            } else {
+                target[name] = value
+            }
+        }
+    }
+
+    private fun flattenedGridAttributes(
+        effective: JsonObject,
+        role: String,
+        id: String,
+        name: String,
+    ): JsonObject {
+        val flattened = effective.toMutableMap()
+        val roleAttributes = effective[role] as? JsonObject
+        flattened.remove("major")
+        flattened.remove("minor")
+        flattened.remove("theme")
+        flattened.putAll(roleAttributes.orEmpty())
+        flattened["id"] = JsonPrimitive(id)
+        flattened["name"] = JsonPrimitive(name)
+        return JsonObject(flattened)
+    }
+
     private fun axisTicksSourceAttributes(
         axisAttributes: JsonObject,
     ): JsonObject {
@@ -2160,6 +2362,16 @@ object JsxGraphEngine {
             reason = "creator returned an incomplete tangentto line",
         )
 
+    private fun invalidGridDocumentResult(
+        source: ParsedObject,
+    ): JsxGraphDocumentError.ElementCreation =
+        JsxGraphDocumentError.ElementCreation(
+            objectIndex = source.index,
+            id = source.id,
+            type = source.type,
+            reason = "creator returned an incomplete grid",
+        )
+
     private fun invalidPolyhedron3DResult(
         source: ParsedObject,
         location: JessieCodeAstLocation,
@@ -2455,6 +2667,7 @@ object JsxGraphEngine {
                         document.boundingBox.right -
                             document.boundingBox.left
                         ) * CURVE_DOMAIN_PADDING,
+            maxCurvePoints = limits.maxCurvePoints,
         )
         val created = mutableListOf<CreatedSourceElement>()
         val transformationsById = linkedMapOf<String, Transformation>()
@@ -2503,14 +2716,32 @@ object JsxGraphEngine {
                 )
             ) {
                 is GMResult.Ok -> result.value
-                is GMResult.Err -> return GMResult.Err(
-                    JsxGraphDocumentError.ElementCreation(
-                        objectIndex = sourceObject.index,
-                        id = sourceObject.id,
-                        type = sourceObject.type,
-                        reason = result.error.toString(),
-                    ),
-                )
+                is GMResult.Err -> {
+                    val error = result.error
+                    return GMResult.Err(
+                        if (
+                            error is
+                                JessieCodeRuntimeError.ResourceLimitExceeded &&
+                            error.resource == "curve point count"
+                        ) {
+                            JsxGraphDocumentError.CurvePointLimitExceeded(
+                                objectIndex = sourceObject.index,
+                                id = sourceObject.id,
+                                limit = error.limit,
+                                actual = error.requestedSize
+                                    .coerceAtMost(Int.MAX_VALUE.toLong())
+                                    .toInt(),
+                            )
+                        } else {
+                            JsxGraphDocumentError.ElementCreation(
+                                objectIndex = sourceObject.index,
+                                id = sourceObject.id,
+                                type = sourceObject.type,
+                                reason = error.toString(),
+                            )
+                        },
+                    )
+                }
             }
             if (value is JessieCodeRuntimeValue.TransformationReference) {
                 if (
@@ -2587,6 +2818,18 @@ object JsxGraphEngine {
                     tangentIndex = sourceObject.index,
                 ) ?: return GMResult.Err(
                     invalidTangentToDocumentResult(sourceObject),
+                )
+                created += expanded
+            } else if (sourceObject.type == "grid") {
+                val major = element as? Curve
+                    ?: return GMResult.Err(
+                        invalidGridDocumentResult(sourceObject),
+                    )
+                val expanded = gridCreatedSourceElements(
+                    source = sourceObject,
+                    major = major,
+                ) ?: return GMResult.Err(
+                    invalidGridDocumentResult(sourceObject),
                 )
                 created += expanded
             } else if (sourceObject.type == "axis") {
@@ -2804,10 +3047,15 @@ object JsxGraphEngine {
             }
             // JSXGraph 1.13.3: src/base/ticks.js -> createTicks;
             // src/base/element.js -> fullUpdate / updateVisibility.
-            val inheritedVisibility =
-                (sourceElement.element as? Ticks)?.let { ticks ->
-                    effectiveVisibilityByElement[ticks.parent] ?: true
-                }
+            val inheritedVisibility = when (val element = sourceElement.element) {
+                is Ticks ->
+                    effectiveVisibilityByElement[element.parent] ?: true
+                is Curve ->
+                    element.majorGrid?.let { major ->
+                        effectiveVisibilityByElement[major] ?: true
+                    }
+                else -> null
+            }
             when (
                 val result = sceneElement(
                     sourceElement = sourceElement,
@@ -3636,8 +3884,10 @@ object JsxGraphEngine {
                             element.isBooleanComposition ||
                                 element.isRiemannSum ||
                                 element.isBoxPlot ||
-                                element.isInequality,
+                                element.isInequality ||
+                                element.isGrid,
                         allowPathBreaks = true,
+                        grid = element.gridDefinition,
                         boxPlot = element.boxPlotSnapshot()?.let { boxPlot ->
                             JsxGraphBoxPlot(
                                 quantiles = boxPlot.quantiles.toList(),
@@ -4290,17 +4540,34 @@ object JsxGraphEngine {
         boxPlot: JsxGraphBoxPlot? = null,
         vectorField: JsxGraphVectorField? = null,
         vectorField3D: JsxGraphVectorField3D? = null,
+        grid: JsxGraphGrid2D? = null,
     ): GMResult<JsxGraphSceneElement.Curve, JsxGraphDocumentError> {
-        val lineCap = when (
-            val result = attributes.string(
-                name = "linecap",
-                default = "round",
-            )
-        ) {
-            is GMResult.Ok -> result.value.lowercase()
-            is GMResult.Err -> return result
-        }
-        if (lineCap != "round") {
+        val lineCap =
+            if (grid != null) {
+                val face =
+                    if (grid.role == JsxGraphGridRole.Major) {
+                        grid.major.face
+                    } else {
+                        grid.minor.face
+                    }
+                when (face.lowercase()) {
+                    "o", "circle", "[]", "square", "<>", "diamond",
+                    "<<>>", "diamond2",
+                    -> "square"
+                    else -> "round"
+                }
+            } else {
+                when (
+                    val result = attributes.string(
+                        name = "linecap",
+                        default = "round",
+                    )
+                ) {
+                    is GMResult.Ok -> result.value.lowercase()
+                    is GMResult.Err -> return result
+                }
+            }
+        if (lineCap !in setOf("round", "square")) {
             return GMResult.Err(
                 attributes.unsupportedValue(
                     attribute = "lineCap",
@@ -4333,11 +4600,14 @@ object JsxGraphEngine {
             return GMResult.Err(attributes.nonFiniteGeometry())
         }
         if (
-            bezierDegree !in setOf(1, 3) ||
+            grid == null &&
+            (
+                bezierDegree !in setOf(1, 3) ||
             (
                 bezierDegree == 3 &&
                     scenePoints.isNotEmpty() &&
                     (scenePoints.size - 1) % 3 != 0
+                )
                 )
         ) {
             return GMResult.Err(attributes.nonFiniteGeometry())
@@ -4354,6 +4624,7 @@ object JsxGraphEngine {
                 boxPlot = boxPlot,
                 vectorField = vectorField,
                 vectorField3D = vectorField3D,
+                grid = grid,
                 ticks3D =
                     (element as? Curve)
                         ?.ticks3DDefinition
@@ -6212,6 +6483,11 @@ object JsxGraphEngine {
                             }
                         is Curve ->
                             CURVE_ATTRIBUTES +
+                                if (element.isGrid) {
+                                    GRID_ATTRIBUTES
+                                } else {
+                                    emptySet()
+                                } +
                                 if (element.isTicks3D) {
                                     TICKS_3D_ATTRIBUTES
                                 } else {
@@ -6573,6 +6849,8 @@ object JsxGraphEngine {
                     }
                 is Curve ->
                     when {
+                        element.isGrid ->
+                            JsxGraphColor(192, 192, 192)
                         element.isMesh3D -> DEFAULT_MESH_3D_COLOR
                         element.isInequality -> JsxGraphColor.Transparent
                         element.isComb -> DEFAULT_COMB_STROKE_COLOR
@@ -6595,6 +6873,7 @@ object JsxGraphEngine {
                 is Point -> DEFAULT_POINT_COLOR
                 is Curve ->
                     when {
+                        element.isGrid -> JsxGraphColor.Transparent
                         element.isRiemannSum ->
                             DEFAULT_RIEMANN_FILL_COLOR
                         element.isBoxPlot ->
@@ -7082,7 +7361,9 @@ object JsxGraphEngine {
                 is Circle -> DEFAULT_CIRCLE_LAYER
                 is Sector -> DEFAULT_AREA_LAYER
                 is Curve ->
-                    if (element.isMesh3D) {
+                    if (element.isGrid) {
+                        DEFAULT_GRID_LAYER
+                    } else if (element.isMesh3D) {
                         DEFAULT_MESH_3D_LAYER
                     } else {
                         DEFAULT_CURVE_LAYER
@@ -7453,6 +7734,7 @@ object JsxGraphEngine {
         highlightSize = 8.0,
     )
     private const val DEFAULT_ELEMENT_LAYER = 0
+    private const val DEFAULT_GRID_LAYER = 1
     private const val DEFAULT_AXIS_LAYER = 2
     private const val DEFAULT_AREA_LAYER = 3
     private const val DEFAULT_CURVE_LAYER = 5
@@ -7574,6 +7856,19 @@ object JsxGraphEngine {
         "createpoints",
         "isarrayofcoordinates",
         "points",
+    )
+    private val GRID_ATTRIBUTES = setOf(
+        "majorstep",
+        "minorelements",
+        "forcesquare",
+        "includeboundaries",
+        "gridx",
+        "gridy",
+        "face",
+        "size",
+        "margin",
+        "drawzero",
+        "polygonvertices",
     )
     private val CIRCLE_3D_ATTRIBUTES =
         CURVE_ATTRIBUTES + setOf("point")
@@ -7711,7 +8006,7 @@ object JsxGraphEngine {
         when (creatorName) {
             "bisectorlines" -> 2
             "tangentto" -> 3
-            "axis" -> 2
+            "axis", "grid" -> 2
             in NON_SCENE_CREATORS -> 0
             else -> 1
         }

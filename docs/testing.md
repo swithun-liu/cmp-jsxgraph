@@ -307,6 +307,14 @@ label placement, lifecycle relationships, and invalid construction behavior:
 node tools/upstream-fixtures/axis.mjs
 ```
 
+Capture the official two-dimensional Grid major/minor Curve relationship,
+themes, faces, units, Axis-parent spacing, identity, lifecycle, and invalid
+construction behavior:
+
+```bash
+node tools/upstream-fixtures/grid.mjs
+```
+
 Capture the official StepFunction expansion, missing-Y behavior, retained
 source-array mutation, zero-arity function parents, and invalid arity:
 
@@ -1280,8 +1288,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 95 cases:
-30 generated production scenarios followed by 65 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 96 cases:
+30 generated production scenarios followed by 66 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1293,7 +1301,7 @@ separate demo schema into handwritten native geometry. The focused
 `tangent_curve`, `ellipses`, `hyperbolas`, `parabolas`,
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
-`ticks_2d`, `axis_2d`, `hatch_2d`,
+`ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1370,6 +1378,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `curves` | 0.986698 | 0.975236 |
 | `ticks_2d` | 0.987918 | 0.983795 |
 | `axis_2d` | 0.986872 | 0.970148 |
+| `grid_2d` | 0.988817 | 0.980518 |
 | `hatch_2d` | 0.988453 | 0.984529 |
 | `step_functions` | 0.987344 | 0.975382 |
 | `polygons` | 0.986562 | 0.973171 |
@@ -1473,6 +1482,16 @@ changes, non-draggable endpoints, generated-sub-element relationships,
 dynamic endpoint and Ticks updates, percent/fraction/pixel conversion,
 diagonal static fallback, recursive removal, duplicate-ID rollback, and
 object/tick limits. This fixture remains outside the 30-case Stable corpus.
+The Grid capture verifies explicit hidden Axis parents and the theme-six
+circle/point combination from one JessieCode source. Desktop `1200 x 900` and
+Compact `390 x 844` captures scored `0.988817` and `0.980518`. Both contact
+sheets passed manual review for major/minor spacing, circle and point faces,
+color, clipping, overlap, and blank output. Core and official-fixture tests
+additionally cover themes `0..6`, every documented face, automatic and
+user/`px`/`%`/`fr` spacing, `forceSquare`, boundaries, zero-axis controls,
+nested identity, lifecycle cleanup, persistent sessions, pre-allocation
+resource limits, and atomic rollback. This fixture remains outside the
+30-case Stable corpus.
 The PolygonalChain capture verifies the official open Segment border,
 transparent default fill, ordered vertices, and visible absence of the
 last-to-first edge. Desktop and Compact scored `0.986474` and `0.972464`;
@@ -1870,9 +1889,9 @@ contact sheets passed manual review for geometry, topology, face closure,
 shading, transparency, overlap, clipping, and blank output. Surface3D
 parametric point projection additionally matches the official COBYLA fixture
 above.
-Together with the two-dimensional Ticks/Axis/Hatch, Polygon3D, Curve3D, VectorField3D, Circle3D,
+Together with the two-dimensional Ticks/Axis/Grid/Hatch, Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 95 cases while the independently
+the development corpus now contains 96 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
+import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.JsxGraphColor
 import com.swithun.jsxgraph.core.JsxGraphElementStyle
 import com.swithun.jsxgraph.core.JsxGraphFillGradient
@@ -935,13 +936,29 @@ private fun DrawScope.drawSceneCurve(
     curve: JsxGraphSceneElement.Curve,
     metrics: BoardMetrics,
 ) {
+    val resolvedGrid = curve.grid?.let { grid ->
+        when (
+            val result = grid.resolve(
+                visibleLeft = metrics.left.toDouble(),
+                visibleTop = metrics.top.toDouble(),
+                visibleRight = metrics.right.toDouble(),
+                visibleBottom = metrics.bottom.toDouble(),
+                cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
+                cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> null
+        }
+    }
     val commands = curvePathCommands(
         points = curveScreenPoints(
             curve = curve,
             metrics = metrics,
             density = density,
+            resolvedGrid = resolvedGrid,
         ),
-        bezierDegree = curve.bezierDegree,
+        bezierDegree = resolvedGrid?.bezierDegree ?: curve.bezierDegree,
     )
     val path = Path()
     var segmentCount = 0
@@ -976,17 +993,26 @@ private fun DrawScope.drawSceneCurve(
     val stroke = curve.style.strokeColor.toComposeColor(
         opacity = curve.style.strokeOpacity,
     )
+    val strokeWidth =
+        resolvedGrid?.pointStrokeWidth ?: curve.style.strokeWidth
     if (
         segmentCount > 0 &&
         stroke.alpha > 0.0f &&
-        curve.style.strokeWidth > 0.0
+        strokeWidth > 0.0
     ) {
         drawPath(
             path = path,
             color = stroke,
             style = Stroke(
-                width = curve.style.strokeWidth.dp.toPx(),
-                cap = StrokeCap.Round,
+                width = strokeWidth.dp.toPx(),
+                cap =
+                    if (
+                        (resolvedGrid?.lineCap ?: curve.lineCap) == "square"
+                    ) {
+                        StrokeCap.Square
+                    } else {
+                        StrokeCap.Round
+                    },
                 pathEffect = strokeDashPathEffect(curve.style),
             ),
         )
@@ -1204,12 +1230,20 @@ internal fun curveScreenPoints(
     curve: JsxGraphSceneElement.Curve,
     metrics: BoardMetrics,
     density: Float,
+    resolvedGrid:
+        com.swithun.jsxgraph.core.JsxGraphResolvedGrid? = null,
 ): List<Offset?> =
-    curve.resolvePoints(
-        // JSXGraph board units are CSS pixels, which correspond to Compose dp.
-        cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
-        cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
-    ).map { point ->
+    (
+        resolvedGrid?.points ?: curve.resolvePoints(
+            visibleLeft = metrics.left.toDouble(),
+            visibleTop = metrics.top.toDouble(),
+            visibleRight = metrics.right.toDouble(),
+            visibleBottom = metrics.bottom.toDouble(),
+            // JSXGraph board units are CSS pixels, corresponding to Compose dp.
+            cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
+            cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
+        )
+        ).map { point ->
         point?.let {
             metrics.toScreen(it.toOffset())
         }?.takeIf { screen ->

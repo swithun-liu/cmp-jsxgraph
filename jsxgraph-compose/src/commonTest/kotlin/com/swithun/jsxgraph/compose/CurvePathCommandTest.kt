@@ -5,10 +5,13 @@
 package com.swithun.jsxgraph.compose
 
 import androidx.compose.ui.geometry.Offset
+import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.JsxGraphAutoRadiusAngle
 import com.swithun.jsxgraph.core.JsxGraphColor
+import com.swithun.jsxgraph.core.JsxGraphEngine
 import com.swithun.jsxgraph.core.JsxGraphElementStyle
 import com.swithun.jsxgraph.core.JsxGraphPoint2D
+import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -118,6 +121,59 @@ class CurvePathCommandTest {
             40.0f,
             assertIs<Offset>(compact[3]).x -
                 assertIs<Offset>(compact[0]).x,
+            absoluteTolerance = 1.0e-4f,
+        )
+    }
+
+    @Test
+    fun explicitGridUsesFinalViewportCssPixelScale() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-6, 5, 6, -5],
+                  "objects": [
+                    {
+                      "id": "grid",
+                      "type": "grid",
+                      "parents": [],
+                      "attributes": {
+                        "majorStep": "100px",
+                        "minorElements": 0
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+        val curve = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements.single { element -> element.id == "grid" },
+        )
+
+        val desktop = curveScreenPoints(
+            curve = curve,
+            metrics = BoardMetrics(width = 1_200.0f, height = 1_000.0f),
+            density = 2.0f,
+        )
+        val compact = curveScreenPoints(
+            curve = curve,
+            metrics = BoardMetrics(width = 600.0f, height = 500.0f),
+            density = 2.0f,
+        )
+
+        assertEquals(30, desktop.size)
+        assertEquals(18, compact.size)
+        assertEquals(
+            200.0f,
+            assertIs<Offset>(desktop[3]).y -
+                assertIs<Offset>(desktop[0]).y,
+            absoluteTolerance = 1.0e-4f,
+        )
+        assertEquals(
+            200.0f,
+            assertIs<Offset>(compact[3]).y -
+                assertIs<Offset>(compact[0]).y,
             absoluteTolerance = 1.0e-4f,
         )
     }

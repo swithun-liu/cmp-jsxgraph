@@ -51,6 +51,15 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphGrid2D
+import com.swithun.jsxgraph.core.JsxGraphGridDrawZero
+import com.swithun.jsxgraph.core.JsxGraphGridFace
+import com.swithun.jsxgraph.core.JsxGraphGridForceSquare
+import com.swithun.jsxgraph.core.JsxGraphGridLength
+import com.swithun.jsxgraph.core.JsxGraphGridMinorElements
+import com.swithun.jsxgraph.core.JsxGraphGridPair
+import com.swithun.jsxgraph.core.JsxGraphGridResolveError
+import com.swithun.jsxgraph.core.JsxGraphGridRole
 import com.swithun.jsxgraph.core.base.AngleRadius
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.ArcError
@@ -102,6 +111,8 @@ import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.Face3DLightAttributes
 import com.swithun.jsxgraph.core.base.Face3DShaderAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Grid
+import com.swithun.jsxgraph.core.base.GridError
 import com.swithun.jsxgraph.core.base.GeometryElement3D
 import com.swithun.jsxgraph.core.base.Hatch
 import com.swithun.jsxgraph.core.base.Hyperbola
@@ -339,6 +350,10 @@ internal sealed interface JessieCodeCreatorError {
         val error: AxisError,
     ) : JessieCodeCreatorError
 
+    data class GridFactory(
+        val error: GridError,
+    ) : JessieCodeCreatorError
+
     data class RadicalAxisFactory(
         val error: RadicalAxisError,
     ) : JessieCodeCreatorError
@@ -431,6 +446,38 @@ internal sealed interface JessieCodeCreatorError {
 internal object NativeJessieCodeCreators {
     private val AXIS_DISTANCE_PATTERN = Regex(
         """^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(%|fr|px)?""",
+    )
+    private val GRID_FACES = setOf(
+        ".",
+        "point",
+        "o",
+        "circle",
+        "regpol",
+        "regularpolygon",
+        "[]",
+        "square",
+        "<>",
+        "diamond",
+        "<<>>",
+        "diamond2",
+        "x",
+        "cross",
+        "+",
+        "plus",
+        "-",
+        "minus",
+        "|",
+        "divide",
+        "^",
+        "a",
+        "triangleup",
+        "v",
+        "triangledown",
+        "<",
+        "triangleleft",
+        ">",
+        "triangleright",
+        "line",
     )
 
     private val creators = mapOf(
@@ -867,6 +914,9 @@ internal object NativeJessieCodeCreators {
         },
         "axis" to JessieCodeCreator { board, parents, attributes, location ->
             createAxis(board, parents, attributes, location)
+        },
+        "grid" to JessieCodeCreator { board, parents, attributes, location ->
+            createGrid(board, parents, attributes, location)
         },
         "ticks" to JessieCodeCreator {
                 board,
@@ -8656,6 +8706,669 @@ internal object NativeJessieCodeCreators {
                 )
             }
         }
+    }
+
+    // JSXGraph 1.13.3: src/element/grid.js -> JXG.createGrid;
+    // src/options.js -> grid / grid.themes.
+    private fun createGrid(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "grid"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size > 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val parentAxes = mutableListOf<Line>()
+        for (parent in parents) {
+            val axis = resolveElement(resolvedBoard, parent) as? Line
+            if (axis == null || axis.type != Const.OBJECT_TYPE_AXIS) {
+                return unsupported(creatorName, parents, location)
+            }
+            parentAxes += axis
+        }
+        val theme = integerAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "theme",
+            default = 0,
+            minimum = 0,
+            maximum = 6,
+            location = location,
+        ).valueOrReturn { return it }
+        val effective = gridEffectiveAttributes(attributes, theme)
+        var majorStep = gridLengthPairAttribute(
+            creatorName = creatorName,
+            attributes = effective,
+            name = "majorstep",
+            default = JsxGraphGridLength.Auto,
+            allowAuto = true,
+            numericIsPixels = false,
+            location = location,
+        ).valueOrReturn { return it }
+        effective.properties["gridx"]
+            ?.takeUnless {
+                it === JessieCodeRuntimeValue.NullValue ||
+                    it === JessieCodeRuntimeValue.UndefinedValue
+            }
+            ?.let {
+                val parsed = gridLengthPairAttribute(
+                    creatorName = creatorName,
+                    attributes = JessieCodeRuntimeValue.ObjectValue(
+                        mapOf("gridx" to it),
+                    ),
+                    name = "gridx",
+                    default = majorStep.x,
+                    allowAuto = false,
+                    numericIsPixels = false,
+                    location = location,
+                ).valueOrReturn { error -> return error }
+                majorStep = majorStep.copy(x = parsed.x)
+            }
+        effective.properties["gridy"]
+            ?.takeUnless {
+                it === JessieCodeRuntimeValue.NullValue ||
+                    it === JessieCodeRuntimeValue.UndefinedValue
+            }
+            ?.let {
+                val parsed = gridLengthPairAttribute(
+                    creatorName = creatorName,
+                    attributes = JessieCodeRuntimeValue.ObjectValue(
+                        mapOf("gridy" to it),
+                    ),
+                    name = "gridy",
+                    default = majorStep.y,
+                    allowAuto = false,
+                    numericIsPixels = false,
+                    location = location,
+                ).valueOrReturn { error -> return error }
+                majorStep = majorStep.copy(y = parsed.x)
+            }
+        val minorElements = gridMinorElementsPairAttribute(
+            creatorName = creatorName,
+            attributes = effective,
+            location = location,
+        ).valueOrReturn { return it }
+        val forceSquare = gridForceSquareAttribute(
+            creatorName = creatorName,
+            attributes = effective,
+            location = location,
+        ).valueOrReturn { return it }
+        val includeBoundaries = booleanAttribute(
+            creatorName = creatorName,
+            attributes = effective,
+            name = "includeboundaries",
+            default = false,
+            location = location,
+        ).valueOrReturn { return it }
+        val majorInput = nestedObjectAttribute(
+            creatorName = creatorName,
+            attributes = effective,
+            name = "major",
+            location = location,
+        ).valueOrReturn { return it }
+        val minorInput = nestedObjectAttribute(
+            creatorName = creatorName,
+            attributes = effective,
+            name = "minor",
+            location = location,
+        ).valueOrReturn { return it }
+        val majorAttributes = flattenedGridAttributes(
+            attributes = effective,
+            role = "major",
+        )
+        val minorAttributes = flattenedGridAttributes(
+            attributes = effective,
+            role = "minor",
+        )
+        val identity = creatorAttributes(
+            creatorName = creatorName,
+            attributes = majorAttributes,
+            location = location,
+            defaultNeedsRegularUpdate = false,
+        ).valueOrReturn { return it }
+        val major = gridFaceAttribute(
+            creatorName = creatorName,
+            attributes = majorInput,
+            prefix = "major",
+            defaultFace = "line",
+            defaultSize = 5.0,
+            location = location,
+        ).valueOrReturn { return it }
+        val minor = gridFaceAttribute(
+            creatorName = creatorName,
+            attributes = minorInput,
+            prefix = "minor",
+            defaultFace = "point",
+            defaultSize = 3.0,
+            location = location,
+        ).valueOrReturn { return it }
+        val minorIdentity = creatorAttributes(
+            creatorName = creatorName,
+            attributes = minorAttributes,
+            location = location,
+            defaultNeedsRegularUpdate = false,
+        ).valueOrReturn { return it }
+        val definition = JsxGraphGrid2D(
+            role = JsxGraphGridRole.Major,
+            majorStep = majorStep,
+            minorElements = minorElements,
+            forceSquare = forceSquare,
+            includeBoundaries = includeBoundaries,
+            major = major,
+            minor = minor,
+            parentMajorStep = JsxGraphGridPair(
+                parentAxes.getOrNull(0)
+                    ?.defaultTicks?.attributes?.ticksDistance,
+                parentAxes.getOrNull(1)
+                    ?.defaultTicks?.attributes?.ticksDistance,
+            ),
+            parentMinorElements = JsxGraphGridPair(
+                parentAxes.getOrNull(0)
+                    ?.defaultTicks?.attributes?.minorTicks?.toDouble(),
+                parentAxes.getOrNull(1)
+                    ?.defaultTicks?.attributes?.minorTicks?.toDouble(),
+            ),
+            maximumPointCount = resolvedBoard.maxCurvePoints,
+        )
+        return when (
+            val result = Grid.create(
+                board = resolvedBoard,
+                parentAxes = parentAxes,
+                definition = definition,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                minorId = minorIdentity.id.takeIf(String::isNotEmpty),
+                minorName = minorIdentity.name,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> when (val error = result.error) {
+                is GridError.Geometry -> {
+                    val pointLimit =
+                        error.error as?
+                            JsxGraphGridResolveError.PointLimitExceeded
+                    if (pointLimit != null) {
+                        GMResult.Err(
+                            JessieCodeRuntimeError.ResourceLimitExceeded(
+                                resource = "curve point count",
+                                limit = pointLimit.limit,
+                                requestedSize = pointLimit.requestedSize,
+                                location = location,
+                            ),
+                        )
+                    } else {
+                        failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError.GridFactory(error),
+                            location = location,
+                        )
+                    }
+                }
+                else -> failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.GridFactory(error),
+                    location = location,
+                )
+            }
+        }
+    }
+
+    private fun flattenedGridAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        role: String,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        val flattened = attributes.properties.toMutableMap()
+        val roleAttributes =
+            attributes.properties[role] as?
+                JessieCodeRuntimeValue.ObjectValue
+        flattened.remove("major")
+        flattened.remove("minor")
+        flattened.remove("themes")
+        flattened.putAll(roleAttributes?.properties.orEmpty())
+        return JessieCodeRuntimeValue.ObjectValue(flattened)
+    }
+
+    private fun gridEffectiveAttributes(
+        source: JessieCodeRuntimeValue.ObjectValue,
+        theme: Int,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        fun objectValue(
+            vararg entries: Pair<String, JessieCodeRuntimeValue>,
+        ) = JessieCodeRuntimeValue.ObjectValue(linkedMapOf(*entries))
+
+        val defaults = linkedMapOf<String, JessieCodeRuntimeValue>(
+            "majorstep" to JessieCodeRuntimeValue.StringValue("auto"),
+            "minorelements" to JessieCodeRuntimeValue.NumberValue(0.0),
+            "forcesquare" to JessieCodeRuntimeValue.BooleanValue(false),
+            "includeboundaries" to
+                JessieCodeRuntimeValue.BooleanValue(false),
+            "major" to objectValue(
+                "size" to JessieCodeRuntimeValue.NumberValue(5.0),
+                "face" to JessieCodeRuntimeValue.StringValue("line"),
+                "margin" to JessieCodeRuntimeValue.NumberValue(0.0),
+                "drawzero" to JessieCodeRuntimeValue.BooleanValue(true),
+                "polygonvertices" to
+                    JessieCodeRuntimeValue.NumberValue(6.0),
+            ),
+            "minor" to objectValue(
+                "visible" to
+                    JessieCodeRuntimeValue.StringValue("inherit"),
+                "size" to JessieCodeRuntimeValue.NumberValue(3.0),
+                "face" to JessieCodeRuntimeValue.StringValue("point"),
+                "margin" to JessieCodeRuntimeValue.NumberValue(0.0),
+                "drawzero" to JessieCodeRuntimeValue.BooleanValue(true),
+                "polygonvertices" to
+                    JessieCodeRuntimeValue.NumberValue(6.0),
+            ),
+        )
+        val themeValues = when (theme) {
+            1 -> mapOf(
+                "forcesquare" to JessieCodeRuntimeValue.StringValue("min"),
+                "major" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("line"),
+                ),
+            )
+            2 -> mapOf(
+                "minorelements" to
+                    JessieCodeRuntimeValue.StringValue("auto"),
+                "major" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("line"),
+                ),
+                "minor" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("point"),
+                    "size" to JessieCodeRuntimeValue.NumberValue(3.0),
+                ),
+            )
+            3 -> mapOf(
+                "minorelements" to
+                    JessieCodeRuntimeValue.StringValue("auto"),
+                "major" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("line"),
+                ),
+                "minor" to objectValue(
+                    "face" to JessieCodeRuntimeValue.StringValue("line"),
+                    "strokeopacity" to
+                        JessieCodeRuntimeValue.NumberValue(0.25),
+                ),
+            )
+            4 -> mapOf(
+                "minorelements" to
+                    JessieCodeRuntimeValue.StringValue("auto"),
+                "major" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("line"),
+                ),
+                "minor" to objectValue(
+                    "face" to JessieCodeRuntimeValue.StringValue("+"),
+                    "size" to JessieCodeRuntimeValue.StringValue("95%"),
+                ),
+            )
+            5 -> mapOf(
+                "minorelements" to
+                    JessieCodeRuntimeValue.StringValue("auto"),
+                "major" to objectValue(
+                    "face" to JessieCodeRuntimeValue.StringValue("+"),
+                    "size" to JessieCodeRuntimeValue.NumberValue(10.0),
+                    "strokeopacity" to
+                        JessieCodeRuntimeValue.NumberValue(1.0),
+                ),
+                "minor" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("point"),
+                    "size" to JessieCodeRuntimeValue.NumberValue(3.0),
+                ),
+            )
+            6 -> mapOf(
+                "minorelements" to
+                    JessieCodeRuntimeValue.StringValue("auto"),
+                "major" to objectValue(
+                    "face" to JessieCodeRuntimeValue.StringValue("circle"),
+                    "size" to JessieCodeRuntimeValue.NumberValue(8.0),
+                    "fillcolor" to
+                        JessieCodeRuntimeValue.StringValue("#c0c0c0"),
+                ),
+                "minor" to objectValue(
+                    "face" to
+                        JessieCodeRuntimeValue.StringValue("point"),
+                    "size" to JessieCodeRuntimeValue.NumberValue(3.0),
+                ),
+            )
+            else -> emptyMap()
+        }
+        mergeRuntimeGridAttributes(defaults, source.properties)
+        mergeRuntimeGridAttributes(defaults, themeValues)
+        return JessieCodeRuntimeValue.ObjectValue(defaults)
+    }
+
+    private fun mergeRuntimeGridAttributes(
+        target: MutableMap<String, JessieCodeRuntimeValue>,
+        source: Map<String, JessieCodeRuntimeValue>,
+    ) {
+        for ((name, value) in source) {
+            val targetObject =
+                target[name] as? JessieCodeRuntimeValue.ObjectValue
+            val sourceObject =
+                value as? JessieCodeRuntimeValue.ObjectValue
+            if (targetObject != null && sourceObject != null) {
+                val merged = targetObject.properties.toMutableMap()
+                mergeRuntimeGridAttributes(merged, sourceObject.properties)
+                target[name] = JessieCodeRuntimeValue.ObjectValue(merged)
+            } else {
+                target[name] = value
+            }
+        }
+    }
+
+    private fun gridFaceAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        prefix: String,
+        defaultFace: String,
+        defaultSize: Double,
+        location: JessieCodeAstLocation,
+    ): GMResult<JsxGraphGridFace, JessieCodeRuntimeError> {
+        val face = stringAttribute(
+            creatorName,
+            attributes,
+            "face",
+            defaultFace,
+            location,
+        ).valueOrReturn { return it }.lowercase()
+        if (face !in GRID_FACES) {
+            return invalidAttribute(
+                creatorName = creatorName,
+                attribute = "$prefix.face",
+                expected = "a supported grid face",
+                actual = attributes.properties["face"]
+                    ?: JessieCodeRuntimeValue.StringValue(face),
+                location = location,
+            )
+        }
+        val size = gridLengthPairAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "size",
+            default = JsxGraphGridLength.Pixels(defaultSize),
+            allowAuto = false,
+            numericIsPixels = true,
+            location = location,
+            attributePrefix = "$prefix.",
+        ).valueOrReturn { return it }
+        val margin = numberAttribute(
+            creatorName,
+            attributes,
+            "margin",
+            0.0,
+            location,
+        ).valueOrReturn { return it }
+        val drawZero = gridDrawZeroAttribute(
+            creatorName,
+            attributes,
+            "$prefix.",
+            location,
+        ).valueOrReturn { return it }
+        val polygonVertices = integerAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "polygonvertices",
+            default = 6,
+            minimum = 1,
+            maximum = 4096,
+            location = location,
+        ).valueOrReturn { return it }
+        return GMResult.Ok(
+            JsxGraphGridFace(
+                face = face,
+                size = size,
+                margin = margin,
+                drawZero = drawZero,
+                polygonVertices = polygonVertices,
+            ),
+        )
+    }
+
+    private fun gridLengthPairAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: JsxGraphGridLength,
+        allowAuto: Boolean,
+        numericIsPixels: Boolean,
+        location: JessieCodeAstLocation,
+        attributePrefix: String = "",
+    ): GMResult<
+        JsxGraphGridPair<JsxGraphGridLength>,
+        JessieCodeRuntimeError,
+        > {
+        val value = attributes.properties[name]
+        if (
+            value == null ||
+            value === JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            return GMResult.Ok(JsxGraphGridPair(default, default))
+        }
+        val values =
+            if (value is JessieCodeRuntimeValue.ArrayValue) {
+                if (value.values.isEmpty()) {
+                    return invalidAttribute(
+                        creatorName,
+                        "$attributePrefix$name",
+                        "a value or non-empty pair",
+                        value,
+                        location,
+                    )
+                }
+                listOf(value.values[0], value.values.getOrElse(1) {
+                    value.values[0]
+                })
+            } else {
+                listOf(value, value)
+            }
+        val parsed = values.map { item ->
+            parseGridLength(item, allowAuto, numericIsPixels)
+                ?: return invalidAttribute(
+                    creatorName,
+                    "$attributePrefix$name",
+                    "a positive number, auto, or numeric %, fr, or px string",
+                    item,
+                    location,
+                )
+        }
+        if (parsed.any { it.numericValue() <= 0.0 }) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "$attributePrefix$name",
+                    actual = value.toString(),
+                ),
+                location = location,
+            )
+        }
+        return GMResult.Ok(JsxGraphGridPair(parsed[0], parsed[1]))
+    }
+
+    private fun parseGridLength(
+        value: JessieCodeRuntimeValue,
+        allowAuto: Boolean,
+        numericIsPixels: Boolean,
+    ): JsxGraphGridLength? =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                value.value.takeIf(Double::isFinite)?.let {
+                    if (numericIsPixels) {
+                        JsxGraphGridLength.Pixels(it)
+                    } else {
+                        JsxGraphGridLength.User(it)
+                    }
+                }
+            is JessieCodeRuntimeValue.StringValue -> {
+                if (allowAuto && value.value.lowercase() == "auto") {
+                    JsxGraphGridLength.Auto
+                } else {
+                    when (val parsed = parseAxisDistance(value.value)) {
+                        is AxisDistance.User ->
+                            if (numericIsPixels) {
+                                JsxGraphGridLength.Pixels(parsed.value)
+                            } else {
+                                JsxGraphGridLength.User(parsed.value)
+                            }
+                        is AxisDistance.Percent ->
+                            JsxGraphGridLength.Percent(parsed.value)
+                        is AxisDistance.Fraction ->
+                            JsxGraphGridLength.Fraction(parsed.value)
+                        is AxisDistance.Pixels ->
+                            JsxGraphGridLength.Pixels(parsed.value)
+                        null -> null
+                    }
+                }
+            }
+            else -> null
+        }
+
+    private fun JsxGraphGridLength.numericValue(): Double =
+        when (this) {
+            JsxGraphGridLength.Auto -> 1.0
+            is JsxGraphGridLength.User -> value
+            is JsxGraphGridLength.Percent -> value
+            is JsxGraphGridLength.Fraction -> value
+            is JsxGraphGridLength.Pixels -> value
+        }
+
+    private fun gridMinorElementsPairAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<
+        JsxGraphGridPair<JsxGraphGridMinorElements>,
+        JessieCodeRuntimeError,
+        > {
+        val value = attributes.properties["minorelements"]
+            ?: JessieCodeRuntimeValue.NumberValue(0.0)
+        val values =
+            if (value is JessieCodeRuntimeValue.ArrayValue) {
+                if (value.values.isEmpty()) {
+                    return invalidAttribute(
+                        creatorName,
+                        "minorelements",
+                        "a value or non-empty pair",
+                        value,
+                        location,
+                    )
+                }
+                listOf(value.values[0], value.values.getOrElse(1) {
+                    value.values[0]
+                })
+            } else {
+                listOf(value, value)
+            }
+        val parsed = values.map { item ->
+            val result = when (item) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    item.value.takeIf { it.isFinite() && it >= 0.0 }
+                        ?.let(JsxGraphGridMinorElements::Fixed)
+                is JessieCodeRuntimeValue.StringValue ->
+                    if (item.value.lowercase() == "auto") {
+                        JsxGraphGridMinorElements.Auto
+                    } else {
+                        item.value.toDoubleOrNull()
+                            ?.takeIf { it.isFinite() && it >= 0.0 }
+                            ?.let(JsxGraphGridMinorElements::Fixed)
+                    }
+                else -> null
+            }
+            result ?: return invalidAttribute(
+                creatorName,
+                "minorelements",
+                "auto or a non-negative finite number",
+                item,
+                location,
+            )
+        }
+        return GMResult.Ok(JsxGraphGridPair(parsed[0], parsed[1]))
+    }
+
+    private fun gridForceSquareAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<JsxGraphGridForceSquare, JessieCodeRuntimeError> {
+        val value = attributes.properties["forcesquare"]
+            ?: return GMResult.Ok(JsxGraphGridForceSquare.None)
+        val parsed = when (value) {
+            is JessieCodeRuntimeValue.BooleanValue ->
+                if (value.value) {
+                    JsxGraphGridForceSquare.Min
+                } else {
+                    JsxGraphGridForceSquare.None
+                }
+            is JessieCodeRuntimeValue.StringValue ->
+                when (value.value.lowercase()) {
+                    "min" -> JsxGraphGridForceSquare.Min
+                    "max" -> JsxGraphGridForceSquare.Max
+                    else -> null
+                }
+            else -> null
+        }
+        return parsed?.let { GMResult.Ok(it) }
+            ?: invalidAttribute(
+                creatorName,
+                "forcesquare",
+                "a boolean, min, or max",
+                value,
+                location,
+            )
+    }
+
+    private fun gridDrawZeroAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        prefix: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<JsxGraphGridDrawZero, JessieCodeRuntimeError> {
+        val value = attributes.properties["drawzero"]
+            ?: return GMResult.Ok(JsxGraphGridDrawZero.All)
+        if (value is JessieCodeRuntimeValue.BooleanValue) {
+            return GMResult.Ok(
+                JsxGraphGridDrawZero(
+                    origin = value.value,
+                    x = value.value,
+                    y = value.value,
+                ),
+            )
+        }
+        val objectValue = value as? JessieCodeRuntimeValue.ObjectValue
+            ?: return invalidAttribute(
+                creatorName,
+                "${prefix}drawzero",
+                "a boolean or object",
+                value,
+                location,
+            )
+        fun component(name: String): GMResult<Boolean, JessieCodeRuntimeError> =
+            booleanAttribute(
+                creatorName,
+                objectValue,
+                name,
+                true,
+                location,
+            )
+        val origin = component("origin").valueOrReturn { return it }
+        val x = component("x").valueOrReturn { return it }
+        val y = component("y").valueOrReturn { return it }
+        return GMResult.Ok(JsxGraphGridDrawZero(origin, x, y))
     }
 
     // JSXGraph 1.13.3: src/base/line.js -> JXG.createAxis;

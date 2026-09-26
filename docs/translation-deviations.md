@@ -462,6 +462,18 @@ practical.
   mesh terms use the same bounded, atomic behavior as VectorField. Function
   dependencies remain metadata-only. The public runtime does not yet expose
   either field type's `setF` mutation method.
+- `src/element/grid.js -> createGrid` is translated as the upstream pair of
+  linked major/minor Curve elements, including theme `0..6` merge order,
+  documented faces, unit-aware spacing, square forcing, boundary and zero-axis
+  controls, explicit Axis parents, registration, and removal. Grid geometry
+  remains viewport-dependent in the scene and is resolved against the final
+  Compose dimensions. Kotlin checks the configured Curve-point budget before
+  allocation and atomically removes both Curves when either geometry pass
+  fails; upstream instead relies on its local line-count guard. A parentless
+  Grid currently uses the standalone automatic-spacing fallback because the
+  translated Board does not yet create upstream `defaultAxes`. Explicit Axis
+  parents preserve their major/minor tick distances. Runtime visual-property
+  mutation, hit testing, and the remaining Grid APIs are pending.
 - `createNormal` translates registered Line/Point, Circle/Point, and
   Curve/Point parents in either order. The Line branch preserves the ideal
   direction helper, `point` and `subs.point` access, and the duplicated helper

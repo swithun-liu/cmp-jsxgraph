@@ -129,6 +129,17 @@ qualification batches pass.
   Desktop/Compact static parity gates pass. Runtime attribute mutation,
   complete label/APIs, hit testing, independent production cases, and Stable
   qualification remain pending.
+- Grid: `src/element/grid.js -> createGrid` and the `src/options.js` defaults
+  and themes now cover linked major/minor Curves, all documented faces,
+  themes `0..6`, `majorStep`, `minorElements`, `forceSquare`, boundary and
+  zero-axis controls, user/`px`/`%`/`fr` units, and explicit Axis parents.
+  JSON, JessieCode, persistent sessions, scene snapshots, and Compose use the
+  same viewport-dependent definitions; point growth is checked before
+  allocation and partial creation rolls back atomically. Core, creator,
+  document/session, official fixture, and focused Desktop/Compact static
+  parity gates pass. Default Board-axis fallback, runtime attribute mutation,
+  hit testing, independent production cases, complete APIs, and Stable
+  qualification remain pending.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point

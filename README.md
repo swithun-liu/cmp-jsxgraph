@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 95 source-controlled cases: 30 independent production scenarios and
-65 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 96 source-controlled cases: 30 independent production scenarios and
+66 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -32,6 +32,7 @@ Focused direct links remain available for cases such as
 [curves](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curves), and
 [2D ticks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=ticks_2d),
 [2D axes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=axis_2d),
+[2D grids](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=grid_2d),
 [2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
@@ -145,7 +146,7 @@ Implemented translation slices:
   Circumcircle,
   Point Reflection, MirrorElement's Point branch, MirrorPoint, Midpoint,
   ParallelPoint, Parallel, ArrowParallel, BisectorLines, Bisector, Incenter,
-  Incircle, Intersection, OtherIntersection, Curve, Ticks, Axis, CurveIntersection,
+  Incircle, Intersection, OtherIntersection, Curve, Ticks, Axis, Grid, CurveIntersection,
   CurveUnion, CurveDifference, FunctionGraph, Plot, StepFunction, Derivative,
   Spline, CardinalSpline, RiemannSum, BoxPlot, Comb, Inequality, VectorField,
   SlopeField,
@@ -228,7 +229,7 @@ Implemented translation slices:
   RadicalAxis, PolePoint, Circle/Point, Line/Point, and Curve/Point Tangent,
   Polar, Circle/Point TangentTo, PolarLine, Text, Arc, Sector, and Angle
   elements through the translated Board and native creator registry;
-- a platform-independent Point/Line/Segment/Circle/Curve/Ticks/Polygon/Text/
+- a platform-independent Point/Line/Segment/Circle/Curve/Ticks/Grid/Polygon/Text/
   Arc/Sector/Angle render scene
   consumed by Compose, including discrete data plots, right-open naive sampling
   for explicit-domain function and parametric curves, retained-array
@@ -339,7 +340,7 @@ The first production source contract maps directly to ordered
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted object
 types are `transform`, `view3d`, `transform3d`, `point3d`, `point`, `line`,
-`arrow`, `segment`, `circle`, `curve`, `ticks`, `hatch`, `hash`,
+`arrow`, `segment`, `circle`, `curve`, `ticks`, `grid`, `hatch`, `hash`,
 `ellipse`, `hyperbola`, `parabola`, `curveintersection`, `curveunion`,
 `curvedifference`,
 `functiongraph`, `plot`,
@@ -377,7 +378,7 @@ Supported elements accept a finite non-negative integer `layer`. Compose
 orders Grid, Axis, top-level elements, and Polygon fill/borders/implicit
 vertices by the JSXGraph `1.13.3` default or explicit layer, then by creation
 order. Nested Polygon `vertices`/`borders` styling, dynamic layer mutation, and
-unsupported Axis/Ticks/Grid options remain pending.
+remaining Axis/Ticks/Grid options remain pending.
 
 Circle supports Point, numeric, JessieCode string, Line, Circle, and
 three-Point circumcircle radius forms. The native JessieCode creator also
@@ -484,6 +485,17 @@ Desktop/Compact fixture passes at `0.986872`/`0.970148`. It remains outside the
 30-case Stable corpus while diagonal fixed/sticky behavior follows upstream
 static fallback and complete mutation, label, hit-testing, and renderer APIs
 remain pending.
+
+Grid translates `src/element/grid.js -> createGrid` and the `src/options.js`
+defaults/themes into linked major and minor Curve elements. Themes `0..6`,
+all documented faces, `majorStep`, `minorElements`, `forceSquare`, boundary
+and zero-axis controls, user/`px`/`%`/`fr` units, and explicit Axis parents are
+supported through JSON, JessieCode, persistent sessions, scene snapshots, and
+final-viewport Compose resolution. Creation and geometry-limit failures roll
+back both Curves atomically. The focused Desktop/Compact fixture passes at
+`0.988817`/`0.980518`. It remains outside the 30-case Stable corpus while
+default Board-axis fallback, runtime attribute mutation, hit testing, and the
+complete Grid API remain pending.
 
 StepFunction translates `src/base/curve.js -> createStepfunction`. It retains
 the two source terms, rebuilds `dataX`/`dataY` on each regular Board update,
