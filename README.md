@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 94 source-controlled cases: 30 independent production scenarios and
-64 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 95 source-controlled cases: 30 independent production scenarios and
+65 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -31,6 +31,7 @@ Focused direct links remain available for cases such as
 [baseline geometry](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=baseline_geometry),
 [curves](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curves), and
 [2D ticks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=ticks_2d),
+[2D axes](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=axis_2d),
 [2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
@@ -144,7 +145,7 @@ Implemented translation slices:
   Circumcircle,
   Point Reflection, MirrorElement's Point branch, MirrorPoint, Midpoint,
   ParallelPoint, Parallel, ArrowParallel, BisectorLines, Bisector, Incenter,
-  Incircle, Intersection, OtherIntersection, Curve, Ticks, CurveIntersection,
+  Incircle, Intersection, OtherIntersection, Curve, Ticks, Axis, CurveIntersection,
   CurveUnion, CurveDifference, FunctionGraph, Plot, StepFunction, Derivative,
   Spline, CardinalSpline, RiemannSum, BoxPlot, Comb, Inequality, VectorField,
   SlopeField,
@@ -376,7 +377,7 @@ Supported elements accept a finite non-negative integer `layer`. Compose
 orders Grid, Axis, top-level elements, and Polygon fill/borders/implicit
 vertices by the JSXGraph `1.13.3` default or explicit layer, then by creation
 order. Nested Polygon `vertices`/`borders` styling, dynamic layer mutation, and
-the remaining Axis/Ticks/Grid option surface are not yet translated.
+unsupported Axis/Ticks/Grid options remain pending.
 
 Circle supports Point, numeric, JessieCode string, Line, Circle, and
 three-Point circumcircle radius forms. The native JessieCode creator also
@@ -471,6 +472,18 @@ bounded fractional count semantics. Their focused Desktop/Compact fixture
 passes at `0.988453`/`0.984529`. Both fixtures remain outside the 30-case
 Stable corpus while function-valued distances, runtime mutation, hit testing,
 and the complete API remain pending.
+
+Axis translates `src/base/line.js -> createAxis` as the official Line wrapper
+with non-draggable AxisPoint endpoints, the generated `defaultTicks`
+relationship, arrow and style defaults, and atomic rollback. Horizontal and
+vertical `static`/`fixed`/`sticky` positioning supports numeric, `%`, `fr`, and
+`px` distances; `ticksAutoPos` resolves labels from the final viewport. JSON
+and JessieCode create the same Axis plus generated Ticks scene, including
+dynamic endpoint updates and bounded fixed-tick input. The focused
+Desktop/Compact fixture passes at `0.986872`/`0.970148`. It remains outside the
+30-case Stable corpus while diagonal fixed/sticky behavior follows upstream
+static fallback and complete mutation, label, hit-testing, and renderer APIs
+remain pending.
 
 StepFunction translates `src/base/curve.js -> createStepfunction`. It retains
 the two source terms, rebuilds `dataX`/`dataY` on each regular Board update,

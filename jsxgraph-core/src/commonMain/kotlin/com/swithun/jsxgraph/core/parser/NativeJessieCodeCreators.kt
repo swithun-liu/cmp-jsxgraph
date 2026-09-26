@@ -54,6 +54,10 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.AngleRadius
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.ArcError
+import com.swithun.jsxgraph.core.base.Axis
+import com.swithun.jsxgraph.core.base.AxisAttributes
+import com.swithun.jsxgraph.core.base.AxisDistance
+import com.swithun.jsxgraph.core.base.AxisError
 import com.swithun.jsxgraph.core.base.Axes3D
 import com.swithun.jsxgraph.core.base.Axes3DError
 import com.swithun.jsxgraph.core.base.Axes3DTicksAttributes
@@ -331,6 +335,10 @@ internal sealed interface JessieCodeCreatorError {
         val error: LineError,
     ) : JessieCodeCreatorError
 
+    data class AxisFactory(
+        val error: AxisError,
+    ) : JessieCodeCreatorError
+
     data class RadicalAxisFactory(
         val error: RadicalAxisError,
     ) : JessieCodeCreatorError
@@ -421,6 +429,10 @@ internal sealed interface JessieCodeCreatorError {
  * JXG.registerElement. Custom environment creators retain precedence.
  */
 internal object NativeJessieCodeCreators {
+    private val AXIS_DISTANCE_PATTERN = Regex(
+        """^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(%|fr|px)?""",
+    )
+
     private val creators = mapOf(
         "transform" to JessieCodeCreator {
                 board,
@@ -852,6 +864,9 @@ internal object NativeJessieCodeCreators {
         },
         "line" to JessieCodeCreator { board, parents, attributes, location ->
             createLine(board, parents, attributes, location)
+        },
+        "axis" to JessieCodeCreator { board, parents, attributes, location ->
+            createAxis(board, parents, attributes, location)
         },
         "ticks" to JessieCodeCreator {
                 board,
@@ -8643,6 +8658,342 @@ internal object NativeJessieCodeCreators {
         }
     }
 
+    // JSXGraph 1.13.3: src/base/line.js -> JXG.createAxis;
+    // src/options.js -> axis.
+    private fun createAxis(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "axis"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+                defaultNeedsRegularUpdate = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val materialized = when (
+            val result = materializePointParents(
+                board = resolvedBoard,
+                parents = parents,
+                creatorName = creatorName,
+                expectedCount = 2,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val position = stringAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "position",
+            default = "static",
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }.lowercase()
+        val anchor = stringAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "anchor",
+            default = "",
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }.lowercase()
+        val anchorDist = axisDistanceAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "anchordist",
+            default = AxisDistance.Percent(10.0),
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val ticksAutoPos = booleanAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "ticksautopos",
+            default = false,
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val ticksAutoPosThreshold = axisDistanceAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "ticksautoposthreshold",
+            default = AxisDistance.Percent(5.0),
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val straightFirst = booleanAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "straightfirst",
+            default = true,
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val straightLast = booleanAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "straightlast",
+            default = true,
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val ticksInput = nestedObjectAttribute(
+            creatorName = creatorName,
+            attributes = attributes,
+            name = "ticks",
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val mergedTicks = axisTicksAttributes(
+            ticksAttributes = ticksInput,
+        )
+        val ticksIdentity = creatorAttributes(
+            creatorName = creatorName,
+            attributes = mergedTicks,
+            location = location,
+            defaultNeedsRegularUpdate = false,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val parsedTicksAttributes = ticksAttributes(
+            attributes = mergedTicks,
+            location = location,
+        ).valueOrReturn {
+            resolvedBoard.removeObjects(materialized.ownedPoints)
+            return it
+        }
+        val ticksSource =
+            if (
+                ticksInput.properties["ticksdistance"] ===
+                JessieCodeRuntimeValue.UndefinedValue
+            ) {
+                when (val ticks = ticksInput.properties["ticks"]) {
+                    null,
+                    JessieCodeRuntimeValue.UndefinedValue,
+                    -> TicksSource.Equidistant
+                    is JessieCodeRuntimeValue.ArrayValue -> {
+                        val values = numericArray(ticks)
+                            ?: run {
+                                resolvedBoard.removeObjects(
+                                    materialized.ownedPoints,
+                                )
+                                return invalidAttribute(
+                                    creatorName = creatorName,
+                                    attribute = "ticks.ticks",
+                                    expected = "an array of finite numbers",
+                                    actual = ticks,
+                                    location = location,
+                                )
+                            }
+                        TicksSource.Fixed(values)
+                    }
+                    else -> {
+                        resolvedBoard.removeObjects(materialized.ownedPoints)
+                        return invalidAttribute(
+                            creatorName = creatorName,
+                            attribute = "ticks.ticks",
+                            expected = "an array of finite numbers",
+                            actual = ticks,
+                            location = location,
+                        )
+                    }
+                }
+            } else {
+                // options.axis.ticks.ticksDistance defaults to 1.0, so the
+                // upstream existence check wins over a ticks array unless
+                // callers explicitly assign undefined.
+                TicksSource.Equidistant
+            }
+        val points = materialized.points
+        return when (
+            val result = Axis.create(
+                board = resolvedBoard,
+                point1 = points[0],
+                point2 = points[1],
+                attributes = AxisAttributes(
+                    position = position,
+                    anchor = anchor,
+                    anchorDist = anchorDist,
+                    ticksAutoPos = ticksAutoPos,
+                    ticksAutoPosThreshold = ticksAutoPosThreshold,
+                ),
+                ticksSource = ticksSource,
+                ticksAttributes = parsedTicksAttributes,
+                id = identity.id,
+                name = identity.name ?: "",
+                needsRegularUpdate = identity.needsRegularUpdate,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                ticksId = ticksIdentity.id,
+                ticksName = ticksIdentity.name,
+                ticksNeedsRegularUpdate =
+                    ticksIdentity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                resolvedBoard.removeObjects(materialized.ownedPoints)
+                failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.AxisFactory(
+                        result.error,
+                    ),
+                    location = location,
+                )
+            }
+        }
+    }
+
+    private fun axisTicksAttributes(
+        ticksAttributes: JessieCodeRuntimeValue.ObjectValue,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        val label = (
+            ticksAttributes.properties["label"] as?
+                JessieCodeRuntimeValue.ObjectValue
+            )
+        val mergedLabel =
+            linkedMapOf<String, JessieCodeRuntimeValue>(
+                "offset" to JessieCodeRuntimeValue.ArrayValue(
+                    mutableListOf(
+                        JessieCodeRuntimeValue.NumberValue(4.0),
+                        JessieCodeRuntimeValue.NumberValue(-9.0),
+                    ),
+                ),
+                "visible" to
+                    JessieCodeRuntimeValue.StringValue("inherit"),
+                "needsregularupdate" to
+                    JessieCodeRuntimeValue.BooleanValue(false),
+                "layer" to JessieCodeRuntimeValue.NumberValue(9.0),
+            ).apply {
+                putAll(label?.properties.orEmpty())
+            }
+        val merged =
+            linkedMapOf<String, JessieCodeRuntimeValue>(
+                "visible" to
+                    JessieCodeRuntimeValue.StringValue("inherit"),
+                "needsregularupdate" to
+                    JessieCodeRuntimeValue.BooleanValue(false),
+                "strokewidth" to
+                    JessieCodeRuntimeValue.NumberValue(1.0),
+                "strokecolor" to
+                    JessieCodeRuntimeValue.StringValue("#666666"),
+                "drawlabels" to
+                    JessieCodeRuntimeValue.BooleanValue(true),
+                "drawzero" to
+                    JessieCodeRuntimeValue.BooleanValue(false),
+                "insertticks" to
+                    JessieCodeRuntimeValue.BooleanValue(true),
+                "minticksdistance" to
+                    JessieCodeRuntimeValue.NumberValue(5.0),
+                "minorheight" to
+                    JessieCodeRuntimeValue.NumberValue(10.0),
+                "majorheight" to
+                    JessieCodeRuntimeValue.NumberValue(-1.0),
+                "tickendings" to numericRuntimeArray(0.0, 1.0),
+                "majortickendings" to numericRuntimeArray(1.0, 1.0),
+                "minorticks" to
+                    JessieCodeRuntimeValue.NumberValue(4.0),
+                "ticksdistance" to
+                    JessieCodeRuntimeValue.NumberValue(1.0),
+                "strokeopacity" to
+                    JessieCodeRuntimeValue.NumberValue(0.25),
+            ).apply {
+                putAll(ticksAttributes.properties)
+                this["label"] =
+                    JessieCodeRuntimeValue.ObjectValue(mergedLabel)
+            }
+        return JessieCodeRuntimeValue.ObjectValue(merged)
+    }
+
+    private fun numericRuntimeArray(
+        first: Double,
+        second: Double,
+    ): JessieCodeRuntimeValue.ArrayValue =
+        JessieCodeRuntimeValue.ArrayValue(
+            mutableListOf(
+                JessieCodeRuntimeValue.NumberValue(first),
+                JessieCodeRuntimeValue.NumberValue(second),
+            ),
+        )
+
+    private fun axisDistanceAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: AxisDistance,
+        location: JessieCodeAstLocation,
+    ): GMResult<AxisDistance, JessieCodeRuntimeError> {
+        val value = attributes.properties[name]
+            ?: return GMResult.Ok(default)
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return GMResult.Ok(default)
+        }
+        val parsed = when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                value.value.takeIf(Double::isFinite)
+                    ?.let(AxisDistance::User)
+            is JessieCodeRuntimeValue.StringValue ->
+                parseAxisDistance(value.value)
+            else -> null
+        }
+        return parsed?.let { GMResult.Ok(it) }
+            ?: invalidAttribute(
+                creatorName = creatorName,
+                attribute = name,
+                expected =
+                    "a finite number or a numeric %, fr, or px string",
+                actual = value,
+                location = location,
+            )
+    }
+
+    private fun parseAxisDistance(value: String): AxisDistance? {
+        val match = AXIS_DISTANCE_PATTERN.find(value) ?: return null
+        val number = match.groupValues[1].toDoubleOrNull()
+            ?.takeIf(Double::isFinite) ?: return null
+        return when (match.groupValues[2].lowercase()) {
+            "%" -> AxisDistance.Percent(number)
+            "fr" -> AxisDistance.Fraction(number)
+            "px" -> AxisDistance.Pixels(number)
+            else -> AxisDistance.User(number)
+        }
+    }
+
     private fun createLine(
         board: Board?,
         parents: List<JessieCodeRuntimeValue>,
@@ -14712,6 +15063,7 @@ internal object NativeJessieCodeCreators {
         creatorName: String,
         attributes: JessieCodeRuntimeValue.ObjectValue,
         location: JessieCodeAstLocation,
+        defaultNeedsRegularUpdate: Boolean = true,
     ): GMResult<CreatorAttributes, JessieCodeRuntimeError> {
         val id = when (
             val result = stringAttribute(
@@ -14741,7 +15093,7 @@ internal object NativeJessieCodeCreators {
                 creatorName,
                 attributes,
                 "needsregularupdate",
-                default = true,
+                default = defaultNeedsRegularUpdate,
                 location,
             )
         ) {

@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **63 development parity scenarios.** These remain focused regression
+3. **65 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -149,6 +149,14 @@ ticks inherited from an invisible parent. It scored `0.987918` on Desktop and
 fixtures and JVM tests additionally cover equidistant spacing, Curve normals,
 polar geometry, movement, formatting, lifecycle cleanup, and resource limits.
 This evidence remains outside the 30-case Stable production corpus.
+The focused two-dimensional Axis fixture verifies fixed horizontal and
+vertical axes, a sticky axis, generated default Ticks, fixed-tick precedence,
+unit-bearing distances, and viewport-dependent automatic label placement. It
+scored `0.986872` on Desktop and `0.970148` on Compact. Both contact sheets
+passed manual review; official fixtures and JVM tests additionally cover
+AxisPoint identity, non-draggable endpoints, generated-sub-element
+relationships, dynamic updates, cleanup, rollback, and resource limits. This
+evidence remains outside the 30-case Stable production corpus.
 The construction-document path now accepts ordered `transform` objects and
 resolves their IDs in subsequent transformed-Point parents without emitting
 scene elements for the transforms. The separate official
@@ -161,7 +169,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 64 focused cases, but this does not change the
+contains 30 production and 65 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary

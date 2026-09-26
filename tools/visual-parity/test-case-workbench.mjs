@@ -3,7 +3,7 @@ import {Buffer} from "node:buffer";
 import puppeteer from "puppeteer";
 
 const baseUrl = process.env.BASE_URL ?? "http://127.0.0.1:8093/";
-const expectedCaseCount = 94;
+const expectedCaseCount = 95;
 const defaultCaseId = "prod_geometry_segment_network";
 const secondCaseId = "prod_geometry_fixed_length_segment";
 const menuTargetCaseId = "prod_curve_quadratic_trend";

@@ -14,6 +14,7 @@ package com.swithun.jsxgraph.core
 
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Arc
+import com.swithun.jsxgraph.core.base.AxisDistance
 import com.swithun.jsxgraph.core.base.Axes3D
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Circle3D
@@ -801,6 +802,27 @@ object JsxGraphEngine {
                                     }
                                     created += expanded
                                     creationCount += expanded.size
+                                } else if (creatorName == "axis") {
+                                    val line = value.element as? Line
+                                    val expanded = line?.let {
+                                        axisCreatedSourceElements(
+                                            source = source,
+                                            line = it,
+                                        )
+                                    }
+                                    if (expanded == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native axis creator " +
+                                                        "returned an " +
+                                                        "incomplete axis.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
+                                    created += expanded
+                                    creationCount += expanded.size
                                 } else {
                                     created += CreatedSourceElement(
                                         source = source,
@@ -1203,6 +1225,7 @@ object JsxGraphEngine {
                     parents.getOrNull(1) as?
                         JessieCodeRuntimeValue.ArrayValue
                     )?.values?.size?.toLong()
+                "axis" -> runtimeAxisFixedTickCount(attributes)
                 "hatch", "hash" ->
                     (
                         parents.getOrNull(1) as?
@@ -1518,6 +1541,24 @@ object JsxGraphEngine {
         return null
     }
 
+    // JSXGraph 1.13.3: src/base/line.js -> JXG.createAxis.
+    private fun runtimeAxisFixedTickCount(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Long? {
+        val ticks = attributes.properties["ticks"] as?
+            JessieCodeRuntimeValue.ObjectValue ?: return null
+        if (
+            ticks.properties["ticksdistance"] !==
+            JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            return null
+        }
+        return (
+            ticks.properties["ticks"] as?
+                JessieCodeRuntimeValue.ArrayValue
+            )?.values?.size?.toLong()
+    }
+
     private fun publicJessieCodeError(
         error: JessieCodeSessionError,
     ): JsxGraphJessieCodeError =
@@ -1761,6 +1802,77 @@ object JsxGraphEngine {
             effective.putAll(nested)
         }
         return JsonObject(effective)
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> createAxis defaultTicks.
+    private fun axisCreatedSourceElements(
+        source: ParsedObject,
+        line: Line,
+    ): List<CreatedSourceElement>? {
+        val ticks = line.defaultTicks ?: return null
+        return listOf(
+            CreatedSourceElement(
+                source = source,
+                element = line,
+            ),
+            CreatedSourceElement(
+                source = ParsedObject(
+                    index = source.index + 1,
+                    id = ticks.id,
+                    type = "ticks",
+                    parents = JsonArray(emptyList()),
+                    attributes = axisTicksSourceAttributes(
+                        source.attributes,
+                    ),
+                ),
+                element = ticks,
+            ),
+        )
+    }
+
+    private fun axisTicksSourceAttributes(
+        axisAttributes: JsonObject,
+    ): JsonObject {
+        val ticks = axisAttributes["ticks"] as? JsonObject
+            ?: JsonObject(emptyMap())
+        val sourceLabel = ticks["label"] as? JsonObject
+            ?: JsonObject(emptyMap())
+        val label = linkedMapOf<String, JsonElement>(
+            "offset" to JsonArray(
+                listOf(JsonPrimitive(4), JsonPrimitive(-9)),
+            ),
+            "visible" to JsonPrimitive("inherit"),
+            "needsregularupdate" to JsonPrimitive(false),
+            "layer" to JsonPrimitive(9),
+        ).apply {
+            putAll(sourceLabel)
+        }
+        val attributes = linkedMapOf<String, JsonElement>(
+            "visible" to JsonPrimitive("inherit"),
+            "needsregularupdate" to JsonPrimitive(false),
+            "strokewidth" to JsonPrimitive(1),
+            "strokecolor" to JsonPrimitive("#666666"),
+            "drawlabels" to JsonPrimitive(true),
+            "drawzero" to JsonPrimitive(false),
+            "insertticks" to JsonPrimitive(true),
+            "minticksdistance" to JsonPrimitive(5),
+            "minorheight" to JsonPrimitive(10),
+            "majorheight" to JsonPrimitive(-1),
+            "tickendings" to JsonArray(
+                listOf(JsonPrimitive(0), JsonPrimitive(1)),
+            ),
+            "majortickendings" to JsonArray(
+                listOf(JsonPrimitive(1), JsonPrimitive(1)),
+            ),
+            "minorticks" to JsonPrimitive(4),
+            "ticksdistance" to JsonPrimitive(1),
+            "strokeopacity" to JsonPrimitive(0.25),
+        ).apply {
+            putAll(ticks)
+            remove("ticks")
+            this["label"] = JsonObject(label)
+        }
+        return JsonObject(attributes)
     }
 
     private fun axes3DCreatedSourceElements(
@@ -2477,6 +2589,29 @@ object JsxGraphEngine {
                     invalidTangentToDocumentResult(sourceObject),
                 )
                 created += expanded
+            } else if (sourceObject.type == "axis") {
+                val line = element as? Line
+                    ?: return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = sourceObject.index,
+                            id = sourceObject.id,
+                            type = sourceObject.type,
+                            reason =
+                                "creator did not return an Axis Line",
+                        ),
+                    )
+                val expanded = axisCreatedSourceElements(
+                    source = sourceObject,
+                    line = line,
+                ) ?: return GMResult.Err(
+                    JsxGraphDocumentError.ElementCreation(
+                        objectIndex = sourceObject.index,
+                        id = sourceObject.id,
+                        type = sourceObject.type,
+                        reason = "axis did not create defaultTicks",
+                    ),
+                )
+                created += expanded
             } else if (sourceObject.type == "polyhedron3d") {
                 val polyhedron = element as? Polyhedron3D
                     ?: return GMResult.Err(
@@ -2863,6 +2998,8 @@ object JsxGraphEngine {
                             straightFirst = parent.straightFirst,
                             straightLast = parent.straightLast,
                             axis = parent.type == Const.OBJECT_TYPE_AXIS,
+                            axisDefinition =
+                                axisSceneDefinition(parent),
                         )
                     }
                     is Curve ->
@@ -3302,7 +3439,9 @@ object JsxGraphEngine {
                     val result = attributes.arrowHead(
                         name = "lastarrow",
                         default =
-                            if (isArrow) {
+                            if (source.type == "axis") {
+                                DEFAULT_AXIS_ARROW_HEAD
+                            } else if (isArrow) {
                                 DEFAULT_ARROW_HEAD
                             } else {
                                 null
@@ -3330,6 +3469,7 @@ object JsxGraphEngine {
                     straightLast = renderStraightLast,
                     firstArrow = firstArrow,
                     lastArrow = lastArrow,
+                    axis = axisSceneDefinition(element),
                 )
             }
 
@@ -5769,6 +5909,50 @@ object JsxGraphEngine {
         }
     }
 
+    private fun axisSceneDefinition(line: Line): JsxGraphAxis2D? {
+        val definition = line.axisDefinition ?: return null
+        fun point(coordinates: DoubleArray): JsxGraphPoint2D? {
+            val weight = coordinates.getOrNull(0) ?: return null
+            val x = coordinates.getOrNull(1) ?: return null
+            val y = coordinates.getOrNull(2) ?: return null
+            if (
+                !weight.isFinite() ||
+                !x.isFinite() ||
+                !y.isFinite() ||
+                abs(weight) <= Mat.eps
+            ) {
+                return null
+            }
+            return JsxGraphPoint2D(x / weight, y / weight)
+        }
+        val originalPoint1 = point(definition.originalPoint1)
+            ?: return null
+        val originalPoint2 = point(definition.originalPoint2)
+            ?: return null
+        fun distance(value: AxisDistance): JsxGraphAxisDistance2D =
+            when (value) {
+                is AxisDistance.User ->
+                    JsxGraphAxisDistance2D.User(value.value)
+                is AxisDistance.Percent ->
+                    JsxGraphAxisDistance2D.Percent(value.value)
+                is AxisDistance.Fraction ->
+                    JsxGraphAxisDistance2D.Fraction(value.value)
+                is AxisDistance.Pixels ->
+                    JsxGraphAxisDistance2D.Pixels(value.value)
+            }
+        val attributes = definition.attributes
+        return JsxGraphAxis2D(
+            originalPoint1 = originalPoint1,
+            originalPoint2 = originalPoint2,
+            position = attributes.position,
+            anchor = attributes.anchor,
+            anchorDistance = distance(attributes.anchorDist),
+            ticksAutoPos = attributes.ticksAutoPos,
+            ticksAutoPosThreshold =
+                distance(attributes.ticksAutoPosThreshold),
+        )
+    }
+
     // JSXGraph: src/element/composition.js -> createParallel ideal point.
     // Compose consumes finite Cartesian endpoints, so preserve the ideal
     // point's direction while anchoring it at the finite line endpoint.
@@ -6008,7 +6192,16 @@ object JsxGraphEngine {
                         is Point3D -> POINT_ATTRIBUTES
                         is Point -> POINT_ATTRIBUTES
                         is Ticks -> TICKS_ATTRIBUTES
-                        is Line -> LINE_ATTRIBUTES
+                        is Line ->
+                            LINE_ATTRIBUTES +
+                                if (
+                                    element.type ==
+                                    Const.OBJECT_TYPE_AXIS
+                                ) {
+                                    AXIS_ATTRIBUTES
+                                } else {
+                                    emptySet()
+                                }
                         is Circle -> CIRCLE_ATTRIBUTES
                         is Arc -> ARC_ATTRIBUTES
                         is Sector ->
@@ -6186,6 +6379,36 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
+            if (
+                element is Line &&
+                element.type == Const.OBJECT_TYPE_AXIS
+            ) {
+                when (
+                    val result = validateNestedAttributes(
+                        name = "ticks",
+                        supported =
+                            COMMON_ATTRIBUTES +
+                                TICKS_ATTRIBUTES +
+                                setOf("ticks"),
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                val ticks = when (val result = nested("ticks")) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = ticks.validateNestedAttributes(
+                        name = "label",
+                        supported = TICKS_LABEL_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
             if (element is Plane3D || element is Surface3D) {
                 when (
                     val result = validateNestedAttributes(
@@ -6342,6 +6565,12 @@ object JsxGraphEngine {
                         DEFAULT_TICKS_COLOR
                     }
                 is Text3D, is Text -> DEFAULT_TEXT_COLOR
+                is Line ->
+                    if (element.type == Const.OBJECT_TYPE_AXIS) {
+                        DEFAULT_AXIS_COLOR
+                    } else {
+                        DEFAULT_STROKE_COLOR
+                    }
                 is Curve ->
                     when {
                         element.isMesh3D -> DEFAULT_MESH_3D_COLOR
@@ -6432,6 +6661,8 @@ object JsxGraphEngine {
                             element is Face3D -> 1.0
                             element is Polygon3D -> 1.0
                             element is Point3D -> 0.0
+                            element is Line &&
+                                element.type == Const.OBJECT_TYPE_AXIS -> 1.0
                             element is Ticks ->
                                 if (element.elType == "hatch") 2.0 else 1.0
                             element is Curve && element.isBoxPlot -> 2.0
@@ -6842,7 +7073,12 @@ object JsxGraphEngine {
                 is Text3D, is Text -> DEFAULT_TEXT_LAYER
                 is Arc -> DEFAULT_ARC_LAYER
                 is Ticks -> DEFAULT_TICKS_LAYER
-                is Line -> DEFAULT_LINE_LAYER
+                is Line ->
+                    if (element.type == Const.OBJECT_TYPE_AXIS) {
+                        DEFAULT_AXIS_LAYER
+                    } else {
+                        DEFAULT_LINE_LAYER
+                    }
                 is Circle -> DEFAULT_CIRCLE_LAYER
                 is Sector -> DEFAULT_AREA_LAYER
                 is Curve ->
@@ -7200,6 +7436,8 @@ object JsxGraphEngine {
         JsxGraphColor(red = 240, green = 228, blue = 66)
     private val DEFAULT_COMB_STROKE_COLOR =
         JsxGraphColor(red = 0, green = 0, blue = 255)
+    private val DEFAULT_AXIS_COLOR =
+        JsxGraphColor(red = 102, green = 102, blue = 102)
     private const val MIN_ARROW_TYPE = 1
     private const val MAX_ARROW_TYPE = 7
     private const val DEFAULT_ARROW_TYPE = 1
@@ -7209,7 +7447,13 @@ object JsxGraphEngine {
         size = DEFAULT_ARROW_SIZE,
         highlightSize = DEFAULT_ARROW_SIZE,
     )
+    private val DEFAULT_AXIS_ARROW_HEAD = JsxGraphArrowHead(
+        type = DEFAULT_ARROW_TYPE,
+        size = 8.0,
+        highlightSize = 8.0,
+    )
     private const val DEFAULT_ELEMENT_LAYER = 0
+    private const val DEFAULT_AXIS_LAYER = 2
     private const val DEFAULT_AREA_LAYER = 3
     private const val DEFAULT_CURVE_LAYER = 5
     private const val DEFAULT_POLYGON_BORDER_LAYER = 5
@@ -7279,6 +7523,15 @@ object JsxGraphEngine {
         "point",
         "point1",
         "point2",
+    )
+    private val AXIS_ATTRIBUTES = setOf(
+        "position",
+        "anchor",
+        "anchordist",
+        "ticksautopos",
+        "ticksautoposthreshold",
+        "withticks",
+        "ticks",
     )
     private val PLANE_3D_ATTRIBUTES = setOf(
         "type",
@@ -7458,6 +7711,7 @@ object JsxGraphEngine {
         when (creatorName) {
             "bisectorlines" -> 2
             "tangentto" -> 3
+            "axis" -> 2
             in NON_SCENE_CREATORS -> 0
             else -> 1
         }

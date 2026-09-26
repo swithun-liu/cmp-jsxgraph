@@ -100,6 +100,9 @@ internal open class Line internal constructor(
     internal var tangentToPoint: IntersectionPoint? = null
     internal var tangentToPolar: Line? = null
     internal val subs = linkedMapOf<String, GeometryElement>()
+    // JSXGraph 1.13.3: src/base/line.js -> createAxis.
+    internal var axisDefinition: AxisDefinition? = null
+    internal var defaultTicks: Ticks? = null
 
     internal var hasFixedLength: Boolean = false
         private set
@@ -125,8 +128,31 @@ internal open class Line internal constructor(
         if (!needsUpdate) {
             return this
         }
+        updateAxisPosition()
         updateSegmentFixedLength()
         updateStdform()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> createAxis.update.
+    internal fun updateAxisPosition(): Line {
+        val definition = axisDefinition ?: return this
+        val resolved = definition.resolve(
+            currentPoint1 = point1.coords.usrCoords,
+            currentPoint2 = point2.coords.usrCoords,
+            boundingBox = board.getBoundingBox(),
+            pixelsPerUnitX = board.unitX,
+            pixelsPerUnitY = board.unitY,
+        )
+        point1.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            resolved.point1,
+        )
+        point2.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            resolved.point2,
+        )
+        defaultTicks?.needsUpdate = true
         return this
     }
 

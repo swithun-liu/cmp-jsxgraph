@@ -466,6 +466,166 @@ data class JsxGraphTicks3DLabel(
     }
 }
 
+sealed interface JsxGraphAxisDistance2D {
+    fun resolve(
+        relativeTo: Double,
+        pixelsToUser: Double,
+    ): Double
+
+    data class User(val value: Double) : JsxGraphAxisDistance2D {
+        override fun resolve(
+            relativeTo: Double,
+            pixelsToUser: Double,
+        ): Double = value
+    }
+
+    data class Percent(val value: Double) : JsxGraphAxisDistance2D {
+        override fun resolve(
+            relativeTo: Double,
+            pixelsToUser: Double,
+        ): Double = value * relativeTo * 0.01
+    }
+
+    data class Fraction(val value: Double) : JsxGraphAxisDistance2D {
+        override fun resolve(
+            relativeTo: Double,
+            pixelsToUser: Double,
+        ): Double = value * relativeTo
+    }
+
+    data class Pixels(val value: Double) : JsxGraphAxisDistance2D {
+        override fun resolve(
+            relativeTo: Double,
+            pixelsToUser: Double,
+        ): Double = value * pixelsToUser
+    }
+}
+
+data class JsxGraphAxis2D(
+    val originalPoint1: JsxGraphPoint2D,
+    val originalPoint2: JsxGraphPoint2D,
+    val position: String,
+    val anchor: String,
+    val anchorDistance: JsxGraphAxisDistance2D,
+    val ticksAutoPos: Boolean,
+    val ticksAutoPosThreshold: JsxGraphAxisDistance2D,
+) {
+    // JSXGraph 1.13.3: src/base/line.js -> createAxis.update;
+    // src/base/board.js -> getPointLoc.
+    fun resolvePoints(
+        currentPoint1: JsxGraphPoint2D,
+        currentPoint2: JsxGraphPoint2D,
+        visibleLeft: Double,
+        visibleTop: Double,
+        visibleRight: Double,
+        visibleBottom: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): Pair<JsxGraphPoint2D, JsxGraphPoint2D> {
+        val directionX = currentPoint2.x - currentPoint1.x
+        val directionY = currentPoint2.y - currentPoint1.y
+        val horizontal = directionY == 0.0 && directionX != 0.0
+        val vertical = directionX == 0.0 && directionY != 0.0
+        if (position == "static" || (!horizontal && !vertical)) {
+            return currentPoint1 to currentPoint2
+        }
+        val left = "left" in anchor
+        val right = "right" in anchor
+        val distance = when {
+            horizontal -> anchorDistance.resolve(
+                relativeTo = abs(visibleTop - visibleBottom),
+                pixelsToUser = 1.0 / cssPixelsPerUnitX,
+            )
+            vertical -> anchorDistance.resolve(
+                relativeTo = abs(visibleLeft - visibleRight),
+                pixelsToUser = 1.0 / cssPixelsPerUnitY,
+            )
+            else -> 0.0
+        }
+        val originalLocationX = when {
+            originalPoint1.x > visibleRight - distance -> 1
+            originalPoint1.x < visibleLeft + distance -> -1
+            else -> 0
+        }
+        val originalLocationY = when {
+            originalPoint1.y > visibleTop - distance -> 1
+            originalPoint1.y < visibleBottom + distance -> -1
+            else -> 0
+        }
+        var point1 = currentPoint1
+        var point2 = currentPoint2
+
+        fun setHorizontal(y: Double) {
+            point1 = point1.copy(y = y)
+            point2 = point2.copy(y = y)
+        }
+
+        fun setVertical(x: Double) {
+            point1 = point1.copy(x = x)
+            point2 = point2.copy(x = x)
+        }
+
+        fun restoreOriginal() {
+            point1 = originalPoint1
+            point2 = originalPoint2
+        }
+
+        when (position) {
+            "fixed" -> when {
+                horizontal &&
+                    (
+                        directionX > 0.0 && right ||
+                            directionX < 0.0 && left
+                        ) -> setHorizontal(visibleBottom + distance)
+                horizontal &&
+                    (
+                        directionX > 0.0 && left ||
+                            directionX < 0.0 && right
+                        ) -> setHorizontal(visibleTop - distance)
+                vertical &&
+                    (
+                        directionY > 0.0 && left ||
+                            directionY < 0.0 && right
+                        ) -> setVertical(visibleLeft + distance)
+                vertical &&
+                    (
+                        directionY > 0.0 && right ||
+                            directionY < 0.0 && left
+                        ) -> setVertical(visibleRight - distance)
+                else -> restoreOriginal()
+            }
+            "sticky" -> when {
+                horizontal &&
+                    originalLocationY < 0 &&
+                    (
+                        directionX > 0.0 && right ||
+                            directionX < 0.0 && left
+                        ) -> setHorizontal(visibleBottom + distance)
+                horizontal &&
+                    originalLocationY > 0 &&
+                    (
+                        directionX > 0.0 && left ||
+                            directionX < 0.0 && right
+                        ) -> setHorizontal(visibleTop - distance)
+                vertical &&
+                    originalLocationX < 0 &&
+                    (
+                        directionY > 0.0 && left ||
+                            directionY < 0.0 && right
+                        ) -> setVertical(visibleLeft + distance)
+                vertical &&
+                    originalLocationX > 0 &&
+                    (
+                        directionY > 0.0 && right ||
+                            directionY < 0.0 && left
+                        ) -> setVertical(visibleRight - distance)
+                else -> restoreOriginal()
+            }
+        }
+        return point1 to point2
+    }
+}
+
 sealed interface JsxGraphTicksParent2D {
     data class Line(
         val point1: JsxGraphPoint2D,
@@ -473,6 +633,7 @@ sealed interface JsxGraphTicksParent2D {
         val straightFirst: Boolean,
         val straightLast: Boolean,
         val axis: Boolean,
+        val axisDefinition: JsxGraphAxis2D? = null,
     ) : JsxGraphTicksParent2D
 
     data class Curve(
@@ -511,6 +672,7 @@ data class JsxGraphTickLabel(
 data class JsxGraphResolvedTicks(
     val paths: List<JsxGraphTickPath>,
     val labels: List<JsxGraphTickLabel>,
+    val labelStyle: JsxGraphTicksLabelStyle? = null,
 )
 
 /**
@@ -577,10 +739,11 @@ data class JsxGraphTicks2D(
                 labels = emptyList(),
             )
         }
-        val locations = when (val parent = parent) {
-            is JsxGraphTicksParent2D.Line ->
-                lineLocations(
-                    parent = parent,
+        val resolvedParent = when (val parent = parent) {
+            is JsxGraphTicksParent2D.Line -> {
+                val points = parent.axisDefinition?.resolvePoints(
+                    currentPoint1 = parent.point1,
+                    currentPoint2 = parent.point2,
                     visibleLeft = visibleLeft,
                     visibleTop = visibleTop,
                     visibleRight = visibleRight,
@@ -588,7 +751,43 @@ data class JsxGraphTicks2D(
                     cssPixelsPerUnitX = cssPixelsPerUnitX,
                     cssPixelsPerUnitY = cssPixelsPerUnitY,
                 )
-            is JsxGraphTicksParent2D.Curve -> parent.locations
+                if (points == null) {
+                    parent
+                } else {
+                    parent.copy(
+                        point1 = points.first,
+                        point2 = points.second,
+                    )
+                }
+            }
+            is JsxGraphTicksParent2D.Curve -> parent
+        }
+        val effectiveLabelStyle =
+            if (resolvedParent is JsxGraphTicksParent2D.Line) {
+                resolveAxisLabelStyle(
+                    parent = resolvedParent,
+                    visibleLeft = visibleLeft,
+                    visibleTop = visibleTop,
+                    visibleRight = visibleRight,
+                    visibleBottom = visibleBottom,
+                    cssPixelsPerUnitX = cssPixelsPerUnitX,
+                    cssPixelsPerUnitY = cssPixelsPerUnitY,
+                )
+            } else {
+                labelStyle
+            }
+        val locations = when (resolvedParent) {
+            is JsxGraphTicksParent2D.Line ->
+                lineLocations(
+                    parent = resolvedParent,
+                    visibleLeft = visibleLeft,
+                    visibleTop = visibleTop,
+                    visibleRight = visibleRight,
+                    visibleBottom = visibleBottom,
+                    cssPixelsPerUnitX = cssPixelsPerUnitX,
+                    cssPixelsPerUnitY = cssPixelsPerUnitY,
+                )
+            is JsxGraphTicksParent2D.Curve -> resolvedParent.locations
         }
         val paths = mutableListOf<JsxGraphTickPath>()
         val labels = mutableListOf<JsxGraphTickLabel>()
@@ -603,12 +802,12 @@ data class JsxGraphTicks2D(
                 cssPixelsPerUnitY = cssPixelsPerUnitY,
             )?.let(paths::add)
             val label = location.label
-            if (label != null && labelStyle.visible) {
+            if (label != null && effectiveLabelStyle.visible) {
                 val position = JsxGraphPoint2D(
                     x = location.base.x +
-                        labelStyle.offsetX / cssPixelsPerUnitX,
+                        effectiveLabelStyle.offsetX / cssPixelsPerUnitX,
                     y = location.base.y +
-                        labelStyle.offsetY / cssPixelsPerUnitY,
+                        effectiveLabelStyle.offsetY / cssPixelsPerUnitY,
                 )
                 if (
                     !clip ||
@@ -621,7 +820,104 @@ data class JsxGraphTicks2D(
                 }
             }
         }
-        return JsxGraphResolvedTicks(paths = paths, labels = labels)
+        return JsxGraphResolvedTicks(
+            paths = paths,
+            labels = labels,
+            labelStyle = effectiveLabelStyle,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js ->
+    // createAxis.update ticksAutoPos branch.
+    private fun resolveAxisLabelStyle(
+        parent: JsxGraphTicksParent2D.Line,
+        visibleLeft: Double,
+        visibleTop: Double,
+        visibleRight: Double,
+        visibleBottom: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): JsxGraphTicksLabelStyle {
+        val axis = parent.axisDefinition
+            ?.takeIf { it.ticksAutoPos }
+            ?: return labelStyle
+        val directionX = parent.point2.x - parent.point1.x
+        val directionY = parent.point2.y - parent.point1.y
+        val horizontal = directionY == 0.0 && directionX != 0.0
+        val vertical = directionX == 0.0 && directionY != 0.0
+        if (!horizontal && !vertical) {
+            return labelStyle
+        }
+        val threshold = when {
+            horizontal -> axis.ticksAutoPosThreshold.resolve(
+                relativeTo = abs(visibleTop - visibleBottom),
+                pixelsToUser = 1.0 / cssPixelsPerUnitX,
+            ) * cssPixelsPerUnitX
+            vertical -> axis.ticksAutoPosThreshold.resolve(
+                relativeTo = abs(visibleTop - visibleBottom),
+                pixelsToUser = 1.0 / cssPixelsPerUnitY,
+            ) * cssPixelsPerUnitY
+            else -> 0.0
+        }
+        return if (horizontal) {
+            val distance =
+                (
+                    (visibleTop + visibleBottom) * 0.5 -
+                        parent.point1.y
+                    ) * cssPixelsPerUnitY
+            when {
+                distance < 0.0 && abs(distance) > threshold ->
+                    labelStyle.copy(
+                        anchorY =
+                            if (labelStyle.anchorY == "top") {
+                                "bottom"
+                            } else {
+                                labelStyle.anchorY
+                            },
+                        offsetY = abs(labelStyle.offsetY),
+                    )
+                distance > 0.0 && abs(distance) > threshold ->
+                    labelStyle.copy(
+                        anchorY =
+                            if (labelStyle.anchorY == "bottom") {
+                                "top"
+                            } else {
+                                labelStyle.anchorY
+                            },
+                        offsetY = -abs(labelStyle.offsetY),
+                    )
+                else -> labelStyle
+            }
+        } else {
+            val distance =
+                (
+                    parent.point1.x -
+                        (visibleLeft + visibleRight) * 0.5
+                    ) * cssPixelsPerUnitX
+            when {
+                distance < 0.0 && abs(distance) > threshold ->
+                    labelStyle.copy(
+                        anchorX =
+                            if (labelStyle.anchorX == "left") {
+                                "right"
+                            } else {
+                                labelStyle.anchorX
+                            },
+                        offsetX = -abs(labelStyle.offsetX),
+                    )
+                distance > 0.0 && abs(distance) > threshold ->
+                    labelStyle.copy(
+                        anchorX =
+                            if (labelStyle.anchorX == "right") {
+                                "left"
+                            } else {
+                                labelStyle.anchorX
+                            },
+                        offsetX = abs(labelStyle.offsetX),
+                    )
+                else -> labelStyle
+            }
+        }
     }
 
     private fun lineLocations(
@@ -1115,6 +1411,7 @@ sealed interface JsxGraphSceneElement {
         val straightLast: Boolean,
         val firstArrow: JsxGraphArrowHead?,
         val lastArrow: JsxGraphArrowHead?,
+        val axis: JsxGraphAxis2D? = null,
     ) : JsxGraphSceneElement
 
     data class Ticks(

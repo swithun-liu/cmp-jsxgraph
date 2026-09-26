@@ -119,6 +119,16 @@ qualification batches pass.
   creation, and focused Desktop/Compact parity. Function-valued tick
   distances, runtime attribute mutation, hit testing, complete APIs,
   independent production cases, and Stable qualification remain pending.
+- Axis: `src/base/line.js -> createAxis`, `src/base/board.js -> getPointLoc`,
+  and the `src/options.js` defaults now cover the official Line wrapper,
+  non-draggable AxisPoint endpoints, generated default Ticks, arrow/style
+  defaults, fixed and sticky horizontal/vertical positioning, numeric and
+  unit-bearing distances, viewport-resolved `ticksAutoPos`, dynamic parent
+  updates, recursive cleanup, JSON/JessieCode resource limits, and atomic
+  rollback. Core, creator, document/session, official fixture, and focused
+  Desktop/Compact static parity gates pass. Runtime attribute mutation,
+  complete label/APIs, hit testing, independent production cases, and Stable
+  qualification remain pending.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point
@@ -425,8 +435,9 @@ qualification batches pass.
   `Options.layer` defaults and explicit non-negative integer overrides with
   creation order as the tie-breaker. Grid, Axis, top-level elements, and
   Polygon fill/borders/implicit vertices participate independently. Nested
-  Polygon styling, dynamic layer mutation, and the remaining renderer objects
-  and Board layer options are still pending.
+  Polygon styling, dynamic layer mutation, unsupported Axis/Ticks/Grid
+  options, and the remaining renderer objects and Board layer options are
+  still pending.
 - Canvas dash rendering: supported Point, Line, Circle, Curve, and
   Polygon-border strokes now use all seven
   `src/renderer/abstract.js -> dashArray` patterns. `dashScale` multiplies

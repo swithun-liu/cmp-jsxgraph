@@ -709,8 +709,18 @@ private fun DrawScope.drawSceneLine(
     line: JsxGraphSceneElement.Line,
     metrics: BoardMetrics,
 ) {
-    val point1 = metrics.toScreen(line.point1.toOffset())
-    val point2 = metrics.toScreen(line.point2.toOffset())
+    val resolvedPoints = line.axis?.resolvePoints(
+        currentPoint1 = line.point1,
+        currentPoint2 = line.point2,
+        visibleLeft = metrics.left.toDouble(),
+        visibleTop = metrics.top.toDouble(),
+        visibleRight = metrics.right.toDouble(),
+        visibleBottom = metrics.bottom.toDouble(),
+        cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
+        cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
+    ) ?: (line.point1 to line.point2)
+    val point1 = metrics.toScreen(resolvedPoints.first.toOffset())
+    val point2 = metrics.toScreen(resolvedPoints.second.toOffset())
     val color = line.style.strokeColor.toComposeColor(
         opacity = line.style.strokeOpacity,
     )
@@ -844,7 +854,8 @@ private fun DrawScope.drawSceneTicks(
             )
         }
     }
-    val labelStyle = ticks.definition.labelStyle
+    val labelStyle =
+        resolved.labelStyle ?: ticks.definition.labelStyle
     if (labelStyle.fontSize <= 0.0 || labelStyle.opacity <= 0.0) {
         return
     }

@@ -4,6 +4,7 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.ArcError
 import com.swithun.jsxgraph.core.base.AngleBisectorPoint
+import com.swithun.jsxgraph.core.base.AxisError
 import com.swithun.jsxgraph.core.base.BisectorLine
 import com.swithun.jsxgraph.core.base.BisectorLines
 import com.swithun.jsxgraph.core.base.BisectorLinesError
@@ -3786,6 +3787,90 @@ class NativeJessieCodeCreatorsTest {
             listOf("left", "inside", "middle", "right"),
             curveTicks.curveLocations.map(TicksCurveLocation::label),
         )
+    }
+
+    @Test
+    fun axisCreatorBuildsDefaultTicksAndParsesPositioningUnits() {
+        val board = board("axis")
+        val axis = line(
+            evaluate(
+                source =
+                    """
+                    axis([0, 0], [1, 0]) <<
+                        id: "axis",
+                        position: "fixed",
+                        anchor: "right",
+                        anchorDist: "25px",
+                        ticksAutoPos: true,
+                        ticksAutoPosThreshold: "5%",
+                        ticks: <<
+                            id: "axisTicks",
+                            ticks: [-2, 0, 3],
+                            ticksDistance: undefined,
+                            minorTicks: 0,
+                            label: <<
+                                anchorX: "middle",
+                                anchorY: "top"
+                            >>
+                        >>
+                    >>;
+                    """.trimIndent(),
+                board = board,
+            ),
+        )
+        val ticks = assertIs<Ticks>(axis.defaultTicks)
+
+        assertTrue("axis" in NativeJessieCodeCreators.names)
+        assertEquals(Const.OBJECT_TYPE_AXIS, axis.type)
+        assertEquals("axis", axis.elType)
+        assertFalse(axis.isDraggable)
+        assertFalse(axis.point1.isDraggable)
+        assertFalse(axis.point2.isDraggable)
+        assertEquals(Const.OBJECT_TYPE_AXISPOINT, axis.point1.type)
+        assertEquals(Const.OBJECT_TYPE_AXISPOINT, axis.point2.type)
+        assertEquals(false, axis.needsRegularUpdate)
+        assertEquals("axisTicks", ticks.id)
+        assertEquals(false, ticks.needsRegularUpdate)
+        assertIs<TicksSource.Fixed>(ticks.source).also { source ->
+            assertContentEquals(
+                doubleArrayOf(-2.0, 0.0, 3.0),
+                source.values,
+            )
+        }
+        assertEquals(0, ticks.attributes.minorTicks)
+        assertTrue(ticks.attributes.drawLabels)
+        assertTrue(ticks.attributes.insertTicks)
+        assertContentEquals(
+            doubleArrayOf(4.0, -9.0),
+            ticks.attributes.labelOffset,
+        )
+        assertEquals("middle", ticks.attributes.labelAnchorX)
+        assertEquals("top", ticks.attributes.labelAnchorY)
+        assertSame(ticks, axis.subs["ticks"])
+    }
+
+    @Test
+    fun axisCreatorRollsBackGeneratedPointsWhenTicksFail() {
+        val board = board("axis-rollback")
+        val error = creatorError(
+            source =
+                """
+                existing = point(4, 4) << id: "duplicate" >>;
+                axis([0, 0], [1, 0]) <<
+                    id: "axis",
+                    ticks: << id: "duplicate" >>
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        val axisError = assertIs<JessieCodeCreatorError.AxisFactory>(
+            error.error,
+        ).error
+        assertIs<AxisError.TicksFactory>(axisError)
+        assertEquals(setOf("duplicate"), board.objects.keys)
+        assertFalse(board.objects.values.any { it is Line })
+        assertFalse(board.objects.values.any { it is Ticks })
     }
 
     @Test
