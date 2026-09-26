@@ -57,6 +57,9 @@ internal open class GeometryElement(
     internal val childElements = linkedMapOf<String, GeometryElement>()
     internal val descendants = linkedMapOf<String, GeometryElement>()
     internal val ancestors = linkedMapOf<String, GeometryElement>()
+    // JSXGraph 1.13.3: src/base/element.js -> addTicks / removeTicks /
+    // removeAllTicks. Only Line and Curve parents accept entries.
+    internal val ticks = mutableListOf<Ticks>()
     // JSXGraph: src/base/element.js -> parents / getParents
     internal val parents = mutableListOf<String>()
 

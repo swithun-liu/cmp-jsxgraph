@@ -155,6 +155,22 @@ class ProductionCorpusTest {
                         "$caseId/${element.id} collapsed to one point",
                     )
                 }
+                is JsxGraphSceneElement.Ticks -> {
+                    val resolved = element.definition.resolve(
+                        visibleLeft = bounds.left,
+                        visibleTop = bounds.top,
+                        visibleRight = bounds.right,
+                        visibleBottom = bounds.bottom,
+                        cssPixelsPerUnitX = 50.0,
+                        cssPixelsPerUnitY = 50.0,
+                    )
+                    resolved.paths.flatMap { it.points }.forEach { point ->
+                        assertFinitePoint(caseId, element.id, point)
+                    }
+                    resolved.labels.forEach { label ->
+                        assertFinitePoint(caseId, element.id, label.position)
+                    }
+                }
                 is JsxGraphSceneElement.Circle -> {
                     assertFinitePoint(caseId, element.id, element.center)
                     assertTrue(

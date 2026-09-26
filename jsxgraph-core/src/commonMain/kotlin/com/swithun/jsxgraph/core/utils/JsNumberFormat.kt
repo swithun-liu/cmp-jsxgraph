@@ -92,6 +92,38 @@ internal object JsNumberFormat {
     }
 
     /**
+     * ECMAScript Number.toExponential behavior used by JSXGraph tick labels.
+     *
+     * The argument is the number of digits after the decimal point.
+     */
+    fun exponential(
+        value: Double,
+        digits: Int,
+    ): String {
+        if (!value.isFinite()) {
+            return compact(value)
+        }
+        val decimalPlaces = digits.coerceIn(0, 100)
+        if (value == 0.0) {
+            return fixed(0.0, decimalPlaces) + "e+0"
+        }
+        val sign = if (value < 0.0) "-" else ""
+        val absoluteValue = abs(value)
+        var exponent = floor(log10(absoluteValue)).toInt()
+        var mantissa = absoluteValue / 10.0.pow(exponent)
+        val factor = 10.0.pow(decimalPlaces)
+        mantissa = JsMath.round(mantissa * factor) / factor
+        if (mantissa >= 10.0) {
+            mantissa /= 10.0
+            exponent += 1
+        }
+        return sign +
+            fixed(mantissa, decimalPlaces) +
+            "e" +
+            if (exponent >= 0) "+$exponent" else exponent.toString()
+    }
+
+    /**
      * JSXGraph: src/utils/type.js -> _round10 through Env._round10.
      */
     fun roundDecimal(

@@ -283,6 +283,22 @@ creator lifecycle, parent updates, and invalid arity:
 node tools/upstream-fixtures/curve-boolean-clipping.mjs
 ```
 
+Capture the official two-dimensional Ticks lifecycle, fixed/equidistant
+positions, labels, Curve normals, faces, finite/infinite endings, polar paths,
+parent visibility inheritance, movement, and rejected function source:
+
+```bash
+node tools/upstream-fixtures/ticks.mjs
+```
+
+Capture the official Hatch/Hash wrapper defaults, centered fixed positions,
+fractional/empty count behavior, parent inheritance and movement, alias, and
+invalid-parent failures:
+
+```bash
+node tools/upstream-fixtures/hatch.mjs
+```
+
 Capture the official StepFunction expansion, missing-Y behavior, retained
 source-array mutation, zero-arity function parents, and invalid arity:
 
@@ -1256,8 +1272,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 92 cases:
-30 generated production scenarios followed by 62 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 94 cases:
+30 generated production scenarios followed by 64 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1269,6 +1285,7 @@ separate demo schema into handwritten native geometry. The focused
 `tangent_curve`, `ellipses`, `hyperbolas`, `parabolas`,
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
+`ticks_2d`, `hatch_2d`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1329,7 +1346,7 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest same-source workbench evidence (2026-09-25):
+Latest same-source workbench evidence (2026-09-26):
 
 `Compact` is the scheduled `390 x 844` profile unless a case paragraph records
 a different reviewed viewport; the new BisectorLines evidence uses
@@ -1343,6 +1360,8 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `coordinate_parents` | 0.986543 | 0.978321 |
 | `shifted_geometry` | 0.986997 | 0.974236 |
 | `curves` | 0.986698 | 0.975236 |
+| `ticks_2d` | 0.987918 | 0.983795 |
+| `hatch_2d` | 0.988453 | 0.984529 |
 | `step_functions` | 0.987344 | 0.975382 |
 | `polygons` | 0.986562 | 0.973171 |
 | `polygonal_chains` | 0.986474 | 0.972464 |
@@ -1413,6 +1432,26 @@ Compact scored `0.987344` and `0.975382`; both contact sheets were manually
 reviewed for horizontal/vertical segment placement, break location, clipping,
 and blank output. Runtime source-array identity and recomputation are covered
 separately by the persistent JessieCode session test. This fixture remains
+outside the 30-case Stable corpus.
+The two-dimensional Ticks capture verifies fixed Line/Curve ticks, source-index
+labels, `>`/`<` faces, Boolean ending semantics, one-sided infinite ticks, and
+parent-inherited hidden polar ticks from one JessieCode source. Desktop
+`1200 x 900` and Compact `390 x 844` captures scored `0.987918` and
+`0.983795`. Both contact sheets passed manual review for tick placement,
+Curve normals, labels, ending direction, hidden-parent propagation, clipping,
+overlap, and blank output. Core and official-fixture tests additionally cover
+equidistant generation, automatic spacing, polar circle coordinates, movement,
+number formatting, lifecycle cleanup, and resource limits. This fixture
+remains outside the 30-case Stable corpus.
+The Hatch capture verifies the default centered three-mark factory, the
+official blue `#0072B2` stroke and width `2`, numeric anchors, custom spacing,
+`>`/`<` faces, the `hash` alias on a Curve, and viewport-sized paths from one
+JessieCode source. Desktop `1200 x 900` and Compact `390 x 844` captures
+scored `0.988453` and `0.984529`. Both contact sheets passed manual review for
+mark count, placement, color, face direction, Curve normals, clipping,
+overlap, and blank output. Core and official-fixture tests additionally cover
+fractional, zero, negative, and `NaN` counts, parent movement and inheritance,
+invalid parents, and pre-allocation resource limits. This fixture remains
 outside the 30-case Stable corpus.
 The PolygonalChain capture verifies the official open Segment border,
 transparent default fill, ordered vertices, and visible absence of the
@@ -1811,9 +1850,9 @@ contact sheets passed manual review for geometry, topology, face closure,
 shading, transparency, overlap, clipping, and blank output. Surface3D
 parametric point projection additionally matches the official COBYLA fixture
 above.
-Together with the Polygon3D, Curve3D, VectorField3D, Circle3D,
+Together with the two-dimensional Ticks/Hatch, Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 92 cases while the independently
+the development corpus now contains 94 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

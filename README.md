@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 92 source-controlled cases: 30 independent production scenarios and
-62 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 94 source-controlled cases: 30 independent production scenarios and
+64 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -30,6 +30,8 @@ The workbench opens on the production
 Focused direct links remain available for cases such as
 [baseline geometry](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=baseline_geometry),
 [curves](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curves), and
+[2D ticks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=ticks_2d),
+[2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
 [Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
@@ -142,7 +144,7 @@ Implemented translation slices:
   Circumcircle,
   Point Reflection, MirrorElement's Point branch, MirrorPoint, Midpoint,
   ParallelPoint, Parallel, ArrowParallel, BisectorLines, Bisector, Incenter,
-  Incircle, Intersection, OtherIntersection, Curve, CurveIntersection,
+  Incircle, Intersection, OtherIntersection, Curve, Ticks, CurveIntersection,
   CurveUnion, CurveDifference, FunctionGraph, Plot, StepFunction, Derivative,
   Spline, CardinalSpline, RiemannSum, BoxPlot, Comb, Inequality, VectorField,
   SlopeField,
@@ -218,19 +220,20 @@ Implemented translation slices:
   Semicircle, CircumcircleArc, MinorArc, and MajorArc compositions and
   CircumcircleSector, MinorSector, MajorSector, NonreflexAngle, and
   ReflexAngle compositions,
-  Curve, CurveIntersection, CurveUnion, CurveDifference, FunctionGraph, Plot,
+  Curve, Ticks, CurveIntersection, CurveUnion, CurveDifference, FunctionGraph, Plot,
   StepFunction, Derivative, Spline, CardinalSpline, RiemannSum, BoxPlot, Comb,
   Inequality, VectorField, SlopeField, Polygon,
   PolygonalChain, Parallelogram, RegularPolygon,
   RadicalAxis, PolePoint, Circle/Point, Line/Point, and Curve/Point Tangent,
   Polar, Circle/Point TangentTo, PolarLine, Text, Arc, Sector, and Angle
   elements through the translated Board and native creator registry;
-- a platform-independent Point/Line/Segment/Circle/Curve/Polygon/Text/Arc/
-  Sector/Angle render scene
+- a platform-independent Point/Line/Segment/Circle/Curve/Ticks/Polygon/Text/
+  Arc/Sector/Angle render scene
   consumed by Compose, including discrete data plots, right-open naive sampling
   for explicit-domain function and parametric curves, retained-array
-  StepFunction expansion, viewport-sized BoxPlot outliers and VectorField/
-  SlopeField arrowheads, filled Line and FunctionGraph inequalities, cubic
+  StepFunction expansion, viewport-sized Ticks, BoxPlot outliers and
+  VectorField/SlopeField arrowheads, filled Line and FunctionGraph
+  inequalities, cubic
   Bezier arcs,
   filled sectors, fixed-radius angles, filled/bordered polygons, open
   polygonal chains, and anchored Canvas text using a bundled
@@ -335,7 +338,7 @@ The first production source contract maps directly to ordered
 `JsxGraphEngine.parse(source)` returns
 `GMResult<JsxGraphScene, JsxGraphDocumentError>`. Current accepted object
 types are `transform`, `view3d`, `transform3d`, `point3d`, `point`, `line`,
-`arrow`, `segment`, `circle`, `curve`,
+`arrow`, `segment`, `circle`, `curve`, `ticks`, `hatch`, `hash`,
 `ellipse`, `hyperbola`, `parabola`, `curveintersection`, `curveunion`,
 `curvedifference`,
 `functiongraph`, `plot`,
@@ -454,6 +457,20 @@ Board updates, structured topology failures, and filled closed-path rendering.
 They are available through construction documents and native JessieCode.
 Dynamic `alwaysIntersect`/`precision` visual properties remain pending. All
 four focused same-source fixtures remain outside the 30-case Stable corpus.
+
+Ticks translates the bounded `src/base/ticks.js -> Ticks/createTicks` path for
+registered Line and Curve parents. Fixed/equidistant positions, anchors,
+automatic Line spacing, minor/major paths, faces, finite/infinite endings,
+polar paths, Curve normals, label indexing/formatting, visibility inheritance,
+updates, cleanup, and resource limits are source mapped. Compose resolves
+pixel-sized paths at the final viewport. The focused Desktop/Compact fixture
+passes at `0.987918`/`0.983795`.
+`createHatchmark` and its `hatch`/`hash` aliases reuse that path with the
+official centered fixed-position loop, defaults, parent inheritance, and
+bounded fractional count semantics. Their focused Desktop/Compact fixture
+passes at `0.988453`/`0.984529`. Both fixtures remain outside the 30-case
+Stable corpus while function-valued distances, runtime mutation, hit testing,
+and the complete API remain pending.
 
 StepFunction translates `src/base/curve.js -> createStepfunction`. It retains
 the two source terms, rebuilds `dataX`/`dataY` on each regular Board update,

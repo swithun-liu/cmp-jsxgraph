@@ -2989,6 +2989,175 @@ class JsxGraphJessieCodeTest {
     }
 
     @Test
+    fun ticksRenderFromTheSameSourceAndTrackParentMovement() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(
+                boardOptions = JsxGraphJessieCodeBoardOptions(
+                    containerId = "ticks",
+                    boundingBox =
+                        JsxGraphBoundingBox(-5.0, 5.0, 5.0, -5.0),
+                ),
+            ),
+        ).value
+        val initial = scene(
+            session.execute(
+                """
+                A = point(-2, 0) <<
+                    id: "A", name: "", withLabel: false
+                >>;
+                B = point(2, 0) <<
+                    id: "B", name: "", withLabel: false
+                >>;
+                line = segment(A, B) <<
+                    id: "line", name: "", withLabel: false
+                >>;
+                fixed = ticks(
+                    line,
+                    [-10, -1, 0, 1, 10]
+                ) <<
+                    id: "fixed", name: "",
+                    drawLabels: true,
+                    labels: [
+                        "out-left", "minus", "zero",
+                        "plus", "out-right"
+                    ]
+                >>;
+                numeric = ticks(line, 2) <<
+                    id: "numeric", name: "",
+                    drawLabels: true,
+                    drawZero: true,
+                    minorTicks: 0
+                >>;
+                curve = functiongraph("x * x", -2, 2) <<
+                    id: "curve", name: "", withLabel: false,
+                    doAdvancedPlot: false,
+                    numberPointsHigh: 8
+                >>;
+                curveTicks = ticks(curve, [0, 1, 2, 4]) <<
+                    id: "curveTicks", name: "",
+                    drawLabels: true,
+                    labels: ["left", "inside", "middle", "right"]
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        val fixed = resolveTicks(sceneTicks(initial, "fixed"))
+        assertEquals(1, fixed.paths.size)
+        assertEquals(JsxGraphPoint2D(-1.0, 0.0), fixed.paths[0].points[1])
+        assertEquals("plus", fixed.labels.single().content)
+
+        val numeric = resolveTicks(sceneTicks(initial, "numeric"))
+        assertEquals(
+            listOf(-1.0, 0.0, 1.0),
+            numeric.paths.map { it.points[1].x },
+        )
+        assertEquals(
+            listOf("1", "2", "3"),
+            numeric.labels.map(JsxGraphTickLabel::content),
+        )
+
+        val curve = resolveTicks(sceneTicks(initial, "curveTicks"))
+        assertEquals(4, curve.paths.size)
+        assertEquals(
+            listOf("left", "inside", "middle", "right"),
+            curve.labels.map(JsxGraphTickLabel::content),
+        )
+        assertEquals(
+            -1.9038476052359176,
+            curve.paths[0].points[0].x,
+            absoluteTolerance = 1.0e-12,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "B",
+                coordinates = JsxGraphPoint2D(2.0, 2.0),
+            ),
+        ).value
+        val movedFixed = resolveTicks(sceneTicks(moved, "fixed"))
+        assertEquals(
+            -1.1055728090000843,
+            movedFixed.paths.single().points[1].x,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            0.4472135954999579,
+            movedFixed.paths.single().points[1].y,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals("plus", movedFixed.labels.single().content)
+    }
+
+    @Test
+    fun ticksInheritParentVisibilityUnlessExplicitlyOverridden() {
+        val scene = scene(
+            JsxGraphJessieCode.parse(
+                """
+                line = segment([-2, 0], [2, 0]) <<
+                    id: "line", name: "", withLabel: false,
+                    visible: false
+                >>;
+                defaultTicks = ticks(line, [0]) <<
+                    id: "defaultTicks", name: ""
+                >>;
+                inheritedTicks = ticks(line, [0]) <<
+                    id: "inheritedTicks", name: "",
+                    visible: "inherit"
+                >>;
+                visibleTicks = ticks(line, [0]) <<
+                    id: "visibleTicks", name: "",
+                    visible: true
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        assertFalse(sceneTicks(scene, "defaultTicks").style.visible)
+        assertFalse(sceneTicks(scene, "inheritedTicks").style.visible)
+        assertTrue(sceneTicks(scene, "visibleTicks").style.visible)
+    }
+
+    @Test
+    fun ticksFunctionParentFailsThroughThePublicApi() {
+        val error = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+            JsxGraphJessieCode.parse(
+                """
+                A = point(-2, 0);
+                B = point(2, 0);
+                line = segment(A, B);
+                ticks(line, function () { return 1; });
+                """.trimIndent(),
+            ),
+        ).error
+        val runtime = assertIs<JsxGraphJessieCodeError.Runtime>(error)
+        assertTrue("FunctionArgumentsNoLongerSupported" in runtime.reason)
+    }
+
+    @Test
+    fun ticksRejectExcessiveFixedTickCountAsResourceLimit() {
+        val fixedTicks = (0..2048).joinToString(",")
+        val error = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+            JsxGraphJessieCode.parse(
+                """
+                line = segment([-2, 0], [2, 0]) <<
+                    id: "line", name: "", withLabel: false
+                >>;
+                ticks(line, [$fixedTicks]) <<
+                    id: "ticks", name: ""
+                >>;
+                """.trimIndent(),
+            ),
+        ).error
+        val limit =
+            assertIs<JsxGraphJessieCodeError.ResourceLimitExceeded>(error)
+
+        assertEquals("tick count", limit.resource)
+        assertEquals(2048, limit.limit)
+        assertEquals(2049, limit.requestedSize)
+    }
+
+    @Test
     fun unsupportedOrExcessiveSceneAttributesFailExplicitly() {
         val unsupported = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
             JsxGraphJessieCode.parse(
@@ -3082,6 +3251,24 @@ class JsxGraphJessieCodeTest {
         id: String,
     ): JsxGraphSceneElement.Curve =
         assertIs(scene.elements.single { it.id == id })
+
+    private fun sceneTicks(
+        scene: JsxGraphScene,
+        id: String,
+    ): JsxGraphSceneElement.Ticks =
+        assertIs(scene.elements.single { it.id == id })
+
+    private fun resolveTicks(
+        ticks: JsxGraphSceneElement.Ticks,
+    ): JsxGraphResolvedTicks =
+        ticks.definition.resolve(
+            visibleLeft = -5.0,
+            visibleTop = 5.0,
+            visibleRight = 5.0,
+            visibleBottom = -5.0,
+            cssPixelsPerUnitX = 50.0,
+            cssPixelsPerUnitY = 50.0,
+        )
 
     private fun assertPointCoordinates(
         expected: JsxGraphPoint2D,

@@ -118,6 +118,38 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "ticks_2d",
+            title = "2D ticks",
+            scenario = "Fixed, faced, one-sided infinite, polar, and curve ticks share one source.",
+            source = TICKS_2D_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "ticks",
+                "fixed-ticks",
+                "tick-face",
+                "tick-endings",
+                "infinite-ticks",
+                "polar-ticks",
+                "curve-ticks",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
+            id = "hatch_2d",
+            title = "2D hatch marks",
+            scenario = "Default, shifted, faced, and curved Hatch/Hash marks share one source.",
+            source = HATCH_2D_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "ticks",
+                "hatch",
+                "hash-alias",
+                "tick-face",
+                "curve-ticks",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "step_functions",
             title = "Step functions",
             scenario = "Static arrays exercise rising, falling, repeated, and mismatched step data.",
@@ -1458,6 +1490,36 @@ private const val CURVES_SOURCE: String = """
       }
     }
   ]
+}
+"""
+
+private const val TICKS_2D_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\npolarAxis = segment([0, 0], [1, 0]) << id: \"polarAxis\", name: \"\", withLabel: false, visible: false, fixed: true, highlight: false >>;\nrings = ticks(polarAxis, [1, 2, 3, 4]) << id: \"rings\", name: \"\", type: \"polar\", majorHeight: 8, strokeColor: \"#A8ADB3\", strokeWidth: 1, fixed: true, highlight: false >>;\ntopLine = segment([-5, 3.5], [5, 3.5]) << id: \"topLine\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 2, fixed: true, highlight: false >>;\ntopTicks = ticks(topLine, [1, 3, 5, 7, 9]) << id: \"topTicks\", name: \"\", face: \">\", majorHeight: 16, drawLabels: true, labels: [\"A\", \"B\", \"C\", \"D\", \"E\"], strokeColor: \"#246BCE\", strokeWidth: 3, label: << offset: [5, -18], fontSize: 13, strokeColor: \"#246BCE\" >>, fixed: true, highlight: false >>;\nbottomLine = segment([-5, -3.5], [5, -3.5]) << id: \"bottomLine\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 2, fixed: true, highlight: false >>;\nbottomTicks = ticks(bottomLine, [1, 3, 5, 7, 9]) << id: \"bottomTicks\", name: \"\", face: \"<\", majorHeight: 16, majorTickEndings: [2, -1], strokeColor: \"#D55E00\", strokeWidth: 3, fixed: true, highlight: false >>;\ncurve = functiongraph(\"0.16 * x * x - 2\", -5, 5) << id: \"curve\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 200, strokeColor: \"#009E73\", strokeWidth: 3, fixed: true, highlight: false >>;\ncurveTicks = ticks(curve, [0, 2.5, 5, 7.5, 10]) << id: \"curveTicks\", name: \"\", majorHeight: 14, drawLabels: true, labels: [\"P\", \"Q\", \"R\", \"S\", \"T\"], strokeColor: \"#009E73\", strokeWidth: 2, label: << offset: [8, 4], fontSize: 12, strokeColor: \"#007A68\" >>, fixed: true, highlight: false >>;\ninfiniteLine = segment([-5, 0], [5, 0]) << id: \"infiniteLine\", name: \"\", withLabel: false, strokeColor: \"#6F7780\", strokeWidth: 2, fixed: true, highlight: false >>;\ninfiniteTick = ticks(infiniteLine, [9]) << id: \"infiniteTick\", name: \"\", majorHeight: -1, majorTickEndings: [1, 0], ignoreInfiniteTickEndings: false, strokeColor: \"#7B4EA3\", strokeWidth: 3, fixed: true, highlight: false >>;"
+}
+"""
+
+private const val HATCH_2D_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ntopLine = segment([-5, 3], [5, 3]) << id: \"topLine\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 2, fixed: true, highlight: false >>;\ndefaultMarks = hatch(topLine, 3) << id: \"defaultMarks\", name: \"\", fixed: true, highlight: false >>;\ndiagonal = segment([-5, 0.2], [5, 2.2]) << id: \"diagonal\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 2, fixed: true, highlight: false >>;\nshiftedMarks = hatch(diagonal, 5) << id: \"shiftedMarks\", name: \"\", anchor: 0.35, ticksDistance: 0.65, face: \">\", majorHeight: 18, strokeColor: \"#D55E00\", strokeWidth: 3, fixed: true, highlight: false >>;\ncurve = functiongraph(\"0.12 * x * x - 3\", -5, 5) << id: \"curve\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 200, strokeColor: \"#009E73\", strokeWidth: 3, fixed: true, highlight: false >>;\ncurveMarks = hash(curve, 4) << id: \"curveMarks\", name: \"\", ticksDistance: 1.4, face: \"<\", majorHeight: 18, strokeColor: \"#7B4EA3\", strokeWidth: 3, fixed: true, highlight: false >>;"
 }
 """
 

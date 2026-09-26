@@ -510,6 +510,23 @@ class GeneratedStressTest {
                     assertFinitePoint(caseIndex, element.id, element.point1)
                     assertFinitePoint(caseIndex, element.id, element.point2)
                 }
+                is JsxGraphSceneElement.Ticks -> {
+                    val bounds = scene.boundingBox
+                    val resolved = element.definition.resolve(
+                        visibleLeft = bounds.left,
+                        visibleTop = bounds.top,
+                        visibleRight = bounds.right,
+                        visibleBottom = bounds.bottom,
+                        cssPixelsPerUnitX = 50.0,
+                        cssPixelsPerUnitY = 50.0,
+                    )
+                    resolved.paths.flatMap { it.points }.forEach { point ->
+                        assertFinitePoint(caseIndex, element.id, point)
+                    }
+                    resolved.labels.forEach { label ->
+                        assertFinitePoint(caseIndex, element.id, label.position)
+                    }
+                }
                 is JsxGraphSceneElement.Circle -> {
                     assertFinitePoint(caseIndex, element.id, element.center)
                     assertTrue(element.radius.isFinite() && element.radius >= 0.0)

@@ -361,6 +361,13 @@ fun JsxGraphScenePreview(
                             drawScenePoint(element, metrics)
                         is JsxGraphSceneElement.Line ->
                             drawSceneLine(element, metrics)
+                        is JsxGraphSceneElement.Ticks ->
+                            drawSceneTicks(
+                                ticks = element,
+                                metrics = metrics,
+                                textMeasurer = textMeasurer,
+                                fontFamily = axisFontFamily,
+                            )
                         is JsxGraphSceneElement.Circle ->
                             drawSceneCircle(element, metrics)
                         is JsxGraphSceneElement.Curve ->
@@ -788,6 +795,78 @@ private fun DrawScope.drawArrowHead(
             style = Stroke(
                 width = strokeWidth,
                 cap = StrokeCap.Butt,
+            ),
+        )
+    }
+}
+
+// JSXGraph 1.13.3: src/base/ticks.js -> createTickPath /
+// updateRendererLabels; src/renderer/canvas.js -> updateTicks.
+private fun DrawScope.drawSceneTicks(
+    ticks: JsxGraphSceneElement.Ticks,
+    metrics: BoardMetrics,
+    textMeasurer: TextMeasurer,
+    fontFamily: FontFamily,
+) {
+    val resolved = ticks.definition.resolve(
+        visibleLeft = metrics.left.toDouble(),
+        visibleTop = metrics.top.toDouble(),
+        visibleRight = metrics.right.toDouble(),
+        visibleBottom = metrics.bottom.toDouble(),
+        cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
+        cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
+    )
+    val stroke = ticks.style.strokeColor.toComposeColor(
+        opacity = ticks.style.strokeOpacity,
+    )
+    if (stroke.alpha > 0.0f && ticks.style.strokeWidth > 0.0) {
+        for (tick in resolved.paths) {
+            val points = tick.points.map { point ->
+                metrics.toScreen(point.toOffset())
+            }
+            if (points.size < 2) {
+                continue
+            }
+            val path = Path().apply {
+                moveTo(points[0].x, points[0].y)
+                for (index in 1 until points.size) {
+                    lineTo(points[index].x, points[index].y)
+                }
+            }
+            drawPath(
+                path = path,
+                color = stroke,
+                style = Stroke(
+                    width = ticks.style.strokeWidth.dp.toPx(),
+                    cap = StrokeCap.Butt,
+                    pathEffect = strokeDashPathEffect(ticks.style),
+                ),
+            )
+        }
+    }
+    val labelStyle = ticks.definition.labelStyle
+    if (labelStyle.fontSize <= 0.0 || labelStyle.opacity <= 0.0) {
+        return
+    }
+    val textStyle = TextStyle(
+        color = labelStyle.color.toComposeColor(labelStyle.opacity),
+        fontSize = labelStyle.fontSize.toFloat().sp,
+        fontFamily = fontFamily,
+        letterSpacing = 0.sp,
+    )
+    for (label in resolved.labels) {
+        val layout = textMeasurer.measure(
+            text = label.content,
+            style = textStyle,
+        )
+        drawText(
+            textLayoutResult = layout,
+            topLeft = textTopLeft(
+                anchor = metrics.toScreen(label.position.toOffset()),
+                width = layout.size.width.toFloat(),
+                height = layout.size.height.toFloat(),
+                anchorX = labelStyle.anchorX,
+                anchorY = labelStyle.anchorY,
             ),
         )
     }

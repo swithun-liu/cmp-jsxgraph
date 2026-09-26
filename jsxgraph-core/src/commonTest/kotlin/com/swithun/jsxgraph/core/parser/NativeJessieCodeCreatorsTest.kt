@@ -51,6 +51,10 @@ import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.TangentError
 import com.swithun.jsxgraph.core.base.TangentToError
 import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.base.Ticks
+import com.swithun.jsxgraph.core.base.TicksCurveLocation
+import com.swithun.jsxgraph.core.base.TicksError
+import com.swithun.jsxgraph.core.base.TicksSource
 import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
 import com.swithun.jsxgraph.core.math.ClipError
 import kotlin.math.sqrt
@@ -3698,6 +3702,134 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
+    fun ticksCreatorSupportsFixedNumericAndCurveForms() {
+        val board = board("ticks")
+        val values = assertIs<JessieCodeRuntimeValue.ArrayValue>(
+            evaluate(
+                source =
+                    """
+                    A = point(-2, 0);
+                    B = point(2, 0);
+                    line = segment(A, B);
+                    fixed = ticks(
+                        line,
+                        [-10, -1, 0, 1, 10]
+                    ) <<
+                        id: "fixed", name: "",
+                        drawLabels: true,
+                        labels: [
+                            "out-left", "minus", "zero",
+                            "plus", "out-right"
+                        ],
+                        majorHeight: 12,
+                        tickEndings: [1, 0],
+                        label: <<
+                            offset: [8, -3],
+                            fontSize: 14,
+                            anchorX: "middle",
+                            anchorY: "top"
+                        >>
+                    >>;
+                    numeric = ticks(line, 2) <<
+                        id: "numeric", name: "",
+                        ticksDistance: 1,
+                        minorTicks: 0
+                    >>;
+                    curve = functiongraph("x * x", -2, 2) <<
+                        id: "curve", name: "",
+                        doAdvancedPlot: false,
+                        numberPointsHigh: 8
+                    >>;
+                    curveTicks = ticks(curve, [0, 1, 2, 4]) <<
+                        id: "curveTicks", name: "",
+                        drawLabels: true,
+                        labels: ["left", "inside", "middle", "right"]
+                    >>;
+                    [fixed, numeric, curveTicks];
+                    """.trimIndent(),
+                board = board,
+            ),
+        ).values
+        val fixed = ticks(values[0])
+        val numeric = ticks(values[1])
+        val curveTicks = ticks(values[2])
+
+        assertIs<TicksSource.Fixed>(fixed.source).also { source ->
+            assertContentEquals(
+                doubleArrayOf(-10.0, -1.0, 0.0, 1.0, 10.0),
+                source.values,
+            )
+        }
+        assertEquals(12.0, fixed.attributes.majorHeight)
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0),
+            fixed.attributes.tickEndings,
+        )
+        assertContentEquals(
+            doubleArrayOf(8.0, -3.0),
+            fixed.attributes.labelOffset,
+        )
+        assertEquals(14.0, fixed.attributes.labelFontSize)
+        assertEquals("middle", fixed.attributes.labelAnchorX)
+        assertEquals("top", fixed.attributes.labelAnchorY)
+        assertEquals(2, fixed.parent.ticks.size)
+
+        assertIs<TicksSource.Equidistant>(numeric.source)
+        assertEquals(1.0, numeric.attributes.ticksDistance)
+        assertEquals(0, numeric.attributes.minorTicks)
+
+        assertEquals(
+            listOf(-2.0, -1.0, 0.0, 2.0),
+            curveTicks.curveLocations.map(TicksCurveLocation::baseX),
+        )
+        assertEquals(
+            listOf("left", "inside", "middle", "right"),
+            curveTicks.curveLocations.map(TicksCurveLocation::label),
+        )
+    }
+
+    @Test
+    fun ticksCreatorRejectsFunctionAndMalformedAttributesAtomically() {
+        val functionBoard = board("ticks-function")
+        val function = creatorError(
+            source =
+                """
+                A = point(-2, 0);
+                B = point(2, 0);
+                line = segment(A, B);
+                ticks(line, function () { return 1; });
+                """.trimIndent(),
+            board = functionBoard,
+        )
+        assertEquals("ticks", function.creatorName)
+        assertEquals(
+            TicksError.FunctionArgumentsNoLongerSupported,
+            assertIs<JessieCodeCreatorError.TicksFactory>(
+                function.error,
+            ).error,
+        )
+        assertFalse(functionBoard.objects.values.any { it is Ticks })
+
+        val attributeBoard = board("ticks-attribute")
+        val attribute = creatorError(
+            source =
+                """
+                A = point(-2, 0);
+                B = point(2, 0);
+                line = segment(A, B);
+                ticks(line) << tickEndings: [1] >>;
+                """.trimIndent(),
+            board = attributeBoard,
+        )
+        val invalid =
+            assertIs<JessieCodeCreatorError.InvalidAttributeType>(
+                attribute.error,
+            )
+        assertEquals("tickendings", invalid.attribute)
+        assertFalse(attributeBoard.objects.values.any { it is Ticks })
+    }
+
+    @Test
     fun stepfunctionCreatorMatchesOfficialStaticAndFunctionParents() {
         val board = board("stepfunction")
         val step = curve(
@@ -6497,6 +6629,10 @@ class NativeJessieCodeCreatorsTest {
             .element.let(::assertIs)
 
     private fun curve(value: JessieCodeRuntimeValue): Curve =
+        assertIs<JessieCodeRuntimeValue.ElementReference>(value)
+            .element.let(::assertIs)
+
+    private fun ticks(value: JessieCodeRuntimeValue): Ticks =
         assertIs<JessieCodeRuntimeValue.ElementReference>(value)
             .element.let(::assertIs)
 

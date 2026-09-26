@@ -5,6 +5,7 @@
  * src/base/line.js -> createLine / createSegment / createArrow /
  * createRadicalAxis / createTangent / createTangentTo / createNormal /
  * createPolarLine,
+ * src/base/ticks.js -> createTicks / createHatchmark,
  * src/base/circle.js -> createCircle,
  * src/element/composition.js -> createMidpoint / createCircumcenter /
  * createCircumcircle / createOrthogonalProjection / createPerpendicular /
@@ -98,6 +99,7 @@ import com.swithun.jsxgraph.core.base.Face3DLightAttributes
 import com.swithun.jsxgraph.core.base.Face3DShaderAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.GeometryElement3D
+import com.swithun.jsxgraph.core.base.Hatch
 import com.swithun.jsxgraph.core.base.Hyperbola
 import com.swithun.jsxgraph.core.base.HyperbolaError
 import com.swithun.jsxgraph.core.base.IncenterPoint
@@ -186,6 +188,11 @@ import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Text3D
 import com.swithun.jsxgraph.core.base.Text3DError
 import com.swithun.jsxgraph.core.base.TextError
+import com.swithun.jsxgraph.core.base.Ticks
+import com.swithun.jsxgraph.core.base.TicksAnchor
+import com.swithun.jsxgraph.core.base.TicksAttributes
+import com.swithun.jsxgraph.core.base.TicksError
+import com.swithun.jsxgraph.core.base.TicksSource
 import com.swithun.jsxgraph.core.base.Ticks3D
 import com.swithun.jsxgraph.core.base.Ticks3DError
 import com.swithun.jsxgraph.core.base.Ticks3DPointSource
@@ -294,6 +301,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class Ticks3DFactory(
         val error: Ticks3DError,
+    ) : JessieCodeCreatorError
+
+    data class TicksFactory(
+        val error: TicksError,
     ) : JessieCodeCreatorError
 
     data class Text3DFactory(
@@ -841,6 +852,42 @@ internal object NativeJessieCodeCreators {
         },
         "line" to JessieCodeCreator { board, parents, attributes, location ->
             createLine(board, parents, attributes, location)
+        },
+        "ticks" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createTicks(board, parents, attributes, location)
+        },
+        "hatch" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createHatch(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+                creatorName = "hatch",
+            )
+        },
+        "hash" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createHatch(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+                creatorName = "hash",
+            )
         },
         "radicalaxis" to JessieCodeCreator {
                 board,
@@ -8782,6 +8829,560 @@ internal object NativeJessieCodeCreators {
         }
         return line
     }
+
+    // JSXGraph 1.13.3: src/base/ticks.js -> createTicks / Ticks.
+    private fun createTicks(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "ticks"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size !in 1..2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val parent = resolveElement(resolvedBoard, parents[0])
+            ?: return unsupported(creatorName, parents, location)
+        if (parent !is Line && parent !is Curve) {
+            return unsupported(creatorName, parents, location)
+        }
+        val source = when (val value = parents.getOrNull(1)) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            is JessieCodeRuntimeValue.NumberValue,
+            -> TicksSource.Equidistant
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val values = numericArray(value)
+                    ?: return unsupported(creatorName, parents, location)
+                TicksSource.Fixed(values)
+            }
+            is JessieCodeRuntimeValue.FunctionValue ->
+                return failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.TicksFactory(
+                        TicksError.FunctionArgumentsNoLongerSupported,
+                    ),
+                    location = location,
+                )
+            else -> return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticksAttributes = when (
+            val result = ticksAttributes(
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Ticks.create(
+                board = resolvedBoard,
+                parent = parent,
+                source = source,
+                attributes = ticksAttributes,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.TicksFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/ticks.js -> createHatchmark.
+    private fun createHatch(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+        creatorName: String,
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val parent = resolveElement(resolvedBoard, parents[0])
+            ?: return unsupported(creatorName, parents, location)
+        if (parent !is Line && parent !is Curve) {
+            return unsupported(creatorName, parents, location)
+        }
+        val numberOfHashes = (
+            parents[1] as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val mergedAttributes =
+            JessieCodeRuntimeValue.ObjectValue(
+                linkedMapOf<String, JessieCodeRuntimeValue>(
+                    "anchor" to
+                        JessieCodeRuntimeValue.StringValue("middle"),
+                    "drawzero" to
+                        JessieCodeRuntimeValue.BooleanValue(true),
+                    "majorheight" to
+                        JessieCodeRuntimeValue.NumberValue(20.0),
+                    "ticksdistance" to
+                        JessieCodeRuntimeValue.NumberValue(0.2),
+                ).apply {
+                    putAll(attributes.properties)
+                },
+            )
+        val hatchAttributes = when (
+            val result = ticksAttributes(
+                attributes = mergedAttributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Hatch.create(
+                board = resolvedBoard,
+                parent = parent,
+                numberOfHashes = numberOfHashes,
+                attributes = hatchAttributes,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.TicksFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    private fun ticksAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<TicksAttributes, JessieCodeRuntimeError> {
+        val creatorName = "ticks"
+        val anchor = when (val value = attributes.properties["anchor"]) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> TicksAnchor.Left
+            is JessieCodeRuntimeValue.NumberValue ->
+                if (value.value.isFinite()) {
+                    TicksAnchor.Fraction(value.value)
+                } else {
+                    return invalidAttribute(
+                        creatorName,
+                        "anchor",
+                        "left, right, middle, or a finite number",
+                        value,
+                        location,
+                    )
+                }
+            is JessieCodeRuntimeValue.StringValue ->
+                when (value.value.lowercase()) {
+                    "left" -> TicksAnchor.Left
+                    "right" -> TicksAnchor.Right
+                    "middle" -> TicksAnchor.Middle
+                    else -> return failure(
+                        creatorName = creatorName,
+                        error =
+                            JessieCodeCreatorError
+                                .UnsupportedAttributeValue(
+                                    attribute = "anchor",
+                                    actual = value.value,
+                                ),
+                        location = location,
+                    )
+                }
+            else -> return invalidAttribute(
+                creatorName,
+                "anchor",
+                "left, right, middle, or a finite number",
+                value,
+                location,
+            )
+        }
+        val tickEndings = when (
+            val result = ticksPairAttribute(
+                attributes = attributes,
+                name = "tickendings",
+                default = doubleArrayOf(1.0, 1.0),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val majorTickEndings = when (
+            val result = ticksPairAttribute(
+                attributes = attributes,
+                name = "majortickendings",
+                default = doubleArrayOf(1.0, 1.0),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticksPerLabel = when (
+            val value = attributes.properties["ticksperlabel"]
+        ) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> null
+            is JessieCodeRuntimeValue.BooleanValue ->
+                if (!value.value) {
+                    null
+                } else {
+                    return invalidAttribute(
+                        creatorName,
+                        "ticksperlabel",
+                        "false or a positive integer",
+                        value,
+                        location,
+                    )
+                }
+            is JessieCodeRuntimeValue.NumberValue -> {
+                val integer = value.value.toInt()
+                if (
+                    value.value.isFinite() &&
+                    integer.toDouble() == value.value &&
+                    integer > 0
+                ) {
+                    integer
+                } else {
+                    return failure(
+                        creatorName = creatorName,
+                        error =
+                            JessieCodeCreatorError
+                                .UnsupportedAttributeValue(
+                                    attribute = "ticksperlabel",
+                                    actual = value.value.toString(),
+                                ),
+                        location = location,
+                    )
+                }
+            }
+            else -> return invalidAttribute(
+                creatorName,
+                "ticksperlabel",
+                "false or a positive integer",
+                value,
+                location,
+            )
+        }
+        val labels = when (val value = attributes.properties["labels"]) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> emptyList()
+            is JessieCodeRuntimeValue.ArrayValue ->
+                value.values.map { item ->
+                    when (item) {
+                        is JessieCodeRuntimeValue.StringValue -> item.value
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            JsNumberFormat.compact(item.value)
+                        JessieCodeRuntimeValue.NullValue,
+                        JessieCodeRuntimeValue.UndefinedValue,
+                        -> null
+                        else -> return invalidAttribute(
+                            creatorName,
+                            "labels",
+                            "an array of strings, numbers, or null",
+                            item,
+                            location,
+                        )
+                    }
+                }
+            else -> return invalidAttribute(
+                creatorName,
+                "labels",
+                "an array",
+                value,
+                location,
+            )
+        }
+        val label = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "label",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelOffset = when (
+            val result = ticksPairAttribute(
+                attributes = label,
+                name = "offset",
+                default = doubleArrayOf(10.0, 0.0),
+                location = location,
+                attributePrefix = "label.",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        fun boolean(
+            name: String,
+            default: Boolean,
+        ): GMResult<Boolean, JessieCodeRuntimeError> =
+            booleanAttribute(
+                creatorName,
+                attributes,
+                name,
+                default,
+                location,
+            )
+        fun number(
+            name: String,
+            default: Double,
+        ): GMResult<Double, JessieCodeRuntimeError> =
+            numberAttribute(
+                creatorName,
+                attributes,
+                name,
+                default,
+                location,
+            )
+        fun integer(
+            name: String,
+            default: Int,
+        ): GMResult<Int, JessieCodeRuntimeError> =
+            integerAttribute(
+                creatorName,
+                attributes,
+                name,
+                default,
+                0,
+                Int.MAX_VALUE,
+                location,
+            )
+        val drawZero = boolean("drawzero", false).valueOrReturn { return it }
+        val insertTicks =
+            boolean("insertticks", false).valueOrReturn { return it }
+        val minTicksDistance =
+            number("minticksdistance", 10.0).valueOrReturn { return it }
+        val minorHeight =
+            number("minorheight", 4.0).valueOrReturn { return it }
+        val majorHeight =
+            number("majorheight", 10.0).valueOrReturn { return it }
+        val ignoreInfiniteTickEndings =
+            boolean("ignoreinfinitetickendings", true)
+                .valueOrReturn { return it }
+        val minorTicks =
+            integer("minorticks", 4).valueOrReturn { return it }
+        val scale = number("scale", 1.0).valueOrReturn { return it }
+        val scaleSymbol =
+            stringAttribute(
+                creatorName,
+                attributes,
+                "scalesymbol",
+                "",
+                location,
+            ).valueOrReturn { return it }
+        val maxLabelLength =
+            integer("maxlabellength", 5).valueOrReturn { return it }
+        val precision =
+            integer("precision", 3).valueOrReturn { return it }
+        val digits = integer("digits", 3).valueOrReturn { return it }
+        val beautifulScientificTickLabels =
+            boolean("beautifulscientificticklabels", false)
+                .valueOrReturn { return it }
+        val useUnicodeMinus =
+            boolean("useunicodeminus", true).valueOrReturn { return it }
+        val face =
+            stringAttribute(
+                creatorName,
+                attributes,
+                "face",
+                "|",
+                location,
+            ).valueOrReturn { return it }
+        val includeBoundaries =
+            boolean("includeboundaries", false).valueOrReturn { return it }
+        val ticksType =
+            stringAttribute(
+                creatorName,
+                attributes,
+                "type",
+                "linear",
+                location,
+            ).valueOrReturn { return it }.lowercase()
+        val ticksDistance =
+            number("ticksdistance", 1.0).valueOrReturn { return it }
+        val drawLabels =
+            boolean("drawlabels", false).valueOrReturn { return it }
+        val clip = boolean("clip", true).valueOrReturn { return it }
+        val labelFontSize =
+            numberAttribute(
+                creatorName,
+                label,
+                "fontsize",
+                12.0,
+                location,
+            ).valueOrReturn { return it }
+        val labelFontUnit =
+            stringAttribute(
+                creatorName,
+                label,
+                "fontunit",
+                "px",
+                location,
+            ).valueOrReturn { return it }.lowercase()
+        if (labelFontUnit != "px") {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "label.fontunit",
+                    actual = labelFontUnit,
+                ),
+                location = location,
+            )
+        }
+        val labelAnchorX =
+            stringAttribute(
+                creatorName,
+                label,
+                "anchorx",
+                "left",
+                location,
+            ).valueOrReturn { return it }.lowercase()
+        if (labelAnchorX !in setOf("left", "middle", "right")) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "label.anchorx",
+                    actual = labelAnchorX,
+                ),
+                location = location,
+            )
+        }
+        val labelAnchorY =
+            stringAttribute(
+                creatorName,
+                label,
+                "anchory",
+                "middle",
+                location,
+            ).valueOrReturn { return it }.lowercase()
+        if (labelAnchorY !in setOf("top", "middle", "bottom")) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "label.anchory",
+                    actual = labelAnchorY,
+                ),
+                location = location,
+            )
+        }
+        return GMResult.Ok(
+            TicksAttributes(
+                anchor = anchor,
+                drawZero = drawZero,
+                insertTicks = insertTicks,
+                minTicksDistance = minTicksDistance,
+                minorHeight = minorHeight,
+                majorHeight = majorHeight,
+                tickEndings = tickEndings,
+                majorTickEndings = majorTickEndings,
+                ignoreInfiniteTickEndings = ignoreInfiniteTickEndings,
+                minorTicks = minorTicks,
+                ticksPerLabel = ticksPerLabel,
+                scale = scale,
+                scaleSymbol = scaleSymbol,
+                labels = labels,
+                maxLabelLength = maxLabelLength,
+                precision = precision,
+                digits = digits,
+                beautifulScientificTickLabels =
+                    beautifulScientificTickLabels,
+                useUnicodeMinus = useUnicodeMinus,
+                face = face,
+                includeBoundaries = includeBoundaries,
+                ticksType = ticksType,
+                ticksDistance = ticksDistance,
+                drawLabels = drawLabels,
+                clip = clip,
+                labelOffset = labelOffset,
+                labelFontSize = labelFontSize,
+                labelAnchorX = labelAnchorX,
+                labelAnchorY = labelAnchorY,
+            ),
+        )
+    }
+
+    private fun ticksPairAttribute(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        default: DoubleArray,
+        location: JessieCodeAstLocation,
+        attributePrefix: String = "",
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val value = attributes.properties[name]
+            ?: return GMResult.Ok(default.copyOf())
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return GMResult.Ok(default.copyOf())
+        }
+        val numbers = (value as? JessieCodeRuntimeValue.ArrayValue)
+            ?.let(::numericArray)
+        if (
+            numbers == null ||
+            numbers.size != 2 ||
+            numbers.any { !it.isFinite() }
+        ) {
+            return invalidAttribute(
+                creatorName = "ticks",
+                attribute = attributePrefix + name,
+                expected = "an array of two finite numbers",
+                actual = value,
+                location = location,
+            )
+        }
+        return GMResult.Ok(numbers)
+    }
+
+    private inline fun <T> GMResult<T, JessieCodeRuntimeError>.valueOrReturn(
+        error: (GMResult.Err<JessieCodeRuntimeError>) -> Nothing,
+    ): T =
+        when (this) {
+            is GMResult.Ok -> value
+            is GMResult.Err -> error(this)
+        }
 
     private fun createRadicalAxis(
         board: Board?,

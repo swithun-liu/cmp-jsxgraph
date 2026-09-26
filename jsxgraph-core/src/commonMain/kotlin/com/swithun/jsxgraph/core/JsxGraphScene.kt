@@ -11,13 +11,19 @@
 package com.swithun.jsxgraph.core
 
 import com.swithun.jsxgraph.core.base.createBoxPlotGeometry
+import com.swithun.jsxgraph.core.base.formatTicksLabel
 import com.swithun.jsxgraph.core.math.Geometry
 import kotlin.math.abs
 import kotlin.math.atan2
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.hypot
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.round
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -460,6 +466,629 @@ data class JsxGraphTicks3DLabel(
     }
 }
 
+sealed interface JsxGraphTicksParent2D {
+    data class Line(
+        val point1: JsxGraphPoint2D,
+        val point2: JsxGraphPoint2D,
+        val straightFirst: Boolean,
+        val straightLast: Boolean,
+        val axis: Boolean,
+    ) : JsxGraphTicksParent2D
+
+    data class Curve(
+        val locations: List<JsxGraphCurveTickLocation>,
+    ) : JsxGraphTicksParent2D
+}
+
+data class JsxGraphCurveTickLocation(
+    val base: JsxGraphPoint2D,
+    val normal: JsxGraphPoint2D,
+    val major: Boolean,
+    val label: String?,
+)
+
+data class JsxGraphTicksLabelStyle(
+    val visible: Boolean,
+    val color: JsxGraphColor,
+    val opacity: Double,
+    val fontSize: Double,
+    val anchorX: String,
+    val anchorY: String,
+    val offsetX: Double,
+    val offsetY: Double,
+)
+
+data class JsxGraphTickPath(
+    val points: List<JsxGraphPoint2D>,
+    val major: Boolean,
+)
+
+data class JsxGraphTickLabel(
+    val position: JsxGraphPoint2D,
+    val content: String,
+)
+
+data class JsxGraphResolvedTicks(
+    val paths: List<JsxGraphTickPath>,
+    val labels: List<JsxGraphTickLabel>,
+)
+
+/**
+ * Viewport-dependent geometry for two-dimensional JXG.Ticks.
+ *
+ * JSXGraph defines tick heights, label offsets, and automatic minimum spacing
+ * in CSS pixels. Resolution therefore remains in the scene model until the
+ * renderer knows the final viewport.
+ */
+data class JsxGraphTicks2D(
+    val parent: JsxGraphTicksParent2D,
+    val fixedTicks: List<Double>?,
+    val fixedLabels: List<String?>,
+    val anchor: String,
+    val drawZero: Boolean,
+    val insertTicks: Boolean,
+    val minTicksDistance: Double,
+    val minorHeight: Double,
+    val majorHeight: Double,
+    val tickEndings: List<Double>,
+    val majorTickEndings: List<Double>,
+    val ignoreInfiniteTickEndings: Boolean,
+    val minorTicks: Int,
+    val ticksPerLabel: Int?,
+    val scale: Double,
+    val scaleSymbol: String,
+    val maxLabelLength: Int,
+    val precision: Int,
+    val digits: Int,
+    val beautifulScientificTickLabels: Boolean,
+    val useUnicodeMinus: Boolean,
+    val face: String,
+    val includeBoundaries: Boolean,
+    val type: String,
+    val ticksDistance: Double,
+    val drawLabels: Boolean,
+    val clip: Boolean,
+    val labelStyle: JsxGraphTicksLabelStyle,
+) {
+    // JSXGraph 1.13.3: src/base/ticks.js ->
+    // calculateTicksCoordinates / createTickPath / generateLabelData.
+    fun resolve(
+        visibleLeft: Double,
+        visibleTop: Double,
+        visibleRight: Double,
+        visibleBottom: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): JsxGraphResolvedTicks {
+        if (
+            !visibleLeft.isFinite() ||
+            !visibleTop.isFinite() ||
+            !visibleRight.isFinite() ||
+            !visibleBottom.isFinite() ||
+            !cssPixelsPerUnitX.isFinite() ||
+            !cssPixelsPerUnitY.isFinite() ||
+            visibleLeft > visibleRight ||
+            visibleBottom > visibleTop ||
+            cssPixelsPerUnitX <= TICK_EPSILON ||
+            cssPixelsPerUnitY <= TICK_EPSILON
+        ) {
+            return JsxGraphResolvedTicks(
+                paths = emptyList(),
+                labels = emptyList(),
+            )
+        }
+        val locations = when (val parent = parent) {
+            is JsxGraphTicksParent2D.Line ->
+                lineLocations(
+                    parent = parent,
+                    visibleLeft = visibleLeft,
+                    visibleTop = visibleTop,
+                    visibleRight = visibleRight,
+                    visibleBottom = visibleBottom,
+                    cssPixelsPerUnitX = cssPixelsPerUnitX,
+                    cssPixelsPerUnitY = cssPixelsPerUnitY,
+                )
+            is JsxGraphTicksParent2D.Curve -> parent.locations
+        }
+        val paths = mutableListOf<JsxGraphTickPath>()
+        val labels = mutableListOf<JsxGraphTickLabel>()
+        for (location in locations.take(MAXIMUM_TICK_COUNT)) {
+            tickPath(
+                location = location,
+                visibleLeft = visibleLeft,
+                visibleTop = visibleTop,
+                visibleRight = visibleRight,
+                visibleBottom = visibleBottom,
+                cssPixelsPerUnitX = cssPixelsPerUnitX,
+                cssPixelsPerUnitY = cssPixelsPerUnitY,
+            )?.let(paths::add)
+            val label = location.label
+            if (label != null && labelStyle.visible) {
+                val position = JsxGraphPoint2D(
+                    x = location.base.x +
+                        labelStyle.offsetX / cssPixelsPerUnitX,
+                    y = location.base.y +
+                        labelStyle.offsetY / cssPixelsPerUnitY,
+                )
+                if (
+                    !clip ||
+                    (
+                        position.x in visibleLeft..visibleRight &&
+                            position.y in visibleBottom..visibleTop
+                        )
+                ) {
+                    labels += JsxGraphTickLabel(position, label)
+                }
+            }
+        }
+        return JsxGraphResolvedTicks(paths = paths, labels = labels)
+    }
+
+    private fun lineLocations(
+        parent: JsxGraphTicksParent2D.Line,
+        visibleLeft: Double,
+        visibleTop: Double,
+        visibleRight: Double,
+        visibleBottom: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): List<JsxGraphCurveTickLocation> {
+        val deltaX = parent.point2.x - parent.point1.x
+        val deltaY = parent.point2.y - parent.point1.y
+        val length = hypot(deltaX, deltaY)
+        if (!length.isFinite() || length <= TICK_EPSILON) {
+            return emptyList()
+        }
+        val directionX = deltaX / length
+        val directionY = deltaY / length
+        val anchorParameter = when {
+            parent.axis ->
+                (
+                    -parent.point1.x * deltaX -
+                        parent.point1.y * deltaY
+                    ) / (length * length)
+            anchor == "right" -> 1.0
+            anchor == "middle" -> 0.5
+            anchor.startsWith(NUMERIC_ANCHOR_PREFIX) ->
+                anchor.removePrefix(NUMERIC_ANCHOR_PREFIX)
+                    .toDoubleOrNull() ?: 0.0
+            else -> 0.0
+        }
+        val zero = JsxGraphPoint2D(
+            x = parent.point1.x + deltaX * anchorParameter,
+            y = parent.point1.y + deltaY * anchorParameter,
+        )
+        val parameterBounds = visibleLineParameterBounds(
+            parent = parent,
+            visibleLeft = visibleLeft,
+            visibleTop = visibleTop,
+            visibleRight = visibleRight,
+            visibleBottom = visibleBottom,
+        ) ?: return emptyList()
+        var lower = (parameterBounds.first - anchorParameter) * length
+        var upper = (parameterBounds.second - anchorParameter) * length
+        if (!includeBoundaries) {
+            val point1Inside =
+                parent.point1.x in visibleLeft..visibleRight &&
+                    parent.point1.y in visibleBottom..visibleTop
+            val point2Inside =
+                parent.point2.x in visibleLeft..visibleRight &&
+                    parent.point2.y in visibleBottom..visibleTop
+            if (!parent.straightFirst && point1Inside) {
+                lower += TICK_EPSILON * 10.0
+            }
+            if (!parent.straightLast && point2Inside) {
+                upper -= TICK_EPSILON * 10.0
+            }
+        }
+        if (type == "polar") {
+            upper = max(
+                hypot(visibleLeft, visibleTop),
+                hypot(visibleRight, visibleBottom),
+            )
+        }
+        val positions = fixedTicks
+            ?.mapIndexedNotNull { sourceIndex, position ->
+                if (
+                    position >= lower - TICK_EPSILON &&
+                    position <= upper + TICK_EPSILON
+                ) {
+                    IndexedSceneTickPosition(sourceIndex, position)
+                } else {
+                    null
+                }
+            }
+            ?: equidistantLinePositions(
+                lower = lower,
+                upper = upper,
+                directionX = directionX,
+                directionY = directionY,
+                cssPixelsPerUnitX = cssPixelsPerUnitX,
+                cssPixelsPerUnitY = cssPixelsPerUnitY,
+            ).mapIndexed { sourceIndex, position ->
+                IndexedSceneTickPosition(sourceIndex, position)
+            }
+        val minorDistance = lineMinorDistance(
+            visibleDistance = upper - lower,
+            directionX = directionX,
+            directionY = directionY,
+            cssPixelsPerUnitX = cssPixelsPerUnitX,
+            cssPixelsPerUnitY = cssPixelsPerUnitY,
+        )
+        return positions.map { (sourceIndex, position) ->
+            val major =
+                fixedTicks != null ||
+                    isMajor(position, minorDistance)
+            val label = when {
+                !drawLabels -> null
+                fixedTicks != null ->
+                    fixedLabels.getOrNull(sourceIndex)
+                        ?: formatLabel(position)
+                isLabelPosition(position, minorDistance) ->
+                    formatLabel(position / scale)
+                else -> null
+            }
+            JsxGraphCurveTickLocation(
+                base = JsxGraphPoint2D(
+                    x = zero.x + position * directionX,
+                    y = zero.y + position * directionY,
+                ),
+                normal = JsxGraphPoint2D(
+                    x = -directionY,
+                    y = directionX,
+                ),
+                major = major,
+                label = label,
+            )
+        }
+    }
+
+    private fun equidistantLinePositions(
+        lower: Double,
+        upper: Double,
+        directionX: Double,
+        directionY: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): List<Double> {
+        val distance = lineMinorDistance(
+            visibleDistance = upper - lower,
+            directionX = directionX,
+            directionY = directionY,
+            cssPixelsPerUnitX = cssPixelsPerUnitX,
+            cssPixelsPerUnitY = cssPixelsPerUnitY,
+        )
+        if (!distance.isFinite() || distance < TICK_EPSILON) {
+            return emptyList()
+        }
+        val requested =
+            ceil((upper - lower).coerceAtLeast(0.0) / distance).toLong() + 2L
+        if (requested > MAXIMUM_TICK_COUNT) {
+            return emptyList()
+        }
+        val positions = mutableListOf<Double>()
+        var position = if (drawZero) 0.0 else distance
+        if (position < lower) {
+            position = floor((lower - TICK_EPSILON) / distance) * distance
+        }
+        while (
+            position <= upper + TICK_EPSILON &&
+            positions.size < MAXIMUM_TICK_COUNT
+        ) {
+            if (position >= lower - TICK_EPSILON) {
+                positions += position
+            }
+            position += distance
+        }
+        position = -distance
+        if (position > upper) {
+            position = ceil((upper + TICK_EPSILON) / -distance) * -distance
+        }
+        while (
+            position >= lower - TICK_EPSILON &&
+            positions.size < MAXIMUM_TICK_COUNT
+        ) {
+            if (position <= upper + TICK_EPSILON) {
+                positions += position
+            }
+            position -= distance
+        }
+        return positions
+    }
+
+    private fun lineMinorDistance(
+        visibleDistance: Double,
+        directionX: Double,
+        directionY: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): Double {
+        val majorDistance =
+            if (!insertTicks) {
+                ticksDistance
+            } else {
+                val maximumDistance = visibleDistance / 6.0 / scale
+                val screenUnits = hypot(
+                    directionX * cssPixelsPerUnitX,
+                    directionY * cssPixelsPerUnitY,
+                )
+                val minimumDistance =
+                    minTicksDistance / scale / screenUnits *
+                        (minorTicks.toDouble() + 1.0)
+                max(
+                    nextNiceMinimum(minimumDistance),
+                    previousNiceMaximum(maximumDistance),
+                )
+            }
+        return majorDistance * scale / (minorTicks.toDouble() + 1.0)
+    }
+
+    private fun tickPath(
+        location: JsxGraphCurveTickLocation,
+        visibleLeft: Double,
+        visibleTop: Double,
+        visibleRight: Double,
+        visibleBottom: Double,
+        cssPixelsPerUnitX: Double,
+        cssPixelsPerUnitY: Double,
+    ): JsxGraphTickPath? {
+        if (location.major && type == "polar") {
+            val radius = hypot(location.base.x, location.base.y)
+            val maximumRadius = max(
+                hypot(visibleLeft, visibleTop),
+                hypot(visibleRight, visibleBottom),
+            )
+            if (!radius.isFinite() || radius >= maximumRadius) {
+                return null
+            }
+            return JsxGraphTickPath(
+                points = (0..180).map { index ->
+                    val angle = index * kotlin.math.PI / 90.0
+                    JsxGraphPoint2D(
+                        x = radius * cos(angle),
+                        y = radius * sin(angle),
+                    )
+                },
+                major = true,
+            )
+        }
+        val height = if (location.major) majorHeight else minorHeight
+        val rawEndings =
+            if (location.major) majorTickEndings else tickEndings
+        if (rawEndings.size != 2) {
+            return null
+        }
+        val infinite = height < 0.0
+        val endings =
+            if (infinite && ignoreInfiniteTickEndings) {
+                listOf(1.0, 1.0)
+            } else {
+                rawEndings.map { ending ->
+                    if (ending > 0.0) 1.0 else 0.0
+                }
+            }
+        val normalMetricX = location.normal.x * cssPixelsPerUnitX
+        val normalMetricY = location.normal.y * cssPixelsPerUnitY
+        val normalLength = hypot(normalMetricX, normalMetricY)
+        if (!normalLength.isFinite() || normalLength <= TICK_EPSILON) {
+            return null
+        }
+        val unitMetricX = normalMetricX / normalLength
+        val unitMetricY = normalMetricY / normalLength
+        if (infinite) {
+            val directionX = unitMetricX / cssPixelsPerUnitX
+            val directionY = unitMetricY / cssPixelsPerUnitY
+            val interval = lineIntervalInBox(
+                origin = location.base,
+                directionX = directionX,
+                directionY = directionY,
+                left = visibleLeft,
+                top = visibleTop,
+                right = visibleRight,
+                bottom = visibleBottom,
+            ) ?: return null
+            val first = if (endings[0] > 0.0) interval.second else 0.0
+            val second = if (endings[1] > 0.0) interval.first else 0.0
+            return JsxGraphTickPath(
+                points = listOf(
+                    JsxGraphPoint2D(
+                        x = location.base.x + directionX * first,
+                        y = location.base.y + directionY * first,
+                    ),
+                    JsxGraphPoint2D(
+                        x = location.base.x + directionX * second,
+                        y = location.base.y + directionY * second,
+                    ),
+                ),
+                major = location.major,
+            )
+        }
+
+        val halfHeight = height * 0.5
+        val angle = when (face) {
+            ">" -> kotlin.math.PI * 0.25
+            "<" -> -kotlin.math.PI * 0.25
+            else -> 0.0
+        }
+        val firstX =
+            cos(angle) * unitMetricX -
+                sin(angle) * unitMetricY
+        val firstY =
+            sin(angle) * unitMetricX +
+                cos(angle) * unitMetricY
+        val secondAngle = -angle
+        val secondX =
+            cos(secondAngle) * unitMetricX -
+                sin(secondAngle) * unitMetricY
+        val secondY =
+            sin(secondAngle) * unitMetricX +
+                cos(secondAngle) * unitMetricY
+        val points = listOf(
+            JsxGraphPoint2D(
+                x = location.base.x +
+                    firstX * halfHeight * endings[0] /
+                    cssPixelsPerUnitX,
+                y = location.base.y +
+                    firstY * halfHeight * endings[0] /
+                    cssPixelsPerUnitY,
+            ),
+            location.base,
+            JsxGraphPoint2D(
+                x = location.base.x -
+                    secondX * halfHeight * endings[1] /
+                    cssPixelsPerUnitX,
+                y = location.base.y -
+                    secondY * halfHeight * endings[1] /
+                    cssPixelsPerUnitY,
+            ),
+        )
+        if (
+            clip &&
+            points.take(2).none {
+                it.x in visibleLeft..visibleRight &&
+                    it.y in visibleBottom..visibleTop
+            }
+        ) {
+            return null
+        }
+        return JsxGraphTickPath(points, location.major)
+    }
+
+    private fun visibleLineParameterBounds(
+        parent: JsxGraphTicksParent2D.Line,
+        visibleLeft: Double,
+        visibleTop: Double,
+        visibleRight: Double,
+        visibleBottom: Double,
+    ): Pair<Double, Double>? {
+        val directionX = parent.point2.x - parent.point1.x
+        val directionY = parent.point2.y - parent.point1.y
+        val interval = lineIntervalInBox(
+            origin = parent.point1,
+            directionX = directionX,
+            directionY = directionY,
+            left = visibleLeft,
+            top = visibleTop,
+            right = visibleRight,
+            bottom = visibleBottom,
+        ) ?: return null
+        val lower = max(
+            interval.first,
+            if (parent.straightFirst) {
+                Double.NEGATIVE_INFINITY
+            } else {
+                0.0
+            },
+        )
+        val upper = min(
+            interval.second,
+            if (parent.straightLast) {
+                Double.POSITIVE_INFINITY
+            } else {
+                1.0
+            },
+        )
+        return if (lower <= upper) lower to upper else null
+    }
+
+    private fun lineIntervalInBox(
+        origin: JsxGraphPoint2D,
+        directionX: Double,
+        directionY: Double,
+        left: Double,
+        top: Double,
+        right: Double,
+        bottom: Double,
+    ): Pair<Double, Double>? {
+        var lower = Double.NEGATIVE_INFINITY
+        var upper = Double.POSITIVE_INFINITY
+
+        fun constrain(
+            coordinate: Double,
+            direction: Double,
+            minimum: Double,
+            maximum: Double,
+        ): Boolean {
+            if (abs(direction) <= TICK_EPSILON) {
+                return coordinate in minimum..maximum
+            }
+            val first = (minimum - coordinate) / direction
+            val second = (maximum - coordinate) / direction
+            lower = max(lower, min(first, second))
+            upper = min(upper, max(first, second))
+            return lower <= upper
+        }
+
+        if (!constrain(origin.x, directionX, left, right)) {
+            return null
+        }
+        if (!constrain(origin.y, directionY, bottom, top)) {
+            return null
+        }
+        return lower to upper
+    }
+
+    private fun isMajor(
+        position: Double,
+        minorDistance: Double,
+    ): Boolean =
+        round(position / minorDistance).toLong() %
+            (minorTicks.toLong() + 1L) == 0L
+
+    private fun isLabelPosition(
+        position: Double,
+        minorDistance: Double,
+    ): Boolean {
+        val interval = ticksPerLabel?.toLong()
+            ?: (minorTicks.toLong() + 1L)
+        return round(position / minorDistance).toLong() %
+            interval == 0L
+    }
+
+    private fun formatLabel(value: Double): String =
+        formatTicksLabel(
+            value = value,
+            maxLabelLength = maxLabelLength,
+            precision = precision,
+            digits = digits,
+            scaleSymbol = scaleSymbol,
+            beautifulScientificTickLabels =
+                beautifulScientificTickLabels,
+            useUnicodeMinus = useUnicodeMinus,
+        )
+
+    private fun nextNiceMinimum(value: Double): Double {
+        var delta = 10.0.pow(floor(log10(value)))
+        if (2.0 * delta >= value) {
+            delta *= 2.0
+        } else if (5.0 * delta >= value) {
+            delta *= 5.0
+        }
+        return delta
+    }
+
+    private fun previousNiceMaximum(value: Double): Double {
+        var delta = 10.0.pow(floor(log10(value)))
+        if (5.0 * delta < value) {
+            delta *= 5.0
+        } else if (2.0 * delta < value) {
+            delta *= 2.0
+        }
+        return delta
+    }
+
+    companion object {
+        const val NUMERIC_ANCHOR_PREFIX: String = "fraction:"
+        private const val MAXIMUM_TICK_COUNT = 2048
+        private const val TICK_EPSILON = 2.220446049250313e-16
+    }
+}
+
+private data class IndexedSceneTickPosition(
+    val sourceIndex: Int,
+    val position: Double,
+)
+
 sealed interface JsxGraphSceneElement {
     val id: String
     val name: String
@@ -486,6 +1115,13 @@ sealed interface JsxGraphSceneElement {
         val straightLast: Boolean,
         val firstArrow: JsxGraphArrowHead?,
         val lastArrow: JsxGraphArrowHead?,
+    ) : JsxGraphSceneElement
+
+    data class Ticks(
+        override val id: String,
+        override val name: String,
+        override val style: JsxGraphElementStyle,
+        val definition: JsxGraphTicks2D,
     ) : JsxGraphSceneElement
 
     data class Circle(

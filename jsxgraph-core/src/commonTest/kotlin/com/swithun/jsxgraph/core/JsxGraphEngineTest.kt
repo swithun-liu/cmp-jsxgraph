@@ -104,6 +104,183 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun ticksDocumentCreatesViewportResolvedLineAndCurveGeometry() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-5, 5, 5, -5],
+                  "objects": [
+                    {
+                      "id": "A",
+                      "type": "point",
+                      "parents": [-2, 0],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "B",
+                      "type": "point",
+                      "parents": [2, 0],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "line",
+                      "type": "segment",
+                      "parents": ["A", "B"],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "fixed",
+                      "type": "ticks",
+                      "parents": [
+                        "line",
+                        [-10, -1, 0, 1, 10]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "drawLabels": true,
+                        "labels": [
+                          "out-left", "minus", "zero",
+                          "plus", "out-right"
+                        ],
+                        "label": {
+                          "offset": [10, 0],
+                          "fontSize": 12
+                        }
+                      }
+                    },
+                    {
+                      "id": "curve",
+                      "type": "functiongraph",
+                      "parents": ["x * x", -2, 2],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "doAdvancedPlot": false,
+                        "numberPointsHigh": 8
+                      }
+                    },
+                    {
+                      "id": "curveTicks",
+                      "type": "ticks",
+                      "parents": ["curve", [0, 1, 2, 4]],
+                      "attributes": {
+                        "name": "",
+                        "drawLabels": true,
+                        "labels": ["left", "inside", "middle", "right"]
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val fixed = resolveTicks(sceneTicks(scene, "fixed"))
+        assertEquals(1, fixed.paths.size)
+        assertEquals(JsxGraphPoint2D(-1.0, 0.0), fixed.paths[0].points[1])
+        assertEquals("plus", fixed.labels.single().content)
+
+        val curve = resolveTicks(sceneTicks(scene, "curveTicks"))
+        assertEquals(4, curve.paths.size)
+        assertEquals(
+            listOf("left", "inside", "middle", "right"),
+            curve.labels.map(JsxGraphTickLabel::content),
+        )
+        assertEquals(
+            -1.9038476052359176,
+            curve.paths[0].points[0].x,
+            absoluteTolerance = 1.0e-12,
+        )
+    }
+
+    @Test
+    fun ticksDocumentInheritsParentVisibilityUnlessExplicitlyOverridden() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-5, 5, 5, -5],
+                  "objects": [
+                    {
+                      "id": "line",
+                      "type": "segment",
+                      "parents": [[-2, 0], [2, 0]],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "visible": false
+                      }
+                    },
+                    {
+                      "id": "defaultTicks",
+                      "type": "ticks",
+                      "parents": ["line", [0]],
+                      "attributes": {"name": ""}
+                    },
+                    {
+                      "id": "inheritedTicks",
+                      "type": "ticks",
+                      "parents": ["line", [0]],
+                      "attributes": {
+                        "name": "",
+                        "visible": "inherit"
+                      }
+                    },
+                    {
+                      "id": "visibleTicks",
+                      "type": "ticks",
+                      "parents": ["line", [0]],
+                      "attributes": {
+                        "name": "",
+                        "visible": true
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        assertFalse(sceneTicks(scene, "defaultTicks").style.visible)
+        assertFalse(sceneTicks(scene, "inheritedTicks").style.visible)
+        assertTrue(sceneTicks(scene, "visibleTicks").style.visible)
+    }
+
+    @Test
+    fun ticksDocumentRejectsExcessiveFixedTickCountBeforeCreation() {
+        val fixedTicks = (0..2048).joinToString(",")
+        val error = assertError(
+            """
+            {
+              "boundingBox": [-5, 5, 5, -5],
+              "objects": [
+                {
+                  "id": "line",
+                  "type": "segment",
+                  "parents": [[-2, 0], [2, 0]],
+                  "attributes": {"name": "", "withLabel": false}
+                },
+                {
+                  "id": "ticks",
+                  "type": "ticks",
+                  "parents": ["line", [$fixedTicks]],
+                  "attributes": {"name": ""}
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val limit =
+            assertIs<JsxGraphDocumentError.TickCountLimitExceeded>(error)
+        assertEquals(1, limit.objectIndex)
+        assertEquals("ticks", limit.id)
+        assertEquals(2048, limit.limit)
+        assertEquals(2049, limit.actual)
+    }
+
+    @Test
     fun orthogonalConstructionsRenderOnlyRequestedElementsAndTrackSourcePoint() {
         val session = assertIs<GMResult.Ok<JsxGraphSession>>(
             JsxGraphEngine.createSession(
@@ -7286,6 +7463,24 @@ class JsxGraphEngineTest {
         id: String,
     ): JsxGraphSceneElement.Curve =
         assertIs(scene.elements.single { it.id == id })
+
+    private fun sceneTicks(
+        scene: JsxGraphScene,
+        id: String,
+    ): JsxGraphSceneElement.Ticks =
+        assertIs(scene.elements.single { it.id == id })
+
+    private fun resolveTicks(
+        ticks: JsxGraphSceneElement.Ticks,
+    ): JsxGraphResolvedTicks =
+        ticks.definition.resolve(
+            visibleLeft = -5.0,
+            visibleTop = 5.0,
+            visibleRight = 5.0,
+            visibleBottom = -5.0,
+            cssPixelsPerUnitX = 50.0,
+            cssPixelsPerUnitY = 50.0,
+        )
 
     private fun assertPointCoordinates(
         expected: JsxGraphPoint2D,

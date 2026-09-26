@@ -3,6 +3,7 @@
  * Upstream: src/base/board.js -> create,
  * src/jxg.js -> registerElement,
  * src/base/element.js -> visual properties,
+ * src/base/ticks.js -> createHatchmark,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
@@ -22,6 +23,7 @@ import com.swithun.jsxgraph.core.base.Curve3D
 import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Hatch
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Line3D
@@ -37,6 +39,9 @@ import com.swithun.jsxgraph.core.base.Sphere3D
 import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Text3D
+import com.swithun.jsxgraph.core.base.Ticks
+import com.swithun.jsxgraph.core.base.TicksAnchor
+import com.swithun.jsxgraph.core.base.TicksSource
 import com.swithun.jsxgraph.core.base.Ticks3D
 import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.base.View3D
@@ -154,6 +159,16 @@ sealed interface JsxGraphDocumentError {
     ) : JsxGraphDocumentError {
         override val message: String =
             "objects[$objectIndex] '$id' curve point count $actual exceeds limit $limit"
+    }
+
+    data class TickCountLimitExceeded(
+        val objectIndex: Int,
+        val id: String,
+        val limit: Int,
+        val actual: Int,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "objects[$objectIndex] '$id' tick count $actual exceeds limit $limit"
     }
 
     data class PolygonVertexLimitExceeded(
@@ -1181,6 +1196,31 @@ object JsxGraphEngine {
         limits: JsxGraphJessieCodeLimits,
         location: JessieCodeAstLocation,
     ): JessieCodeRuntimeError.ResourceLimitExceeded? {
+        val requestedTickCount =
+            when (creatorName) {
+                "ticks" ->
+                (
+                    parents.getOrNull(1) as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values?.size?.toLong()
+                "hatch", "hash" ->
+                    (
+                        parents.getOrNull(1) as?
+                            JessieCodeRuntimeValue.NumberValue
+                        )?.value?.let(Hatch::positionCount)
+                else -> null
+            }
+        if (
+            requestedTickCount != null &&
+            requestedTickCount > Ticks.DEFAULT_MAXIMUM_TICK_COUNT
+        ) {
+            return JessieCodeRuntimeError.ResourceLimitExceeded(
+                resource = "tick count",
+                limit = Ticks.DEFAULT_MAXIMUM_TICK_COUNT,
+                requestedSize = requestedTickCount,
+                location = location,
+            )
+        }
         val curveXValues = (
             parents.getOrNull(0) as? JessieCodeRuntimeValue.ArrayValue
         )?.values
@@ -2602,6 +2642,8 @@ object JsxGraphEngine {
         maxCurvePoints: Int? = null,
     ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
         val sceneElements = mutableListOf<JsxGraphSceneElement>()
+        val effectiveVisibilityByElement =
+            mutableMapOf<GeometryElement, Boolean>()
         for (sourceElement in depthOrderedSourceElements(created)) {
             val curve = sourceElement.element as? Curve
             if (maxCurvePoints != null) {
@@ -2625,9 +2667,22 @@ object JsxGraphEngine {
                     }
                 }
             }
-            when (val result = sceneElement(sourceElement)) {
+            // JSXGraph 1.13.3: src/base/ticks.js -> createTicks;
+            // src/base/element.js -> fullUpdate / updateVisibility.
+            val inheritedVisibility =
+                (sourceElement.element as? Ticks)?.let { ticks ->
+                    effectiveVisibilityByElement[ticks.parent] ?: true
+                }
+            when (
+                val result = sceneElement(
+                    sourceElement = sourceElement,
+                    inheritedVisibility = inheritedVisibility,
+                )
+            ) {
                 is GMResult.Ok -> {
                     sceneElements += result.value
+                    effectiveVisibilityByElement[sourceElement.element] =
+                        result.value.style.visible
                     val ticks = curve?.ticks3DDefinition
                     val drawsLabels =
                         (
@@ -2722,6 +2777,7 @@ object JsxGraphEngine {
     private fun sceneElement(
         sourceElement: CreatedSourceElement,
         ticks3DLabel: JsxGraphTicks3DLabel? = null,
+        inheritedVisibility: Boolean? = null,
     ): GMResult<JsxGraphSceneElement, JsxGraphDocumentError> {
         val source =
             if (sourceElement.element is Face3D) {
@@ -2738,7 +2794,12 @@ object JsxGraphEngine {
             is GMResult.Ok -> Unit
             is GMResult.Err -> return result
         }
-        val style = when (val result = attributes.style(element)) {
+        val style = when (
+            val result = attributes.style(
+                element = element,
+                inheritedVisibility = inheritedVisibility,
+            )
+        ) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
@@ -2784,6 +2845,122 @@ object JsxGraphEngine {
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
+            }
+
+            is Ticks -> {
+                element.evaluationError?.let { error ->
+                    return GMResult.Err(attributes.elementCreation(error.toString()))
+                }
+                val ticksParent = when (val parent = element.parent) {
+                    is Line -> {
+                        val endpoints = lineEndpoints(parent)
+                            ?: return GMResult.Err(
+                                attributes.nonFiniteGeometry(),
+                            )
+                        JsxGraphTicksParent2D.Line(
+                            point1 = endpoints.first,
+                            point2 = endpoints.second,
+                            straightFirst = parent.straightFirst,
+                            straightLast = parent.straightLast,
+                            axis = parent.type == Const.OBJECT_TYPE_AXIS,
+                        )
+                    }
+                    is Curve ->
+                        JsxGraphTicksParent2D.Curve(
+                            locations = element.curveLocations.map {
+                                location ->
+                                JsxGraphCurveTickLocation(
+                                    base = JsxGraphPoint2D(
+                                        location.baseX,
+                                        location.baseY,
+                                    ),
+                                    normal = JsxGraphPoint2D(
+                                        location.normalX,
+                                        location.normalY,
+                                    ),
+                                    major = location.major,
+                                    label = location.label,
+                                )
+                            },
+                        )
+                    else -> return GMResult.Err(
+                        attributes.elementCreation(
+                            "Ticks parent is neither a Line nor a Curve",
+                        ),
+                    )
+                }
+                val labelAttributes = when (
+                    val result = attributes.nested("label")
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val labelStyle = when (
+                    val result = labelAttributes.style(
+                        element = element,
+                        inheritedVisibility = style.visible,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val config = element.attributes
+                val anchor = when (val value = config.anchor) {
+                    TicksAnchor.Left -> "left"
+                    TicksAnchor.Right -> "right"
+                    TicksAnchor.Middle -> "middle"
+                    is TicksAnchor.Fraction ->
+                        JsxGraphTicks2D.NUMERIC_ANCHOR_PREFIX + value.value
+                }
+                JsxGraphSceneElement.Ticks(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    definition = JsxGraphTicks2D(
+                        parent = ticksParent,
+                        fixedTicks =
+                            (element.source as? TicksSource.Fixed)
+                                ?.values?.toList(),
+                        fixedLabels = config.labels,
+                        anchor = anchor,
+                        drawZero = config.drawZero,
+                        insertTicks = config.insertTicks,
+                        minTicksDistance = config.minTicksDistance,
+                        minorHeight = config.minorHeight,
+                        majorHeight = config.majorHeight,
+                        tickEndings = config.tickEndings.toList(),
+                        majorTickEndings =
+                            config.majorTickEndings.toList(),
+                        ignoreInfiniteTickEndings =
+                            config.ignoreInfiniteTickEndings,
+                        minorTicks = config.minorTicks,
+                        ticksPerLabel = config.ticksPerLabel,
+                        scale = config.scale,
+                        scaleSymbol = config.scaleSymbol,
+                        maxLabelLength = config.maxLabelLength,
+                        precision = config.precision,
+                        digits = config.digits,
+                        beautifulScientificTickLabels =
+                            config.beautifulScientificTickLabels,
+                        useUnicodeMinus = config.useUnicodeMinus,
+                        face = config.face,
+                        includeBoundaries = config.includeBoundaries,
+                        type = config.ticksType,
+                        ticksDistance = config.ticksDistance,
+                        drawLabels = config.drawLabels,
+                        clip = config.clip,
+                        labelStyle = JsxGraphTicksLabelStyle(
+                            visible = labelStyle.visible,
+                            color = labelStyle.strokeColor,
+                            opacity = labelStyle.strokeOpacity,
+                            fontSize = config.labelFontSize,
+                            anchorX = config.labelAnchorX,
+                            anchorY = config.labelAnchorY,
+                            offsetX = config.labelOffset[0],
+                            offsetY = config.labelOffset[1],
+                        ),
+                    ),
+                )
             }
 
             is Line3D -> {
@@ -4153,6 +4330,10 @@ object JsxGraphEngine {
                     ),
                 )
             }
+            when (val result = validateTickCountLimit(sourceObject)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
             if (sourceObject.type != "curve3d") {
                 when (
                     val result = validateCurvePointLimit(
@@ -4316,6 +4497,36 @@ object JsxGraphEngine {
                 attributes = normalizeObjectKeys(attributes),
             ),
         )
+    }
+
+    private fun validateTickCountLimit(
+        sourceObject: ParsedObject,
+    ): GMResult<Unit, JsxGraphDocumentError> {
+        val requested = when (sourceObject.type) {
+            "ticks" ->
+                (sourceObject.parents.getOrNull(1) as? JsonArray)
+                    ?.size?.toLong()
+            "hatch", "hash" ->
+                (
+                    sourceObject.parents.getOrNull(1) as?
+                        JsonPrimitive
+                    )?.doubleOrNull?.let(Hatch::positionCount)
+            else -> null
+        } ?: return GMResult.Ok(Unit)
+        return if (requested > Ticks.DEFAULT_MAXIMUM_TICK_COUNT) {
+            GMResult.Err(
+                JsxGraphDocumentError.TickCountLimitExceeded(
+                    objectIndex = sourceObject.index,
+                    id = sourceObject.id,
+                    limit = Ticks.DEFAULT_MAXIMUM_TICK_COUNT,
+                    actual = requested
+                        .coerceAtMost(Int.MAX_VALUE.toLong())
+                        .toInt(),
+                ),
+            )
+        } else {
+            GMResult.Ok(Unit)
+        }
     }
 
     private fun validateCurvePointLimit(
@@ -5796,6 +6007,7 @@ object JsxGraphEngine {
                         is Polygon3D -> POLYGON_3D_ATTRIBUTES
                         is Point3D -> POINT_ATTRIBUTES
                         is Point -> POINT_ATTRIBUTES
+                        is Ticks -> TICKS_ATTRIBUTES
                         is Line -> LINE_ATTRIBUTES
                         is Circle -> CIRCLE_ATTRIBUTES
                         is Arc -> ARC_ATTRIBUTES
@@ -5963,6 +6175,17 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
+            if (element is Ticks) {
+                when (
+                    val result = validateNestedAttributes(
+                        name = "label",
+                        supported = TICKS_LABEL_ATTRIBUTES,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+            }
             if (element is Plane3D || element is Surface3D) {
                 when (
                     val result = validateNestedAttributes(
@@ -6102,6 +6325,7 @@ object JsxGraphEngine {
 
         fun style(
             element: GeometryElement,
+            inheritedVisibility: Boolean? = null,
         ): GMResult<JsxGraphElementStyle, JsxGraphDocumentError> {
             val defaultStroke = when (element) {
                 is Line3D -> DEFAULT_LINE_3D_COLOR
@@ -6111,6 +6335,12 @@ object JsxGraphEngine {
                 is Sphere3D -> DEFAULT_SPHERE_3D_STROKE_COLOR
                 is Point3D -> DEFAULT_STROKE_COLOR
                 is Point -> DEFAULT_POINT_COLOR
+                is Ticks ->
+                    if (element.elType == "hatch") {
+                        DEFAULT_STROKE_COLOR
+                    } else {
+                        DEFAULT_TICKS_COLOR
+                    }
                 is Text3D, is Text -> DEFAULT_TEXT_COLOR
                 is Curve ->
                     when {
@@ -6159,7 +6389,11 @@ object JsxGraphEngine {
                 else -> JsxGraphColor.Transparent
             }
             val visible = when (
-                val result = boolean("visible", default = true)
+                val result = inheritableBoolean(
+                    name = "visible",
+                    default = true,
+                    inherited = inheritedVisibility,
+                )
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
@@ -6198,6 +6432,8 @@ object JsxGraphEngine {
                             element is Face3D -> 1.0
                             element is Polygon3D -> 1.0
                             element is Point3D -> 0.0
+                            element is Ticks ->
+                                if (element.elType == "hatch") 2.0 else 1.0
                             element is Curve && element.isBoxPlot -> 2.0
                             element is Curve &&
                                 element.isVectorField -> 0.5
@@ -6344,6 +6580,32 @@ object JsxGraphEngine {
             val boolean = (value as? JsonPrimitive)?.booleanOrNull
                 ?: return invalid(name, "a boolean")
             return GMResult.Ok(boolean)
+        }
+
+        private fun inheritableBoolean(
+            name: String,
+            default: Boolean,
+            inherited: Boolean?,
+        ): GMResult<Boolean, JsxGraphDocumentError> {
+            val value = attributes[name]
+                ?: return GMResult.Ok(inherited ?: default)
+            val primitive = value as? JsonPrimitive
+                ?: return invalid(name, "a boolean")
+            primitive.booleanOrNull?.let { return GMResult.Ok(it) }
+            if (
+                inherited != null &&
+                primitive.isString &&
+                primitive.content.equals("inherit", ignoreCase = true)
+            ) {
+                return GMResult.Ok(inherited)
+            }
+            val expected =
+                if (inherited == null) {
+                    "a boolean"
+                } else {
+                    "a boolean or 'inherit'"
+                }
+            return invalid(name, expected)
         }
 
         fun requireExplicitFalse(
@@ -6579,6 +6841,7 @@ object JsxGraphEngine {
                 is Point -> DEFAULT_POINT_LAYER
                 is Text3D, is Text -> DEFAULT_TEXT_LAYER
                 is Arc -> DEFAULT_ARC_LAYER
+                is Ticks -> DEFAULT_TICKS_LAYER
                 is Line -> DEFAULT_LINE_LAYER
                 is Circle -> DEFAULT_CIRCLE_LAYER
                 is Sector -> DEFAULT_AREA_LAYER
@@ -6929,6 +7192,8 @@ object JsxGraphEngine {
         JsxGraphColor(red = 240, green = 228, blue = 66)
     private val DEFAULT_TEXT_COLOR =
         JsxGraphColor(red = 0, green = 0, blue = 0)
+    private val DEFAULT_TICKS_COLOR =
+        JsxGraphColor(red = 0, green = 0, blue = 0)
     private val DEFAULT_ANGLE_COLOR =
         JsxGraphColor(red = 230, green = 159, blue = 0)
     private val DEFAULT_RIEMANN_FILL_COLOR =
@@ -6952,6 +7217,7 @@ object JsxGraphEngine {
     private const val DEFAULT_LINE_LAYER = 7
     private const val DEFAULT_ARC_LAYER = 8
     private const val DEFAULT_POINT_LAYER = 9
+    private const val DEFAULT_TICKS_LAYER = 2
     private const val DEFAULT_POINT_3D_LAYER = 13
     private const val DEFAULT_LINE_3D_LAYER = 12
     private const val DEFAULT_CURVE_3D_LAYER = 12
@@ -7106,6 +7372,43 @@ object JsxGraphEngine {
         "drawlabels",
         "label",
     )
+    private val TICKS_ATTRIBUTES = setOf(
+        "anchor",
+        "beautifulscientificticklabels",
+        "clip",
+        "digits",
+        "drawlabels",
+        "drawzero",
+        "face",
+        "ignoreinfinitetickendings",
+        "includeboundaries",
+        "insertticks",
+        "label",
+        "labels",
+        "majorheight",
+        "majortickendings",
+        "maxlabellength",
+        "minticksdistance",
+        "minorheight",
+        "minorticks",
+        "precision",
+        "scale",
+        "scalesymbol",
+        "tickendings",
+        "ticksdistance",
+        "ticksperlabel",
+        "type",
+        "useunicodeminus",
+    )
+    private val TICKS_LABEL_ATTRIBUTES =
+        COMMON_ATTRIBUTES +
+            setOf(
+                "anchorx",
+                "anchory",
+                "fontsize",
+                "fontunit",
+                "offset",
+            )
     private val CONIC_ATTRIBUTES = setOf("foci", "center", "line")
     private val BOX_PLOT_ATTRIBUTES = setOf(
         "dir",

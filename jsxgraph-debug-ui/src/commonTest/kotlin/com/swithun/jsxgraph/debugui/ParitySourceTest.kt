@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(92, cases.size)
+        assertEquals(94, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            62,
+            64,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -59,6 +59,34 @@ class ParitySourceTest {
         )
         assertIs<GMResult.Err<String>>(
             JsxGraphParityCorpus.find("missing_case"),
+        )
+    }
+
+    @Test
+    fun hatchFocusedCaseUsesOfficialDefaultsAndBothAliases() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("hatch_2d"),
+        ).value
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            parseParitySource(parityCase.source),
+        ).value
+        val hatches = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Ticks>()
+            .associateBy(JsxGraphSceneElement.Ticks::id)
+
+        assertEquals(
+            setOf("defaultMarks", "shiftedMarks", "curveMarks"),
+            hatches.keys,
+        )
+        val defaults = hatches.getValue("defaultMarks")
+        assertEquals(JsxGraphColor(0, 114, 178), defaults.style.strokeColor)
+        assertEquals(2.0, defaults.style.strokeWidth)
+        assertEquals(2, defaults.style.layer)
+        assertEquals("middle", defaults.definition.anchor)
+        assertEquals(listOf(-0.2, 0.0, 0.2), defaults.definition.fixedTicks)
+        assertEquals(5, hatches.getValue("shiftedMarks").definition.fixedTicks?.size)
+        assertIs<com.swithun.jsxgraph.core.JsxGraphTicksParent2D.Curve>(
+            hatches.getValue("curveMarks").definition.parent,
         )
     }
 

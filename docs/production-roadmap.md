@@ -105,6 +105,20 @@ qualification batches pass.
   session, document, official fixture, and Desktop/Compact same-source gates
   pass. It remains outside the Stable corpus until independent production
   qualification is added.
+- Ticks: `src/base/ticks.js -> Ticks/createTicks` now covers registered Line
+  and Curve parents, fixed/equidistant positions, anchors and boundaries,
+  automatic Line spacing, minor/major paths, faces, finite/infinite endings,
+  polar paths, Curve endpoint/interior normals, fixed-label source indexes,
+  number formatting, and parent/label visibility inheritance. Pixel-sized
+  paths resolve against the final Compose viewport. JSON and JessieCode entry
+  points enforce bounded creation and structured failures. Core, creator,
+  document/session, official fixture, and focused Desktop/Compact static
+  parity gates pass. `createHatchmark` plus its `hatch`/`hash` aliases reuse
+  the translated Ticks path with the exact centered fixed-position loop,
+  official defaults, parent inheritance, fractional-count behavior, bounded
+  creation, and focused Desktop/Compact parity. Function-valued tick
+  distances, runtime attribute mutation, hit testing, complete APIs,
+  independent production cases, and Stable qualification remain pending.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point
