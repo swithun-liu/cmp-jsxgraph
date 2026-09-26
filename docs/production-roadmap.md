@@ -153,6 +153,19 @@ qualification batches pass.
   tests, and focused Desktop/Compact static parity gates pass. Dragging, hit
   testing, arbitrary transform mutation, non-data-URI loading, complete APIs,
   independent production cases, and Stable qualification remain pending.
+- Glider/Slider: the finite-coordinate Line/Segment branch of
+  `src/base/point.js -> createGlider`,
+  `src/base/coordselement.js -> updateGlider/updateGliderFromParent`, and
+  `src/element/slider.js -> createSlider` now covers projection, finite-end
+  clamping, parent updates, direct position updates, helper ownership/removal,
+  labels, ticks, `snapWidth`, `snapValues`, and the Slider value/mutation
+  method map. Native JessieCode and construction documents expand Slider into
+  the official helper order with bounded object accounting and atomic
+  rollback. Core, creator, document/session, official fixture, and focused
+  Desktop/Compact static parity gates pass. Circle, Curve, Polygon, Ticks,
+  Turtle, Point, transformed-slide, attractor, animation, baseline-click,
+  locale, independent production cases, and Stable qualification remain
+  pending.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point
@@ -214,7 +227,7 @@ qualification batches pass.
   Native JessieCode, construction-document, core lifecycle, official fixture,
   and focused static plus parent-drag Desktop/Compact parity gates pass.
   Ellipse/Hyperbola/Parabola Tangent/Polar and PolarLine Conic forms, Turtle
-  and one-parent Glider branches, an independent production case, and Stable
+  and Glider Tangent branches, an independent production case, and Stable
   qualification remain pending.
 - TangentTo: the Circle branch of
   `src/base/line.js -> createTangentTo` now composes the source Point's polar,

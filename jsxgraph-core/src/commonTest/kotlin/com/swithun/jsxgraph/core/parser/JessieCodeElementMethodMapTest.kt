@@ -439,6 +439,63 @@ class JessieCodeElementMethodMapTest {
     }
 
     @Test
+    fun sliderMethodMapExposesValueRangeAndHelperElements() {
+        val board = board()
+        val values = array(
+            evaluate(
+                source =
+                    """
+                    s = slider(
+                        [-4, 0],
+                        [4, 0],
+                        [-10, 3, 10]
+                    ) <<
+                        id: "s", name: "",
+                        withLabel: false, withTicks: false
+                    >>;
+                    initial = [s.Value(), V(s), s.smin, s.smax];
+                    s.setMin(-20).setMax(20).setValue(-5);
+                    [
+                        initial,
+                        s.Value(),
+                        s.point1,
+                        s.point2,
+                        s.baseline,
+                        s.highline,
+                        s.ticks,
+                        s.label
+                    ];
+                    """.trimIndent(),
+                board = board,
+            ),
+        )
+
+        assertContentEquals(
+            doubleArrayOf(3.0, 3.0, -10.0, 10.0),
+            numbers(array(values.values[0])),
+        )
+        assertEquals(
+            -5.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                values.values[1],
+            ).value,
+        )
+        listOf(2, 3, 4, 5).forEach { index ->
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                values.values[index],
+            )
+        }
+        assertSame(
+            JessieCodeRuntimeValue.UndefinedValue,
+            values.values[6],
+        )
+        assertSame(
+            JessieCodeRuntimeValue.UndefinedValue,
+            values.values[7],
+        )
+    }
+
+    @Test
     fun methodFailuresDoNotChangeObjectAndArrayAssignment() {
         val values = array(
             evaluate(

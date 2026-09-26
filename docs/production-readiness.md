@@ -126,6 +126,14 @@ application-resource loading. Its focused Desktop/Compact parity scores are
 `0.985178` and `0.985329`. Dragging, hit testing, arbitrary transform mutation,
 non-data-URI loading, complete APIs, and independent Stable qualification
 remain pending.
+Glider and Slider now have source-mapped finite-coordinate Line/Segment
+projection, finite-end clamping, parent updates, helper ownership/removal,
+labels, ticks, snapping, value mutation, native JessieCode and construction-
+document entry points, bounded scene expansion, and structured atomic
+failures. Their focused Desktop/Compact parity scores are `0.987490` and
+`0.980515`. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed-slide,
+attractor, animation, baseline-click, locale, complete mutation, and
+independent Stable qualification remain pending.
 PolygonalChain now has source-mapped wrapper construction, official border
 ordering, open vertices and Segment border rendering, explicit/helper Point
 ownership and removal, JSON/JessieCode vertex limits, and focused static plus
@@ -170,7 +178,7 @@ FunctionGraph classification for JessieCode string x-terms, hidden helpers,
 and Point-only ownership. All three branches have bounded JSON/JessieCode
 paths, structured atomic failure handling, and focused static plus parent-drag
 Desktop/Compact parity. Ellipse/Hyperbola/Parabola Tangent/Polar and PolarLine
-Conic forms, Turtle, and one-parent Glider branches remain explicitly
+Conic forms plus Turtle and Glider Tangent/Polar branches remain explicitly
 unsupported, and this slice remains outside the independent Stable corpus.
 TangentTo now has source-mapped Circle-only
 `polar -> intersection -> tangent` composition, numeric truthiness for

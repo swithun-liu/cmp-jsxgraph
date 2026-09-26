@@ -323,6 +323,14 @@ parent behavior:
 node tools/upstream-fixtures/image.mjs
 ```
 
+Capture the official finite-coordinate Line/Segment Glider projection,
+clamping, parent movement, Slider helper lifecycle, value methods, snapping,
+labels, ticks, removal, and rejected parent forms:
+
+```bash
+node tools/upstream-fixtures/glider-slider.mjs
+```
+
 Capture the official StepFunction expansion, missing-Y behavior, retained
 source-array mutation, zero-arity function parents, and invalid arity:
 
@@ -1296,8 +1304,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 97 cases:
-30 generated production scenarios followed by 67 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 98 cases:
+30 generated production scenarios followed by 68 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1309,7 +1317,7 @@ separate demo schema into handwritten native geometry. The focused
 `tangent_curve`, `ellipses`, `hyperbolas`, `parabolas`,
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
-`ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`,
+`ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`, `glider_slider`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1389,6 +1397,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `grid_2d` | 0.988817 | 0.980518 |
 | `hatch_2d` | 0.988453 | 0.984529 |
 | `image_2d` | 0.985178 | 0.985329 |
+| `glider_slider` | 0.987490 | 0.980515 |
 | `step_functions` | 0.987344 | 0.975382 |
 | `polygons` | 0.986562 | 0.973171 |
 | `polygonal_chains` | 0.986474 | 0.972464 |
@@ -1907,9 +1916,22 @@ additionally cover dynamic URL/coordinates/sizes, `setSize`, negative
 dimensions, method-map access, malformed inputs, source-size limits, resolver
 failures, and screen-basis geometry. This remains a focused preview outside
 the 30-case Stable corpus.
-Together with the two-dimensional Ticks/Axis/Grid/Hatch/Image, Polygon3D, Curve3D, VectorField3D, Circle3D,
+The focused `glider_slider` capture uses one JessieCode source for a projected
+Segment-backed Glider, a continuous Slider with label and ticks, and a
+discrete `snapWidth` Slider. It scored `0.987490` on Desktop and `0.980515` on
+Compact. Both contact sheets passed manual review for projection, finite
+baseline/highline geometry, point styling, tick placement, complete labels,
+helper visibility, clipping, overlap, and blank output. The official fixture
+and common tests additionally cover parent movement, endpoint clamping,
+`snapValues`, value mutation, helper identity/order, removal, object limits,
+structured failures, and atomic rollback. Circle, Curve, Polygon, Ticks,
+Turtle, Point, transformed-slide, attractor, animation, baseline-click, and
+locale behavior remain unsupported. This is a focused preview outside the
+30-case Stable corpus.
+Together with the two-dimensional Ticks/Axis/Grid/Hatch/Image/Glider/Slider,
+Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 97 cases while the independently
+the development corpus now contains 98 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

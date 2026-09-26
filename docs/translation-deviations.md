@@ -85,8 +85,19 @@ practical.
   State capture/reset/restore is explicit and a move or restore that produces
   invalid scene geometry is rolled back atomically. Point events, hover
   styling, multi-pointer gestures, keyboard movement, object dragging, pan,
-  zoom, snapping, gliders, groups, and persistent transformations remain
-  pending.
+  zoom, grid/Point snapping, remaining Glider hosts, groups, and persistent
+  transformations remain pending. Line/Segment-backed Gliders and Sliders
+  use this Point interaction path.
+- `createGlider` currently accepts only registered, finite-coordinate Line or
+  Segment hosts. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed
+  slide objects, attractors, and animation remain explicit structured
+  failures. JSXGraph `1.13.3` also accepts a Point as a slide object, while
+  Kotlin deliberately rejects that unimplemented branch. Slider requires
+  exactly two coordinates for each endpoint and three finite range values;
+  upstream can register partial helper state for malformed range input before
+  later producing invalid geometry. Kotlin validates first and rolls back any
+  staged helper creation atomically. Baseline-click movement and locale label
+  formatting are not translated.
 - `Intersection` currently translates
   `src/base/point.js -> createIntersectionPoint` and
   `src/math/geometry.js -> intersectionFunction` for Line/Segment/Circle,
@@ -348,7 +359,7 @@ practical.
   projection failure, cross-Board parent, or duplicate ID returns a structured
   error with atomic rollback. Ellipse, Hyperbola, and Parabola Tangent/Polar
   and PolarLine Conic forms remain explicitly unsupported pending dedicated
-  evidence, as do Turtle and one-parent Glider branches.
+  evidence, as do Turtle and Glider Tangent/Polar branches.
 - The Circle branch of `src/base/line.js -> JXG.createTangentTo` is translated
   as the same three-stage construction: create the external Point's polar,
   intersect that Line with the Circle, then create the Tangent at the selected
@@ -759,9 +770,11 @@ practical.
 - The translated JessieCode built-ins now include coordinate access,
   Line/Circle/Polygon measurements, names, angles, binomial/GCD, `randint`,
   `IfThen`, recursive `eval`, and `remove`. `V`/`Value` delegates to
-  `JessieCodeElementRuntime` until Slider/Glider exists. Area and perimeter
-  accept Circle and Polygon. `randint` uses an injectable `RandomSource`; its
-  default remains nondeterministic.
+  `JessieCodeElementRuntime`, including Slider value semantics; Slider also
+  exposes its range setters and helper references, and Glider exposes
+  `setPosition`/`setGliderPosition`. Area and perimeter accept Circle and
+  Polygon. `randint` uses an injectable `RandomSource`; its default remains
+  nondeterministic.
 - JSXGraph `1.13.3` registers `Mat.lcm` and `Mat.ratpow` as unbound built-ins.
   Their ordinary nonzero paths therefore throw `this.gcd is not a function`;
   Kotlin preserves that observable defect as `BuiltInInvocationFailure`.
@@ -977,8 +990,8 @@ practical.
   `1.13.3` accepts nonnumeric members from a function-returned JavaScript
   array and can corrupt coordinate storage, or throws a `TypeError` when the
   single function returns a scalar. Kotlin requires numeric array members and
-  returns a structured failure instead. Slider and Coords-object function
-  results remain pending.
+  returns a structured failure instead. Slider-valued and Coords-object
+  function results used as Point coordinates remain pending.
 - `Point.isOn` currently supports translated `Point`, ordinary `Line`, and
   circle-boundary targets. Segment clipping, circle interior hits, curves,
   polygons, and turtles remain pending on their element and visual-property

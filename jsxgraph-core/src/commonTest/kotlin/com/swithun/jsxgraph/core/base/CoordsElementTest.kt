@@ -111,7 +111,7 @@ class CoordsElementTest {
         assertContentEquals(doubleArrayOf(1.0, 4.0, -1.0), element.actualCoords.usrCoords)
         assertContentEquals(doubleArrayOf(1.0, 2.0, 3.0), element.initialCoords.usrCoords)
         assertEquals(
-            listOf("grid", "points", "attractors", "prepare", "update:true"),
+            listOf("grid", "points", "attractors", "prepare", "update:false"),
             calls,
         )
         assertTrue(element.needsUpdate)

@@ -5,6 +5,7 @@
  * src/base/element.js -> visual properties,
  * src/base/image.js -> Image / createImage,
  * src/base/ticks.js -> createHatchmark,
+ * src/element/slider.js -> createSlider,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
@@ -38,6 +39,7 @@ import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Polygon3D
 import com.swithun.jsxgraph.core.base.Polyhedron3D
 import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.Slider
 import com.swithun.jsxgraph.core.base.Sphere3D
 import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Text
@@ -856,6 +858,28 @@ object JsxGraphEngine {
                                             ),
                                         )
                                     }
+                                    created += expanded
+                                    creationCount += expanded.size
+                                } else if (creatorName == "slider") {
+                                    val slider = value.element as? Slider
+                                    if (slider == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native slider creator " +
+                                                        "returned an " +
+                                                        "unexpected element.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
+                                    val expanded =
+                                        sliderCreatedSourceElements(
+                                            source = source.copy(
+                                                index = creationCount,
+                                            ),
+                                            slider = slider,
+                                        )
                                     created += expanded
                                     creationCount += expanded.size
                                 } else {
@@ -1861,6 +1885,207 @@ object JsxGraphEngine {
             effective.putAll(nested)
         }
         return JsonObject(effective)
+    }
+
+    // JSXGraph 1.13.3: src/element/slider.js -> createSlider;
+    // src/options.js -> slider.
+    private fun sliderCreatedSourceElements(
+        source: ParsedObject,
+        slider: Slider,
+    ): List<CreatedSourceElement> {
+        val sliderVisible = (
+            source.attributes["visible"] as? JsonPrimitive
+            )?.booleanOrNull ?: true
+        fun helperAttributes(
+            role: String,
+            defaults: Map<String, JsonElement>,
+        ): JsonObject {
+            val result = nestedAttributes(
+                attributes = source.attributes,
+                name = role,
+                defaults = defaults,
+            ).toMutableMap()
+            if (
+                (result["visible"] as? JsonPrimitive)
+                    ?.content == "inherit"
+            ) {
+                result["visible"] = JsonPrimitive(sliderVisible)
+            }
+            return JsonObject(result)
+        }
+
+        val pointDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(false),
+            "fixed" to JsonPrimitive(true),
+            "withlabel" to JsonPrimitive(false),
+            "needsregularupdate" to JsonPrimitive(false),
+        )
+        val baselineAttributes = helperAttributes(
+            role = "baseline",
+            defaults = mapOf(
+                "visible" to JsonPrimitive(sliderVisible),
+                "fixed" to JsonPrimitive(true),
+                "withlabel" to JsonPrimitive(false),
+                "needsregularupdate" to JsonPrimitive(false),
+                "strokewidth" to JsonPrimitive(1),
+                "strokecolor" to JsonPrimitive("#000000"),
+            ),
+        )
+        val highlineAttributes = helperAttributes(
+            role = "highline",
+            defaults = mapOf(
+                "visible" to JsonPrimitive(sliderVisible),
+                "fixed" to JsonPrimitive(true),
+                "withlabel" to JsonPrimitive(false),
+                "strokewidth" to JsonPrimitive(3),
+                "strokecolor" to JsonPrimitive("#000000"),
+            ),
+        )
+        val pointAttributes = linkedMapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(sliderVisible),
+            "fixed" to (
+                source.attributes["fixed"] ?: JsonPrimitive(false)
+                ),
+            "withlabel" to JsonPrimitive(false),
+            "size" to (
+                source.attributes["size"] ?: JsonPrimitive(6)
+                ),
+            "layer" to (
+                source.attributes["layer"] ?: JsonPrimitive(9)
+                ),
+            "strokecolor" to (
+                source.attributes["strokecolor"]
+                    ?: JsonPrimitive("#000000")
+                ),
+            "fillcolor" to (
+                source.attributes["fillcolor"]
+                    ?: JsonPrimitive("#ffffff")
+                ),
+        )
+        pointAttributes.putAll(source.attributes)
+        for (
+            name in setOf(
+                "snapwidth",
+                "snapvalues",
+                "snapvaluedistance",
+                "withticks",
+                "digits",
+                "precision",
+                "suffixlabel",
+                "unitlabel",
+                "postlabel",
+                "point1",
+                "point2",
+                "baseline",
+                "highline",
+                "ticks",
+                "label",
+            )
+        ) {
+            pointAttributes.remove(name)
+        }
+        pointAttributes["withlabel"] = JsonPrimitive(false)
+
+        val result = mutableListOf<CreatedSourceElement>()
+        fun add(
+            element: GeometryElement,
+            type: String,
+            attributes: JsonObject,
+        ) {
+            result += CreatedSourceElement(
+                source = ParsedObject(
+                    index = source.index + result.size,
+                    id = element.id,
+                    type = type,
+                    parents = JsonArray(emptyList()),
+                    attributes = attributes,
+                ),
+                element = element,
+            )
+        }
+
+        add(
+            element = slider.point1,
+            type = "point",
+            attributes = helperAttributes("point1", pointDefaults),
+        )
+        add(
+            element = slider.point2,
+            type = "point",
+            attributes = helperAttributes("point2", pointDefaults),
+        )
+        add(
+            element = slider.baseline,
+            type = "segment",
+            attributes = baselineAttributes,
+        )
+        add(
+            element = slider,
+            type = "slider",
+            attributes = JsonObject(pointAttributes),
+        )
+        add(
+            element = slider.highline,
+            type = "segment",
+            attributes = highlineAttributes,
+        )
+        slider.label?.let { label ->
+            add(
+                element = label,
+                type = "text",
+                attributes = helperAttributes(
+                    role = "label",
+                    defaults = mapOf(
+                        "visible" to JsonPrimitive(sliderVisible),
+                        "withlabel" to JsonPrimitive(false),
+                        "strokecolor" to JsonPrimitive("#000000"),
+                    ),
+                ),
+            )
+        }
+        slider.sliderTicks?.let { ticks ->
+            add(
+                element = ticks,
+                type = "ticks",
+                attributes = helperAttributes(
+                    role = "ticks",
+                    defaults = mapOf(
+                        "visible" to JsonPrimitive(sliderVisible),
+                        "fixed" to JsonPrimitive(true),
+                        "drawlabels" to JsonPrimitive(false),
+                        "digits" to JsonPrimitive(2),
+                        "includeboundaries" to JsonPrimitive(true),
+                        "drawzero" to JsonPrimitive(true),
+                        "minticksdistance" to JsonPrimitive(30),
+                        "insertticks" to JsonPrimitive(true),
+                        "ticksdistance" to JsonPrimitive(1),
+                        "minorheight" to JsonPrimitive(4),
+                        "majorheight" to JsonPrimitive(5),
+                        "minorticks" to JsonPrimitive(0),
+                        "strokeopacity" to JsonPrimitive(1),
+                        "strokewidth" to JsonPrimitive(1),
+                        "tickendings" to JsonArray(
+                            listOf(JsonPrimitive(0), JsonPrimitive(1)),
+                        ),
+                        "majortickendings" to JsonArray(
+                            listOf(JsonPrimitive(0), JsonPrimitive(1)),
+                        ),
+                        "strokecolor" to JsonPrimitive("#000000"),
+                        "label" to JsonObject(
+                            mapOf(
+                                "offset" to JsonArray(
+                                    listOf(
+                                        JsonPrimitive(-4),
+                                        JsonPrimitive(-14),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+        return result
     }
 
     // JSXGraph 1.13.3: src/base/line.js -> createAxis defaultTicks.
@@ -2892,6 +3117,21 @@ object JsxGraphEngine {
                     ),
                 )
                 created += expanded
+            } else if (sourceObject.type == "slider") {
+                val slider = element as? Slider
+                    ?: return GMResult.Err(
+                        JsxGraphDocumentError.ElementCreation(
+                            objectIndex = sourceObject.index,
+                            id = sourceObject.id,
+                            type = sourceObject.type,
+                            reason =
+                                "creator did not return a Slider",
+                        ),
+                    )
+                created += sliderCreatedSourceElements(
+                    source = sourceObject,
+                    slider = slider,
+                )
             } else if (sourceObject.type == "polyhedron3d") {
                 val polyhedron = element as? Polyhedron3D
                     ?: return GMResult.Err(
@@ -8156,6 +8396,7 @@ object JsxGraphEngine {
             "bisectorlines" -> 2
             "tangentto" -> 3
             "axis", "grid" -> 2
+            "slider" -> 7
             in NON_SCENE_CREATORS -> 0
             else -> 1
         }
@@ -8174,6 +8415,19 @@ object JsxGraphEngine {
                     )?.value,
                 attributes = attributes,
             )
+        }
+        if (creatorName == "slider") {
+            val withLabel = (
+                attributes.properties["withlabel"] as?
+                    JessieCodeRuntimeValue.BooleanValue
+                )?.value ?: true
+            val withTicks = (
+                attributes.properties["withticks"] as?
+                    JessieCodeRuntimeValue.BooleanValue
+                )?.value ?: true
+            return 5 +
+                if (withLabel) 1 else 0 +
+                if (withTicks) 1 else 0
         }
         if (creatorName == "axes3d" || creatorName == "view3d") {
             val boundingBox = when (creatorName) {
@@ -8241,6 +8495,17 @@ object JsxGraphEngine {
                     )?.doubleOrNull,
                 attributes = source.attributes,
             )
+        }
+        if (source.type == "slider") {
+            val withLabel = (
+                source.attributes["withlabel"] as? JsonPrimitive
+                )?.booleanOrNull ?: true
+            val withTicks = (
+                source.attributes["withticks"] as? JsonPrimitive
+                )?.booleanOrNull ?: true
+            return 5 +
+                if (withLabel) 1 else 0 +
+                if (withTicks) 1 else 0
         }
         if (source.type == "axes3d" || source.type == "view3d") {
             val viewSource = if (source.type == "view3d") {

@@ -53,8 +53,9 @@ internal sealed interface CoordinateTransformationError {
  * Initial coordinate-access slice of JXG.CoordsElement.
  *
  * JessieCode string and function coordinate constraints and the persistent
- * 2D transformation lifecycle are present. Slider, Coords-object, glider,
- * animation, and renderer behavior remain in the untranslated element model.
+ * 2D transformation lifecycle and the line-backed Glider update hook are
+ * present. Coords-object, remaining Glider hosts, animation, and renderer
+ * behavior remain in the untranslated element model.
  * This class stays internal until those lifecycle contracts are available.
  */
 internal open class CoordsElement(
@@ -405,10 +406,7 @@ internal open class CoordsElement(
             return this
         }
 
-        /*
-         * This is the free-element path. Frozen visual properties and glider
-         * projection are added with their owner models.
-         */
+        // Glider overrides update() and preserves this shared free-element path.
         updateConstraint()
         updateTransform(fromParent)
         return this
@@ -486,7 +484,9 @@ internal open class CoordsElement(
             }
         }
         prepareUpdate()
-        update()
+        // JSXGraph's omitted update argument means a direct manipulation,
+        // while Board.update passes true for parent-driven updates.
+        update(fromParent = false)
         return if (preimageError == null) {
             GMResult.Ok(this)
         } else {

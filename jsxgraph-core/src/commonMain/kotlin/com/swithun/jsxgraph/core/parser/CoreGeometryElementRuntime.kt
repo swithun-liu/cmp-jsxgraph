@@ -2,7 +2,7 @@
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> resolveProperty and the methodMap
  * declarations in src/base/coordselement.js, line.js, circle.js, curve.js,
- * polygon.js, text.js, and image.js
+ * polygon.js, text.js, image.js, and element/slider.js
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -16,11 +16,13 @@ import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.Slider
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
@@ -35,6 +37,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
         when (element) {
+            is Slider -> number(element.Value())
             is Arc -> number(element.Value())
             is Sector -> number(element.Value())
             is Curve ->
@@ -62,6 +65,12 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
         resolveGeometryProperty(element, property)?.let {
+            return it
+        }
+        resolveSliderProperty(element, property)?.let {
+            return it
+        }
+        resolveGliderProperty(element, property)?.let {
             return it
         }
         resolveCurveProperty(element, property)?.let {
@@ -603,6 +612,99 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             else -> null
         }
     }
+
+    // JSXGraph 1.13.3: src/element/slider.js -> instance methodMap.
+    private fun resolveSliderProperty(
+        element: GeometryElement,
+        property: String,
+    ): ElementPropertyResult? {
+        val slider = element as? Slider ?: return null
+        return when (property) {
+            "V", "Value" -> numberFunction("Value", slider::Value)
+            "setValue" -> sliderNumberMethod(
+                slider,
+                "setValue",
+                slider::setValue,
+            )
+            "setMin" -> sliderNumberMethod(
+                slider,
+                "setMin",
+                slider::setMin,
+            )
+            "setMax" -> sliderNumberMethod(
+                slider,
+                "setMax",
+                slider::setMax,
+            )
+            "smin" -> number(slider.sliderMinimum ?: Double.NaN)
+            "smax" -> number(slider.sliderMaximum ?: Double.NaN)
+            "point1" -> elementReference(slider.point1)
+            "point2" -> elementReference(slider.point2)
+            "baseline" -> elementReference(slider.baseline)
+            "highline" -> elementReference(slider.highline)
+            "ticks" -> slider.sliderTicks?.let(::elementReference)
+                ?: GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+            "label" -> slider.label?.let(::elementReference)
+                ?: GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+            else -> null
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/coordselement.js -> methodMap.
+    private fun resolveGliderProperty(
+        element: GeometryElement,
+        property: String,
+    ): ElementPropertyResult? {
+        val glider = element as? Glider ?: return null
+        return when (property) {
+            "setPosition", "setGliderPosition" ->
+                function("setGliderPosition") {
+                        arguments,
+                        callLocation,
+                    ->
+                    val value = (
+                        arguments.firstOrNull() as?
+                            JessieCodeRuntimeValue.NumberValue
+                        )?.value ?: return@function invalidArgumentType(
+                        functionName = "setGliderPosition",
+                        argumentIndex = 0,
+                        expected = "number",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                    glider.setGliderPosition(value)
+                    elementReference(glider)
+                }
+            else -> null
+        }
+    }
+
+    private fun sliderNumberMethod(
+        slider: Slider,
+        methodName: String,
+        operation: (Double) -> Slider,
+    ): ElementPropertyResult =
+        function(methodName) { arguments, callLocation ->
+            val value = (
+                arguments.firstOrNull() as?
+                    JessieCodeRuntimeValue.NumberValue
+                )?.value ?: return@function invalidArgumentType(
+                functionName = methodName,
+                argumentIndex = 0,
+                expected = "number",
+                actual = arguments.firstOrNull()
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = callLocation,
+            )
+            operation(value)
+            elementReference(slider)
+        }
+
+    private fun elementReference(
+        element: GeometryElement,
+    ): ElementPropertyResult =
+        GMResult.Ok(JessieCodeRuntimeValue.ElementReference(element))
 
     private fun resolveCoordsProperty(
         element: GeometryElement,

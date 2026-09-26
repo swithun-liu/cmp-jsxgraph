@@ -2,6 +2,7 @@
  * Kotlin translation of JSXGraph.
  * Upstream: src/parser/jessiecode.js -> creator / isCreator,
  * src/base/point.js -> createPoint / createPolePoint,
+ * createGlider,
  * src/base/line.js -> createLine / createSegment / createArrow /
  * createRadicalAxis / createTangent / createTangentTo / createNormal /
  * createPolarLine,
@@ -26,6 +27,7 @@
  * createParallelogram / createRegularPolygon,
  * src/base/text.js -> createText,
  * src/base/image.js -> createImage,
+ * src/element/slider.js -> createSlider,
  * src/base/transformation.js -> createTransform,
  * src/3d/point3d.js -> createPoint3D,
  * src/3d/linspace3d.js -> createLine3D / createIntersectionLine3D /
@@ -112,6 +114,8 @@ import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.Face3DLightAttributes
 import com.swithun.jsxgraph.core.base.Face3DShaderAttributes
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Glider
+import com.swithun.jsxgraph.core.base.GliderError
 import com.swithun.jsxgraph.core.base.Grid
 import com.swithun.jsxgraph.core.base.GridError
 import com.swithun.jsxgraph.core.base.GeometryElement3D
@@ -195,6 +199,11 @@ import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.SectorError
 import com.swithun.jsxgraph.core.base.Sphere3D
 import com.swithun.jsxgraph.core.base.Sphere3DError
+import com.swithun.jsxgraph.core.base.Slider
+import com.swithun.jsxgraph.core.base.SliderAttributes
+import com.swithun.jsxgraph.core.base.SliderElementAttributes
+import com.swithun.jsxgraph.core.base.SliderError
+import com.swithun.jsxgraph.core.base.SliderPointAttributes
 import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Surface3DArrayEvaluator
 import com.swithun.jsxgraph.core.base.Surface3DAttributes
@@ -255,6 +264,14 @@ internal sealed interface JessieCodeCreatorError {
 
     data class PointFactory(
         val error: PointError,
+    ) : JessieCodeCreatorError
+
+    data class GliderFactory(
+        val error: GliderError,
+    ) : JessieCodeCreatorError
+
+    data class SliderFactory(
+        val error: SliderError,
     ) : JessieCodeCreatorError
 
     data class View3DFactory(
@@ -514,6 +531,12 @@ internal object NativeJessieCodeCreators {
         },
         "point" to JessieCodeCreator { board, parents, attributes, location ->
             createPoint(board, parents, attributes, location)
+        },
+        "glider" to JessieCodeCreator { board, parents, attributes, location ->
+            createGlider(board, parents, attributes, location)
+        },
+        "slider" to JessieCodeCreator { board, parents, attributes, location ->
+            createSlider(board, parents, attributes, location)
         },
         "point3d" to JessieCodeCreator {
                 board,
@@ -1691,6 +1714,499 @@ internal object NativeJessieCodeCreators {
             )
         }
     }
+
+    // JSXGraph 1.13.3: src/base/point.js -> createGlider.
+    private fun createGlider(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "glider"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val coordinates = when (parents.size) {
+            1 -> doubleArrayOf(0.0, 0.0)
+            3 -> doubleArrayOf(
+                (
+                    parents[0] as?
+                        JessieCodeRuntimeValue.NumberValue
+                    )?.value ?: return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                ),
+                (
+                    parents[1] as?
+                        JessieCodeRuntimeValue.NumberValue
+                    )?.value ?: return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                ),
+            )
+            else -> return unsupported(creatorName, parents, location)
+        }
+        val slideObject = resolveElement(
+            resolvedBoard,
+            parents.last(),
+        ) ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "fixed",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Glider.create(
+                board = resolvedBoard,
+                coordinates = coordinates,
+                slideObject = slideObject,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.GliderFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/slider.js -> createSlider.
+    private fun createSlider(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "slider"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val start = numericArray(parents[0])
+            ?: return unsupported(creatorName, parents, location)
+        val end = numericArray(parents[1])
+            ?: return unsupported(creatorName, parents, location)
+        val range = numericArray(parents[2])
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName,
+                attributes,
+                "fixed",
+                false,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val snapWidth = when (
+            val result = numberAttribute(
+                creatorName,
+                attributes,
+                "snapwidth",
+                -1.0,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val snapValueDistance = when (
+            val result = numberAttribute(
+                creatorName,
+                attributes,
+                "snapvaluedistance",
+                0.0,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val snapValues = when (
+            val result = numberArrayAttribute(
+                creatorName,
+                attributes,
+                "snapvalues",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withTicks = when (
+            val result = booleanAttribute(
+                creatorName,
+                attributes,
+                "withticks",
+                true,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withLabel = when (
+            val result = booleanAttribute(
+                creatorName,
+                attributes,
+                "withlabel",
+                true,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val digits = when (
+            val result = integerAttribute(
+                creatorName,
+                attributes,
+                "digits",
+                2,
+                0,
+                100,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val precision = when (
+            val result = integerAttribute(
+                creatorName,
+                attributes,
+                "precision",
+                2,
+                0,
+                100,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point1 = when (
+            val result = sliderPointAttributes(
+                creatorName,
+                attributes,
+                "point1",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point2 = when (
+            val result = sliderPointAttributes(
+                creatorName,
+                attributes,
+                "point2",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val baseline = when (
+            val result = sliderElementAttributes(
+                creatorName,
+                attributes,
+                "baseline",
+                defaultNeedsRegularUpdate = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val highline = when (
+            val result = sliderElementAttributes(
+                creatorName,
+                attributes,
+                "highline",
+                defaultNeedsRegularUpdate = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticks = when (
+            val result = sliderElementAttributes(
+                creatorName,
+                attributes,
+                "ticks",
+                defaultNeedsRegularUpdate = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val label = when (
+            val result = sliderElementAttributes(
+                creatorName,
+                attributes,
+                "label",
+                defaultNeedsRegularUpdate = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticksRuntimeAttributes = when (
+            val result = nestedObjectAttribute(
+                creatorName,
+                attributes,
+                "ticks",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val effectiveTicksAttributes = sliderTicksAttributes(
+            ticksRuntimeAttributes,
+        )
+        val parsedTicksAttributes = when (
+            val result = ticksAttributes(
+                attributes = effectiveTicksAttributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        fun optionalText(name: String): GMResult<String?, JessieCodeRuntimeError> =
+            nullableTextAttribute(
+                creatorName,
+                attributes,
+                name,
+                location,
+            )
+
+        val suffixLabel = when (val result = optionalText("suffixlabel")) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val unitLabel = when (val result = optionalText("unitlabel")) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val postLabel = when (val result = optionalText("postlabel")) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        return when (
+            val result = Slider.create(
+                board = resolvedBoard,
+                startCoordinates = start,
+                endCoordinates = end,
+                range = range,
+                attributes = SliderAttributes(
+                    id = identity.id,
+                    name = identity.name ?: "",
+                    needsRegularUpdate =
+                        identity.needsRegularUpdate,
+                    fixed = fixed,
+                    snapWidth = snapWidth,
+                    snapValues = snapValues,
+                    snapValueDistance = snapValueDistance,
+                    withTicks = withTicks,
+                    withLabel = withLabel,
+                    digits = digits,
+                    precision = precision,
+                    suffixLabel = suffixLabel,
+                    unitLabel = unitLabel,
+                    postLabel = postLabel,
+                    point1 = point1,
+                    point2 = point2,
+                    baseline = baseline,
+                    highline = highline,
+                    ticks = ticks,
+                    label = label,
+                    ticksAttributes = parsedTicksAttributes,
+                ),
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.SliderFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    private fun sliderPointAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<SliderPointAttributes, JessieCodeRuntimeError> {
+        val nested = when (
+            val result = nestedObjectAttribute(
+                creatorName,
+                attributes,
+                name,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                nested,
+                location,
+                defaultNeedsRegularUpdate = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName,
+                nested,
+                "fixed",
+                true,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            SliderPointAttributes(
+                id = identity.id,
+                name = identity.name ?: "",
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
+            ),
+        )
+    }
+
+    private fun sliderElementAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        defaultNeedsRegularUpdate: Boolean,
+        location: JessieCodeAstLocation,
+    ): GMResult<SliderElementAttributes, JessieCodeRuntimeError> {
+        val nested = when (
+            val result = nestedObjectAttribute(
+                creatorName,
+                attributes,
+                name,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = creatorAttributes(
+                creatorName,
+                nested,
+                location,
+                defaultNeedsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                SliderElementAttributes(
+                    id = result.value.id,
+                    name = result.value.name ?: "",
+                    needsRegularUpdate =
+                        result.value.needsRegularUpdate,
+                ),
+            )
+            is GMResult.Err -> result
+        }
+    }
+
+    private fun sliderTicksAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        val defaults = linkedMapOf<String, JessieCodeRuntimeValue>(
+            "drawzero" to JessieCodeRuntimeValue.BooleanValue(true),
+            "insertticks" to JessieCodeRuntimeValue.BooleanValue(true),
+            "minticksdistance" to
+                JessieCodeRuntimeValue.NumberValue(30.0),
+            "minorheight" to JessieCodeRuntimeValue.NumberValue(4.0),
+            "majorheight" to JessieCodeRuntimeValue.NumberValue(5.0),
+            "tickendings" to numericRuntimeArray(0.0, 1.0),
+            "majortickendings" to numericRuntimeArray(0.0, 1.0),
+            "minorticks" to JessieCodeRuntimeValue.NumberValue(0.0),
+            "digits" to JessieCodeRuntimeValue.NumberValue(2.0),
+            "includeboundaries" to
+                JessieCodeRuntimeValue.BooleanValue(true),
+            "ticksdistance" to JessieCodeRuntimeValue.NumberValue(1.0),
+            "drawlabels" to JessieCodeRuntimeValue.BooleanValue(false),
+            "label" to JessieCodeRuntimeValue.ObjectValue(
+                mapOf(
+                    "offset" to numericRuntimeArray(-4.0, -14.0),
+                ),
+            ),
+        )
+        defaults.putAll(attributes.properties)
+        return JessieCodeRuntimeValue.ObjectValue(defaults)
+    }
+
+    private fun numericRuntimeArray(
+        vararg values: Double,
+    ): JessieCodeRuntimeValue.ArrayValue =
+        JessieCodeRuntimeValue.ArrayValue(
+            values.map(JessieCodeRuntimeValue::NumberValue),
+        )
 
     // JSXGraph: src/3d/view3d.js -> createView3D.
     private fun createView3D(
@@ -16171,6 +16687,59 @@ internal object NativeJessieCodeCreators {
                 location,
             )
         }
+    }
+
+    private fun nullableTextAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<String?, JessieCodeRuntimeError> {
+        val value = attributes.properties[name]
+            ?: return GMResult.Ok(null)
+        return when (value) {
+            JessieCodeRuntimeValue.NullValue,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> GMResult.Ok(null)
+            is JessieCodeRuntimeValue.StringValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(JsNumberFormat.compact(value.value))
+            else -> invalidAttribute(
+                creatorName,
+                name,
+                "string, number, or null",
+                value,
+                location,
+            )
+        }
+    }
+
+    private fun numberArrayAttribute(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val value = attributes.properties[name]
+            ?: return GMResult.Ok(doubleArrayOf())
+        if (
+            value === JessieCodeRuntimeValue.NullValue ||
+            value === JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            return GMResult.Ok(doubleArrayOf())
+        }
+        val numbers = (value as? JessieCodeRuntimeValue.ArrayValue)
+            ?.let(::numericArray)
+            ?.takeIf { values -> values.all(Double::isFinite) }
+            ?: return invalidAttribute(
+                creatorName,
+                name,
+                "array of finite numbers",
+                value,
+                location,
+            )
+        return GMResult.Ok(numbers)
     }
 
     private fun stringListAttribute(

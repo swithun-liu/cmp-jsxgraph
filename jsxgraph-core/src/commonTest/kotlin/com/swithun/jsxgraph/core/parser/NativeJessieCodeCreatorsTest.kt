@@ -6641,6 +6641,125 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
+    fun gliderAndSliderCreatorsMatchLineBackedFactoryState() {
+        assertTrue("glider" in NativeJessieCodeCreators.names)
+        assertTrue("slider" in NativeJessieCodeCreators.names)
+
+        val gliderBoard = board("glider")
+        val glider = point(
+            evaluate(
+                source =
+                    """
+                    A = point(-4, 1) << id: "A", name: "" >>;
+                    B = point(4, 3) << id: "B", name: "" >>;
+                    base = segment(A, B) << id: "base", name: "" >>;
+                    glider(0, 5, base) << id: "G", name: "" >>;
+                    """.trimIndent(),
+                board = gliderBoard,
+            ),
+        )
+        assertIs<com.swithun.jsxgraph.core.base.Glider>(glider)
+        assertPoint(0.7058823529411765, 2.176470588235294, glider.coords)
+        assertSame(glider, assertIs<Line>(gliderBoard.select("base"))
+            .childElements["G"])
+
+        val oneParentBoard = board("one-parent-glider")
+        val oneParentGlider = point(
+            evaluate(
+                source =
+                    """
+                    A = point(-2, 1) << id: "A", name: "" >>;
+                    B = point(2, 1) << id: "B", name: "" >>;
+                    base = line(A, B) << id: "base", name: "" >>;
+                    glider(base) << id: "G", name: "" >>;
+                    """.trimIndent(),
+                board = oneParentBoard,
+            ),
+        )
+        assertIs<com.swithun.jsxgraph.core.base.Glider>(oneParentGlider)
+        assertPoint(0.0, 1.0, oneParentGlider.coords)
+
+        val sliderBoard = board("slider")
+        val slider = assertIs<com.swithun.jsxgraph.core.base.Slider>(
+            point(
+                evaluate(
+                    source =
+                        """
+                        slider(
+                            [-4, -1],
+                            [4, 3],
+                            [-10, 3, 10]
+                        ) <<
+                            id: "slider", name: "s",
+                            point1: << id: "sliderStart" >>,
+                            point2: << id: "sliderEnd" >>,
+                            baseline: << id: "baseline" >>,
+                            highline: << id: "highline" >>,
+                            ticks: << id: "sliderTicks" >>,
+                            label: << id: "sliderLabel" >>
+                        >>;
+                        """.trimIndent(),
+                    board = sliderBoard,
+                ),
+            ),
+        )
+        sliderBoard.fullUpdate()
+
+        assertEquals(3.0, slider.Value(), absoluteTolerance = 1.0e-12)
+        assertEquals(
+            listOf(
+                "sliderStart",
+                "sliderEnd",
+                "baseline",
+                "slider",
+                "highline",
+                "sliderLabel",
+                "sliderTicks",
+            ),
+            sliderBoard.objectsList.map(GeometryElement::id),
+        )
+        assertEquals("s = 3.00", assertIs<Text>(slider.label).plaintext)
+    }
+
+    @Test
+    fun gliderAndSliderCreatorFailuresAreStructuredAndAtomic() {
+        val board = board("glider-failure")
+        evaluate(
+            source = "P = point(0, 0) << id: \"P\", name: \"\" >>;",
+            board = board,
+        )
+        val beforeGlider = board.objects.keys.toList()
+        val unsupported = creatorError(
+            source = "glider(1, 1, P) << id: \"G\" >>;",
+            board = board,
+        )
+        assertEquals("glider", unsupported.creatorName)
+        assertIs<JessieCodeCreatorError.GliderFactory>(unsupported.error)
+        assertEquals(beforeGlider, board.objects.keys.toList())
+
+        evaluate(
+            source =
+                "point(3, 3) << id: \"collision\", name: \"\" >>;",
+            board = board,
+        )
+        val beforeSlider = board.objects.keys.toList()
+        val duplicate = creatorError(
+            source =
+                """
+                slider(
+                    [-2, 0],
+                    [2, 0],
+                    [0, 1, 2]
+                ) << id: "collision", name: "" >>;
+                """.trimIndent(),
+            board = board,
+        )
+        assertEquals("slider", duplicate.creatorName)
+        assertIs<JessieCodeCreatorError.SliderFactory>(duplicate.error)
+        assertEquals(beforeSlider, board.objects.keys.toList())
+    }
+
+    @Test
     fun customCreatorOverridesTheNativeRegistry() {
         val marker = JessieCodeRuntimeValue.StringValue("custom")
         var attributes: JessieCodeRuntimeValue.ObjectValue? = null

@@ -196,6 +196,21 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "glider_slider",
+            title = "Glider and slider",
+            scenario = "A projected segment glider and two styled sliders share one source.",
+            source = GLIDER_SLIDER_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "glider",
+                "slider",
+                "slider-label",
+                "slider-ticks",
+                "snap-width",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "step_functions",
             title = "Step functions",
             scenario = "Static arrays exercise rising, falling, repeated, and mismatched step data.",
@@ -1611,6 +1626,21 @@ private const val IMAGE_2D_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nasset = \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAANUlEQVR4AWTKMQ0AIAxE0cvJQEA1sKGAIIYNpeAAF21ubX/yts9n5tL2dyFSHKdD7lyQcgQAAAD//1xY61AAAAAGSURBVAMAl9QOAxv/U6sAAAAASUVORK5CYII=\";\nplain = image(asset, [-6, -4], [4, 3]) << id: \"plainImage\", name: \"\", fixed: true, highlight: false >>;\nrotated = image(asset, [0, -2], [4, 3]) << id: \"rotatedImage\", name: \"\", rotate: 25, fillOpacity: 0.72, fixed: true, highlight: false >>;"
+}
+"""
+
+private const val GLIDER_SLIDER_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-6, 5, 6, -5],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ntrack = segment([-5, 3.5], [5, 2]) << id: \"track\", name: \"\", withLabel: false, strokeColor: \"#A8ADB3\", strokeWidth: 2, fixed: true, highlight: false >>;\nprobe = glider(-1, 5, track) << id: \"probe\", name: \"\", withLabel: false, size: 7, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false >>;\ncontinuous = slider([-5, 0.8], [2.5, 0.8], [-10, 2.5, 10]) << id: \"continuous\", name: \"a\", size: 7, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false, baseline: << id: \"continuousBase\", strokeColor: \"#A8ADB3\", strokeWidth: 2 >>, highline: << id: \"continuousHigh\", strokeColor: \"#D55E3F\", strokeWidth: 4 >>, ticks: << id: \"continuousTicks\", strokeColor: \"#6F7780\", majorHeight: 8 >>, label: << id: \"continuousLabel\", fontSize: 14, strokeColor: \"#B44335\" >> >>;\ndiscrete = slider([-5, -2.3], [2.5, -2.3], [0, 6, 12]) << id: \"discrete\", name: \"n\", size: 8, snapWidth: 2, withTicks: false, suffixLabel: \"n = \", postLabel: \" steps\", strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false, baseline: << id: \"discreteBase\", strokeColor: \"#A8ADB3\", strokeWidth: 2 >>, highline: << id: \"discreteHigh\", strokeColor: \"#009E73\", strokeWidth: 5 >>, label: << id: \"discreteLabel\", fontSize: 14, strokeColor: \"#0072B2\" >> >>;"
 }
 """
 

@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 97 source-controlled cases: 30 independent production scenarios and
-67 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 98 source-controlled cases: 30 independent production scenarios and
+68 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -35,6 +35,7 @@ Focused direct links remain available for cases such as
 [2D grids](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=grid_2d),
 [2D Hatch marks](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=hatch_2d),
 [2D images](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=image_2d),
+[Glider and Slider](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=glider_slider),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
 [Point3D projection](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=point3d_projection),
@@ -262,7 +263,7 @@ The construction-document, scene-rendering, and Point-interaction slice
 described by the 30-case production corpus is Stable. The public native
 JessieCode source/session API is a bounded preview and is not yet part of that
 Stable contract. The remaining JessieCode creator registry, visual-property
-and function-valued element mutation, Slider/Glider-backed built-ins,
+and function-valued element mutation, remaining Glider host families,
 `import`/`$log`/`D`, the complete element `methodMap`, the remaining
 construction-document element types and attributes, and the complete element
 renderer are not yet translated. The current 3D preview includes bounded
@@ -511,6 +512,18 @@ Desktop/Compact fixture passes at
 dragging, hit testing, arbitrary transformation mutation, non-data-URI
 loading, and the complete Image API remain pending.
 
+Glider and Slider translate the finite-coordinate Line/Segment branch of
+`src/base/point.js -> createGlider`,
+`src/base/coordselement.js -> updateGlider/updateGliderFromParent`, and
+`src/element/slider.js -> createSlider`. Native JessieCode and construction
+documents support projected and clamped Gliders plus Slider helper ownership,
+labels, ticks, `snapWidth`, `snapValues`, `Value`, `setValue`, `setMin`, and
+`setMax`; staged failures roll back atomically. The focused Desktop/Compact
+fixture passes at `0.987490`/`0.980515`. Circle, Curve, Polygon, Ticks, Turtle,
+Point, transformed-slide, attractor, animation, baseline-click, locale, and
+complete mutation behavior remain unsupported. This bounded slice remains
+outside the 30-case Stable corpus.
+
 StepFunction translates `src/base/curve.js -> createStepfunction`. It retains
 the two source terms, rebuilds `dataX`/`dataY` on each regular Board update,
 and emits `0` or `2n - 1` points from the X-term length, including upstream
@@ -600,7 +613,7 @@ Plot, and duplicate-ID inputs return structured errors with atomic rollback.
 Ellipse, Hyperbola, and Parabola construction are translated, but their
 Tangent/Polar and PolarLine Conic forms remain explicitly unsupported pending
 dedicated interop evidence.
-Turtle and one-parent Glider branches also remain unsupported.
+Tangent branches for Turtle and Glider also remain unsupported.
 Focused static and parent-drag Desktop/Compact parity evidence remains outside
 the 30-case Stable corpus.
 
