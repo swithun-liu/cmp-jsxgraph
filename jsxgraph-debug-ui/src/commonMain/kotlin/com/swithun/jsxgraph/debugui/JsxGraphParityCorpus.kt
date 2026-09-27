@@ -242,6 +242,23 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "smartlabels",
+            title = "Smart labels",
+            scenario = "Point, Line, Circle, Polygon, and Angle smart labels share dynamic geometry and official box styles.",
+            source = SMARTLABELS_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "smartlabel",
+                "dynamic-attribute",
+                "column-layout",
+                "rotation",
+                "visibility-threshold",
+                "superscript",
+                "dependency-update",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "curve_glider",
             title = "Curve gliders",
             scenario = "FunctionGraph and data Plot gliders project onto the same-source curves.",
@@ -1749,6 +1766,21 @@ private const val MEASUREMENTS_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\ncenter = point(-3, 1.5) << id: \"center\", name: \"\", withLabel: false, size: 7, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\nradiusPoint = point(-0.5, 1.5) << id: \"radiusPoint\", name: \"\", withLabel: false, size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false >>;\nring = circle(center, radiusPoint) << id: \"ring\", name: \"\", withLabel: false, strokeColor: \"#0072B2\", strokeWidth: 4, fillColor: \"#56B4E9\", fillOpacity: 0.12, fixed: true, highlight: false >>;\ndirectionStart = point(1.5, 3) << id: \"directionStart\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\ndirectionEnd = point(4.5, 1) << id: \"directionEnd\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\ndirectionLine = segment(directionStart, directionEnd) << id: \"directionLine\", name: \"\", withLabel: false, strokeColor: \"#16877A\", strokeWidth: 3, fixed: true, highlight: false >>;\nradiusValue = measurement(-6.4, -2.4, [\"Radius\", ring]) << id: \"radiusValue\", name: \"\", prefix: function() { return \"r = \"; }, baseUnit: function() { return \" cm\"; }, digits: function() { return 2; }, fontSize: 17, strokeColor: \"#0072B2\", fixed: true, highlight: false >>;\nareaValue = measurement(-6.4, -3.4, [\"Area\", ring]) << id: \"areaValue\", name: \"\", prefix: \"A = \", baseUnit: \" cm\", digits: 2, fontSize: 17, strokeColor: \"#B44335\", fixed: true, highlight: false >>;\ncoordsValue = measurement(0.5, -2.4, [\"Coords\", radiusPoint]) << id: \"coordsValue\", name: \"\", dim: function() { return \"coords\"; }, prefix: \"x = \", digits: 1, formatCoords: function(self, x, y, z) { return x; }, fontSize: 17, strokeColor: \"#7B4EA3\", fixed: true, highlight: false >>;\ndirectionValue = measurement(0.5, -3.4, [\"Direction\", directionLine]) << id: \"directionValue\", name: \"\", dim: \"direction\", prefix: \"dir = \", digits: 1, fontSize: 17, strokeColor: \"#16877A\", fixed: true, highlight: false >>;"
+}
+"""
+
+private const val SMARTLABELS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-8, 6, 8, -6],
+    "axis": false,
+    "grid": false,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nprobe = point(-6, 4) << id: \"probe\", name: \"\", withLabel: false, size: 7, strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: false, highlight: false >>;\npointLabel = smartlabel(probe) << id: \"pointLabel\", name: \"\", prefix: \"P = \", baseUnit: \"cm\", digits: 1, dir: \"column\", cssClass: \"smart-label-solid smart-label-point\", highlightCssClass: \"smart-label-solid smart-label-point\", fontSize: 15, useMathJax: false, fixed: true, highlight: false >>;\nlineStart = point(-6, 0.5) << id: \"lineStart\", name: \"\", withLabel: false, visible: false, fixed: true >>;\nlineEnd = point(-1, 2) << id: \"lineEnd\", name: \"\", withLabel: false, size: 7, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false >>;\nspan = segment(lineStart, lineEnd) << id: \"span\", name: \"\", withLabel: false, strokeColor: \"#B44335\", strokeWidth: 3, fixed: true, highlight: false >>;\nlineLabel = smartlabel(span) << id: \"lineLabel\", name: \"\", prefix: function() { return \"L = \"; }, baseUnit: \"m\", digits: 2, orientation: \"parallel\", visibleThreshold: 0.45, cssClass: \"smart-label-outline smart-label-line\", highlightCssClass: \"smart-label-outline smart-label-line\", fontSize: 15, useMathJax: false, fixed: true, highlight: false >>;\ncircleCenter = point(3.8, 3) << id: \"circleCenter\", name: \"\", withLabel: false, visible: false, fixed: true >>;\ncircleEdge = point(5.4, 3) << id: \"circleEdge\", name: \"\", withLabel: false, size: 7, strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: false, highlight: false >>;\nring = circle(circleCenter, circleEdge) << id: \"ring\", name: \"\", withLabel: false, strokeColor: \"#0072B2\", strokeWidth: 3, fillColor: \"#56B4E9\", fillOpacity: 0.12, fixed: true, highlight: false >>;\ncircleLabel = smartlabel(ring) << id: \"circleLabel\", name: \"\", measure: \"area\", prefix: \"A = \", baseUnit: \"cm\", digits: 2, cssClass: \"smart-label-outline smart-label-circle\", highlightCssClass: \"smart-label-outline smart-label-circle\", fontSize: 15, useMathJax: false, fixed: true, highlight: false >>;\nregionA = point(1, -1) << id: \"regionA\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", fixed: true, highlight: false >>;\nregionB = point(6, -1) << id: \"regionB\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", fixed: true, highlight: false >>;\nregionC = point(5, -4) << id: \"regionC\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", fixed: true, highlight: false >>;\nregionD = point(1.5, -3.5) << id: \"regionD\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", fixed: true, highlight: false >>;\nregion = polygon(regionA, regionB, regionC, regionD) << id: \"region\", name: \"\", withLabel: false, strokeColor: \"#16877A\", strokeWidth: 3, fillColor: \"#009E73\", fillOpacity: 0.12, fixed: true, highlight: false >>;\npolygonLabel = smartlabel(region) << id: \"polygonLabel\", name: \"\", measure: \"perimeter\", prefix: \"U = \", digits: 2, cssClass: \"smart-label-pure smart-label-polygon\", highlightCssClass: \"smart-label-pure smart-label-polygon\", fontSize: 15, useMathJax: false, fixed: true, highlight: false >>;\nangleTop = point(-5, -4.5) << id: \"angleTop\", name: \"\", withLabel: false, visible: false, fixed: true >>;\nangleCenter = point(-5, -1.8) << id: \"angleCenter\", name: \"\", withLabel: false, visible: false, fixed: true >>;\nangleEnd = point(-2, -0.8) << id: \"angleEnd\", name: \"\", withLabel: false, size: 7, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: false, highlight: false >>;\nwedge = angle(angleTop, angleCenter, angleEnd) << id: \"wedge\", name: \"\", withLabel: false, radius: 1.2, strokeColor: \"#7B4EA3\", fillColor: \"#CC79A7\", fillOpacity: 0.18, fixed: true, highlight: false >>;\nangleLabel = smartlabel(wedge) << id: \"angleLabel\", name: \"\", measure: function() { return IfThen(angleEnd.X() > -5, \"deg\", \"rad\"); }, prefix: \"a = \", digits: 2, cssClass: \"smart-label-solid smart-label-angle\", highlightCssClass: \"smart-label-solid smart-label-angle\", fontSize: 15, useMathJax: false, fixed: true, highlight: false >>;"
 }
 """
 

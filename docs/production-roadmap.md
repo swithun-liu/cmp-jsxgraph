@@ -191,12 +191,25 @@ qualification batches pass.
   function-valued coordinates and Measurement-specific attributes; custom
   coordinate/direction formatters; script markup; translated method aliases;
   dependency updates; structured failures; and atomic rollback. Core,
-  creator, document/session, official fixture, common tests, 103-case
+  creator, document/session, official fixture, common tests, 104-case
   workbench, and focused Desktop/Compact static plus radius-Point-drag parity
   gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
   `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
   surface, complete Text APIs, an independent production case, and Stable
   qualification remain pending.
+- SmartLabel: `src/element/smartlabel.js -> createSmartLabel` and the
+  parent-specific `src/options.js` defaults now cover Point, Line, Circle,
+  Polygon, and Angle parents; parent-specific measures and placement; dynamic
+  Point/Angle measures; units, prefix/suffix visibility, fixed digits, custom
+  formatting, row/column coordinates, Line rotation and visibility
+  thresholds, Angle rotation and final-viewport 12 CSS-pixel offset, CSS box
+  kinds, method-map access, dependency updates, JessieCode HTML sanitization,
+  structured failures, and atomic rollback. Core, creator, session, official
+  fixture, common tests, 104-case workbench, and focused Desktop/Compact
+  static plus Angle-parent-drag parity gates pass. Static scores are
+  `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale,
+  MathJax/KaTeX, user-defined CSS, complete Text APIs, an independent
+  production case, and Stable qualification remain pending.
 - Integral: `src/element/composition.js -> createIntegral` and the corresponding
   `src/options.js` defaults now cover Curve/interval parent order, fixed and
   string/function bounds, hidden constrained dynamic-bound Gliders, draggable

@@ -671,6 +671,17 @@ function readInteractionTrace() {
                 bottom: -5
             }
         },
+        smartlabel_angle_parent_drag: {
+            caseId: "smartlabels",
+            from: {x: -2, y: -0.8},
+            to: {x: -6, y: -3.4},
+            boundingBox: {
+                left: -8,
+                top: 6,
+                right: 8,
+                bottom: -6
+            }
+        },
         integral_bound_drag: {
             caseId: "integrals",
             from: {x: -3, y: -5},

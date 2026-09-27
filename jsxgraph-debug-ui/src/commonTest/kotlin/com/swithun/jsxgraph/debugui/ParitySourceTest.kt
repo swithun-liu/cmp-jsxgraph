@@ -9,12 +9,14 @@ import com.swithun.jsxgraph.core.JsxGraphInteractionState
 import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
+import com.swithun.jsxgraph.core.JsxGraphSmartLabelBoxKind
 import com.swithun.jsxgraph.debugui.generated.productionCorpusCases
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ParitySourceTest {
@@ -36,7 +38,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(103, cases.size)
+        assertEquals(104, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +50,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            73,
+            74,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -203,6 +205,115 @@ class ParitySourceTest {
         assertEquals("x = 0.0", movedTexts.getValue(
             "coordsValue",
         ).content)
+    }
+
+    @Test
+    fun smartLabelFocusedCaseCoversParentsStylesAndDynamicAngle() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("smartlabels"),
+        ).value
+        val paritySessionResult = createParitySession(parityCase.source)
+        val paritySession = assertIs<GMResult.Ok<JsxGraphParitySession>>(
+            paritySessionResult,
+            paritySessionResult.toString(),
+        ).value
+        val jessieCodeSession =
+            assertIs<JsxGraphParitySession.JessieCode>(paritySession)
+        val initial = jessieCodeSession.scene
+        val labels = initial.elements
+            .filterIsInstance<JsxGraphSceneElement.Text>()
+            .filter { text -> text.smartLabel != null }
+            .associateBy(JsxGraphSceneElement.Text::id)
+
+        assertTrue("smartlabel" in parityCase.features)
+        assertEquals(
+            setOf(
+                "pointLabel",
+                "lineLabel",
+                "circleLabel",
+                "polygonLabel",
+                "angleLabel",
+            ),
+            labels.keys,
+        )
+        assertEquals(
+            "P = -6.0 cm&lt;br /&gt;4.0 cm",
+            labels.getValue("pointLabel").content,
+        )
+        assertEquals(
+            JsxGraphSmartLabelBoxKind.SOLID,
+            labels.getValue("pointLabel").smartLabel?.boxKind,
+        )
+        assertEquals(
+            JsxGraphSmartLabelBoxKind.OUTLINE,
+            labels.getValue("circleLabel").smartLabel?.boxKind,
+        )
+        assertEquals(
+            JsxGraphSmartLabelBoxKind.PURE,
+            labels.getValue("polygonLabel").smartLabel?.boxKind,
+        )
+        assertNotEquals(
+            0.0,
+            labels.getValue("lineLabel").smartLabel?.rotationDegrees,
+        )
+        assertNotNull(
+            labels.getValue("lineLabel").smartLabel?.visibility,
+        )
+        val initialAngleLabel = labels.getValue("angleLabel")
+        assertEquals(
+            -4.026509377789328,
+            initialAngleLabel.coordinates.x,
+            absoluteTolerance = 1.0e-9,
+        )
+        assertEquals(
+            -2.501652341596519,
+            initialAngleLabel.coordinates.y,
+            absoluteTolerance = 1.0e-9,
+        )
+        assertEquals(
+            9.734906222106723,
+            initialAngleLabel.screenOffset.x,
+            absoluteTolerance = 1.0e-9,
+        )
+        assertEquals(
+            7.016523415965189,
+            initialAngleLabel.screenOffset.y,
+            absoluteTolerance = 1.0e-9,
+        )
+
+        val initialAngle = labels.getValue("angleLabel").content
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            jessieCodeSession.session.movePoint(
+                id = "angleEnd",
+                coordinates = JsxGraphPoint2D(-6.0, -3.4),
+            ),
+        ).value
+        val movedAngle = assertIs<JsxGraphSceneElement.Text>(
+            moved.elements.single { element ->
+                element.id == "angleLabel"
+            },
+        )
+        assertNotEquals(initialAngle, movedAngle.content)
+        assertEquals(
+            -4.669180984348939,
+            movedAngle.coordinates.x,
+            absoluteTolerance = 1.0e-9,
+        )
+        assertEquals(
+            -0.6465015046027747,
+            movedAngle.coordinates.y,
+            absoluteTolerance = 1.0e-9,
+        )
+        assertEquals(
+            3.3081901565106078,
+            movedAngle.screenOffset.x,
+            absoluteTolerance = 1.0e-9,
+        )
+        assertEquals(
+            -11.534984953972254,
+            movedAngle.screenOffset.y,
+            absoluteTolerance = 1.0e-9,
+        )
     }
 
     @Test

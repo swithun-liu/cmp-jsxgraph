@@ -355,6 +355,14 @@ failure leakage:
 node tools/upstream-fixtures/measurement.mjs
 ```
 
+Capture the official SmartLabel parent dispatch, measurements, units,
+formatting, dynamic attributes, placement, JessieCode sanitization, updates,
+and rejected forms:
+
+```bash
+node tools/upstream-fixtures/smartlabel.mjs
+```
+
 Capture the official SlopeTriangle parent forms, helper and border order,
 method map, dynamic slope/label updates, removal ownership, and failures:
 
@@ -1134,6 +1142,37 @@ INPUT_DIR=captures/local/measurements/interaction-desktop \
   npm --prefix tools/visual-parity run audit
 ```
 
+Capture the focused SmartLabel case and replay its Angle-parent drag:
+
+```bash
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/smartlabels/static/desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=smartlabels \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/smartlabels/static/desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.90 \
+  PARITY_CASE_IDS=smartlabels \
+  npm --prefix tools/visual-parity run audit
+
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/smartlabels/interaction/desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=smartlabels \
+  INTERACTION_TRACE=smartlabel_angle_parent_drag \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/smartlabels/interaction/desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.90 \
+  PARITY_CASE_IDS=smartlabels \
+  npm --prefix tools/visual-parity run audit
+```
+
 Capture the focused Integral case and replay its dynamic-bound driver drag:
 
 ```bash
@@ -1429,8 +1468,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 103 cases:
-30 generated production scenarios followed by 73 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 104 cases:
+30 generated production scenarios followed by 74 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1443,7 +1482,8 @@ separate demo schema into handwritten native geometry. The focused
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
 `ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`, `glider_slider`,
-`curve_glider`, `tapemeasures`, `measurements`, `integrals`, `slope_triangle`,
+`curve_glider`, `tapemeasures`, `measurements`, `smartlabels`, `integrals`,
+`slope_triangle`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1527,6 +1567,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `curve_glider` | 0.986233 | 0.977524 |
 | `tapemeasures` | 0.984781 | 0.969197 |
 | `measurements` | 0.982740 | 0.970961 |
+| `smartlabels` | 0.984719 | 0.974114 |
 | `integrals` | 0.984526 | 0.974454 |
 | `slope_triangle` | 0.982474 | 0.966707 |
 | `step_functions` | 0.987344 | 0.975382 |
@@ -2102,6 +2143,23 @@ custom coordinate/direction formatters, constrained coordinates,
 `parse:false`, method aliases, dependency updates, resource limits,
 structured failures, and atomic rollback. Locale formatting, the complete
 `exec` surface, complete Text APIs, and Stable qualification remain pending.
+The focused `smartlabels` capture uses one JessieCode source for Point, Line,
+Circle, Polygon, and Angle parents with solid, outline, and pure box styles.
+Static captures scored `0.984719` on Desktop and `0.974114` on Compact. After
+moving the Angle endpoint from `(-2,-0.8)` toward `(-6,-3.4)`, both renderers
+updated the sector, dynamic degree value, rotation, anchor side, and
+final-viewport 12 CSS-pixel offset, scoring `0.984582` and `0.975467`,
+respectively. Pointer quantization produced `5.72` versus `5.73` degrees on
+Compact while preserving geometry and update direction. All four contact
+sheets passed nonblank/browser checks and manual review for label content,
+box style, rotation, placement, clipping, and overlap. The official fixture
+and common tests additionally cover dynamic Point/Angle measures, static
+Line/Circle/Polygon measure validation, units, prefix/suffix visibility,
+custom formatting, row/column directions, Line visibility thresholds,
+method-map access, dependency updates, JessieCode HTML sanitization,
+structured failures, and atomic rollback. Locale, MathJax/KaTeX,
+user-defined CSS, complete Text APIs, and Stable qualification remain
+pending.
 The focused `integrals` capture uses one JessieCode source for a FunctionGraph
 and an Integral whose left bound follows a draggable Point. Static captures
 scored `0.984526` on Desktop and `0.974454` on Compact. After moving the
@@ -2130,10 +2188,10 @@ function-valued visual attributes, hit testing, and complete APIs remain
 pending. This is a focused preview outside the 30-case Stable corpus.
 Together with the two-dimensional
 Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
-Integral/SlopeTriangle,
+SmartLabel/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 103 cases while the independently
+the development corpus now contains 104 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

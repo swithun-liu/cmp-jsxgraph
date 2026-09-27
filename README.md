@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 103 source-controlled cases: 30 independent production scenarios and
-73 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 104 source-controlled cases: 30 independent production scenarios and
+74 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -39,6 +39,7 @@ Focused direct links remain available for cases such as
 [Curve Gliders](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve_glider),
 [Tape measures](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=tapemeasures),
 [Measurements](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=measurements),
+[Smart labels](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=smartlabels),
 [Integral](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=integrals),
 [SlopeTriangle](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=slope_triangle),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
@@ -562,6 +563,20 @@ Desktop/Compact parity at `0.982740`/`0.970961` and radius-Point-drag parity
 at `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math
 `exec` surface, complete Text APIs, an independent production case, and Stable
 qualification remain pending.
+
+SmartLabel translates `src/element/smartlabel.js -> createSmartLabel` for
+Point, Line, Circle, Polygon, and Angle parents. It preserves parent-specific
+measure defaults and placement, dynamic `measure` on Point/Angle, units,
+prefix/suffix visibility, fixed digits, custom formatting, row/column
+coordinates, Line rotation and visibility thresholds, Angle rotation and
+final-viewport 12 CSS-pixel offset, CSS box kinds, method-map access,
+dependency updates, and atomic failures. Native JessieCode also matches the
+upstream `setTextJessieCode` HTML sanitization that renders generated
+`<br />` as literal text. The focused fixture passes static Desktop/Compact
+parity at `0.984719`/`0.974114` and Angle-parent-drag parity at
+`0.984582`/`0.975467`. Locale formatting, MathJax/KaTeX, user-defined CSS,
+complete Text APIs, an independent production case, and Stable qualification
+remain pending.
 
 Integral translates `src/element/composition.js -> createIntegral` for the
 translated Curve path. It preserves fixed and function-valued interval

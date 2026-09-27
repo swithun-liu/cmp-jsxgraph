@@ -54,6 +54,42 @@ data class JsxGraphPoint2D(
     val y: Double,
 )
 
+enum class JsxGraphSmartLabelBoxKind {
+    SOLID,
+    OUTLINE,
+    PURE,
+}
+
+enum class JsxGraphSmartLabelParentKind {
+    POINT,
+    LINE,
+    CIRCLE,
+    POLYGON,
+    ANGLE,
+}
+
+sealed interface JsxGraphSmartLabelVisibility {
+    data class Line(
+        val point1: JsxGraphPoint2D,
+        val point2: JsxGraphPoint2D,
+        val orientation: String,
+        val threshold: Double,
+    ) : JsxGraphSmartLabelVisibility
+
+    data class Circle(
+        val center: JsxGraphPoint2D,
+        val radius: Double,
+        val threshold: Double,
+    ) : JsxGraphSmartLabelVisibility
+}
+
+data class JsxGraphSmartLabel(
+    val boxKind: JsxGraphSmartLabelBoxKind,
+    val parentKind: JsxGraphSmartLabelParentKind,
+    val rotationDegrees: Double,
+    val visibility: JsxGraphSmartLabelVisibility?,
+)
+
 data class JsxGraphArrowHead(
     val type: Int,
     val size: Double,
@@ -1517,6 +1553,7 @@ sealed interface JsxGraphSceneElement {
         val anchorY: String,
         val screenOffset: JsxGraphPoint2D = JsxGraphPoint2D(0.0, 0.0),
         val ticks3DLabel: JsxGraphTicks3DLabel? = null,
+        val smartLabel: JsxGraphSmartLabel? = null,
     ) : JsxGraphSceneElement
 
     data class Image(

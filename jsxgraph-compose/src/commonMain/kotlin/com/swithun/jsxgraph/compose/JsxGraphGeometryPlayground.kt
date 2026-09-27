@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
@@ -59,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -87,6 +89,9 @@ import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import com.swithun.jsxgraph.core.JsxGraphSession
+import com.swithun.jsxgraph.core.JsxGraphSmartLabelBoxKind
+import com.swithun.jsxgraph.core.JsxGraphSmartLabelParentKind
+import com.swithun.jsxgraph.core.JsxGraphSmartLabelVisibility
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import kotlin.math.abs
@@ -1495,20 +1500,170 @@ private fun DrawScope.drawSceneText(
             x = text.screenOffset.x.toFloat().dp.toPx(),
             y = text.screenOffset.y.toFloat().dp.toPx(),
         )
-    drawText(
-        textLayoutResult = layout,
-        topLeft = textTopLeft(
-            anchor = anchor,
-            width = layout.size.width.toFloat(),
-            height = layout.size.height.toFloat(),
-            anchorX = text.anchorX,
-            anchorY = text.anchorY,
-        ),
+    val smartLabel = text.smartLabel
+    if (smartLabel == null) {
+        drawText(
+            textLayoutResult = layout,
+            topLeft = textTopLeft(
+                anchor = anchor,
+                width = layout.size.width.toFloat(),
+                height = layout.size.height.toFloat(),
+                anchorX = text.anchorX,
+                anchorY = text.anchorY,
+            ),
+        )
+        return
+    }
+
+    // JSXGraph 1.13.3: distrib/jsxgraph.css -> smart-label-*.
+    val borderWidth =
+        if (smartLabel.boxKind == JsxGraphSmartLabelBoxKind.OUTLINE) {
+            2.dp.toPx()
+        } else {
+            0f
+        }
+    val horizontalPadding = 7.dp.toPx()
+    val verticalPadding = 1.dp.toPx()
+    val boxWidth =
+        layout.size.width.toFloat() + horizontalPadding * 2f +
+            borderWidth * 2f
+    val boxHeight =
+        layout.size.height.toFloat() + verticalPadding * 2f +
+            borderWidth * 2f
+    if (
+        !smartLabelIsVisible(
+            visibility = smartLabel.visibility,
+            metrics = metrics,
+            width = boxWidth,
+            height = boxHeight,
+        )
+    ) {
+        return
+    }
+    val marginTop =
+        if (
+            smartLabel.parentKind ==
+            JsxGraphSmartLabelParentKind.POINT
+        ) {
+            12.dp.toPx()
+        } else {
+            0f
+        }
+    val adjustedAnchor = anchor + Offset(0f, marginTop)
+    val boxTopLeft = textTopLeft(
+        anchor = adjustedAnchor,
+        width = boxWidth,
+        height = boxHeight,
+        anchorX = text.anchorX,
+        anchorY = text.anchorY,
     )
+    val background = when (smartLabel.parentKind) {
+        JsxGraphSmartLabelParentKind.LINE,
+        JsxGraphSmartLabelParentKind.POINT,
+        -> Color(0xFF0072B2)
+        JsxGraphSmartLabelParentKind.ANGLE -> Color(0xFFE69F00)
+        JsxGraphSmartLabelParentKind.CIRCLE,
+        JsxGraphSmartLabelParentKind.POLYGON,
+        -> Color(0xFFF0E442)
+    }
+    val radius =
+        if (smartLabel.boxKind == JsxGraphSmartLabelBoxKind.SOLID) {
+            150.dp.toPx()
+        } else {
+            15.dp.toPx()
+        }
+    rotate(
+        degrees = -smartLabel.rotationDegrees.toFloat(),
+        pivot = adjustedAnchor,
+    ) {
+        drawRoundRect(
+            color = background,
+            topLeft = boxTopLeft,
+            size = Size(boxWidth, boxHeight),
+            cornerRadius = CornerRadius(radius, radius),
+        )
+        if (borderWidth > 0f) {
+            drawRoundRect(
+                color = background,
+                topLeft = boxTopLeft + Offset(
+                    borderWidth * 0.5f,
+                    borderWidth * 0.5f,
+                ),
+                size = Size(
+                    boxWidth - borderWidth,
+                    boxHeight - borderWidth,
+                ),
+                cornerRadius = CornerRadius(radius, radius),
+                style = Stroke(width = borderWidth),
+            )
+        }
+        drawText(
+            textLayoutResult = layout,
+            topLeft = boxTopLeft + Offset(
+                horizontalPadding + borderWidth,
+                verticalPadding + borderWidth,
+            ),
+        )
+    }
 }
 
+// JSXGraph 1.13.3: src/element/smartlabel.js -> attr.visible.
+private fun DrawScope.smartLabelIsVisible(
+    visibility: JsxGraphSmartLabelVisibility?,
+    metrics: BoardMetrics,
+    width: Float,
+    height: Float,
+): Boolean =
+    when (visibility) {
+        null -> true
+        is JsxGraphSmartLabelVisibility.Line -> {
+            val first = metrics.toScreen(visibility.point1.toOffset())
+            val second = metrics.toScreen(visibility.point2.toOffset())
+            val dx = second.x - first.x
+            val dy = second.y - first.y
+            val screenLength = floor(
+                kotlin.math.sqrt(dx * dx + dy * dy).toDouble(),
+            ).toFloat()
+            when (visibility.orientation) {
+                "parallel",
+                "parallel-inverted",
+                "inverted",
+                -> width < screenLength * visibility.threshold
+                "orthogonal",
+                "orthogonal-inverted",
+                -> height < screenLength * visibility.threshold
+                else -> {
+                    val userDx =
+                        visibility.point2.x - visibility.point1.x
+                    val userDy =
+                        visibility.point2.y - visibility.point1.y
+                    kotlin.math.sqrt(
+                        userDx * userDx + userDy * userDy,
+                    ) >= 1.5
+                }
+            }
+        }
+        is JsxGraphSmartLabelVisibility.Circle -> {
+            val center = metrics.toScreen(visibility.center.toOffset())
+            val edge = metrics.toScreen(
+                Offset(
+                    x = visibility.center.x.toFloat() +
+                        visibility.radius.toFloat(),
+                    y = visibility.center.y.toFloat(),
+                ),
+            )
+            val radius = floor(
+                kotlin.math.sqrt(
+                    (edge.x - center.x) * (edge.x - center.x) +
+                        (edge.y - center.y) * (edge.y - center.y),
+                ).toDouble(),
+            ).toFloat()
+            width < radius * 2f * visibility.threshold
+        }
+    }
+
 // JSXGraph 1.13.3: src/base/text.js -> replaceSup / replaceSub;
-// browser HTML rendering of the generated <sup>/<sub> markup.
+// browser HTML rendering of generated <sup>/<sub>/<br /> markup.
 internal fun sceneTextAnnotatedString(
     content: String,
     fontSize: Double,
@@ -1518,17 +1673,33 @@ internal fun sceneTextAnnotatedString(
         while (offset < content.length) {
             val superscriptStart = content.indexOf("<sup>", offset)
             val subscriptStart = content.indexOf("<sub>", offset)
-            val start = when {
+            val lineBreakStart = content.indexOf("<br />", offset)
+            var start = when {
                 superscriptStart < 0 -> subscriptStart
                 subscriptStart < 0 -> superscriptStart
                 else -> min(superscriptStart, subscriptStart)
             }
+            if (
+                lineBreakStart >= 0 &&
+                (start < 0 || lineBreakStart < start)
+            ) {
+                start = lineBreakStart
+            }
             if (start < 0) {
-                append(content.substring(offset))
+                append(decodeSanitizedAngles(content.substring(offset)))
                 break
             }
             if (start > offset) {
-                append(content.substring(offset, start))
+                append(
+                    decodeSanitizedAngles(
+                        content.substring(offset, start),
+                    ),
+                )
+            }
+            if (start == lineBreakStart) {
+                append('\n')
+                offset = start + "<br />".length
+                continue
             }
             val superscript = start == superscriptStart
             val openTag = if (superscript) "<sup>" else "<sub>"
@@ -1549,11 +1720,20 @@ internal fun sceneTextAnnotatedString(
                     },
                 ),
             ) {
-                append(content.substring(contentStart, end))
+                append(
+                    decodeSanitizedAngles(
+                        content.substring(contentStart, end),
+                    ),
+                )
             }
             offset = end + closeTag.length
         }
     }
+
+// JSXGraph 1.13.3: src/utils/type.js -> sanitizeHTML. Browser text nodes
+// decode these entities after markup recognition; Canvas must do so explicitly.
+private fun decodeSanitizedAngles(content: String): String =
+    content.replace("&lt;", "<").replace("&gt;", ">")
 
 private const val SCRIPT_FONT_SCALE = 0.75
 

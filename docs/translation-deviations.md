@@ -623,6 +623,22 @@ practical.
   Locale formatting, the complete Math/JXG.Math `exec` surface, and the
   remaining Text APIs are pending. This focused subset remains outside the
   `0.1.0` Stable corpus.
+- SmartLabel follows
+  `src/element/smartlabel.js -> createSmartLabel`,
+  `src/element/sector.js -> getLabelAnchor`, and the parent-specific
+  `src/options.js` defaults for Point, Line, Circle, Polygon, and Angle.
+  JSXGraph computes the Angle label's 12 CSS-pixel radial extension by
+  dividing through the live `board.unitX`; the viewport-independent Kotlin
+  core stores the radius anchor and direction separately, then Compose applies
+  the equivalent screen offset at the final viewport. Native JessieCode also
+  mirrors the temporary `Text.setTextJessieCode` substitution and escapes
+  angle brackets before Text script expansion, so generated `<br />` is
+  rendered literally while direct non-JessieCode construction retains HTML
+  line-break semantics. Unsupported parents/measures, invalid attributes,
+  evaluation failures, and duplicate IDs return structured errors with atomic
+  Text rollback. Locale formatting, MathJax/KaTeX, user-defined CSS, complete
+  Text APIs, and Stable qualification remain pending. This focused subset
+  remains outside the `0.1.0` Stable corpus.
 - The translated Image subset stores only its source string and user-space
   geometry in core. Compose resolves the source through a caller-supplied
   `JsxGraphImageResolver`; the default resolver accepts only bounded

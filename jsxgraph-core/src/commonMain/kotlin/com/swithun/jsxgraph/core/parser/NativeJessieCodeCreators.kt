@@ -158,6 +158,9 @@ import com.swithun.jsxgraph.core.base.Mesh3DVectorSource
 import com.swithun.jsxgraph.core.base.Measurement
 import com.swithun.jsxgraph.core.base.MeasurementAttributes
 import com.swithun.jsxgraph.core.base.MeasurementError
+import com.swithun.jsxgraph.core.base.SmartLabel
+import com.swithun.jsxgraph.core.base.SmartLabelAttributes
+import com.swithun.jsxgraph.core.base.SmartLabelError
 import com.swithun.jsxgraph.core.base.Normal
 import com.swithun.jsxgraph.core.base.NormalError
 import com.swithun.jsxgraph.core.base.OrthogonalConstructionError
@@ -298,6 +301,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class MeasurementFactory(
         val error: MeasurementError,
+    ) : JessieCodeCreatorError
+
+    data class SmartLabelFactory(
+        val error: SmartLabelError,
     ) : JessieCodeCreatorError
 
     data class SlopeTriangleFactory(
@@ -587,6 +594,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createMeasurement(board, parents, attributes, location)
+        },
+        "smartlabel" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createSmartLabel(board, parents, attributes, location)
         },
         "slopetriangle" to JessieCodeCreator {
                 board,
@@ -2583,6 +2598,70 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.MeasurementFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/smartlabel.js -> createSmartLabel.
+    private fun createSmartLabel(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "smartlabel"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.isEmpty() || parents.size > 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val parent = resolveElement(resolvedBoard, parents[0])
+            ?: return unsupported(creatorName, parents, location)
+        val userText = parents.getOrNull(1)
+            ?: JessieCodeRuntimeValue.StringValue("")
+        if (
+            userText !is JessieCodeRuntimeValue.StringValue &&
+            userText !is JessieCodeRuntimeValue.NumberValue &&
+            userText !is JessieCodeRuntimeValue.FunctionValue
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = SmartLabel.create(
+                board = resolvedBoard,
+                parent = parent,
+                userText = userText,
+                attributes = SmartLabelAttributes(
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    sanitizeHtml = true,
+                    values = attributes.properties.toMap(),
+                ),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.SmartLabelFactory(
                     result.error,
                 ),
                 location = location,

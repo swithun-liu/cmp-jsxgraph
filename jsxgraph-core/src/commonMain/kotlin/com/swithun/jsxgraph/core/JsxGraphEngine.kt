@@ -42,6 +42,8 @@ import com.swithun.jsxgraph.core.base.Polygon3D
 import com.swithun.jsxgraph.core.base.Polyhedron3D
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Slider
+import com.swithun.jsxgraph.core.base.SmartLabelBoxKind
+import com.swithun.jsxgraph.core.base.SmartLabelParentKind
 import com.swithun.jsxgraph.core.base.Sphere3D
 import com.swithun.jsxgraph.core.base.Surface3D
 import com.swithun.jsxgraph.core.base.Text
@@ -615,6 +617,8 @@ object JsxGraphEngine {
                                     INEQUALITY_SEMANTIC_ATTRIBUTES
                                 "measurement" ->
                                     MEASUREMENT_DYNAMIC_ATTRIBUTES
+                                "smartlabel" ->
+                                    SMART_LABEL_DYNAMIC_ATTRIBUTES
                                 "vectorfield",
                                 "slopefield",
                                 "vectorfield3d",
@@ -5029,6 +5033,7 @@ object JsxGraphEngine {
                 val y = text.Y()
                     .takeIf(Double::isFinite)
                     ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val smartLabelDefinition = text.smartLabelDefinition
                 val fontSize = when (
                     val result = attributes.number(
                         name = "fontsize",
@@ -5056,15 +5061,29 @@ object JsxGraphEngine {
                         ),
                     )
                 }
-                val anchorX = when (
-                    val result = attributes.string(
-                        name = "anchorx",
-                        default = "left",
-                    )
-                ) {
-                    is GMResult.Ok -> result.value.lowercase()
-                    is GMResult.Err -> return result
-                }
+                val anchorX =
+                    if (smartLabelDefinition != null) {
+                        when (
+                            val result = smartLabelDefinition.anchorX()
+                        ) {
+                            is GMResult.Ok -> result.value.lowercase()
+                            is GMResult.Err -> return GMResult.Err(
+                                attributes.elementCreation(
+                                    result.error.toString(),
+                                ),
+                            )
+                        }
+                    } else {
+                        when (
+                            val result = attributes.string(
+                                name = "anchorx",
+                                default = "left",
+                            )
+                        ) {
+                            is GMResult.Ok -> result.value.lowercase()
+                            is GMResult.Err -> return result
+                        }
+                    }
                 if (anchorX !in TEXT_ANCHOR_X_VALUES) {
                     return GMResult.Err(
                         attributes.unsupportedValue(
@@ -5073,15 +5092,29 @@ object JsxGraphEngine {
                         ),
                     )
                 }
-                val anchorY = when (
-                    val result = attributes.string(
-                        name = "anchory",
-                        default = "middle",
-                    )
-                ) {
-                    is GMResult.Ok -> result.value.lowercase()
-                    is GMResult.Err -> return result
-                }
+                val anchorY =
+                    if (smartLabelDefinition != null) {
+                        when (
+                            val result = smartLabelDefinition.anchorY()
+                        ) {
+                            is GMResult.Ok -> result.value.lowercase()
+                            is GMResult.Err -> return GMResult.Err(
+                                attributes.elementCreation(
+                                    result.error.toString(),
+                                ),
+                            )
+                        }
+                    } else {
+                        when (
+                            val result = attributes.string(
+                                name = "anchory",
+                                default = "middle",
+                            )
+                        ) {
+                            is GMResult.Ok -> result.value.lowercase()
+                            is GMResult.Err -> return result
+                        }
+                    }
                 if (anchorY !in TEXT_ANCHOR_Y_VALUES) {
                     return GMResult.Err(
                         attributes.unsupportedValue(
@@ -5125,16 +5158,50 @@ object JsxGraphEngine {
                         is GMResult.Err -> return result
                     }
                 }
-                val rotate = when (
-                    val result = attributes.number(
-                        name = "rotate",
-                        default = 0.0,
-                    )
-                ) {
-                    is GMResult.Ok -> result.value
-                    is GMResult.Err -> return result
+                if (smartLabelDefinition != null) {
+                    when (
+                        val result =
+                            smartLabelDefinition.usesMathTypesetting()
+                    ) {
+                        is GMResult.Ok -> if (result.value) {
+                            return GMResult.Err(
+                                attributes.unsupportedValue(
+                                    attribute = "useMathJax",
+                                    value = "true",
+                                ),
+                            )
+                        }
+                        is GMResult.Err -> return GMResult.Err(
+                            attributes.elementCreation(
+                                result.error.toString(),
+                            ),
+                        )
+                    }
                 }
-                if (rotate != 0.0) {
+                val rotate =
+                    if (smartLabelDefinition != null) {
+                        when (
+                            val result = smartLabelDefinition.rotation()
+                        ) {
+                            is GMResult.Ok -> result.value
+                            is GMResult.Err -> return GMResult.Err(
+                                attributes.elementCreation(
+                                    result.error.toString(),
+                                ),
+                            )
+                        }
+                    } else {
+                        when (
+                            val result = attributes.number(
+                                name = "rotate",
+                                default = 0.0,
+                            )
+                        ) {
+                            is GMResult.Ok -> result.value
+                            is GMResult.Err -> return result
+                        }
+                    }
+                if (smartLabelDefinition == null && rotate != 0.0) {
                     return GMResult.Err(
                         attributes.unsupportedValue(
                             attribute = "rotate",
@@ -5142,6 +5209,106 @@ object JsxGraphEngine {
                         ),
                     )
                 }
+                val smartLabel = smartLabelDefinition?.let { definition ->
+                    val box = when (val result = definition.boxStyle()) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return GMResult.Err(
+                            attributes.elementCreation(
+                                result.error.toString(),
+                            ),
+                        )
+                    }
+                    val visibility = when (definition.parentKind) {
+                        SmartLabelParentKind.LINE -> {
+                            val line =
+                                definition.parentObject as Line
+                            val orientation = when (
+                                val result = definition.orientation()
+                            ) {
+                                is GMResult.Ok -> result.value
+                                is GMResult.Err -> return GMResult.Err(
+                                    attributes.elementCreation(
+                                        result.error.toString(),
+                                    ),
+                                )
+                            }
+                            val threshold = when (
+                                val result =
+                                    definition.visibleThreshold()
+                            ) {
+                                is GMResult.Ok -> result.value
+                                is GMResult.Err -> return GMResult.Err(
+                                    attributes.elementCreation(
+                                        result.error.toString(),
+                                    ),
+                                )
+                            }
+                            JsxGraphSmartLabelVisibility.Line(
+                                point1 = JsxGraphPoint2D(
+                                    line.point1.X(),
+                                    line.point1.Y(),
+                                ),
+                                point2 = JsxGraphPoint2D(
+                                    line.point2.X(),
+                                    line.point2.Y(),
+                                ),
+                                orientation = orientation,
+                                threshold = threshold,
+                            )
+                        }
+                        SmartLabelParentKind.CIRCLE -> {
+                            val circle =
+                                definition.parentObject as Circle
+                            val threshold = when (
+                                val result =
+                                    definition.visibleThreshold()
+                            ) {
+                                is GMResult.Ok -> result.value
+                                is GMResult.Err -> return GMResult.Err(
+                                    attributes.elementCreation(
+                                        result.error.toString(),
+                                    ),
+                                )
+                            }
+                            JsxGraphSmartLabelVisibility.Circle(
+                                center = JsxGraphPoint2D(
+                                    circle.center.X(),
+                                    circle.center.Y(),
+                                ),
+                                radius = circle.Radius(),
+                                threshold = threshold,
+                            )
+                        }
+                        else -> null
+                    }
+                    JsxGraphSmartLabel(
+                        boxKind = when (box.kind) {
+                            SmartLabelBoxKind.SOLID ->
+                                JsxGraphSmartLabelBoxKind.SOLID
+                            SmartLabelBoxKind.OUTLINE ->
+                                JsxGraphSmartLabelBoxKind.OUTLINE
+                            SmartLabelBoxKind.PURE ->
+                                JsxGraphSmartLabelBoxKind.PURE
+                        },
+                        parentKind = when (box.parentKind) {
+                            SmartLabelParentKind.POINT ->
+                                JsxGraphSmartLabelParentKind.POINT
+                            SmartLabelParentKind.LINE ->
+                                JsxGraphSmartLabelParentKind.LINE
+                            SmartLabelParentKind.CIRCLE ->
+                                JsxGraphSmartLabelParentKind.CIRCLE
+                            SmartLabelParentKind.POLYGON ->
+                                JsxGraphSmartLabelParentKind.POLYGON
+                            SmartLabelParentKind.ANGLE ->
+                                JsxGraphSmartLabelParentKind.ANGLE
+                        },
+                        rotationDegrees = rotate,
+                        visibility = visibility,
+                    )
+                }
+                val smartLabelScreenOffset =
+                    smartLabelDefinition?.screenOffset()
+                        ?: doubleArrayOf(0.0, 0.0)
                 JsxGraphSceneElement.Text(
                     id = element.id,
                     name = element.name,
@@ -5152,10 +5319,13 @@ object JsxGraphEngine {
                     anchorX = anchorX,
                     anchorY = anchorY,
                     screenOffset = JsxGraphPoint2D(
-                        x = text.screenOffset[0],
-                        y = text.screenOffset[1],
+                        x = text.screenOffset[0] +
+                            smartLabelScreenOffset[0],
+                        y = text.screenOffset[1] +
+                            smartLabelScreenOffset[1],
                     ),
                     ticks3DLabel = ticks3DLabel,
+                    smartLabel = smartLabel,
                 )
             }
 
@@ -7545,6 +7715,13 @@ object JsxGraphEngine {
                                     MEASUREMENT_ATTRIBUTES
                                 } else {
                                     emptySet()
+                                } +
+                                if (
+                                    element.smartLabelDefinition != null
+                                ) {
+                                    SMART_LABEL_ATTRIBUTES
+                                } else {
+                                    emptySet()
                                 }
                         is Image -> IMAGE_ATTRIBUTES
                         else -> emptySet()
@@ -9881,6 +10058,31 @@ object JsxGraphEngine {
     )
     private val MEASUREMENT_DYNAMIC_ATTRIBUTES =
         MEASUREMENT_ATTRIBUTES + setOf("digits", "parse")
+    private val SMART_LABEL_ATTRIBUTES = setOf(
+        "baseunit",
+        "units",
+        "unit",
+        "showprefix",
+        "showsuffix",
+        "prefix",
+        "suffix",
+        "formatvalue",
+        "measure",
+        "dir",
+        "orientation",
+        "visiblethreshold",
+        "cssclass",
+        "highlightcssclass",
+    )
+    private val SMART_LABEL_DYNAMIC_ATTRIBUTES =
+        SMART_LABEL_ATTRIBUTES + setOf(
+            "digits",
+            "anchorx",
+            "anchory",
+            "rotate",
+            "usemathjax",
+            "usekatex",
+        )
     private val IMAGE_ATTRIBUTES = setOf(
         "rotate",
     )

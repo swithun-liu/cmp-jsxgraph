@@ -57,6 +57,10 @@ internal sealed interface TextError {
         val error: MeasurementError,
     ) : TextError
 
+    data class SmartLabelContent(
+        val error: SmartLabelError,
+    ) : TextError
+
     data class Registration(
         val error: BoardError,
     ) : TextError
@@ -106,6 +110,8 @@ internal class Text private constructor(
     internal var contentEvaluationError: TextError? = null
         private set
     internal var measurementDefinition: MeasurementDefinition? = null
+    // JSXGraph 1.13.3: src/element/smartlabel.js -> createSmartLabel.
+    internal var smartLabelDefinition: SmartLabelDefinition? = null
     // JSXGraph: src/base/text.js -> relativeCoords. Stored in CSS pixels and
     // resolved by the platform renderer after the user-coordinate transform.
     internal var screenOffset: DoubleArray = doubleArrayOf(0.0, 0.0)
@@ -338,7 +344,13 @@ internal class Text private constructor(
             xjc: String? = null,
             yjc: String? = null,
         ): GMResult<Text, TextError> {
-            if (coordinateFunctions.size !in 2..3) {
+            if (
+                coordinateFunctions.size !in 2..3 &&
+                !(
+                    coordinateFunctions.size == 1 &&
+                        coordinateFunctions[0].returnsCoordinateArray
+                    )
+            ) {
                 return GMResult.Err(
                     TextError.InvalidCoordinateCount(
                         coordinateFunctions.size,
@@ -359,7 +371,10 @@ internal class Text private constructor(
             val text = Text(
                 board = board,
                 coordinates =
-                    if (coordinateFunctions.size == 2) {
+                    if (
+                        coordinateFunctions.size == 2 ||
+                        coordinateFunctions.size == 1
+                    ) {
                         doubleArrayOf(0.0, 0.0)
                     } else {
                         doubleArrayOf(1.0, 0.0, 0.0)

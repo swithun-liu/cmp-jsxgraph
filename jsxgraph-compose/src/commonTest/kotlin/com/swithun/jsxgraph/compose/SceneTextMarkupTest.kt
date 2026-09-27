@@ -35,6 +35,28 @@ class SceneTextMarkupTest {
     }
 
     @Test
+    fun convertsExactHtmlLineBreakMarkupToNewline() {
+        assertEquals(
+            "P=2.00 cm\n3.00 cm",
+            sceneTextAnnotatedString(
+                content = "P=2.00 cm<br />3.00 cm",
+                fontSize = 12.0,
+            ).text,
+        )
+    }
+
+    @Test
+    fun preservesSanitizedHtmlMarkupAsLiteralText() {
+        assertEquals(
+            "P=2.00 cm<br />3.00 cm",
+            sceneTextAnnotatedString(
+                content = "P=2.00 cm&lt;br /&gt;3.00 cm",
+                fontSize = 12.0,
+            ).text,
+        )
+    }
+
+    @Test
     fun preservesUnclosedAndUnsupportedMarkupAsLiteralText() {
         assertEquals(
             "A<sup>2",

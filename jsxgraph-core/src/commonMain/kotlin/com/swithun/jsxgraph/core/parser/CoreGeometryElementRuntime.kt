@@ -48,7 +48,14 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 )
             is Slider -> number(element.Value())
             is Text ->
-                element.measurementDefinition?.let { definition ->
+                element.smartLabelDefinition?.let { definition ->
+                    measurementValue(
+                        element = element,
+                        method = "Value",
+                        location = location,
+                        result = definition.Value(),
+                    )
+                } ?: element.measurementDefinition?.let { definition ->
                     measurementValue(
                         element = element,
                         method = "Value",
@@ -124,6 +131,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             return it
         }
         resolveMeasurementProperty(element, property, location)?.let {
+            return it
+        }
+        resolveSmartLabelProperty(element, property, location)?.let {
             return it
         }
         resolveTextProperty(element, property, location)?.let {
@@ -676,6 +686,46 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                         )
                     }
                 }
+            else -> null
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/smartlabel.js ->
+    // extendInstanceMethodMap.
+    private fun resolveSmartLabelProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val text = element as? Text ?: return null
+        val definition = text.smartLabelDefinition ?: return null
+        return when (property) {
+            "V", "Value" -> function("Value") { _, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "Value",
+                    location = callLocation,
+                    result = definition.Value(),
+                )
+            }
+            "Dimension" -> function("Dimension") { _, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "Dimension",
+                    location = callLocation,
+                    result = definition.Dimension(),
+                )
+            }
+            "Unit" -> function("Unit") { arguments, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "Unit",
+                    location = callLocation,
+                    result = definition.Unit(arguments.firstOrNull()),
+                )
+            }
+            "parent", "parentObject" ->
+                elementReference(definition.parentObject)
             else -> null
         }
     }

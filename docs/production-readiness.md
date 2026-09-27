@@ -143,6 +143,16 @@ are `0.984781` and `0.969197`; after dragging one endpoint they are `0.985490`
 and `0.969261`. Automatic/none digits, locale and `formatValue`,
 function-valued visual attributes, hit testing, complete APIs, and independent
 Stable qualification remain pending.
+SmartLabel now has source-mapped Point, Line, Circle, Polygon, and Angle
+construction; parent-specific measure defaults and placement; dynamic
+Point/Angle measures; units, prefix/suffix visibility, fixed digits, custom
+formatting, row/column coordinates, Line rotation and visibility thresholds,
+Angle rotation and final-viewport 12 CSS-pixel offset, CSS box kinds,
+method-map access, dependency updates, JessieCode HTML sanitization, and
+structured atomic failures. Its focused static Desktop/Compact parity scores
+are `0.984719` and `0.974114`; after dragging the Angle parent they are
+`0.984582` and `0.975467`. Locale, MathJax/KaTeX, user-defined CSS, complete
+Text APIs, and independent Stable qualification remain pending.
 Integral now has source-mapped Curve/interval construction, fixed and
 string/function bounds, hidden constrained dynamic-bound Gliders, draggable
 fixed-bound Gliders, x/y-axis base Points and closed fill geometry, reverse
