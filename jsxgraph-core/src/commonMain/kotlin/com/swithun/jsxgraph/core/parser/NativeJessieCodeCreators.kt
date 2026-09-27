@@ -101,6 +101,7 @@ import com.swithun.jsxgraph.core.base.CurveCoordinateSplinePoint
 import com.swithun.jsxgraph.core.base.CurveElementSplinePoint
 import com.swithun.jsxgraph.core.base.CurveError
 import com.swithun.jsxgraph.core.base.CurveFunctionSplinePoint
+import com.swithun.jsxgraph.core.base.CurvePlotOptions
 import com.swithun.jsxgraph.core.base.CurveSplinePoint
 import com.swithun.jsxgraph.core.base.CurveStaticPoint
 import com.swithun.jsxgraph.core.base.CurveStepTerm
@@ -12686,8 +12687,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -12831,7 +12832,8 @@ internal object NativeJessieCodeCreators {
                     parentlessPoints = parentlessPoints,
                     minimum = minimum,
                     maximum = maximum,
-                    sampleCount = sampleCount,
+                    sampleCount = sampling.sampleCount,
+                    plotOptions = sampling.plotOptions,
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -12856,7 +12858,8 @@ internal object NativeJessieCodeCreators {
                     parentlessPoints = parentlessPoints,
                     minimum = minimum,
                     maximum = maximum,
-                    sampleCount = sampleCount,
+                    sampleCount = sampling.sampleCount,
+                    plotOptions = sampling.plotOptions,
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -12931,8 +12934,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -13074,7 +13077,8 @@ internal object NativeJessieCodeCreators {
                     parentlessPoints = parentlessPoints,
                     minimum = minimum,
                     maximum = maximum,
-                    sampleCount = sampleCount,
+                    sampleCount = sampling.sampleCount,
+                    plotOptions = sampling.plotOptions,
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -13099,7 +13103,8 @@ internal object NativeJessieCodeCreators {
                     parentlessPoints = parentlessPoints,
                     minimum = minimum,
                     maximum = maximum,
-                    sampleCount = sampleCount,
+                    sampleCount = sampling.sampleCount,
+                    plotOptions = sampling.plotOptions,
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -13185,8 +13190,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -13316,7 +13321,8 @@ internal object NativeJessieCodeCreators {
                 parentlessElements = parentlessElements,
                 minimum = minimum,
                 maximum = maximum,
-                sampleCount = sampleCount,
+                sampleCount = sampling.sampleCount,
+                plotOptions = sampling.plotOptions,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -13429,8 +13435,12 @@ internal object NativeJessieCodeCreators {
         if (sources.any { it == null }) {
             return unsupported("curve", parents, location)
         }
-        val sampleCount = when (
-            val result = curveSampleCount("curve", attributes, location)
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
+                "curve",
+                attributes,
+                location,
+            )
         ) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
@@ -13444,7 +13454,8 @@ internal object NativeJessieCodeCreators {
                 ySource = sources[1] ?: "",
                 minimumSource = sources[2] ?: "",
                 maximumSource = sources[3] ?: "",
-                sampleCount = sampleCount,
+                sampleCount = sampling.sampleCount,
+                plotOptions = sampling.plotOptions,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -13885,8 +13896,8 @@ internal object NativeJessieCodeCreators {
         if (sources.any { it == null }) {
             return unsupported(creatorName, parents, location)
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -13903,7 +13914,8 @@ internal object NativeJessieCodeCreators {
                 ySource = sources[0] ?: "",
                 minimumSource = sources[1] ?: "",
                 maximumSource = sources[2] ?: "",
-                sampleCount = sampleCount,
+                sampleCount = sampling.sampleCount,
+                plotOptions = sampling.plotOptions,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -14413,8 +14425,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -14429,7 +14441,8 @@ internal object NativeJessieCodeCreators {
             result = Curve.createDerivative(
                 board = resolvedBoard,
                 source = source,
-                sampleCount = sampleCount,
+                sampleCount = sampling.sampleCount,
+                plotOptions = sampling.plotOptions,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -15120,8 +15133,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -15214,7 +15227,8 @@ internal object NativeJessieCodeCreators {
             result = Curve.createSpline(
                 board = resolvedBoard,
                 points = points,
-                sampleCount = sampleCount,
+                sampleCount = sampling.sampleCount,
+                plotOptions = sampling.plotOptions,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -15290,8 +15304,8 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val sampleCount = when (
-            val result = curveSampleCount(
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
@@ -15448,7 +15462,8 @@ internal object NativeJessieCodeCreators {
             tensionTerm = tensionTerm,
             type = type,
             ownedPoints = ownedPoints,
-            sampleCount = sampleCount,
+            sampleCount = sampling.sampleCount,
+            plotOptions = sampling.plotOptions,
             id = identity.id,
             name = identity.name,
             needsRegularUpdate = identity.needsRegularUpdate,
@@ -16138,11 +16153,27 @@ internal object NativeJessieCodeCreators {
         }
     }
 
-    private fun curveSampleCount(
+    // JSXGraph 1.13.3: src/options.js -> curve plotting defaults and
+    // src/base/curve.js -> updateCurve continuous-data branch.
+    private fun continuousCurveSamplingOptions(
         creatorName: String,
         attributes: JessieCodeRuntimeValue.ObjectValue,
         location: JessieCodeAstLocation,
-    ): GMResult<Int, JessieCodeRuntimeError> {
+    ): GMResult<ContinuousCurveSamplingOptions, JessieCodeRuntimeError> {
+        val sampleCount = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "numberpointshigh",
+                default = Curve.DEFAULT_SAMPLE_COUNT,
+                minimum = 1,
+                maximum = Curve.MAX_SAMPLE_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         val advanced = when (
             val result = booleanAttribute(
                 creatorName = creatorName,
@@ -16155,24 +16186,61 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        if (advanced) {
+        if (!advanced) {
+            return GMResult.Ok(
+                ContinuousCurveSamplingOptions(
+                    sampleCount = sampleCount,
+                    plotOptions = CurvePlotOptions(),
+                ),
+            )
+        }
+        val plotVersion = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "plotversion",
+                default = Curve.DEFAULT_PLOT_VERSION,
+                minimum = 1,
+                maximum = 4,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (plotVersion != Curve.DEFAULT_PLOT_VERSION) {
             return failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.UnsupportedAttributeValue(
-                    attribute = "doAdvancedPlot",
-                    actual = "true",
+                    attribute = "plotVersion",
+                    actual = plotVersion.toString(),
                 ),
                 location = location,
             )
         }
-        return integerAttribute(
-            creatorName = creatorName,
-            attributes = attributes,
-            name = "numberpointshigh",
-            default = Curve.DEFAULT_SAMPLE_COUNT,
-            minimum = 1,
-            maximum = Curve.MAX_SAMPLE_COUNT,
-            location = location,
+        val recursionDepth = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "recursiondepthhigh",
+                default = Curve.DEFAULT_RECURSION_DEPTH_HIGH,
+                minimum = 1,
+                maximum = Curve.MAX_RECURSION_DEPTH,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ContinuousCurveSamplingOptions(
+                sampleCount = sampleCount,
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = plotVersion,
+                    recursionDepthHigh = recursionDepth,
+                ),
+            ),
         )
     }
 
@@ -18081,6 +18149,11 @@ internal object NativeJessieCodeCreators {
         val name: String?,
         val needsRegularUpdate: Boolean,
         val fixed: Boolean = false,
+    )
+
+    private data class ContinuousCurveSamplingOptions(
+        val sampleCount: Int,
+        val plotOptions: CurvePlotOptions,
     )
 
     private data class ParsedAxes3DAttributes(

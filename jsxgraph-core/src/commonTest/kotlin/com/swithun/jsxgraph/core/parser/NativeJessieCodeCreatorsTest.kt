@@ -5895,20 +5895,137 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
-    fun continuousCurveCreatorRequiresTranslatedSamplingMode() {
-        val error = creatorError(
-            source = "functiongraph(\"x\", -1, 1);",
-            board = board(),
+    fun continuousCurveCreatorUsesAdaptiveV2ByDefault() {
+        val curve = curve(
+            evaluate(
+                source = "functiongraph(\"x\", -1, 1);",
+                board = board(),
+            ),
         )
 
-        assertEquals("functiongraph", error.creatorName)
+        assertTrue(curve.numberPoints >= 2)
+        assertEquals(-1.0, curve.points.first().curveParameter)
+        assertEquals(1.0, curve.points.last().curveParameter)
+
+        for (version in listOf(1, 3, 4)) {
+            val error = creatorError(
+                source =
+                    "functiongraph(\"x\", -1, 1) " +
+                        "<< plotVersion: $version >>;",
+                board = board(),
+            )
+
+            assertEquals("functiongraph", error.creatorName)
+            assertEquals(
+                JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "plotVersion",
+                    actual = version.toString(),
+                ),
+                error.error,
+            )
+        }
+
+        val invalidDepth = creatorError(
+            source =
+                "functiongraph(\"x\", -1, 1) " +
+                    "<< recursionDepthHigh: 31 >>;",
+            board = board(),
+        )
+        assertEquals("functiongraph", invalidDepth.creatorName)
         assertEquals(
             JessieCodeCreatorError.UnsupportedAttributeValue(
-                attribute = "doAdvancedPlot",
-                actual = "true",
+                attribute = "recursiondepthhigh",
+                actual = "31.0",
             ),
-            error.error,
+            invalidDepth.error,
         )
+    }
+
+    @Test
+    fun continuousCurveWrappersUseAdaptiveV2ByDefault() {
+        val cases = listOf(
+            Triple(
+                "ellipse",
+                "ellipse([-2, 0], [2, 0], 6);",
+                821 to 0,
+            ),
+            Triple(
+                "hyperbola",
+                "hyperbola([-2, 0], [2, 0], 2);",
+                1132 to 2,
+            ),
+            Triple(
+                "parabola",
+                "parabola([1, 0], [[-1, -2], [-1, 2]]);",
+                827 to 0,
+            ),
+            Triple(
+                "spline",
+                "spline([-3, -1, 1, 3], [0, 2, -1, 1]);",
+                536 to 0,
+            ),
+            Triple(
+                "cardinalspline",
+                "cardinalspline(" +
+                    "[[-3, 0], [-1, 2], [1, -1], [3, 1]], " +
+                    "0.5, \"uniform\"" +
+                    ") << createPoints: false >>;",
+                499 to 0,
+            ),
+            Triple(
+                "derivative",
+                "f = functiongraph(\"x * x * x\", -2, 2) << " +
+                    "doAdvancedPlot: false, numberPointsHigh: 32 >>; " +
+                    "derivative(f);",
+                1269 to 0,
+            ),
+        )
+
+        for ((creatorName, source, expected) in cases) {
+            val curve = curve(evaluate(source, plotBoard(creatorName)))
+            assertEquals(expected.first, curve.numberPoints, creatorName)
+            assertEquals(
+                expected.second,
+                curve.points.count { point ->
+                    point.usrCoords[1].isNaN() ||
+                        point.usrCoords[2].isNaN()
+                },
+                creatorName,
+            )
+        }
+
+        val unsupportedSources = mapOf(
+            "ellipse" to
+                "ellipse([-2, 0], [2, 0], 6) << plotVersion: 3 >>;",
+            "hyperbola" to
+                "hyperbola([-2, 0], [2, 0], 2) << plotVersion: 3 >>;",
+            "parabola" to
+                "parabola([1, 0], [[-1, -2], [-1, 2]]) " +
+                    "<< plotVersion: 3 >>;",
+            "spline" to
+                "spline([-3, -1, 1, 3], [0, 2, -1, 1]) " +
+                    "<< plotVersion: 3 >>;",
+            "cardinalspline" to
+                "cardinalspline(" +
+                    "[[-3, 0], [-1, 2], [1, -1], [3, 1]], " +
+                    "0.5, \"uniform\"" +
+                    ") << createPoints: false, plotVersion: 3 >>;",
+            "derivative" to
+                "f = functiongraph(\"x * x * x\", -2, 2) << " +
+                    "doAdvancedPlot: false, numberPointsHigh: 32 >>; " +
+                    "derivative(f) << plotVersion: 3 >>;",
+        )
+        for ((creatorName, source) in unsupportedSources) {
+            val error = creatorError(source, plotBoard("$creatorName-v3"))
+            assertEquals(creatorName, error.creatorName)
+            assertEquals(
+                JessieCodeCreatorError.UnsupportedAttributeValue(
+                    attribute = "plotVersion",
+                    actual = "3",
+                ),
+                error.error,
+            )
+        }
     }
 
     @Test
@@ -7418,6 +7535,15 @@ class NativeJessieCodeCreatorsTest {
         originY = 0.0,
         unitX = 1.0,
         unitY = 1.0,
+        id = id,
+    )
+
+    private fun plotBoard(id: String): Board = Board(
+        originX = 0.0,
+        originY = 0.0,
+        unitX = 1.0,
+        unitY = 1.0,
+        boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
         id = id,
     )
 }

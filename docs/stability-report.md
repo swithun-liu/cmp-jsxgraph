@@ -16,8 +16,8 @@ evidence layers and are not counted as substitutes for each other.
 | Native core results | 30 production cases plus 512 generated stress inputs passed |
 | Web Native/Official captures | 60: 30 Desktop plus 30 Compact |
 | Automated visual parity | 60/60 passed SSIM `0.93` |
-| Lowest Desktop SSIM | 0.981779, `prod_text_anchor_board` |
-| Lowest Compact SSIM | 0.961778, `prod_text_opacity_caption` |
+| Lowest Desktop SSIM | 0.981479, `prod_text_anchor_board` |
+| Lowest Compact SSIM | 0.961276, `prod_text_opacity_caption` |
 | Deterministic scene replay | 30/30 |
 | Deterministic interaction replay | 8/8 |
 | Generated interaction updates | 64/64 |
@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **74 development parity scenarios.** These remain focused regression
+3. **75 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -273,6 +273,18 @@ cleanup, resource accounting, structured failures, and atomic rollback.
 Automatic/none digits, locale and `formatValue`, function-valued visual
 attributes, hit testing, and complete APIs remain pending. This evidence
 remains outside the 30-case Stable production corpus.
+The focused `adaptive_plot_v2` fixture verifies the native adaptive defaults
+for Ellipse, Hyperbola, Parabola, Derivative, Spline, and CardinalSpline from
+one JessieCode source. Static captures scored `0.987022` on Desktop and
+`0.976101` on Compact. Both contact sheets passed nonblank/browser checks and
+manual review for continuous geometry, Hyperbola breaks, the Parabola
+singularity, clipping, overlap, and Native/Official agreement. Raw kernel and
+creator tests additionally lock official point counts, callback suspension,
+smoothness/cusp/jump/undefined decisions, parameter metadata, canonical
+screen projection, the repeated `_borderCase` midpoint probe observed in
+JSXGraph `1.13.3`, evaluator failures, and point limits. Plot v1/v3/v4,
+FunctionGraph RDP simplification, and Stable qualification remain pending.
+This evidence remains outside the 30-case Stable production corpus.
 The construction-document path now accepts ordered `transform` objects and
 resolves their IDs in subsequent transformed-Point parents without emitting
 scene elements for the transforms. The separate official
@@ -285,7 +297,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 74 focused cases, but this does not change the
+contains 30 production and 75 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary
@@ -711,13 +723,18 @@ first geometry case to `prod_mixed_operations_board`.
 | Android Emulator | Passed | 30-case label and final case visible; 135,386,112-byte PSS; 205,467,648-byte RSS; WebViews 0 |
 | iOS Simulator | Passed | 30-case label and final case visible; 264,519,680-byte observed peak and 258,801,664-byte final host RSS |
 | Desktop JVM | Passed | Process survived 30s beyond automatic traversal; 224,116,736-byte final RSS |
-| Web | Passed | 542ms first content; 2.110s traversal; 8,129,096-byte retained JS heap; no browser errors |
+| Web | Passed | 575ms first content; 2.719s traversal; 8,928,360-byte retained JS heap; no browser errors |
 
 Machine-readable measurements:
 [Android](assets/runtime-load/android-emulator-metrics.json),
 [iOS](assets/runtime-load/ios-simulator-metrics.json),
 [Desktop](assets/runtime-load/desktop-metrics.json), and
-[Web](assets/runtime-load/web-metrics.json).
+[Web](assets/runtime-load/web-metrics.json). The prepared Pages distribution
+also passed the
+[chunked-Wasm retry smoke test](assets/runtime-load/web-chunked-metrics.json):
+11 compressed parts, no direct Wasm downloads, native
+`WebAssembly.instantiateStreaming`, and successful recovery after one
+simulated `503` response.
 
 | Android Emulator | iOS Simulator |
 | :---: | :---: |

@@ -231,9 +231,35 @@ degenerate denominator sentinel; direct and Levin iteration reliability; and
 finite, infinite, and `NaN` classifications. It also records the documented
 logarithm, tangent, and reciprocal limits. `ExtrapolateTest` checks the same
 values, sparse-state `NaN` behavior, and structured index, configuration,
-method, callback-result, and callback-exception failures. This math-only
-fixture does not add a visual corpus case; adaptive Plot integration remains
-pending.
+method, callback-result, and callback-exception failures. The tangent fixture
+uses a narrow cross-platform tolerance because Darwin and JavaScript math
+libraries diverge near the pole. This math-only fixture does not add a visual
+corpus case; the Extrapolate-consuming Plot v3 path remains pending.
+
+Capture the raw JSXGraph `1.13.3` adaptive Plot v2 point sequence:
+
+```bash
+node tools/upstream-fixtures/plot-v2.mjs
+```
+
+The fixture disables FunctionGraph RDP simplification to isolate Plot v2 and
+records smooth, cusp, jump, undefined-interval, isolated-`NaN`, border,
+delayed-border, uncropped wide-domain, parametric, Ellipse, Hyperbola,
+Parabola, Derivative, Spline, and CardinalSpline cases. The delayed-border
+case locks JSXGraph `1.13.3`'s repeated midpoint probe after `_borderCase`
+resets its local bounds on every pass. `PlotTest` checks the raw kernel's
+official point counts, key parameter values, callback suspension order,
+repeated border probe, and structured evaluator and point-limit failures using
+the production-style user-space Board contract.
+`NativeJessieCodeCreatorsTest` checks the wrapper point counts and explicit
+unsupported-version failures. The focused `adaptive_plot_v2` JessieCode case
+renders Ellipse, Hyperbola, Parabola, Derivative, Spline, and CardinalSpline
+through their native adaptive defaults. Desktop `1200 x 900` and Compact
+`390 x 844` captures scored `0.987022` and `0.976101`; both contact sheets
+passed nonblank/browser checks and manual review for continuous geometry,
+Hyperbola breaks, the Parabola singularity, clipping, overlap, and
+Native/Official agreement. Plot v1/v3/v4, RDP simplification, and Stable
+qualification remain pending.
 
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
@@ -1485,8 +1511,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 104 cases:
-30 generated production scenarios followed by 74 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 105 cases:
+30 generated production scenarios followed by 75 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -2129,6 +2155,19 @@ Curves, the two-stage drag-versus-parent update state, `setGliderPosition`,
 dynamic evaluation failures, cleanup, cross-Board and Conic rejection,
 resource accounting, and atomic duplicate-ID rollback. This remains a focused
 preview outside the 30-case Stable corpus.
+The focused `adaptive_plot_v2` capture uses one JessieCode source for
+Ellipse, Hyperbola, Parabola, Derivative, Spline, and CardinalSpline native
+adaptive defaults. Static captures scored `0.987022` on Desktop and
+`0.976101` on Compact. Both contact sheets passed nonblank/browser checks and
+manual review for continuous geometry, Hyperbola breaks, the Parabola
+singularity, clipping, overlap, and Native/Official agreement. The official
+fixture and common tests additionally lock the raw Plot v2 point counts,
+callback suspension, smoothness/cusp/jump/undefined decisions, parameter
+metadata, canonical screen projection, the repeated `_borderCase` midpoint
+probe observed in JSXGraph `1.13.3`, evaluator failures, point limits, and each
+wrapper's point count. This remains a focused preview outside the 30-case
+Stable corpus; Plot v1/v3/v4 and FunctionGraph RDP simplification remain
+pending.
 The focused `tapemeasures` capture uses one JessieCode source for a default
 horizontal tape and a label-only diagonal tape. Static captures scored
 `0.984781` on Desktop and `0.969197` on Compact. After dragging the horizontal
@@ -2208,7 +2247,7 @@ Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
 SmartLabel/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 104 cases while the independently
+the development corpus now contains 105 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous
@@ -2313,12 +2352,12 @@ The source-controlled `baseline_point_drag` trace moves the amber Point from
 Native/Official full-board SSIM was `0.984721` on Desktop and `0.974036` on
 Compact; both profiles completed without browser errors.
 
-Latest independent production evidence (2026-09-17):
+Latest independent production evidence (2026-09-27):
 
 | Profile | Cases | Lowest SSIM | Stable floor |
 | --- | ---: | ---: | ---: |
-| Desktop `1200 x 900` | 30/30 | 0.981779 | 0.93 |
-| Compact `390 x 844` | 30/30 | 0.961778 | 0.93 |
+| Desktop `1200 x 900` | 30/30 | 0.981479 | 0.93 |
+| Compact `390 x 844` | 30/30 | 0.961276 | 0.93 |
 
 The lowest cases are `prod_text_anchor_board` on Desktop and
 `prod_text_opacity_caption` on Compact; their remaining differences are font

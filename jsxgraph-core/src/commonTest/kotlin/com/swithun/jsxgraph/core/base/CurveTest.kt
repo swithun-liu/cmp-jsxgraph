@@ -192,6 +192,78 @@ class CurveTest {
     }
 
     @Test
+    fun adaptiveFunctionGraphUsesPlotVersionTwoWhenExplicitlyEnabled() {
+        val board = Board(
+            originX = 250.0,
+            originY = 250.0,
+            unitX = 50.0,
+            unitY = 50.0,
+            boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+            id = "adaptive-board",
+        )
+        val curve = curve(
+            Curve.createFunctionGraph(
+                board = board,
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 2,
+                    recursionDepthHigh = 17,
+                ),
+                name = "",
+            ),
+        )
+
+        assertEquals(523, curve.numberPoints)
+        assertEquals(-2.0, curve.points.first().curveParameter)
+        assertEquals(-1.99609375, curve.points[1].curveParameter)
+        assertEquals(2.0, curve.points.last().curveParameter)
+        assertEquals(4.0, curve.points.first().usrCoords[2])
+        assertEquals(4.0, curve.points.last().usrCoords[2])
+    }
+
+    @Test
+    fun adaptiveFunctionGraphRejectsUnsupportedVersionsAndDepths() {
+        val unsupported = assertIs<
+            GMResult.Err<CurveError.UnsupportedPlotVersion>,
+            >(
+            Curve.createFunctionGraph(
+                board = board(),
+                ySource = "x",
+                minimumSource = "-1",
+                maximumSource = "1",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 3,
+                ),
+            ),
+        ).error
+        assertEquals(3, unsupported.version)
+
+        val invalidDepth = assertIs<
+            GMResult.Err<CurveError.InvalidRecursionDepth>,
+            >(
+            Curve.createFunctionGraph(
+                board = board(),
+                ySource = "x",
+                minimumSource = "-1",
+                maximumSource = "1",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    recursionDepthHigh =
+                        Curve.MAX_RECURSION_DEPTH + 1,
+                ),
+            ),
+        ).error
+        assertEquals(
+            Curve.MAX_RECURSION_DEPTH + 1,
+            invalidDepth.depth,
+        )
+    }
+
+    @Test
     fun parametricCurveExpressionsTrackBoardDependencies() {
         val board = board()
         val driver = point(

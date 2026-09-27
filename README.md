@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 104 source-controlled cases: 30 independent production scenarios and
-74 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 105 source-controlled cases: 30 independent production scenarios and
+75 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -115,7 +115,7 @@ The release decision is based on repository-controlled evidence:
 | Separate generated Native stress inputs | 512 |
 | Generated interaction updates | 64 |
 | Native/Official visual pairs | 60 across Desktop and Compact |
-| Lowest Desktop / Compact SSIM | 0.981779 / 0.961778 |
+| Lowest Desktop / Compact SSIM | 0.981479 / 0.961276 |
 | JVM production soak | 900 renders, 1.649ms P95 |
 | Runtime load matrix | Android, iOS, Desktop, Web passed |
 
@@ -294,8 +294,8 @@ The standalone `src/math/extrapolate.js -> Mat.Extrapolate` translation
 preserves all four sequence transformations, iterative limit estimation,
 mutable `upper`/`infty` settings, sparse-state `NaN` propagation, and official
 finite/infinite/NaN reliability results. Kotlin exposes callback and
-configuration failures through `GMResult`; wiring this kernel into the
-still-pending adaptive `src/math/plot.js` path remains future work.
+configuration failures through `GMResult`; raw Plot v2 is translated
+independently, while the Extrapolate-consuming Plot v3 path remains pending.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -374,7 +374,12 @@ types are `transform`, `view3d`, `transform3d`, `point3d`, `point`, `line`,
 `text`, `arc`, `semicircle`, `circumcirclearc`, `minorarc`, `majorarc`,
 `sector`, `circumcirclesector`, `minorsector`, `majorsector`, `angle`,
 `nonreflexangle`, and `reflexangle`.
-Continuous curves currently require `doAdvancedPlot: false`; Polygon,
+Native `curve`, `functiongraph`, and `plot` use the translated adaptive
+`src/math/plot.js` v2 sampler by default. Set `doAdvancedPlot: false` to use
+the translated right-open naive sampler and `numberPointsHigh`. Ellipse,
+Hyperbola, Parabola, Derivative, Spline, and CardinalSpline inherit the same
+native adaptive default. Plot versions 1, 3, and 4 and FunctionGraph RDP
+simplification remain explicit gaps. Polygon,
 PolygonalChain, Parallelogram, and RegularPolygon currently support Point or
 coordinate-array vertices,
 `withLines`, top-level fill styling, and default border/vertex styles.
@@ -744,9 +749,8 @@ identity, and JavaScript `Double` behavior for degenerate axes. Native
 JessieCode and construction-document paths enforce sample/object limits and
 return structured failures with atomic helper rollback. Focused static and
 point-parent-drag Desktop/Compact parity passes, but this slice remains
-outside the 30-case Stable corpus. Adaptive plotting and all Conic
-interoperation remain explicitly unsupported pending dedicated translation
-and evidence.
+outside the 30-case Stable corpus. Conic interoperation remains explicitly
+unsupported pending dedicated translation and evidence.
 
 Parabola translates `src/element/conic.js -> createParabola`. It supports a
 Point/reference/function-returning-Point or coordinate focus and either a
@@ -759,8 +763,8 @@ directrices. Native JessieCode and construction-document paths enforce
 sample/object limits, unique IDs, and atomic helper rollback; nested implicit
 Line metadata is limited to identity and regular-update fields. Focused static
 and focus-drag Desktop/Compact parity passes, but this slice remains outside
-the 30-case Stable corpus. Adaptive plotting and all Conic interoperation
-remain explicitly unsupported pending dedicated translation and evidence.
+the 30-case Stable corpus. Conic interoperation remains explicitly unsupported
+pending dedicated translation and evidence.
 
 Derivative translates `src/base/curve.js -> createDerivative`. It reuses
 `Numerics.D` for the source Curve's `X` and `Y` functions, renders
@@ -770,8 +774,9 @@ parametric, and linearly interpolated data-Plot parents are supported, including
 the viewport-padded default data domain, regular Board recomputation, and the
 official behavior where removing the source does not recursively remove the
 Derivative. Invalid parents, duplicate IDs, and point-count overflow return
-structured errors. Focused static and coefficient-Point-drag Desktop/Compact
-parity evidence remains outside the 30-case Stable corpus.
+structured errors. Native creation uses adaptive Plot v2 by default and
+retains the explicit naive fallback. Focused static and coefficient-Point-drag
+Desktop/Compact parity evidence remains outside the 30-case Stable corpus.
 
 Normal translates the Line/Point, Circle/Point, and Curve/Point branches of
 `src/base/line.js -> createNormal` in either parent order. The Line branch
@@ -800,9 +805,10 @@ CardinalSpline accepts existing or generated Points, dynamic tension, uniform,
 centripetal, and chordal parameterization, and the upstream `createPoints` and
 `isArrayOfCoordinates` modes. Both creators have bounded JSON/JessieCode paths,
 structured evaluation failures, official lifecycle fixtures, and focused
-static plus tension-drag Desktop/Compact parity. Kotlin rejects fewer than two
-interpolation points instead of allowing the upstream delayed invalid
-geometry. This slice remains outside the 30-case Stable corpus.
+static plus tension-drag Desktop/Compact parity. Native creation uses adaptive
+Plot v2 by default and retains the explicit naive fallback. Kotlin rejects
+fewer than two interpolation points instead of allowing the upstream delayed
+invalid geometry. This slice remains outside the 30-case Stable corpus.
 
 RiemannSum translates `src/base/curve.js -> createRiemannsum` over the
 existing `Numerics.riemann` port. It accepts one function or an ordered

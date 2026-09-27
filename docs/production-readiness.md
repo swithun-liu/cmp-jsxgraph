@@ -412,10 +412,13 @@ platform-specific.
 | Android Emulator | 30 | Automatic traversal reached final case | 129.1MiB PSS; 195.9MiB RSS; WebViews 0 | Passed |
 | iOS Simulator | 30 | Automatic traversal reached final case | 252.3MiB observed peak; 246.8MiB final host RSS | Passed |
 | Desktop JVM | 30 | Process survived 30s beyond automatic traversal | 213.7MiB final RSS | Passed |
-| Web | 30 | 542ms first content; 2.110s traversal | 7.8MiB retained JS heap | Passed 15s/96MiB budget |
+| Web | 30 | 575ms first content; 2.719s traversal | 8.5MiB retained JS heap | Passed 15s/96MiB budget |
 
 The Desktop run has machine-readable process evidence but no current
 screenshot because macOS screen-recording permission prevented window capture.
+The prepared Pages distribution also passed the chunked-Wasm smoke test with
+11 compressed parts, no direct Wasm downloads, and a successful retry after
+one simulated `503` response.
 
 ## Integration Guidance
 

@@ -92,9 +92,16 @@ qualification batches pass.
   `src/math/nlp.js -> Nlp.FindMinimum` translation.
   `src/math/extrapolate.js -> Mat.Extrapolate` is also translated as a
   standalone pure Kotlin kernel with all four sequence transformations,
-  iterative limit classification, exact official fixtures, sparse-state
-  propagation, and structured boundary failures. Its `src/math/plot.js`
-  adaptive-sampling consumer remains pending.
+  iterative limit classification, official fixtures, sparse-state
+  propagation, and structured boundary failures. Raw
+  `src/math/plot.js -> updateParametricCurve_v2` is translated for native
+  Curve/FunctionGraph/Plot with its default recursion depth, callback
+  suspension, smoothness/cusp/jump/undefined/border decisions, canonical
+  bbox-derived pixel projection, parameter metadata, and bounded point
+  growth. Native Ellipse/Hyperbola/Parabola, Derivative, Spline, and
+  CardinalSpline wrappers inherit the same adaptive default. Plot v1/v3/v4,
+  the v3 Extrapolate consumer, and FunctionGraph RDP simplification remain
+  pending.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed
@@ -196,7 +203,7 @@ qualification batches pass.
   function-valued coordinates and Measurement-specific attributes; custom
   coordinate/direction formatters; script markup; translated method aliases;
   dependency updates; structured failures; and atomic rollback. Core,
-  creator, document/session, official fixture, common tests, 104-case
+  creator, document/session, official fixture, common tests, 105-case
   workbench, and focused Desktop/Compact static plus radius-Point-drag parity
   gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
   `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
@@ -210,7 +217,7 @@ qualification batches pass.
   thresholds, Angle rotation and final-viewport 12 CSS-pixel offset, CSS box
   kinds, method-map access, dependency updates, JessieCode HTML sanitization,
   structured failures, and atomic rollback. Core, creator, session, official
-  fixture, common tests, 104-case workbench, and focused Desktop/Compact
+  fixture, common tests, 105-case workbench, and focused Desktop/Compact
   static plus Angle-parent-drag parity gates pass. Static scores are
   `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale,
   MathJax/KaTeX, user-defined CSS, complete Text APIs, an independent
@@ -323,8 +330,9 @@ qualification batches pass.
   JSON/JessieCode entry points, native session updates, duplicate-ID
   rejection, resource checks, and atomic helper rollback are covered. Core,
   creator, document/session, method-map, official fixture, and focused static
-  plus point-parent-drag Desktop/Compact parity gates pass. Adaptive plotting,
-  an independent production case, and Stable qualification remain pending.
+  plus point-parent-drag Desktop/Compact parity gates pass. Native adaptive
+  Plot v2 is covered; an independent production case and Stable qualification
+  remain pending.
   Tangent, Polar, PolarLine, PolePoint, TangentTo, Normal, Intersection, and
   OtherIntersection Conic forms remain explicitly unsupported until their
   dedicated source-mapped numerical, lifecycle, resource, and parity evidence
@@ -339,8 +347,8 @@ qualification batches pass.
   updates, duplicate-ID rejection, resource checks, and atomic helper
   rollback are covered. Core, creator, document/session, method-map, official
   fixture, and focused static plus point-parent-drag Desktop/Compact parity
-  gates pass. Adaptive plotting, an independent production case, and Stable
-  qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
+  gates pass. Native adaptive Plot v2 is covered; an independent production
+  case and Stable qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
   TangentTo, Normal, Intersection, and OtherIntersection Conic forms remain
   explicitly unsupported until their dedicated source-mapped numerical,
   lifecycle, resource, and parity evidence is complete.
@@ -354,8 +362,8 @@ qualification batches pass.
   entry points, native session updates, duplicate-ID rejection, resource
   checks, and atomic helper rollback are covered. Core, creator,
   document/session, method-map, official fixture, and focused static plus
-  focus-drag Desktop/Compact parity gates pass. Adaptive plotting, richer
-  implicit-Line attributes, an independent production case, and Stable
+  focus-drag Desktop/Compact parity gates pass. Native adaptive Plot v2 is
+  covered; richer implicit-Line attributes, an independent production case, and Stable
   qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
   TangentTo, Normal, Intersection, and OtherIntersection Conic forms remain
   explicitly unsupported until their dedicated source-mapped numerical,
@@ -369,8 +377,8 @@ qualification batches pass.
   registration, source-removal survival, bounded JSON/JessieCode entry points,
   and structured atomic failures. Core, creator, document/session, official
   fixture, and focused static plus coefficient-Point-drag Desktop/Compact
-  parity gates pass. Adaptive plotting, transformed Curves, an independent
-  production case, and Stable qualification remain pending.
+  parity gates pass. Native adaptive Plot v2 is covered; transformed Curves,
+  an independent production case, and Stable qualification remain pending.
 - Normal: the Line/Point, Circle/Point, and Curve/Point branches of
   `src/base/line.js -> createNormal` now accept registered parents in either
   order. The Line branch preserves its ideal helper plus `point`, `subs`, and
@@ -394,8 +402,9 @@ qualification batches pass.
   ownership, `createPoints`/`isArrayOfCoordinates`, bounded JSON/JessieCode
   paths, structured failures, and atomic rollback are covered. Core, creator,
   document/session, official fixture, and focused static plus tension-drag
-  Desktop/Compact parity gates pass. Adaptive plotting, ordinary Curve fill,
-  an independent production case, and Stable qualification remain pending.
+  Desktop/Compact parity gates pass. Native adaptive Plot v2 is covered;
+  ordinary Curve fill, an independent production case, and Stable
+  qualification remain pending.
 - RiemannSum: `src/base/curve.js -> createRiemannsum` now composes the
   translated `Numerics.riemann` geometry for one function or an ordered
   lower/upper pair. Numeric, string, and function-valued rectangle counts,

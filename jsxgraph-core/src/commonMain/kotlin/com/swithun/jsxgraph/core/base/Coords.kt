@@ -28,6 +28,8 @@ internal class Coords(
 ) {
     internal val usrCoords = DoubleArray(3) { Double.NaN }
     internal val scrCoords = DoubleArray(3) { Double.NaN }
+    // JSXGraph 1.13.3: src/math/plot.js -> Coords._t assignments.
+    internal var curveParameter: Double? = null
 
     private val events = if (emitter) EventEmitter(this) else null
 

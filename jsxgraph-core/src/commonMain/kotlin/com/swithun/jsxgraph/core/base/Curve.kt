@@ -3,7 +3,8 @@
  * Upstream: src/base/curve.js -> Curve, generateTerm, updateCurve,
  * createStepfunction, createDerivative, interpolationFunctionFromArray,
  * createSpline, createCardinalSpline, createRiemannsum, createBoxPlot,
- * src/math/plot.js -> updateParametricCurveNaive,
+ * src/math/plot.js -> updateParametricCurveNaive /
+ * updateParametricCurve_v2,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality,
  * src/element/vectorfield.js -> createVectorField / createSlopeField,
@@ -25,6 +26,9 @@ import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.Numerics
 import com.swithun.jsxgraph.core.math.NumericsError
 import com.swithun.jsxgraph.core.math.NumericsPoint2D
+import com.swithun.jsxgraph.core.math.Plot
+import com.swithun.jsxgraph.core.math.PlotError
+import com.swithun.jsxgraph.core.math.PlotFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
@@ -43,6 +47,26 @@ internal sealed interface CurveError {
     data class InvalidSampleCount(
         val count: Int,
         val maximum: Int,
+    ) : CurveError
+
+    data class InvalidAdaptivePointCount(
+        val count: Int,
+        val maximum: Int,
+    ) : CurveError
+
+    data class UnsupportedPlotVersion(
+        val version: Int,
+    ) : CurveError
+
+    data class InvalidRecursionDepth(
+        val depth: Int,
+        val maximum: Int,
+    ) : CurveError
+
+    data class PlotEvaluationException(
+        val coordinate: String,
+        val parameter: Double,
+        val message: String,
     ) : CurveError
 
     data class ExpressionCompile(
@@ -97,6 +121,12 @@ internal sealed interface CurveError {
         val error: CurveDataUpdateError,
     ) : CurveError
 }
+
+internal data class CurvePlotOptions(
+    val doAdvancedPlot: Boolean = false,
+    val plotVersion: Int = 2,
+    val recursionDepthHigh: Int = 17,
+)
 
 internal sealed interface CurveDataUpdateError {
     data class Face3D(
@@ -543,6 +573,7 @@ internal class Curve private constructor(
     dataX: DoubleArray?,
     dataY: DoubleArray?,
     internal val sampleCount: Int,
+    private val plotOptions: CurvePlotOptions = CurvePlotOptions(),
     private val booleanDefinition: CurveBooleanDefinition? = null,
     private val stepDefinition: CurveStepDefinition? = null,
     private val derivativeDefinition: CurveDerivativeDefinition? = null,
@@ -812,7 +843,66 @@ internal class Curve private constructor(
             )
         }
 
-        // JSXGraph: src/math/plot.js -> updateParametricCurveNaive
+        if (plotOptions.doAdvancedPlot) {
+            if (plotOptions.plotVersion != DEFAULT_PLOT_VERSION) {
+                return GMResult.Err(
+                    CurveError.UnsupportedPlotVersion(
+                        plotOptions.plotVersion,
+                    ),
+                )
+            }
+            val result = Plot.updateParametricCurveV2(
+                board = board,
+                minimum = minimum,
+                maximum = maximum,
+                recursionDepthHigh = plotOptions.recursionDepthHigh,
+                maximumPointCount = board.maxCurvePoints,
+                x = PlotFunction { parameter, suspendedUpdate ->
+                    evaluateX(
+                        parameter = parameter,
+                        arguments = listOf(
+                            JessieCodeRuntimeValue.NumberValue(parameter),
+                        ),
+                        suspendedUpdate = suspendedUpdate,
+                    )
+                },
+                y = PlotFunction { parameter, suspendedUpdate ->
+                    evaluateY(
+                        parameter = parameter,
+                        arguments = listOf(
+                            JessieCodeRuntimeValue.NumberValue(parameter),
+                        ),
+                        suspendedUpdate = suspendedUpdate,
+                    )
+                },
+            )
+            return when (result) {
+                is GMResult.Ok -> {
+                    points.clear()
+                    points.addAll(result.value.points)
+                    numberPoints = points.size
+                    GMResult.Ok(this)
+                }
+                is GMResult.Err -> when (val error = result.error) {
+                    is PlotError.Evaluation -> GMResult.Err(error.error)
+                    is PlotError.EvaluationException -> GMResult.Err(
+                        CurveError.PlotEvaluationException(
+                            coordinate = error.coordinate.name,
+                            parameter = error.parameter,
+                            message = error.message,
+                        ),
+                    )
+                    is PlotError.PointLimitExceeded -> GMResult.Err(
+                        CurveError.InvalidAdaptivePointCount(
+                            count = error.attemptedCount,
+                            maximum = error.maximum,
+                        ),
+                    )
+                }
+            }
+        }
+
+        // JSXGraph: src/math/plot.js -> updateParametricCurveNaive.
         val stepSize = (maximum - minimum) / sampleCount
         points.clear()
         for (index in 0 until sampleCount) {
@@ -841,11 +931,13 @@ internal class Curve private constructor(
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
-            points += Coords(
+            val point = Coords(
                 method = Const.COORDS_BY_USER,
                 coordinates = doubleArrayOf(x, y),
                 board = board,
             )
+            point.curveParameter = parameter
+            points += point
         }
         numberPoints = sampleCount
         return GMResult.Ok(this)
@@ -2589,6 +2681,9 @@ internal class Curve private constructor(
     internal companion object {
         internal const val DEFAULT_SAMPLE_COUNT: Int = 1600
         internal const val MAX_SAMPLE_COUNT: Int = 10_000
+        internal const val DEFAULT_PLOT_VERSION: Int = 2
+        internal const val DEFAULT_RECURSION_DEPTH_HIGH: Int = 17
+        internal const val MAX_RECURSION_DEPTH: Int = 30
         internal const val COMB_DEFAULT_FREQUENCY: Double = 0.2
         internal const val COMB_DEFAULT_WIDTH: Double = 0.4
         internal const val COMB_DEFAULT_ANGLE: Double =
@@ -2620,17 +2715,19 @@ internal class Curve private constructor(
             definition: CurveEllipseDefinition,
             parentlessPoints: Set<Point>,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
         ): GMResult<Curve, CurveError> {
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             return when (
                 val result = register(
@@ -2644,6 +2741,7 @@ internal class Curve private constructor(
                         dataX = null,
                         dataY = null,
                         sampleCount = sampleCount,
+                        plotOptions = plotOptions,
                         ellipseDefinition = definition,
                         id = id,
                         name = name,
@@ -2690,17 +2788,19 @@ internal class Curve private constructor(
             definition: CurveHyperbolaDefinition,
             parentlessPoints: Set<Point>,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
         ): GMResult<Curve, CurveError> {
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             return when (
                 val result = register(
@@ -2714,6 +2814,7 @@ internal class Curve private constructor(
                         dataX = null,
                         dataY = null,
                         sampleCount = sampleCount,
+                        plotOptions = plotOptions,
                         hyperbolaDefinition = definition,
                         id = id,
                         name = name,
@@ -2760,17 +2861,19 @@ internal class Curve private constructor(
             definition: CurveParabolaDefinition,
             parentlessElements: Set<GeometryElement>,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
         ): GMResult<Curve, CurveError> {
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             return when (
                 val result = register(
@@ -2784,6 +2887,7 @@ internal class Curve private constructor(
                         dataX = null,
                         dataY = null,
                         sampleCount = sampleCount,
+                        plotOptions = plotOptions,
                         parabolaDefinition = definition,
                         id = id,
                         name = name,
@@ -3101,6 +3205,7 @@ internal class Curve private constructor(
             board: Board,
             points: List<CurveSplinePoint>,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -3114,13 +3219,14 @@ internal class Curve private constructor(
                     ),
                 )
             }
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             return when (
                 val result = register(
@@ -3134,6 +3240,7 @@ internal class Curve private constructor(
                         dataX = null,
                         dataY = null,
                         sampleCount = sampleCount,
+                        plotOptions = plotOptions,
                         splineDefinition = CurveSplineDefinition(points),
                         id = id,
                         name = name,
@@ -3162,6 +3269,7 @@ internal class Curve private constructor(
             type: String = "uniform",
             ownedPoints: Set<Point> = emptySet(),
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -3175,13 +3283,14 @@ internal class Curve private constructor(
                     ),
                 )
             }
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             return when (
                 val result = register(
@@ -3195,6 +3304,7 @@ internal class Curve private constructor(
                         dataX = null,
                         dataY = null,
                         sampleCount = sampleCount,
+                        plotOptions = plotOptions,
                         cardinalSplineDefinition =
                             CurveCardinalSplineDefinition(
                                 points = points,
@@ -3366,6 +3476,7 @@ internal class Curve private constructor(
             minimumSource: String,
             maximumSource: String,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -3378,6 +3489,7 @@ internal class Curve private constructor(
                 minimumSource = minimumSource,
                 maximumSource = maximumSource,
                 sampleCount = sampleCount,
+                plotOptions = plotOptions,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -3393,6 +3505,7 @@ internal class Curve private constructor(
             minimumSource: String,
             maximumSource: String,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -3405,6 +3518,7 @@ internal class Curve private constructor(
                 minimumSource = minimumSource,
                 maximumSource = maximumSource,
                 sampleCount = sampleCount,
+                plotOptions = plotOptions,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -3417,6 +3531,7 @@ internal class Curve private constructor(
             minimumSource: String,
             maximumSource: String,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -3429,6 +3544,7 @@ internal class Curve private constructor(
                 minimumSource = minimumSource,
                 maximumSource = maximumSource,
                 sampleCount = sampleCount,
+                plotOptions = plotOptions,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -3439,17 +3555,19 @@ internal class Curve private constructor(
             board: Board,
             source: Curve,
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
         ): GMResult<Curve, CurveError> {
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             val definition = CurveDerivativeDefinition(
                 source = source,
@@ -3470,6 +3588,7 @@ internal class Curve private constructor(
                         dataX = null,
                         dataY = null,
                         sampleCount = sampleCount,
+                        plotOptions = plotOptions,
                         derivativeDefinition = definition,
                         id = id,
                         name = name,
@@ -3528,17 +3647,19 @@ internal class Curve private constructor(
             minimumSource: String,
             maximumSource: String,
             sampleCount: Int,
+            plotOptions: CurvePlotOptions,
             id: String,
             name: String?,
             needsRegularUpdate: Boolean,
         ): GMResult<Curve, CurveError> {
-            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
-                return GMResult.Err(
-                    CurveError.InvalidSampleCount(
-                        count = sampleCount,
-                        maximum = MAX_SAMPLE_COUNT,
-                    ),
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                 )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
             val xTerm = when (
                 val result = compile(
@@ -3585,6 +3706,7 @@ internal class Curve private constructor(
                     dataX = null,
                     dataY = null,
                     sampleCount = sampleCount,
+                    plotOptions = plotOptions,
                     id = id,
                     name = name,
                     needsRegularUpdate = needsRegularUpdate,
@@ -3643,6 +3765,42 @@ internal class Curve private constructor(
                     CurveError.Registration(registration.error),
                 )
             }
+        }
+
+        private fun validateContinuousPlotting(
+            sampleCount: Int,
+            plotOptions: CurvePlotOptions,
+        ): GMResult<Unit, CurveError> {
+            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
+                return GMResult.Err(
+                    CurveError.InvalidSampleCount(
+                        count = sampleCount,
+                        maximum = MAX_SAMPLE_COUNT,
+                    ),
+                )
+            }
+            if (
+                plotOptions.doAdvancedPlot &&
+                plotOptions.plotVersion != DEFAULT_PLOT_VERSION
+            ) {
+                return GMResult.Err(
+                    CurveError.UnsupportedPlotVersion(
+                        version = plotOptions.plotVersion,
+                    ),
+                )
+            }
+            if (
+                plotOptions.recursionDepthHigh !in
+                1..MAX_RECURSION_DEPTH
+            ) {
+                return GMResult.Err(
+                    CurveError.InvalidRecursionDepth(
+                        depth = plotOptions.recursionDepthHigh,
+                        maximum = MAX_RECURSION_DEPTH,
+                    ),
+                )
+            }
+            return GMResult.Ok(Unit)
         }
 
         private fun runtimeType(

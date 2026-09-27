@@ -195,17 +195,28 @@ practical.
   become non-finite scene path breaks. JSON input accepts numeric arrays;
   native JessieCode also preserves mutable array identity and JavaScript
   function `length`/indexed-property behavior without invoking the functions.
-  Its expanded point count is bounded before construction. Continuous curves
-  require `doAdvancedPlot: false` and use
-  `src/math/plot.js -> updateParametricCurveNaive`, including its right-open
-  sampling interval. The default and maximum translated sample counts are
-  1,600 and 10,000. Non-finite sampled points become explicit scene path
-  breaks. Boolean-composition Curves accept fill styling because their
-  Greiner-Hormann output is a closed path. Adaptive plot versions, omitted
-  domains, function-valued and mixed-array terms, transformations, polar
-  curves, cubic Bezier paths, ordinary Curve fills, non-round caps, arrows,
-  labels, and hit testing return structured unsupported or creation errors
-  until their upstream slices are translated.
+  Its expanded point count is bounded before construction. Native `curve`,
+  `functiongraph`, and `plot` use
+  `src/math/plot.js -> updateParametricCurve_v2` by default, including the
+  exact recursive smoothness, cusp, jump, undefined-neighborhood, border, and
+  0.7-pixel insertion checks. Because the portable Board stores user-space
+  coordinates independently from its final renderer viewport, those pixel
+  checks use a bbox-derived canonical 500x500 projection. The upstream v2
+  `this.xterm` receiver behavior is preserved, so its apparent
+  FunctionGraph-domain crop is not entered in JSXGraph `1.13.3`.
+  `doAdvancedPlot: false` selects `updateParametricCurveNaive`, including its
+  right-open interval and `numberPointsHigh`; the default and maximum
+  translated sample counts are 1,600 and 10,000. Adaptive point growth is
+  bounded by the same 10,000-point resource limit. Non-finite sampled points
+  become explicit scene path breaks. Boolean-composition Curves accept fill
+  styling because their Greiner-Hormann output is a closed path. Native
+  Ellipse/Hyperbola/Parabola, Derivative, Spline, and CardinalSpline creators
+  inherit the same adaptive-v2 default and retain the explicit naive fallback.
+  Plot versions 1, 3, and 4, FunctionGraph RDP simplification, omitted domains,
+  function-valued and mixed-array terms, transformations, polar curves, cubic
+  Bezier paths, ordinary Curve fills, non-round caps, arrows, labels, and hit
+  testing return structured unsupported or creation errors until their
+  upstream slices are translated.
 - The translated Polygon subset accepts registered Point references or
   coordinate arrays, closes the vertex list, creates Segment borders in the
   upstream storage and Board-creation orders, and preserves
@@ -278,9 +289,9 @@ practical.
   The point-on-Ellipse and major-axis forms preserve parent updates,
   coordinate-helper ownership, center/output removal behavior, and upstream
   `Double` propagation for short, zero, negative, non-finite, and coincident
-  inputs. Sampling deliberately uses the existing fixed right-open naive
-  Curve path with an explicit bounded count; adaptive plotting remains
-  pending.
+  inputs. Native creation uses adaptive Plot v2 by default; the fixed
+  right-open naive Curve path remains available through
+  `doAdvancedPlot: false` and a bounded count.
   JSXGraph `1.13.3` may overwrite a Board registry entry for a duplicate
   Ellipse or nested center ID and can retain helpers after a later creator
   failure. Kotlin rejects duplicate IDs and removes newly materialized focus,
@@ -301,8 +312,8 @@ practical.
   major-axis forms preserve parent updates, coordinate-helper ownership,
   center/output removal behavior, and upstream `Double` propagation for
   short, equal-focal-distance, zero, negative, non-finite, and coincident
-  inputs. Sampling uses the existing fixed right-open naive Curve path with a
-  bounded count; adaptive plotting remains pending.
+  inputs. Native creation uses adaptive Plot v2 by default and retains the
+  bounded fixed right-open naive fallback.
   Kotlin rejects duplicate output or nested center IDs and atomically removes
   newly materialized focus, point-on-Hyperbola, and center helpers. Invalid
   function results, unsupported parent forms, sample overflow, and scene
@@ -321,8 +332,8 @@ practical.
   `quadraticform`. Optional parameter-domain parents are numeric-only, with
   omitted values preserving the official `0..2π` domain and its `π/2`
   non-finite singularity. Degenerate and ideal directrices preserve upstream
-  `Double` propagation. Sampling uses the existing fixed right-open naive
-  Curve path with a bounded count; adaptive plotting remains pending.
+  `Double` propagation. Native creation uses adaptive Plot v2 by default and
+  retains the bounded fixed right-open naive fallback.
   For an implicit directrix, nested `line` attributes currently support only
   `id`, `name`, and `needsRegularUpdate`; the helper Line is not emitted as a
   top-level source element, and construction-document `line.visible: true`
@@ -417,9 +428,9 @@ practical.
   domain. Kotlin accepts exactly one registered Curve parent and returns a
   structured error for all invalid forms; JSXGraph `1.13.3` instead exposes
   inconsistent `TypeError`/generic `Error` paths because its guard combines
-  `parents.length !== 1` with `parents[0].class`. Adaptive plotting remains
-  unsupported, so public sources must continue to request
-  `doAdvancedPlot: false`.
+  `parents.length !== 1` with `parents[0].class`. Native creation uses
+  adaptive Plot v2 by default and retains `doAdvancedPlot: false` as the
+  bounded naive fallback.
 - `createSpline` and `createCardinalSpline` preserve the upstream natural and
   cardinal interpolation functions, dynamic Point/tension updates, and
   distinct parent lifecycles. Spline's Point parents are metadata only;
@@ -431,8 +442,8 @@ practical.
   rejected as `InvalidInterpolationPointCount` before registration instead of
   allowing a later invalid Curve. Coordinate functions, dynamic tension,
   `createPoints`, `isArrayOfCoordinates`, uniform/centripetal/chordal
-  parameterization, and bounded sample counts are translated; adaptive
-  plotting remains unsupported.
+  parameterization, and bounded sample counts are translated. Native creation
+  uses adaptive Plot v2 by default and retains the bounded naive fallback.
 - `createRiemannsum` accepts one numeric function or an ordered lower/upper
   pair, evaluates dynamic rectangle count/type/interval terms on every regular
   update, and exposes the cached signed area through `Value()` and `V()`.
@@ -1363,8 +1374,8 @@ practical.
   test, convergence order, and reliability calculation. Kotlin rejects
   negative state indexes, non-positive `upper`, and unknown iteration methods
   with `GMResult.Err`; callback failures and thrown exceptions are likewise
-  contained instead of escaping. The translated kernel is not yet wired into
-  the pending adaptive `src/math/plot.js` sampler.
+  contained instead of escaping. Raw adaptive Plot v2 does not call
+  `Extrapolate`; its Plot v3 consumer remains pending.
 - Statistics filters `NaN` values before sorting percentile and boxplot data.
   Upstream filters after sorting, which makes results depend on the
   JavaScript engine's sort behavior when the comparator receives `NaN`.
