@@ -47,6 +47,15 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     ),
                 )
             is Slider -> number(element.Value())
+            is Line ->
+                element.tapemeasureDefinition?.let {
+                    number(it.Value())
+                } ?: GMResult.Err(
+                    JessieCodeRuntimeError.ElementValueUnavailable(
+                        elementId = element.id,
+                        location = location,
+                    ),
+                )
             is Arc -> number(element.Value())
             is Sector -> number(element.Value())
             is Curve ->
@@ -507,7 +516,15 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         location: JessieCodeAstLocation,
     ): ElementPropertyResult? {
         val line = element as? Line ?: return null
+        val tapemeasure = line.tapemeasureDefinition
         return when (property) {
+            "V", "Value" -> tapemeasure?.let {
+                numberFunction("Value", it::Value)
+            } ?: unavailable(line, property, location)
+            "label" -> tapemeasure?.label?.let(::elementReference)
+                ?: unavailable(line, property, location)
+            "ticks" -> tapemeasure?.tapeTicks?.let(::elementReference)
+                ?: unavailable(line, property, location)
             "point" -> (line.tangentToPoint ?: line.normalPoint)?.let {
                 GMResult.Ok(
                     JessieCodeRuntimeValue.ElementReference(it),

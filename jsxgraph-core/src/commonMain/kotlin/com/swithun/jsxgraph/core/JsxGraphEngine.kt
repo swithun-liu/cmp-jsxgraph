@@ -884,6 +884,29 @@ object JsxGraphEngine {
                                         )
                                     created += expanded
                                     creationCount += expanded.size
+                                } else if (creatorName == "tapemeasure") {
+                                    val line = value.element as? Line
+                                    val expanded = line?.let {
+                                        tapemeasureCreatedSourceElements(
+                                            source = source.copy(
+                                                index = creationCount,
+                                            ),
+                                            line = it,
+                                        )
+                                    }
+                                    if (expanded == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native tapemeasure " +
+                                                        "creator returned an " +
+                                                        "incomplete Line.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
+                                    created += expanded
+                                    creationCount += expanded.size
                                 } else if (creatorName == "slopetriangle") {
                                     val polygon = value.element as? Polygon
                                     val expanded = polygon?.let {
@@ -2125,6 +2148,153 @@ object JsxGraphEngine {
                                     listOf(
                                         JsonPrimitive(-4),
                                         JsonPrimitive(-14),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+        return result
+    }
+
+    // JSXGraph 1.13.3: src/element/measure.js ->
+    // createTapemeasure; src/options.js -> tapemeasure.
+    private fun tapemeasureCreatedSourceElements(
+        source: ParsedObject,
+        line: Line,
+    ): List<CreatedSourceElement>? {
+        val definition = line.tapemeasureDefinition ?: return null
+        val tapemeasureVisible = (
+            source.attributes["visible"] as? JsonPrimitive
+            )?.booleanOrNull ?: true
+
+        fun helperAttributes(
+            role: String,
+            defaults: Map<String, JsonElement>,
+        ): JsonObject {
+            val result = nestedAttributes(
+                attributes = source.attributes,
+                name = role,
+                defaults = defaults,
+            ).toMutableMap()
+            if (
+                (result["visible"] as? JsonPrimitive)
+                    ?.content == "inherit"
+            ) {
+                result["visible"] = JsonPrimitive(tapemeasureVisible)
+            }
+            return JsonObject(result)
+        }
+
+        val pointDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(true),
+            "fixed" to JsonPrimitive(false),
+            "withlabel" to JsonPrimitive(false),
+            "size" to JsonPrimitive(6),
+            "strokecolor" to JsonPrimitive("#000000"),
+            "fillcolor" to JsonPrimitive("#ffffff"),
+            "fillopacity" to JsonPrimitive(0),
+        )
+        val rootAttributes = linkedMapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(tapemeasureVisible),
+            "fixed" to JsonPrimitive(false),
+            "withlabel" to JsonPrimitive(false),
+            "strokewidth" to JsonPrimitive(2),
+            "strokecolor" to JsonPrimitive("#000000"),
+        )
+        rootAttributes.putAll(
+            source.attributes.filterKeys { name ->
+                name in COMMON_ATTRIBUTES || name in LINE_ATTRIBUTES
+            },
+        )
+        rootAttributes.remove("point")
+        rootAttributes.remove("point1")
+        rootAttributes.remove("point2")
+        rootAttributes["withlabel"] = JsonPrimitive(false)
+
+        val result = mutableListOf<CreatedSourceElement>()
+        fun add(
+            element: GeometryElement,
+            type: String,
+            attributes: JsonObject,
+        ) {
+            result += CreatedSourceElement(
+                source = ParsedObject(
+                    index = source.index + result.size,
+                    id = element.id,
+                    type = type,
+                    parents = JsonArray(emptyList()),
+                    attributes = attributes,
+                ),
+                element = element,
+            )
+        }
+
+        add(
+            element = definition.point1,
+            type = "point",
+            attributes = helperAttributes("point1", pointDefaults),
+        )
+        add(
+            element = definition.point2,
+            type = "point",
+            attributes = helperAttributes("point2", pointDefaults),
+        )
+        add(
+            element = line,
+            type = "tapemeasure",
+            attributes = JsonObject(rootAttributes),
+        )
+        definition.label?.let { label ->
+            add(
+                element = label,
+                type = "text",
+                attributes = helperAttributes(
+                    role = "label",
+                    defaults = mapOf(
+                        "visible" to JsonPrimitive(tapemeasureVisible),
+                        "withlabel" to JsonPrimitive(false),
+                        "digits" to JsonPrimitive(2),
+                        "strokecolor" to JsonPrimitive("#000000"),
+                    ),
+                ),
+            )
+        }
+        definition.tapeTicks?.let { ticks ->
+            add(
+                element = ticks,
+                type = "ticks",
+                attributes = helperAttributes(
+                    role = "ticks",
+                    defaults = mapOf(
+                        "visible" to JsonPrimitive(tapemeasureVisible),
+                        "drawlabels" to JsonPrimitive(false),
+                        "drawzero" to JsonPrimitive(true),
+                        "insertticks" to JsonPrimitive(true),
+                        "ticksdistance" to JsonPrimitive(0.1),
+                        "minticksdistance" to JsonPrimitive(10),
+                        "minorheight" to JsonPrimitive(8),
+                        "majorheight" to JsonPrimitive(16),
+                        "minorticks" to JsonPrimitive(4),
+                        "tickendings" to JsonArray(
+                            listOf(JsonPrimitive(0), JsonPrimitive(1)),
+                        ),
+                        "majortickendings" to JsonArray(
+                            listOf(JsonPrimitive(0), JsonPrimitive(1)),
+                        ),
+                        "strokeopacity" to JsonPrimitive(1),
+                        "strokewidth" to JsonPrimitive(1),
+                        "strokecolor" to JsonPrimitive("#000000"),
+                        "label" to JsonObject(
+                            mapOf(
+                                "anchorx" to JsonPrimitive("middle"),
+                                "anchory" to JsonPrimitive("top"),
+                                "offset" to JsonArray(
+                                    listOf(
+                                        JsonPrimitive(0),
+                                        JsonPrimitive(-10),
                                     ),
                                 ),
                             ),
@@ -3504,6 +3674,24 @@ object JsxGraphEngine {
                     source = sourceObject,
                     slider = slider,
                 )
+            } else if (sourceObject.type == "tapemeasure") {
+                val line = element as? Line
+                val expanded = line?.let {
+                    tapemeasureCreatedSourceElements(
+                        source = sourceObject,
+                        line = it,
+                    )
+                } ?: return GMResult.Err(
+                    JsxGraphDocumentError.ElementCreation(
+                        objectIndex = sourceObject.index,
+                        id = sourceObject.id,
+                        type = sourceObject.type,
+                        reason =
+                            "creator did not return a complete " +
+                                "Tapemeasure Line",
+                    ),
+                )
+                created += expanded
             } else if (sourceObject.type == "slopetriangle") {
                 val polygon = element as? Polygon
                 val expanded = polygon?.let {
@@ -4334,7 +4522,9 @@ object JsxGraphEngine {
                 val lineEndpoints = lineEndpoints(element)
                     ?: return GMResult.Err(attributes.nonFiniteGeometry())
                 val (point1, point2) = lineEndpoints
-                val isSegment = source.type == "segment"
+                val isSegment =
+                    source.type == "segment" ||
+                        source.type == "tapemeasure"
                 val isArrow =
                     source.type == "arrow" ||
                         source.type == "arrowparallel"
@@ -8818,6 +9008,7 @@ object JsxGraphEngine {
             "tangentto" -> 3
             "axis", "grid" -> 2
             "slider" -> 7
+            "tapemeasure" -> 5
             "slopetriangle" -> 9
             "integral" -> 6
             in NON_SCENE_CREATORS -> 0
@@ -8849,6 +9040,19 @@ object JsxGraphEngine {
                     JessieCodeRuntimeValue.BooleanValue
                 )?.value ?: true
             return 5 +
+                if (withLabel) 1 else 0 +
+                if (withTicks) 1 else 0
+        }
+        if (creatorName == "tapemeasure") {
+            val withLabel = (
+                attributes.properties["withlabel"] as?
+                    JessieCodeRuntimeValue.BooleanValue
+                )?.value ?: true
+            val withTicks = (
+                attributes.properties["withticks"] as?
+                    JessieCodeRuntimeValue.BooleanValue
+                )?.value ?: true
+            return 3 +
                 if (withLabel) 1 else 0 +
                 if (withTicks) 1 else 0
         }
@@ -8947,6 +9151,17 @@ object JsxGraphEngine {
                 source.attributes["withticks"] as? JsonPrimitive
                 )?.booleanOrNull ?: true
             return 5 +
+                if (withLabel) 1 else 0 +
+                if (withTicks) 1 else 0
+        }
+        if (source.type == "tapemeasure") {
+            val withLabel = (
+                source.attributes["withlabel"] as? JsonPrimitive
+                )?.booleanOrNull ?: true
+            val withTicks = (
+                source.attributes["withticks"] as? JsonPrimitive
+                )?.booleanOrNull ?: true
+            return 3 +
                 if (withLabel) 1 else 0 +
                 if (withTicks) 1 else 0
         }

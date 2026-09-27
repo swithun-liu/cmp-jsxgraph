@@ -221,6 +221,11 @@ import com.swithun.jsxgraph.core.base.Surface3DDynamicError
 import com.swithun.jsxgraph.core.base.Surface3DError
 import com.swithun.jsxgraph.core.base.Surface3DScalarEvaluator
 import com.swithun.jsxgraph.core.base.Surface3DSource
+import com.swithun.jsxgraph.core.base.Tapemeasure
+import com.swithun.jsxgraph.core.base.TapemeasureAttributes
+import com.swithun.jsxgraph.core.base.TapemeasureElementAttributes
+import com.swithun.jsxgraph.core.base.TapemeasureError
+import com.swithun.jsxgraph.core.base.TapemeasurePointAttributes
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Text3D
 import com.swithun.jsxgraph.core.base.Text3DError
@@ -282,6 +287,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class SliderFactory(
         val error: SliderError,
+    ) : JessieCodeCreatorError
+
+    data class TapemeasureFactory(
+        val error: TapemeasureError,
     ) : JessieCodeCreatorError
 
     data class SlopeTriangleFactory(
@@ -555,6 +564,14 @@ internal object NativeJessieCodeCreators {
         },
         "slider" to JessieCodeCreator { board, parents, attributes, location ->
             createSlider(board, parents, attributes, location)
+        },
+        "tapemeasure" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createTapemeasure(board, parents, attributes, location)
         },
         "slopetriangle" to JessieCodeCreator {
                 board,
@@ -2210,6 +2227,248 @@ internal object NativeJessieCodeCreators {
             )
             is GMResult.Err -> result
         }
+    }
+
+    // JSXGraph 1.13.3: src/element/measure.js -> createTapemeasure.
+    private fun createTapemeasure(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "tapemeasure"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val start = numericArray(parents[0])
+            ?: return unsupported(creatorName, parents, location)
+        val end = numericArray(parents[1])
+            ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withTicks = when (
+            val result = booleanAttribute(
+                creatorName,
+                attributes,
+                "withticks",
+                true,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withLabel = when (
+            val result = booleanAttribute(
+                creatorName,
+                attributes,
+                "withlabel",
+                true,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point1Identity = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName,
+                attributes,
+                "point1",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point2Identity = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName,
+                attributes,
+                "point2",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticksIdentity = when (
+            val result = nestedCreatorIdentity(
+                creatorName,
+                attributes,
+                "ticks",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelAttributes = when (
+            val result = nestedObjectAttribute(
+                creatorName,
+                attributes,
+                "label",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelIdentity = when (
+            val result = creatorAttributes(
+                creatorName,
+                labelAttributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelDigits = when (
+            val result = integerAttribute(
+                creatorName,
+                labelAttributes,
+                "digits",
+                2,
+                0,
+                100,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val ticksAttributes = when (
+            val result = nestedObjectAttribute(
+                creatorName,
+                attributes,
+                "ticks",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val parsedTicksAttributes = when (
+            val result = ticksAttributes(
+                attributes = tapemeasureTicksAttributes(ticksAttributes),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        return when (
+            val result = Tapemeasure.create(
+                board = resolvedBoard,
+                startCoordinates = start,
+                endCoordinates = end,
+                attributes = TapemeasureAttributes(
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    withTicks = withTicks,
+                    withLabel = withLabel,
+                    point1 = TapemeasurePointAttributes(
+                        id = point1Identity.id,
+                        name = point1Identity.name,
+                        needsRegularUpdate =
+                            point1Identity.needsRegularUpdate,
+                        fixed = point1Identity.fixed,
+                    ),
+                    point2 = TapemeasurePointAttributes(
+                        id = point2Identity.id,
+                        name = point2Identity.name,
+                        needsRegularUpdate =
+                            point2Identity.needsRegularUpdate,
+                        fixed = point2Identity.fixed,
+                    ),
+                    ticks = TapemeasureElementAttributes(
+                        id = ticksIdentity.id,
+                        name = ticksIdentity.name,
+                        needsRegularUpdate =
+                            ticksIdentity.needsRegularUpdate,
+                    ),
+                    label = TapemeasureElementAttributes(
+                        id = labelIdentity.id,
+                        name = labelIdentity.name,
+                        needsRegularUpdate =
+                            labelIdentity.needsRegularUpdate,
+                    ),
+                    labelDigits = labelDigits,
+                    ticksAttributes = parsedTicksAttributes,
+                ),
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.TapemeasureFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    private fun tapemeasureTicksAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        val defaults = linkedMapOf<String, JessieCodeRuntimeValue>(
+            "drawlabels" to JessieCodeRuntimeValue.BooleanValue(false),
+            "drawzero" to JessieCodeRuntimeValue.BooleanValue(true),
+            "insertticks" to JessieCodeRuntimeValue.BooleanValue(true),
+            "ticksdistance" to JessieCodeRuntimeValue.NumberValue(0.1),
+            "minticksdistance" to
+                JessieCodeRuntimeValue.NumberValue(10.0),
+            "minorheight" to JessieCodeRuntimeValue.NumberValue(8.0),
+            "majorheight" to JessieCodeRuntimeValue.NumberValue(16.0),
+            "minorticks" to JessieCodeRuntimeValue.NumberValue(4.0),
+            "tickendings" to numericRuntimeArray(0.0, 1.0),
+            "majortickendings" to numericRuntimeArray(0.0, 1.0),
+            "label" to JessieCodeRuntimeValue.ObjectValue(
+                mapOf(
+                    "anchorx" to
+                        JessieCodeRuntimeValue.StringValue("middle"),
+                    "anchory" to
+                        JessieCodeRuntimeValue.StringValue("top"),
+                    "offset" to numericRuntimeArray(0.0, -10.0),
+                ),
+            ),
+        )
+        defaults.putAll(attributes.properties)
+        val providedLabel = (
+            attributes.properties["label"] as?
+                JessieCodeRuntimeValue.ObjectValue
+            )
+        if (providedLabel != null) {
+            val labelDefaults = linkedMapOf<String, JessieCodeRuntimeValue>(
+                "anchorx" to
+                    JessieCodeRuntimeValue.StringValue("middle"),
+                "anchory" to
+                    JessieCodeRuntimeValue.StringValue("top"),
+                "offset" to numericRuntimeArray(0.0, -10.0),
+            )
+            labelDefaults.putAll(providedLabel.properties)
+            defaults["label"] =
+                JessieCodeRuntimeValue.ObjectValue(labelDefaults)
+        }
+        return JessieCodeRuntimeValue.ObjectValue(defaults)
     }
 
     // JSXGraph 1.13.3: src/element/slopetriangle.js ->

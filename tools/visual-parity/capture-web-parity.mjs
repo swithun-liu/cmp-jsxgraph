@@ -649,6 +649,17 @@ function readInteractionTrace() {
                 bottom: -5
             }
         },
+        tapemeasure_endpoint_drag: {
+            caseId: "tapemeasures",
+            from: {x: 4.5, y: 2.2},
+            to: {x: 2.5, y: 3.2},
+            boundingBox: {
+                left: -6,
+                top: 5,
+                right: 6,
+                bottom: -5
+            }
+        },
         integral_bound_drag: {
             caseId: "integrals",
             from: {x: -3, y: -5},

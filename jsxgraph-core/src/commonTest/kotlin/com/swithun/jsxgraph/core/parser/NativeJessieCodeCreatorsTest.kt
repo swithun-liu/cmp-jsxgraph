@@ -52,6 +52,7 @@ import com.swithun.jsxgraph.core.base.RegularPolygonError
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.TangentError
 import com.swithun.jsxgraph.core.base.TangentToError
+import com.swithun.jsxgraph.core.base.TapemeasureError
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.Ticks
 import com.swithun.jsxgraph.core.base.TicksCurveLocation
@@ -6934,6 +6935,113 @@ class NativeJessieCodeCreatorsTest {
         assertEquals("slider", duplicate.creatorName)
         assertIs<JessieCodeCreatorError.SliderFactory>(duplicate.error)
         assertEquals(beforeSlider, board.objects.keys.toList())
+    }
+
+    @Test
+    fun tapemeasureCreatorMatchesOfficialHelpersAndMethodMap() {
+        assertTrue("tapemeasure" in NativeJessieCodeCreators.names)
+        val board = board("tapemeasure")
+        val tape = line(
+            evaluate(
+                source =
+                    """
+                    t = tapemeasure([1, 2], [4, 6]) <<
+                        id: "tape", name: "dist",
+                        digits: 4, precision: 5,
+                        point1: << id: "start" >>,
+                        point2: << id: "end" >>,
+                        label: << id: "label", digits: 3 >>,
+                        ticks: << id: "ticks" >>
+                    >>;
+                    t;
+                    """.trimIndent(),
+                board = board,
+            ),
+        )
+        board.fullUpdate()
+        val definition =
+            tape.tapemeasureDefinition ?: error("missing definition")
+
+        assertEquals("tapemeasure", tape.elType)
+        assertEquals(5.0, definition.Value())
+        assertEquals(
+            listOf("start", "end", "tape", "tapeLabel", "ticks"),
+            board.objectsList.map(GeometryElement::id),
+        )
+        assertEquals("dist = 5.000", definition.label?.plaintext)
+        assertEquals(
+            5.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate("tape.Value();", board),
+            ).value,
+        )
+        assertEquals(
+            5.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate("tape.V();", board),
+            ).value,
+        )
+        assertSame(
+            definition.point1,
+            point(evaluate("tape.subs.point1;", board)),
+        )
+        assertSame(
+            definition.point2,
+            point(evaluate("tape.point2;", board)),
+        )
+
+        definition.point2.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(7.0, 10.0),
+        )
+        board.fullUpdate()
+        assertEquals(10.0, definition.Value())
+        assertEquals("dist = 10.000", definition.label?.plaintext)
+
+        board.removeObject(tape)
+        assertTrue(board.objects.isEmpty())
+    }
+
+    @Test
+    fun tapemeasureCreatorFailuresAreStructuredAndAtomic() {
+        for (source in listOf(
+            "tapemeasure();",
+            "tapemeasure([0], [1, 1]);",
+            "tapemeasure([0, 0], true);",
+        )) {
+            val board = board("invalid-tapemeasure")
+            val failure = creatorError(source, board)
+
+            assertEquals("tapemeasure", failure.creatorName)
+            assertTrue(
+                failure.error is
+                    JessieCodeCreatorError.UnsupportedParents ||
+                    failure.error is
+                    JessieCodeCreatorError.TapemeasureFactory,
+            )
+            assertTrue(board.objects.isEmpty())
+        }
+
+        val board = board("duplicate-tapemeasure")
+        evaluate(
+            source = "point(0, 0) << id: \"taken\", name: \"\" >>;",
+            board = board,
+        )
+        val before = board.objects.keys.toList()
+        val failure = creatorError(
+            source =
+                """
+                tapemeasure([0, 0], [1, 1]) <<
+                    id: "taken", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+        val factory = assertIs<
+            JessieCodeCreatorError.TapemeasureFactory,
+            >(failure.error)
+        assertIs<TapemeasureError.LineFactory>(factory.error)
+        assertEquals(before, board.objects.keys.toList())
     }
 
     @Test

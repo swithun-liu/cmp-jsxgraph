@@ -103,6 +103,8 @@ internal open class Line internal constructor(
     // JSXGraph 1.13.3: src/base/line.js -> createAxis.
     internal var axisDefinition: AxisDefinition? = null
     internal var defaultTicks: Ticks? = null
+    // JSXGraph 1.13.3: src/element/measure.js -> createTapemeasure.
+    internal var tapemeasureDefinition: TapemeasureDefinition? = null
 
     internal var hasFixedLength: Boolean = false
         private set
@@ -131,6 +133,7 @@ internal open class Line internal constructor(
         updateAxisPosition()
         updateSegmentFixedLength()
         updateStdform()
+        tapemeasureDefinition?.updateLabel()
         return this
     }
 
@@ -565,6 +568,12 @@ internal open class Line internal constructor(
             maxOf(coordinates1[1], coordinates2[1]),
             minOf(coordinates1[2], coordinates2[2]),
         )
+    }
+
+    // JSXGraph 1.13.3: src/element/measure.js -> li.remove.
+    override fun remove(): GeometryElement {
+        tapemeasureDefinition?.remove()
+        return this
     }
 
     internal companion object {

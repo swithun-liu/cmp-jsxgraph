@@ -134,6 +134,15 @@ failures. Their focused Desktop/Compact parity scores are `0.987490` and
 `0.980515`. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed-slide,
 attractor, animation, baseline-click, locale, complete mutation, and
 independent Stable qualification remain pending.
+Tapemeasure now has source-mapped coordinate endpoint creation, finite Segment
+composition, optional dynamic value labels and equidistant Ticks, nested
+helper identity, `subs`/`inherits`, `Value()`/`V`, endpoint dependency updates,
+official helper-removal behavior, bounded JSON/JessieCode scene expansion, and
+structured atomic failures. Its focused static Desktop/Compact parity scores
+are `0.984781` and `0.969197`; after dragging one endpoint they are `0.985490`
+and `0.969261`. Automatic/none digits, locale and `formatValue`,
+function-valued visual attributes, hit testing, complete APIs, and independent
+Stable qualification remain pending.
 Integral now has source-mapped Curve/interval construction, fixed and
 string/function bounds, hidden constrained dynamic-bound Gliders, draggable
 fixed-bound Gliders, x/y-axis base Points and closed fill geometry, reverse

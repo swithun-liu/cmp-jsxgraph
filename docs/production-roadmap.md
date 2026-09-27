@@ -171,6 +171,18 @@ qualification batches pass.
   data-Plot drag. Circle, Conic, Polygon, Ticks, Turtle, Point,
   transformed-slide, attractor, animation, baseline-click, locale, independent
   production cases, and Stable qualification remain pending.
+- Tapemeasure: `src/element/measure.js -> createTapemeasure` and the
+  corresponding `src/options.js` defaults now cover coordinate endpoint
+  creation, finite Segment composition, optional dynamic value label and
+  equidistant Ticks, nested helper identity, `subs`/`inherits`, `Value()`/`V`,
+  endpoint dependency updates, official root/helper removal behavior, bounded
+  JSON/JessieCode scene expansion, and atomic rollback. Core, creator,
+  document/session, official fixture, and focused Desktop/Compact static plus
+  endpoint-drag parity gates pass. Static scores are
+  `0.984781`/`0.969197`; moved scores are `0.985490`/`0.969261`.
+  Automatic/none digits, locale and `formatValue`, function-valued visual
+  attributes, hit testing, complete APIs, an independent production case, and
+  Stable qualification remain pending.
 - Integral: `src/element/composition.js -> createIntegral` and the corresponding
   `src/options.js` defaults now cover Curve/interval parent order, fixed and
   string/function bounds, hidden constrained dynamic-bound Gliders, draggable
