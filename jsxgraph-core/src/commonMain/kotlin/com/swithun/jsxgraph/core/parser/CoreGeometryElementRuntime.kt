@@ -47,6 +47,20 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     ),
                 )
             is Slider -> number(element.Value())
+            is Text ->
+                element.measurementDefinition?.let { definition ->
+                    measurementValue(
+                        element = element,
+                        method = "Value",
+                        location = location,
+                        result = definition.Value(),
+                    )
+                } ?: GMResult.Err(
+                    JessieCodeRuntimeError.ElementValueUnavailable(
+                        elementId = element.id,
+                        location = location,
+                    ),
+                )
             is Line ->
                 element.tapemeasureDefinition?.let {
                     number(it.Value())
@@ -107,6 +121,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             return it
         }
         resolveLineProperty(element, property, location)?.let {
+            return it
+        }
+        resolveMeasurementProperty(element, property, location)?.let {
             return it
         }
         resolveTextProperty(element, property, location)?.let {
@@ -479,14 +496,14 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
     ): ElementPropertyResult? {
         val circle = element as? Circle ?: return null
         return when (property) {
-            "Area", "area" -> numberFunction("Area") {
+            "A", "Area", "area" -> numberFunction("Area") {
                 circle.Area()
             }
             "Perimeter", "Circumference" ->
                 numberFunction("Perimeter") {
                     circle.Perimeter()
                 }
-            "radius", "Radius", "getRadius" ->
+            "R", "radius", "Radius", "getRadius" ->
                 numberFunction("Radius") {
                     circle.Radius()
                 }
@@ -577,10 +594,89 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     }
                 }
             }
-            "L", "length" -> numberFunction("L") {
+            "L", "Length", "length" -> numberFunction("L") {
                 line.L()
             }
             else -> unavailable(line, property, location)
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/measure.js ->
+    // extendInstanceMethodMap.
+    private fun resolveMeasurementProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val text = element as? Text ?: return null
+        val definition = text.measurementDefinition ?: return null
+        return when (property) {
+            "V", "Value" -> function("Value") { _, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "Value",
+                    location = callLocation,
+                    result = definition.Value(),
+                )
+            }
+            "Dimension" -> function("Dimension") { _, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "Dimension",
+                    location = callLocation,
+                    result = definition.Dimension(),
+                )
+            }
+            "Unit" -> function("Unit") { arguments, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "Unit",
+                    location = callLocation,
+                    result = definition.Unit(arguments.firstOrNull()),
+                )
+            }
+            "getTerm", "Term" -> function("getTerm") { _, _ ->
+                GMResult.Ok(definition.getTerm())
+            }
+            "getMethod", "Method" ->
+                function("getMethod") { _, callLocation ->
+                    when (val result = definition.getMethod()) {
+                        is GMResult.Ok -> GMResult.Ok(
+                            JessieCodeRuntimeValue.StringValue(result.value),
+                        )
+                        is GMResult.Err -> measurementFailure(
+                            element = text,
+                            method = "getMethod",
+                            location = callLocation,
+                            reason = result.error.toString(),
+                        )
+                    }
+                }
+            "toPrefix" -> function("toPrefix") { _, callLocation ->
+                measurementValue(
+                    element = text,
+                    method = "toPrefix",
+                    location = callLocation,
+                    result = definition.toPrefix(),
+                )
+            }
+            "getParents", "Parents" ->
+                function("getParents") { _, callLocation ->
+                    when (val result = definition.getParents()) {
+                        is GMResult.Ok -> GMResult.Ok(
+                            JessieCodeRuntimeValue.ArrayValue(
+                                result.value,
+                            ),
+                        )
+                        is GMResult.Err -> measurementFailure(
+                            element = text,
+                            method = "getParents",
+                            location = callLocation,
+                            reason = result.error.toString(),
+                        )
+                    }
+                }
+            else -> null
         }
     }
 
@@ -815,6 +911,37 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         element: GeometryElement,
     ): ElementPropertyResult =
         GMResult.Ok(JessieCodeRuntimeValue.ElementReference(element))
+
+    private fun measurementValue(
+        element: Text,
+        method: String,
+        location: JessieCodeAstLocation,
+        result: GMResult<JessieCodeRuntimeValue, *>,
+    ): ElementPropertyResult =
+        when (result) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> measurementFailure(
+                element = element,
+                method = method,
+                location = location,
+                reason = result.error.toString(),
+            )
+        }
+
+    private fun measurementFailure(
+        element: Text,
+        method: String,
+        location: JessieCodeAstLocation,
+        reason: String,
+    ): ElementPropertyResult =
+        GMResult.Err(
+            JessieCodeRuntimeError.ElementMethodUnavailable(
+                elementId = element.id,
+                method = method,
+                reason = reason,
+                location = location,
+            ),
+        )
 
     private fun resolveCoordsProperty(
         element: GeometryElement,

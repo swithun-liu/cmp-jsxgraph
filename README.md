@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 102 source-controlled cases: 30 independent production scenarios and
-72 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 103 source-controlled cases: 30 independent production scenarios and
+73 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -38,6 +38,7 @@ Focused direct links remain available for cases such as
 [Glider and Slider](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=glider_slider),
 [Curve Gliders](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve_glider),
 [Tape measures](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=tapemeasures),
+[Measurements](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=measurements),
 [Integral](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=integrals),
 [SlopeTriangle](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=slope_triangle),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
@@ -154,7 +155,7 @@ Implemented translation slices:
   ParallelPoint, Parallel, ArrowParallel, BisectorLines, Bisector, Incenter,
   Incircle, Intersection, OtherIntersection, Curve, Ticks, Axis, Grid, CurveIntersection,
   CurveUnion, CurveDifference, FunctionGraph, Plot, StepFunction, Derivative,
-  Spline, CardinalSpline, RiemannSum, Tapemeasure, BoxPlot, Comb, Inequality,
+  Spline, CardinalSpline, RiemannSum, Tapemeasure, Measurement, BoxPlot, Comb, Inequality,
   VectorField, SlopeField,
   Polygon, PolygonalChain, Parallelogram,
   RegularPolygon, RadicalAxis, PolePoint, Circle/Point,
@@ -230,6 +231,7 @@ Implemented translation slices:
   ReflexAngle compositions,
   Curve, Ticks, CurveIntersection, CurveUnion, CurveDifference, FunctionGraph, Plot,
   StepFunction, Derivative, Spline, CardinalSpline, RiemannSum, Tapemeasure,
+  Measurement,
   BoxPlot, Comb, Inequality, VectorField, SlopeField, Polygon,
   PolygonalChain, Parallelogram, RegularPolygon,
   RadicalAxis, PolePoint, Circle/Point, Line/Point, and Curve/Point Tangent,
@@ -543,6 +545,23 @@ Desktop/Compact parity at `0.984781`/`0.969197` and endpoint-drag parity at
 `0.985490`/`0.969261`. Automatic/none digits, locale and `formatValue`,
 function-valued visual attributes, hit testing, complete APIs, an independent
 production case, and Stable qualification remain pending.
+
+Measurement translates `src/element/measure.js -> createMeasurement` and
+`src/parser/prefix.js -> PrefixParser` into a dynamic Text element. Numeric,
+string, arithmetic, element-method, nested Measurement, and bounded `exec`
+terms expose `Value`/`V`, `Dimension`, `Unit`, `Term`, `Method`, `toPrefix`,
+and `Parents`; dependencies follow both prefix parents and function-valued
+Measurement attributes. Fixed, `auto`, and `none` digits, per-dimension units,
+dynamic prefix/suffix visibility and content, `coords`/`direction` formatting,
+numeric/string/function coordinates, and `parse`-controlled superscript and
+subscript text are supported. Invalid terms, attributes, formatter results,
+resource limits, and runtime failures return structured errors, and Kotlin
+atomically removes the temporary Text where JSXGraph `1.13.3` can leave a
+partially created Measurement registered. The focused fixture passes static
+Desktop/Compact parity at `0.982740`/`0.970961` and radius-Point-drag parity
+at `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math
+`exec` surface, complete Text APIs, an independent production case, and Stable
+qualification remain pending.
 
 Integral translates `src/element/composition.js -> createIntegral` for the
 translated Curve path. It preserves fixed and function-valued interval

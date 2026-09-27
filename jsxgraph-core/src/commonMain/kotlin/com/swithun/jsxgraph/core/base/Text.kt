@@ -9,6 +9,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
@@ -52,6 +53,10 @@ internal sealed interface TextError {
         val marker: String,
     ) : TextError
 
+    data class MeasurementContent(
+        val error: MeasurementError,
+    ) : TextError
+
     data class Registration(
         val error: BoardError,
     ) : TextError
@@ -77,7 +82,7 @@ internal class Text private constructor(
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
-    coordinateFunctions: List<JessieCodeExpressionFunction> = emptyList(),
+    coordinateFunctions: List<JessieCodeCoordinateFunction> = emptyList(),
 ) : CoordsElement(
     board = board,
     coordinates = coordinates,
@@ -93,10 +98,14 @@ internal class Text private constructor(
     internal var plaintext: String = plaintext
         private set
     private var contentSegments: List<ContentSegment> = contentSegments
+    private var dynamicContent:
+        (() -> GMResult<String, TextError>)? = null
+    private var parseDynamicContent: Boolean = false
     private val parse: Boolean = parse
     private val digits: Int = digits
     internal var contentEvaluationError: TextError? = null
         private set
+    internal var measurementDefinition: MeasurementDefinition? = null
     // JSXGraph: src/base/text.js -> relativeCoords. Stored in CSS pixels and
     // resolved by the platform renderer after the user-coordinate transform.
     internal var screenOffset: DoubleArray = doubleArrayOf(0.0, 0.0)
@@ -122,9 +131,26 @@ internal class Text private constructor(
         orgText = content
         plaintext = compiled.plaintext
         contentSegments = compiled.segments
+        dynamicContent = null
+        parseDynamicContent = false
         contentEvaluationError = null
         prepareUpdate()
         return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> setText(function).
+    internal fun setDynamicText(
+        parse: Boolean = this.parse,
+        content: () -> GMResult<String, TextError>,
+    ): Text {
+        orgText = ""
+        plaintext = ""
+        contentSegments = emptyList()
+        dynamicContent = content
+        parseDynamicContent = parse
+        contentEvaluationError = null
+        prepareUpdate()
+        return this
     }
 
     // JSXGraph: src/base/text.js -> update
@@ -133,9 +159,18 @@ internal class Text private constructor(
             return this
         }
         updateCoords(fromParent)
-        when (val result = evaluateContent(contentSegments, digits)) {
+        val result = dynamicContent?.invoke()
+            ?: evaluateContent(contentSegments, digits)
+        when (result) {
             is GMResult.Ok -> {
-                plaintext = result.value
+                plaintext = if (
+                    dynamicContent != null &&
+                    parseDynamicContent
+                ) {
+                    replaceSub(replaceSup(result.value))
+                } else {
+                    result.value
+                }
                 contentEvaluationError = null
             }
             is GMResult.Err -> {
@@ -283,6 +318,79 @@ internal class Text private constructor(
                     text.applyCoordinateConstraint(initialCoordinates)
                     text.addParentsFromJCFunctions(
                         functions + compiledContent.functions,
+                    )
+                    GMResult.Ok(text)
+                }
+                is GMResult.Err -> registration
+            }
+        }
+
+        // JSXGraph: src/base/coordselement.js -> create / addConstraint.
+        internal fun createConstrained(
+            board: Board,
+            coordinateFunctions: List<JessieCodeCoordinateFunction>,
+            content: String,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            parse: Boolean = true,
+            digits: Int = 2,
+            xjc: String? = null,
+            yjc: String? = null,
+        ): GMResult<Text, TextError> {
+            if (coordinateFunctions.size !in 2..3) {
+                return GMResult.Err(
+                    TextError.InvalidCoordinateCount(
+                        coordinateFunctions.size,
+                    ),
+                )
+            }
+            val compiledContent = when (
+                val result = compileContent(
+                    board = board,
+                    content = content,
+                    parse = parse,
+                    digits = digits,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val text = Text(
+                board = board,
+                coordinates =
+                    if (coordinateFunctions.size == 2) {
+                        doubleArrayOf(0.0, 0.0)
+                    } else {
+                        doubleArrayOf(1.0, 0.0, 0.0)
+                    },
+                content = content,
+                plaintext = compiledContent.plaintext,
+                contentSegments = compiledContent.segments,
+                parse = parse,
+                digits = digits,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                coordinateFunctions = coordinateFunctions,
+            )
+            val initialCoordinates = when (
+                val result = text.coordinateConstraintResult()
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    TextError.CoordinateExpressionEvaluation(
+                        result.error,
+                    ),
+                )
+            }
+            return when (val registration = register(board, text)) {
+                is GMResult.Ok -> {
+                    text.Xjc = xjc
+                    text.Yjc = yjc
+                    text.applyCoordinateConstraint(initialCoordinates)
+                    text.addParentsFromJCFunctions(
+                        coordinateFunctions + compiledContent.functions,
                     )
                     GMResult.Ok(text)
                 }
@@ -472,6 +580,67 @@ internal class Text private constructor(
                 }
             }
             return GMResult.Ok(output.toString())
+        }
+
+        // JSXGraph 1.13.3: src/base/text.js -> replaceSup.
+        private fun replaceSup(content: String): String =
+            replaceScript(
+                content = content,
+                marker = '^',
+                openTag = "<sup>",
+                closeTag = "</sup>",
+            )
+
+        // JSXGraph 1.13.3: src/base/text.js -> replaceSub.
+        private fun replaceSub(content: String): String =
+            replaceScript(
+                content = content,
+                marker = '_',
+                openTag = "<sub>",
+                closeTag = "</sub>",
+            )
+
+        private fun replaceScript(
+            content: String,
+            marker: Char,
+            openTag: String,
+            closeTag: String,
+        ): String {
+            var output = content
+            val bracedMarker = "$marker{"
+            var start = output.indexOf(bracedMarker)
+            while (start >= 0) {
+                output = output.replaceRange(
+                    startIndex = start,
+                    endIndex = start + bracedMarker.length,
+                    replacement = openTag,
+                )
+                val end = output.indexOf(
+                    char = '}',
+                    startIndex = start + openTag.length,
+                )
+                if (end >= 0) {
+                    output = output.replaceRange(
+                        startIndex = end,
+                        endIndex = end + 1,
+                        replacement = closeTag,
+                    )
+                }
+                start = output.indexOf(bracedMarker)
+            }
+
+            start = output.indexOf(marker)
+            while (start >= 0) {
+                val valueEnd = minOf(start + 2, output.length)
+                val value = output.substring(start + 1, valueEnd)
+                output = output.replaceRange(
+                    startIndex = start,
+                    endIndex = valueEnd,
+                    replacement = openTag + value + closeTag,
+                )
+                start = output.indexOf(marker)
+            }
+            return output
         }
 
         private fun runtimeType(value: JessieCodeRuntimeValue): String =

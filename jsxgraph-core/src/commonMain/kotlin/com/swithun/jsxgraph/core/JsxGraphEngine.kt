@@ -613,6 +613,8 @@ object JsxGraphEngine {
                                 "comb" -> COMB_SEMANTIC_ATTRIBUTES
                                 "inequality" ->
                                     INEQUALITY_SEMANTIC_ATTRIBUTES
+                                "measurement" ->
+                                    MEASUREMENT_DYNAMIC_ATTRIBUTES
                                 "vectorfield",
                                 "slopefield",
                                 "vectorfield3d",
@@ -7534,7 +7536,16 @@ object JsxGraphEngine {
                                         setOf("vertices")
                                     else -> emptySet()
                                 }
-                        is Text3D, is Text -> TEXT_ATTRIBUTES
+                        is Text3D -> TEXT_ATTRIBUTES
+                        is Text ->
+                            TEXT_ATTRIBUTES +
+                                if (
+                                    element.measurementDefinition != null
+                                ) {
+                                    MEASUREMENT_ATTRIBUTES
+                                } else {
+                                    emptySet()
+                                }
                         is Image -> IMAGE_ATTRIBUTES
                         else -> emptySet()
                     } +
@@ -9857,6 +9868,19 @@ object JsxGraphEngine {
         "useasciimathml",
         "tofraction",
     )
+    private val MEASUREMENT_ATTRIBUTES = setOf(
+        "baseunit",
+        "units",
+        "showprefix",
+        "showsuffix",
+        "prefix",
+        "suffix",
+        "dim",
+        "formatcoords",
+        "formatdirection",
+    )
+    private val MEASUREMENT_DYNAMIC_ATTRIBUTES =
+        MEASUREMENT_ATTRIBUTES + setOf("digits", "parse")
     private val IMAGE_ATTRIBUTES = setOf(
         "rotate",
     )

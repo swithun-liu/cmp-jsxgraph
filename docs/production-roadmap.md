@@ -183,6 +183,20 @@ qualification batches pass.
   Automatic/none digits, locale and `formatValue`, function-valued visual
   attributes, hit testing, complete APIs, an independent production case, and
   Stable qualification remain pending.
+- Measurement: `src/element/measure.js -> createMeasurement`,
+  `src/parser/prefix.js -> PrefixParser`, and the corresponding
+  `src/options.js` defaults now cover numeric/string, arithmetic,
+  element-method, nested Measurement, and bounded `exec` prefix terms;
+  dimension and per-dimension unit propagation; fixed/`auto`/`none` digits;
+  function-valued coordinates and Measurement-specific attributes; custom
+  coordinate/direction formatters; script markup; translated method aliases;
+  dependency updates; structured failures; and atomic rollback. Core,
+  creator, document/session, official fixture, common tests, 103-case
+  workbench, and focused Desktop/Compact static plus radius-Point-drag parity
+  gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
+  `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
+  surface, complete Text APIs, an independent production case, and Stable
+  qualification remain pending.
 - Integral: `src/element/composition.js -> createIntegral` and the corresponding
   `src/options.js` defaults now cover Curve/interval parent order, fixed and
   string/function bounds, hidden constrained dynamic-bound Gliders, draggable

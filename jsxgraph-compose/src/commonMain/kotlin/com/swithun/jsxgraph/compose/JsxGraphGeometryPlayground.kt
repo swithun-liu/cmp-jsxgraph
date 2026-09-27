@@ -60,13 +60,18 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
@@ -1467,7 +1472,10 @@ private fun DrawScope.drawSceneText(
         return
     }
     val layout = textMeasurer.measure(
-        text = text.content,
+        text = sceneTextAnnotatedString(
+            content = text.content,
+            fontSize = text.fontSize,
+        ),
         style = TextStyle(
             color = text.style.strokeColor.toComposeColor(
                 opacity = text.style.strokeOpacity,
@@ -1498,6 +1506,56 @@ private fun DrawScope.drawSceneText(
         ),
     )
 }
+
+// JSXGraph 1.13.3: src/base/text.js -> replaceSup / replaceSub;
+// browser HTML rendering of the generated <sup>/<sub> markup.
+internal fun sceneTextAnnotatedString(
+    content: String,
+    fontSize: Double,
+): AnnotatedString =
+    buildAnnotatedString {
+        var offset = 0
+        while (offset < content.length) {
+            val superscriptStart = content.indexOf("<sup>", offset)
+            val subscriptStart = content.indexOf("<sub>", offset)
+            val start = when {
+                superscriptStart < 0 -> subscriptStart
+                subscriptStart < 0 -> superscriptStart
+                else -> min(superscriptStart, subscriptStart)
+            }
+            if (start < 0) {
+                append(content.substring(offset))
+                break
+            }
+            if (start > offset) {
+                append(content.substring(offset, start))
+            }
+            val superscript = start == superscriptStart
+            val openTag = if (superscript) "<sup>" else "<sub>"
+            val closeTag = if (superscript) "</sup>" else "</sub>"
+            val contentStart = start + openTag.length
+            val end = content.indexOf(closeTag, contentStart)
+            if (end < 0) {
+                append(content.substring(start))
+                break
+            }
+            withStyle(
+                SpanStyle(
+                    fontSize = (fontSize * SCRIPT_FONT_SCALE).toFloat().sp,
+                    baselineShift = if (superscript) {
+                        BaselineShift.Superscript
+                    } else {
+                        BaselineShift.Subscript
+                    },
+                ),
+            ) {
+                append(content.substring(contentStart, end))
+            }
+            offset = end + closeTag.length
+        }
+    }
+
+private const val SCRIPT_FONT_SCALE = 0.75
 
 internal data class JsxGraphImageScreenGeometry(
     val topLeft: Offset,

@@ -660,6 +660,17 @@ function readInteractionTrace() {
                 bottom: -5
             }
         },
+        measurement_radius_point_drag: {
+            caseId: "measurements",
+            from: {x: -0.5, y: 1.5},
+            to: {x: 0, y: 2.5},
+            boundingBox: {
+                left: -7,
+                top: 5,
+                right: 7,
+                bottom: -5
+            }
+        },
         integral_bound_drag: {
             caseId: "integrals",
             from: {x: -3, y: -5},

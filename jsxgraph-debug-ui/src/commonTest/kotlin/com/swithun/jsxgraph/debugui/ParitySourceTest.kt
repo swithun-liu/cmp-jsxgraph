@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(102, cases.size)
+        assertEquals(103, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            72,
+            73,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -143,6 +143,66 @@ class ParitySourceTest {
             moved.elements.single { element -> element.id == "areaLabel" },
         )
         assertEquals("\u222b = -7.290", movedLabel.content)
+    }
+
+    @Test
+    fun measurementFocusedCaseTracksGeometryAndFormattedText() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("measurements"),
+        ).value
+        val paritySessionResult = createParitySession(parityCase.source)
+        val paritySession = assertIs<GMResult.Ok<JsxGraphParitySession>>(
+            paritySessionResult,
+            paritySessionResult.toString(),
+        ).value
+        val jessieCodeSession =
+            assertIs<JsxGraphParitySession.JessieCode>(paritySession)
+        val initial = jessieCodeSession.scene
+        val initialTexts = initial.elements
+            .filterIsInstance<JsxGraphSceneElement.Text>()
+            .associateBy(JsxGraphSceneElement.Text::id)
+
+        assertTrue("measurement" in parityCase.features)
+        assertEquals(10, initial.elements.size)
+        assertEquals("r = 2.50 cm", initialTexts.getValue(
+            "radiusValue",
+        ).content)
+        assertEquals(
+            "A = 19.63 cm<sup>2</sup>",
+            initialTexts.getValue("areaValue").content,
+        )
+        assertEquals("x = -0.5", initialTexts.getValue(
+            "coordsValue",
+        ).content)
+        assertEquals(
+            "dir = (3.0, -2.0)",
+            initialTexts.getValue("directionValue").content,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            jessieCodeSession.session.movePoint(
+                id = "radiusPoint",
+                coordinates = JsxGraphPoint2D(0.0, 2.5),
+            ),
+        ).value
+        val movedTexts = moved.elements
+            .filterIsInstance<JsxGraphSceneElement.Text>()
+            .associateBy(JsxGraphSceneElement.Text::id)
+
+        assertNotEquals(
+            circle(initial, "ring").radius,
+            circle(moved, "ring").radius,
+        )
+        assertEquals("r = 3.16 cm", movedTexts.getValue(
+            "radiusValue",
+        ).content)
+        assertEquals(
+            "A = 31.42 cm<sup>2</sup>",
+            movedTexts.getValue("areaValue").content,
+        )
+        assertEquals("x = 0.0", movedTexts.getValue(
+            "coordsValue",
+        ).content)
     }
 
     @Test

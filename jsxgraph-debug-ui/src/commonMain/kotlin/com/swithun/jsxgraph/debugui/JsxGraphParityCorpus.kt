@@ -226,6 +226,22 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "measurements",
+            title = "Measurements",
+            scenario = "Radius, area, coordinates, and direction measurements update from shared draggable geometry.",
+            source = MEASUREMENTS_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "measurement",
+                "prefix-expression",
+                "dynamic-attribute",
+                "coordinate-formatter",
+                "superscript",
+                "dependency-update",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "curve_glider",
             title = "Curve gliders",
             scenario = "FunctionGraph and data Plot gliders project onto the same-source curves.",
@@ -1718,6 +1734,21 @@ private const val TAPEMEASURES_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nwidth = tapemeasure([-4.5, 2.2], [4.5, 2.2]) << id: \"width\", name: \"width\", strokeColor: \"#0072B2\", strokeWidth: 3, fixed: false, highlight: false, point1: << id: \"widthStart\", size: 7, strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 2 >>, point2: << id: \"widthEnd\", size: 7, strokeColor: \"#0072B2\", fillColor: \"#FCFDFE\", strokeWidth: 2 >>, ticks: << id: \"widthTicks\", strokeColor: \"#49545D\" >>, label: << digits: 2, fontSize: 16, strokeColor: \"#0072B2\" >> >>;\ndiagonal = tapemeasure([-3.5, -3.2], [2.5, 0.2]) << id: \"diagonal\", name: \"d\", withTicks: false, strokeColor: \"#B44335\", strokeWidth: 4, fixed: false, highlight: false, point1: << id: \"diagonalStart\", size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2 >>, point2: << id: \"diagonalEnd\", size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2 >>, label: << digits: 3, fontSize: 15, strokeColor: \"#B44335\" >> >>;"
+}
+"""
+
+private const val MEASUREMENTS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-7, 5, 7, -5],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ncenter = point(-3, 1.5) << id: \"center\", name: \"\", withLabel: false, size: 7, strokeColor: \"#49545D\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\nradiusPoint = point(-0.5, 1.5) << id: \"radiusPoint\", name: \"\", withLabel: false, size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false >>;\nring = circle(center, radiusPoint) << id: \"ring\", name: \"\", withLabel: false, strokeColor: \"#0072B2\", strokeWidth: 4, fillColor: \"#56B4E9\", fillOpacity: 0.12, fixed: true, highlight: false >>;\ndirectionStart = point(1.5, 3) << id: \"directionStart\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\ndirectionEnd = point(4.5, 1) << id: \"directionEnd\", name: \"\", withLabel: false, size: 5, strokeColor: \"#16877A\", fillColor: \"#FCFDFE\", strokeWidth: 2, fixed: true, highlight: false >>;\ndirectionLine = segment(directionStart, directionEnd) << id: \"directionLine\", name: \"\", withLabel: false, strokeColor: \"#16877A\", strokeWidth: 3, fixed: true, highlight: false >>;\nradiusValue = measurement(-6.4, -2.4, [\"Radius\", ring]) << id: \"radiusValue\", name: \"\", prefix: function() { return \"r = \"; }, baseUnit: function() { return \" cm\"; }, digits: function() { return 2; }, fontSize: 17, strokeColor: \"#0072B2\", fixed: true, highlight: false >>;\nareaValue = measurement(-6.4, -3.4, [\"Area\", ring]) << id: \"areaValue\", name: \"\", prefix: \"A = \", baseUnit: \" cm\", digits: 2, fontSize: 17, strokeColor: \"#B44335\", fixed: true, highlight: false >>;\ncoordsValue = measurement(0.5, -2.4, [\"Coords\", radiusPoint]) << id: \"coordsValue\", name: \"\", dim: function() { return \"coords\"; }, prefix: \"x = \", digits: 1, formatCoords: function(self, x, y, z) { return x; }, fontSize: 17, strokeColor: \"#7B4EA3\", fixed: true, highlight: false >>;\ndirectionValue = measurement(0.5, -3.4, [\"Direction\", directionLine]) << id: \"directionValue\", name: \"\", dim: \"direction\", prefix: \"dir = \", digits: 1, fontSize: 17, strokeColor: \"#16877A\", fixed: true, highlight: false >>;"
 }
 """
 

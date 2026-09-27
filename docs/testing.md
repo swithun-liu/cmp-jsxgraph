@@ -347,6 +347,14 @@ rejected parent forms:
 node tools/upstream-fixtures/tapemeasure.mjs
 ```
 
+Capture the official Measurement/PrefixParser arithmetic, dimensions, units,
+coordinates, directions, dynamic attributes and formatters, updates, and
+failure leakage:
+
+```bash
+node tools/upstream-fixtures/measurement.mjs
+```
+
 Capture the official SlopeTriangle parent forms, helper and border order,
 method map, dynamic slope/label updates, removal ownership, and failures:
 
@@ -1095,6 +1103,37 @@ INPUT_DIR=captures/local/tapemeasures/interaction-desktop \
   npm --prefix tools/visual-parity run audit
 ```
 
+Capture the focused Measurement case and replay its radius-Point drag:
+
+```bash
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/measurements/static-desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=measurements \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/measurements/static-desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.93 \
+  PARITY_CASE_IDS=measurements \
+  npm --prefix tools/visual-parity run audit
+
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/measurements/interaction-desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=measurements \
+  INTERACTION_TRACE=measurement_radius_point_drag \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/measurements/interaction-desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.93 \
+  PARITY_CASE_IDS=measurements \
+  npm --prefix tools/visual-parity run audit
+```
+
 Capture the focused Integral case and replay its dynamic-bound driver drag:
 
 ```bash
@@ -1341,6 +1380,7 @@ Line Tangent/Polar and Curve Tangent/Polar Point drags,
 the two Inequality drags, the VectorField mesh/scale/arrow driver drag, and
 the SlopeField normalization/mesh/scale/arrow driver drag, plus the Ellipse
 and Hyperbola point-parent drags and the Parabola focus drag,
+the Measurement radius-Point drag,
 and uploads the PNG pairs, contact sheets, TSV summaries, and JSON reports as
 workflow artifacts. Its independent production-corpus pass uses the Stable
 floor of `0.93` at both viewports.
@@ -1389,8 +1429,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 102 cases:
-30 generated production scenarios followed by 72 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 103 cases:
+30 generated production scenarios followed by 73 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1403,7 +1443,7 @@ separate demo schema into handwritten native geometry. The focused
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
 `ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`, `glider_slider`,
-`curve_glider`, `tapemeasures`, `integrals`, `slope_triangle`,
+`curve_glider`, `tapemeasures`, `measurements`, `integrals`, `slope_triangle`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1486,6 +1526,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `glider_slider` | 0.987490 | 0.980515 |
 | `curve_glider` | 0.986233 | 0.977524 |
 | `tapemeasures` | 0.984781 | 0.969197 |
+| `measurements` | 0.982740 | 0.970961 |
 | `integrals` | 0.984526 | 0.974454 |
 | `slope_triangle` | 0.982474 | 0.966707 |
 | `step_functions` | 0.987344 | 0.975382 |
@@ -2044,6 +2085,23 @@ dependency updates, removal behavior, resource limits, structured failures,
 and atomic rollback. Automatic/none digits, locale and `formatValue`,
 function-valued visual attributes, hit testing, complete APIs, and Stable
 qualification remain pending.
+The focused `measurements` capture uses one JessieCode source for Circle
+Radius and Area, Point coordinates, and Segment direction. Static captures
+scored `0.982740` on Desktop and `0.970961` on Compact. After dragging the
+Circle radius Point from `(-0.5,1.5)` toward `(0,2.5)`, both renderers updated
+the Circle, Radius, Area, and coordinate output with scores of `0.982735` and
+`0.969542`, respectively. Browser pointer quantization left reviewed moved
+values of `31.42` versus `31.40` on Desktop and `31.42` versus `31.50` on
+Compact, with Compact Radius `3.16` versus `3.17`; the geometry and update
+direction remain aligned. All four contact sheets passed nonblank/browser
+checks and manual review for geometry, dynamic text, superscript placement,
+clipping, and overlap. The official fixture and common tests additionally
+cover arithmetic, bounded Math/JXG.Math `exec`, dimensions, units,
+fixed/`auto`/`none` digits, dynamic prefix/suffix/dimension/unit attributes,
+custom coordinate/direction formatters, constrained coordinates,
+`parse:false`, method aliases, dependency updates, resource limits,
+structured failures, and atomic rollback. Locale formatting, the complete
+`exec` surface, complete Text APIs, and Stable qualification remain pending.
 The focused `integrals` capture uses one JessieCode source for a FunctionGraph
 and an Integral whose left bound follows a draggable Point. Static captures
 scored `0.984526` on Desktop and `0.974454` on Compact. After moving the
@@ -2071,10 +2129,11 @@ and atomic rollback. Automatic/none digits, locale and `formatValue`,
 function-valued visual attributes, hit testing, and complete APIs remain
 pending. This is a focused preview outside the 30-case Stable corpus.
 Together with the two-dimensional
-Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Integral/SlopeTriangle,
+Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
+Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 102 cases while the independently
+the development corpus now contains 103 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

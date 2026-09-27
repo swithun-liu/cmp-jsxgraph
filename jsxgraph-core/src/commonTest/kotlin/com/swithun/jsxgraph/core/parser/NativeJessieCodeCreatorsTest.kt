@@ -29,6 +29,7 @@ import com.swithun.jsxgraph.core.base.IntersectionError
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.LineError
+import com.swithun.jsxgraph.core.base.MeasurementError
 import com.swithun.jsxgraph.core.base.MidpointError
 import com.swithun.jsxgraph.core.base.MidpointPoint
 import com.swithun.jsxgraph.core.base.NormalError
@@ -7041,6 +7042,256 @@ class NativeJessieCodeCreatorsTest {
             JessieCodeCreatorError.TapemeasureFactory,
             >(failure.error)
         assertIs<TapemeasureError.LineFactory>(factory.error)
+        assertEquals(before, board.objects.keys.toList())
+    }
+
+    @Test
+    fun measurementCreatorMatchesOfficialHelpersAndMethodMap() {
+        assertTrue("measurement" in NativeJessieCodeCreators.names)
+        val board = board("measurement")
+        val measurement = assertIs<Text>(
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                evaluate(
+                    source =
+                        """
+                        center = point(1, 1) <<
+                            id: "center", name: ""
+                        >>;
+                        radiusPoint = point(1, 4) <<
+                            id: "radiusPoint", name: ""
+                        >>;
+                        circle = circle(center, radiusPoint) <<
+                            id: "circle", name: ""
+                        >>;
+                        m = measurement(-3, -2, ["Radius", circle]) <<
+                            id: "radius", name: "",
+                            prefix: "r=", baseUnit: "cm", digits: 3
+                        >>;
+                        m;
+                        """.trimIndent(),
+                    board = board,
+                ),
+            ).element,
+        )
+        board.fullUpdate()
+
+        assertEquals(Const.OBJECT_TYPE_MEASUREMENT, measurement.type)
+        assertEquals("measurement", measurement.elType)
+        assertEquals("r=3.000cm", measurement.plaintext)
+        assertEquals(
+            3.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate("radius.Value();", board),
+            ).value,
+        )
+        assertEquals(
+            3.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate("radius.V();", board),
+            ).value,
+        )
+        assertEquals(
+            1.0,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate("radius.Dimension();", board),
+            ).value,
+        )
+        assertEquals(
+            "cm",
+            assertIs<JessieCodeRuntimeValue.StringValue>(
+                evaluate("radius.Unit();", board),
+            ).value,
+        )
+        assertEquals(
+            "cm^{2}",
+            assertIs<JessieCodeRuntimeValue.StringValue>(
+                evaluate("radius.Unit(2);", board),
+            ).value,
+        )
+        assertEquals(
+            "Radius",
+            assertIs<JessieCodeRuntimeValue.StringValue>(
+                evaluate("radius.Method();", board),
+            ).value,
+        )
+        assertEquals(
+            "Radius",
+            assertIs<JessieCodeRuntimeValue.StringValue>(
+                evaluate("radius.getMethod();", board),
+            ).value,
+        )
+        val term = assertIs<JessieCodeRuntimeValue.ArrayValue>(
+            evaluate("radius.Term();", board),
+        ).values
+        assertEquals("Radius", assertIs<JessieCodeRuntimeValue.StringValue>(
+            term[0],
+        ).value)
+        assertSame(
+            board.select("circle"),
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                term[1],
+            ).element,
+        )
+        val prefix = assertIs<JessieCodeRuntimeValue.ArrayValue>(
+            evaluate("radius.toPrefix();", board),
+        ).values
+        assertEquals(
+            listOf("Radius", "circle"),
+            prefix.map {
+                assertIs<JessieCodeRuntimeValue.StringValue>(it).value
+            },
+        )
+        for (method in listOf("Parents", "getParents")) {
+            val parents = assertIs<JessieCodeRuntimeValue.ArrayValue>(
+                evaluate("radius.$method();", board),
+            ).values
+            assertEquals(1, parents.size)
+            assertSame(
+                board.select("circle"),
+                assertIs<JessieCodeRuntimeValue.ElementReference>(
+                    parents.single(),
+                ).element,
+            )
+        }
+    }
+
+    @Test
+    fun measurementCreatorEvaluatesDynamicAttributesAndFormatters() {
+        val board = board("dynamic-measurement")
+        val measurement = assertIs<Text>(
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                evaluate(
+                    source =
+                        """
+                        driver = point(1, 3) <<
+                            id: "driver", name: ""
+                        >>;
+                        m = measurement(
+                            function() { return driver.X(); },
+                            function() { return -5; },
+                            ["Coords", driver]
+                        ) <<
+                            id: "coords", name: "",
+                            dim: function() { return "coords"; },
+                            digits: function() { return 1; },
+                            showPrefix: function() { return true; },
+                            prefix: function() { return "P="; },
+                            showSuffix: function() { return true; },
+                            suffix: function() { return "!"; },
+                            formatCoords: function(self, x, y, z) {
+                                return x;
+                            }
+                        >>;
+                        m;
+                        """.trimIndent(),
+                    board = board,
+                ),
+            ).element,
+        )
+        board.fullUpdate()
+
+        assertEquals("P=1.0!", measurement.plaintext)
+        assertEquals(1.0, measurement.X(), absoluteTolerance = 1.0e-12)
+        assertEquals(-5.0, measurement.Y(), absoluteTolerance = 1.0e-12)
+        assertSame(measurement, board.select("driver")?.childElements?.get(
+            measurement.id,
+        ))
+
+        point(evaluate("driver;", board)).setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(4.0, 6.0),
+        )
+        board.fullUpdate()
+
+        assertEquals("P=4.0!", measurement.plaintext)
+        assertEquals(4.0, measurement.X(), absoluteTolerance = 1.0e-12)
+
+        val rawArea = assertIs<Text>(
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                evaluate(
+                    source =
+                        """
+                        c = circle(driver, [7, 6]) <<
+                            id: "areaCircle", name: ""
+                        >>;
+                        measurement(-3, -4, ["Area", c]) <<
+                            id: "rawArea", name: "",
+                            prefix: "A=", baseUnit: " cm",
+                            digits: "none", parse: false
+                        >>;
+                        """.trimIndent(),
+                    board = board,
+                ),
+            ).element,
+        )
+        board.fullUpdate()
+        assertEquals(
+            "A=${9.0 * kotlin.math.PI} cm^{2}",
+            rawArea.plaintext,
+        )
+    }
+
+    @Test
+    fun measurementCreatorFailuresAreStructuredAndAtomic() {
+        for (source in listOf(
+            "measurement();",
+            "measurement([0, 0], 1, [\"+\", 1, 2]);",
+            "measurement(0, 0, true);",
+            "measurement(\"(\", 0, [\"+\", 1, 2]);",
+            """
+            measurement(0, 0, ["+", 1, 2]) <<
+                id: "invalidDigits", digits: function() {
+                    return << invalid: true >>;
+                }
+            >>;
+            """.trimIndent(),
+            """
+            p = point(1, 2) << id: "p", name: "" >>;
+            measurement(0, 0, ["Coords", p]) <<
+                id: "invalidFormatter", dim: "coords",
+                formatCoords: function(self, x, y, z) {
+                    return p.Unknown();
+                }
+            >>;
+            """.trimIndent(),
+        )) {
+            val board = board("invalid-measurement")
+            val before = board.objects.keys.toList()
+            val failure = creatorError(source, board)
+
+            assertEquals("measurement", failure.creatorName)
+            assertTrue(
+                failure.error is
+                    JessieCodeCreatorError.UnsupportedParents ||
+                    failure.error is
+                    JessieCodeCreatorError.MeasurementFactory,
+            )
+            if (source.contains("p = point")) {
+                assertEquals(listOf("p"), board.objects.keys.toList())
+            } else {
+                assertEquals(before, board.objects.keys.toList())
+            }
+        }
+
+        val board = board("duplicate-measurement")
+        evaluate(
+            source = "point(0, 0) << id: \"taken\", name: \"\" >>;",
+            board = board,
+        )
+        val before = board.objects.keys.toList()
+        val failure = creatorError(
+            source =
+                """
+                measurement(0, 0, ["+", 1, 2]) <<
+                    id: "taken", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+        val factory = assertIs<
+            JessieCodeCreatorError.MeasurementFactory,
+            >(failure.error)
+        assertIs<MeasurementError.TextFactory>(factory.error)
         assertEquals(before, board.objects.keys.toList())
     }
 

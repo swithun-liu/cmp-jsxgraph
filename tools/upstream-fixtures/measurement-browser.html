@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script src="/jsxgraph-debug-ui/src/androidMain/assets/jsxgraphcore-1.13.3.js"></script>
+</head>
+<body>
+<div id="board" style="width: 640px; height: 480px"></div>
+<script>
+const board = JXG.JSXGraph.initBoard("board", {
+    boundingbox: [-8, 8, 8, -8],
+    axis: false,
+    showCopyright: false,
+    showNavigation: false
+});
+const p1 = board.create("point", [1, 1], {id: "p1", name: ""});
+const p2 = board.create("point", [1, 3], {id: "p2", name: ""});
+const circle = board.create("circle", [p1, p2], {
+    id: "circle",
+    name: ""
+});
+const segment = board.create("segment", [[-2, -3], [-2, 3]], {
+    id: "segment",
+    name: ""
+});
+const slider = board.create(
+    "slider",
+    [[-4, 4], [-1.5, 4], [-10, 1, 10]],
+    {id: "slider", name: "a"}
+);
+const radius = board.create(
+    "measurement",
+    [-6, -2, ["Radius", circle]],
+    {
+        id: "radius",
+        name: "",
+        prefix: "r=",
+        baseUnit: "cm",
+        digits: 3
+    }
+);
+const length = board.create(
+    "measurement",
+    [-6, -4, ["L", segment]],
+    {
+        id: "length",
+        name: "",
+        prefix: "l=",
+        units: {1: " meter", dim2: " square meter"},
+        digits: "auto"
+    }
+);
+const total = board.create(
+    "measurement",
+    [1, -4, ["+", ["V", radius], ["V", length], ["V", slider]]],
+    {
+        id: "total",
+        name: "",
+        prefix: "sum=",
+        suffix: "!",
+        baseUnit: "cm",
+        dim: 1,
+        digits: 2
+    }
+);
+const area = board.create(
+    "measurement",
+    [1, -2, ["Area", circle]],
+    {
+        id: "area",
+        name: "",
+        prefix: "A=",
+        baseUnit: " cm",
+        digits: "none"
+    }
+);
+const sine = board.create(
+    "measurement",
+    [1, -6, ["exec", "sin", ["V", slider]]],
+    {id: "sine", name: "", prefix: "sin=", digits: "auto"}
+);
+const coords = board.create(
+    "measurement",
+    [-6, -6, ["Coords", p2]],
+    {id: "coords", name: "", prefix: "P=", dim: "coords", digits: 1}
+);
+const direction = board.create(
+    "measurement",
+    [1, 0, ["Direction", segment]],
+    {
+        id: "direction",
+        name: "",
+        prefix: "d=",
+        dim: "direction",
+        digits: 1
+    }
+);
+board.update();
+
+const snapshot = (measurement) => ({
+    id: measurement.id,
+    type: measurement.type,
+    elType: measurement.elType,
+    plaintext: measurement.plaintext,
+    value: measurement.Value(),
+    dimension: measurement.Dimension(),
+    unit: measurement.Unit(),
+    unitArray: measurement.Unit([0, 1, 2]),
+    method: measurement.getMethod(),
+    term: measurement.getTerm().map((value) => value?.id ?? value),
+    prefix: measurement.toPrefix(),
+    parents: measurement.getParents().map((value) => value?.id ?? value)
+});
+
+const initial = [
+    radius,
+    length,
+    total,
+    area,
+    sine,
+    coords,
+    direction
+].map(snapshot);
+p2.setPosition(JXG.COORDS_BY_USER, [1, 5]);
+slider.setValue(2);
+board.update();
+const moved = [
+    radius,
+    length,
+    total,
+    area,
+    sine,
+    coords,
+    direction
+].map(snapshot);
+const errors = {};
+for (const [name, term] of Object.entries({
+    malformed: ["+"],
+    forbidden: ["exec", "alert", 1],
+    unknownMethod: ["Missing", circle]
+})) {
+    try {
+        JXG.PrefixParser.parse(term, "execute");
+        errors[name] = "no error";
+    } catch (error) {
+        errors[name] = String(error.message);
+    }
+}
+window.measurementEvidence = {
+    version: JXG.version,
+    initial,
+    moved,
+    objectOrder: board.objectsList.map((element) => element.id),
+    errors
+};
+</script>
+</body>
+</html>

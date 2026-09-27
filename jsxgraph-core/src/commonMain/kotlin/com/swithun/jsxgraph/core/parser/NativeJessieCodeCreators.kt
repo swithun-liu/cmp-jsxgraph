@@ -155,6 +155,9 @@ import com.swithun.jsxgraph.core.base.Mesh3D
 import com.swithun.jsxgraph.core.base.Mesh3DError
 import com.swithun.jsxgraph.core.base.Mesh3DPointSource
 import com.swithun.jsxgraph.core.base.Mesh3DVectorSource
+import com.swithun.jsxgraph.core.base.Measurement
+import com.swithun.jsxgraph.core.base.MeasurementAttributes
+import com.swithun.jsxgraph.core.base.MeasurementError
 import com.swithun.jsxgraph.core.base.Normal
 import com.swithun.jsxgraph.core.base.NormalError
 import com.swithun.jsxgraph.core.base.OrthogonalConstructionError
@@ -291,6 +294,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class TapemeasureFactory(
         val error: TapemeasureError,
+    ) : JessieCodeCreatorError
+
+    data class MeasurementFactory(
+        val error: MeasurementError,
     ) : JessieCodeCreatorError
 
     data class SlopeTriangleFactory(
@@ -572,6 +579,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createTapemeasure(board, parents, attributes, location)
+        },
+        "measurement" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createMeasurement(board, parents, attributes, location)
         },
         "slopetriangle" to JessieCodeCreator {
                 board,
@@ -2419,6 +2434,155 @@ internal object NativeJessieCodeCreators {
             is GMResult.Err -> failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.TapemeasureFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/element/measure.js -> createMeasurement.
+    private fun createMeasurement(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "measurement"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val coordinateValues = parents.take(2)
+        if (
+            coordinateValues.any { value ->
+                value !is JessieCodeRuntimeValue.NumberValue &&
+                    value !is JessieCodeRuntimeValue.StringValue &&
+                    value !is JessieCodeRuntimeValue.FunctionValue
+            }
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val term = parents[2]
+        if (
+            term !is JessieCodeRuntimeValue.NumberValue &&
+            term !is JessieCodeRuntimeValue.StringValue &&
+            term !is JessieCodeRuntimeValue.ArrayValue
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val measurementAttributes = MeasurementAttributes(
+            id = identity.id,
+            name = identity.name,
+            needsRegularUpdate = identity.needsRegularUpdate,
+            values = attributes.properties.toMap(),
+        )
+        val numericCoordinates = coordinateValues.mapNotNull { value ->
+            (value as? JessieCodeRuntimeValue.NumberValue)?.value
+        }
+        val result = when {
+            numericCoordinates.size == coordinateValues.size ->
+                Measurement.create(
+                    board = resolvedBoard,
+                    coordinates = numericCoordinates.toDoubleArray(),
+                    term = term,
+                    attributes = measurementAttributes,
+                    location = location,
+                )
+            coordinateValues.none {
+                it is JessieCodeRuntimeValue.FunctionValue
+            } -> Measurement.create(
+                board = resolvedBoard,
+                coordinateExpressions = coordinateValues.map { value ->
+                    when (value) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            JsNumberFormat.compact(value.value)
+                        is JessieCodeRuntimeValue.StringValue -> value.value
+                        else -> ""
+                    }
+                },
+                term = term,
+                attributes = measurementAttributes,
+                location = location,
+            )
+            else -> {
+                val functions =
+                    mutableListOf<JessieCodeCoordinateFunction>()
+                for ((index, value) in coordinateValues.withIndex()) {
+                    when (value) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            functions += JessieCodeNumericCoordinateFunction(
+                                value.value,
+                            )
+                        is JessieCodeRuntimeValue.StringValue -> {
+                            when (
+                                val compiled =
+                                    JessieCodeExpressionFunction.compile(
+                                        source = value.value,
+                                        board = resolvedBoard,
+                                    )
+                            ) {
+                                is GMResult.Ok -> functions += compiled.value
+                                is GMResult.Err -> return failure(
+                                    creatorName = creatorName,
+                                    error = JessieCodeCreatorError
+                                        .MeasurementFactory(
+                                            MeasurementError.TextFactory(
+                                                TextError
+                                                    .CoordinateExpressionCompile(
+                                                        coordinateIndex =
+                                                            index,
+                                                        error =
+                                                            compiled.error,
+                                                    ),
+                                            ),
+                                        ),
+                                    location = location,
+                                )
+                            }
+                        }
+                        is JessieCodeRuntimeValue.FunctionValue ->
+                            functions += JessieCodeRuntimeCoordinateFunction(
+                                function = value,
+                                location = location,
+                                returnsCoordinateArray = false,
+                            )
+                        else -> return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        )
+                    }
+                }
+                Measurement.createConstrained(
+                    board = resolvedBoard,
+                    coordinateFunctions = functions,
+                    term = term,
+                    attributes = measurementAttributes,
+                    location = location,
+                )
+            }
+        }
+        return when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.MeasurementFactory(
                     result.error,
                 ),
                 location = location,

@@ -594,16 +594,35 @@ practical.
   helpers and outputs. Collapsed source Lines preserve upstream `NaN`
   propagation. This focused subset remains outside the `0.1.0` Stable corpus.
 - The translated Text subset accepts numeric or string coordinates, static
-  string/number content, and numeric JessieCode expressions inside upstream
-  `<value>...</value>` tags. It preserves the upstream short-math expansion,
-  dependency updates, `digits` formatting, `setText`, font size, stroke
-  color/opacity, and left/middle/right plus top/middle/bottom anchors. Only
-  `px` font units are accepted. Function-valued content, nonnumeric value-tag
-  results, rich-text subscript/superscript and GEONExT conversion,
-  MathJax/KaTeX/ASCIIMath, fractions, element anchors, nonzero rotation,
-  measured bounds, and hit testing return structured errors or remain
-  unavailable. Compose always draws text on Canvas; accepted `html` and
-  `internal` display modes are equivalent for this plain-text subset.
+  string/number content, numeric JessieCode expressions inside upstream
+  `<value>...</value>` tags, and the function-valued content and constrained
+  coordinates used by Measurement. It preserves the upstream short-math
+  expansion, dependency updates, `digits` formatting, `setText`, font size,
+  stroke color/opacity, and left/middle/right plus top/middle/bottom anchors.
+  Measurement text additionally translates `replaceSup`/`replaceSub` and
+  Compose renders the generated `<sup>`/`<sub>` spans with baseline shifts;
+  `parse:false` preserves the raw markers. Only `px` font units are accepted.
+  General function-valued Text content, nonnumeric value-tag results, GEONExT
+  conversion, MathJax/KaTeX/ASCIIMath, fractions, element anchors, nonzero
+  rotation, measured bounds, and hit testing return structured errors or
+  remain unavailable. Compose always draws text on Canvas; accepted `html`
+  and `internal` display modes are equivalent for this subset.
+- Measurement follows
+  `src/element/measure.js -> createMeasurement` and
+  `src/parser/prefix.js -> PrefixParser` for the translated element method
+  map, arithmetic, dimensions, units, nested Measurements, and bounded
+  Math/JXG.Math `exec` subset. Measurement-specific function-valued
+  coordinates, prefix/suffix visibility and content, dimension/unit settings,
+  digits/parse mode, and coordinate/direction formatters remain live in the
+  runtime and are excluded from JSON scene-style conversion. JSXGraph
+  `1.13.3` creates and registers its backing Text before validating the prefix
+  term or evaluating dynamic content, so malformed terms and formatter
+  failures can leave partial Measurement objects on the Board. Kotlin treats
+  those as structured creator failures and removes the temporary Text
+  atomically. Prefix depth/node limits are an additional host-safety boundary.
+  Locale formatting, the complete Math/JXG.Math `exec` surface, and the
+  remaining Text APIs are pending. This focused subset remains outside the
+  `0.1.0` Stable corpus.
 - The translated Image subset stores only its source string and user-space
   geometry in core. Compose resolves the source through a caller-supplied
   `JsxGraphImageResolver`; the default resolver accepts only bounded
@@ -691,7 +710,8 @@ practical.
   `perpendicularpoint`, `perpendicular`, `perpendicularsegment`,
   `parallelpoint`, `parallel`, `arrowparallel`, `bisectorlines`, `bisector`,
   `incenter`, `incircle`, `curve`, `functiongraph`, `plot`, `stepfunction`,
-  `derivative`, `spline`, `cardinalspline`, `riemannsum`, `boxplot`, `comb`,
+  `derivative`, `spline`, `cardinalspline`, `riemannsum`, `measurement`,
+  `boxplot`, `comb`,
   `inequality`, `vectorfield`, `slopefield`,
   `polygon`, `polygonalchain`, `parallelogram`, `regularpolygon`,
   `radicalaxis`, `polepoint`, `tangent`, `polar`, `tangentto`, `polarline`,
@@ -705,7 +725,9 @@ practical.
 - Native JessieCode creators currently apply `id`, `name`, and
   `needsRegularUpdate`; Curve creators additionally consume their translated
   plotting attributes, Polygon consumes `withLines`, Text consumes `parse`,
-  `formatNumber`, and `digits`, Arc/Sector consume `selection` and
+  `formatNumber`, and `digits`; Measurement additionally consumes its dynamic
+  `baseUnit`, `units`, prefix/suffix, dimension, digits/parse, and formatter
+  attributes. Arc/Sector consume `selection` and
   `orientation`, Arc additionally consumes `useDirection`, Angle also
   consumes `radius`. Arc and Sector compositions consume the translated
   common/shape attributes while forcing their upstream composition semantics.
@@ -787,12 +809,14 @@ practical.
   function adapters are deferred until a translated caller needs those parent
   forms.
 - The core element runtime exposes the translated `methodMap` subset for
-  coordinate elements, lines, circles, polygons, Text, and common element
-  names, plus the bounded writable subset described above. `Bounds` and
+  coordinate elements, lines, circles, polygons, Text, Measurement, and common
+  element names, plus the bounded writable subset described above. `Bounds` and
   `addChild` preserve the translated element return values. `move` and
   `moveTo` accept numeric two- or three-coordinate arrays when the duration is
   omitted or zero, Point `addConstraint` accepts arrays of number/string
-  terms, and Text `setText` atomically compiles supported replacement content.
+  terms, Text `setText` atomically compiles supported replacement content, and
+  Measurement exposes its value, dimension, unit, term, method, prefix, and
+  parent aliases.
   Nonzero movement durations return `ElementMethodUnavailable` until the
   animation scheduler exists; function-valued constraints, remaining mutating
   methods, visual-property fallback, generic `Value()`, and untranslated
