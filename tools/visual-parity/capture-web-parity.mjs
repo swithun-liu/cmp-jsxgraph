@@ -648,6 +648,17 @@ function readInteractionTrace() {
                 right: 6,
                 bottom: -5
             }
+        },
+        integral_bound_drag: {
+            caseId: "integrals",
+            from: {x: -3, y: -5},
+            to: {x: -1, y: -5},
+            boundingBox: {
+                left: -7,
+                top: 6,
+                right: 7,
+                bottom: -6
+            }
         }
     };
     const trace = traces[name];

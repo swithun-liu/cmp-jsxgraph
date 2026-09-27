@@ -171,6 +171,18 @@ qualification batches pass.
   data-Plot drag. Circle, Conic, Polygon, Ticks, Turtle, Point,
   transformed-slide, attractor, animation, baseline-click, locale, independent
   production cases, and Stable qualification remain pending.
+- Integral: `src/element/composition.js -> createIntegral` and the corresponding
+  `src/options.js` defaults now cover Curve/interval parent order, fixed and
+  string/function bounds, hidden constrained dynamic-bound Gliders, draggable
+  fixed-bound Gliders, x/y-axis base Points and closed fill paths, reverse
+  signed `Value()`, optional fixed-digit labels, helper identity/order,
+  `subs`/`inherits`, dependency updates, official root-removal behavior,
+  bounded JSON/JessieCode scene expansion, and atomic rollback. Core, creator,
+  document/session, official fixture, and focused Desktop/Compact static plus
+  driver-drag parity gates pass. Static scores are
+  `0.984526`/`0.974454`; moved scores are `0.984815`/`0.975287`. Adaptive
+  plotting, locale and `digits: auto`/`none`, complete attributes/APIs, an
+  independent production case, and Stable qualification remain pending.
 - SlopeTriangle: `src/element/slopetriangle.js -> createSlopeTriangle` now
   covers `[Tangent]`, `[Glider]`, and `[Line, Point]` parents for the translated
   Glider/Tangent subset, including ordinary Curve-backed Gliders through the

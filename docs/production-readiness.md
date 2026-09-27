@@ -134,6 +134,16 @@ failures. Their focused Desktop/Compact parity scores are `0.987490` and
 `0.980515`. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed-slide,
 attractor, animation, baseline-click, locale, complete mutation, and
 independent Stable qualification remain pending.
+Integral now has source-mapped Curve/interval construction, fixed and
+string/function bounds, hidden constrained dynamic-bound Gliders, draggable
+fixed-bound Gliders, x/y-axis base Points and closed fill geometry, reverse
+signed values, optional fixed-digit labels, helper identity/order,
+`subs`/`inherits`, dependency updates, official root-removal behavior,
+bounded JSON/JessieCode scene expansion, and structured atomic failures. Its
+focused static Desktop/Compact parity scores are `0.984526` and `0.974454`;
+after dragging the bound driver they are `0.984815` and `0.975287`. Adaptive
+plotting, locale and automatic/none digits, complete attributes/APIs, and
+independent Stable qualification remain pending.
 SlopeTriangle now has source-mapped Tangent, Glider, and Line/Point parent
 forms within that translated subset. It preserves private-Tangent ownership,
 helper and border order, finite Segment borders, default fill/arrows,

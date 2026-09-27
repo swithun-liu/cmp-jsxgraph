@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 100 source-controlled cases: 30 independent production scenarios and
-70 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 101 source-controlled cases: 30 independent production scenarios and
+71 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -37,6 +37,7 @@ Focused direct links remain available for cases such as
 [2D images](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=image_2d),
 [Glider and Slider](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=glider_slider),
 [Curve Gliders](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=curve_glider),
+[Integral](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=integrals),
 [SlopeTriangle](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=slope_triangle),
 [Step functions](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=step_functions),
 [function-coordinate Points](https://swithun-liu.github.io/cmp-jsxgraph/?caseId=function_coordinate_points),
@@ -529,6 +530,19 @@ staged failures roll back atomically. The Line/Slider focused fixture passes at
 transformed-slide, attractor, animation, baseline-click, locale, and complete
 mutation behavior remain unsupported. This bounded slice remains outside the
 30-case Stable corpus.
+
+Integral translates `src/element/composition.js -> createIntegral` for the
+translated Curve path. It preserves fixed and function-valued interval
+bounds, hidden non-draggable dynamic-bound Gliders, draggable fixed-bound
+Gliders, axis base Points, signed reverse intervals, x/y-axis closure,
+optional fixed-digit labels, `subs`/`inherits`, `Value()`, helper survival
+after root removal, bounded scene growth, and atomic staged rollback. Native
+JessieCode and construction documents both expose the creator and nested
+helper identities. The focused FunctionGraph fixture passes static
+Desktop/Compact parity at `0.984526`/`0.974454` and driver-drag parity at
+`0.984815`/`0.975287`. Adaptive source plotting, locale and
+`digits: auto`/`none`, complete attributes/APIs, an independent production
+case, and Stable qualification remain pending.
 
 SlopeTriangle translates
 `src/element/slopetriangle.js -> createSlopeTriangle` for a Tangent, a

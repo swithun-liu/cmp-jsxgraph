@@ -50,7 +50,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             is Arc -> number(element.Value())
             is Sector -> number(element.Value())
             is Curve ->
-                if (element.isRiemannSum) {
+                if (element.isRiemannSum || element.isIntegral) {
                     number(element.Value())
                 } else {
                     GMResult.Err(
@@ -137,6 +137,25 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                         },
                     ),
                 )
+                else -> null
+            }
+        }
+        curve.integralDefinition?.let { definition ->
+            return when (property) {
+                "curveLeft" -> elementReference(definition.curveLeft)
+                "baseLeft" -> elementReference(definition.baseLeft)
+                "curveRight" -> elementReference(definition.curveRight)
+                "baseRight" -> elementReference(definition.baseRight)
+                "label" -> definition.label?.let(::elementReference)
+                "subs" -> GMResult.Ok(
+                    JessieCodeRuntimeValue.ObjectValue(
+                        curve.subs.mapValues { (_, child) ->
+                            JessieCodeRuntimeValue.ElementReference(child)
+                        },
+                    ),
+                )
+                "V", "Value" ->
+                    numberFunction("Value", curve::Value)
                 else -> null
             }
         }

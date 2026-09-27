@@ -106,6 +106,17 @@ practical.
   before later producing invalid geometry. Kotlin validates first and rolls
   back any staged helper creation atomically. Baseline-click movement and
   locale label formatting are not translated.
+- `createIntegral` accepts a registered translated Curve plus a two-value
+  interval in either upstream parent order. Numeric bounds remain draggable;
+  JessieCode string/function bounds are constrained, hidden, and
+  non-draggable. The official helper order, x/y-axis closure, signed reverse
+  `Value()`, fixed-digit label placement, helper survival after root removal,
+  and `subs`/`inherits` graph are preserved. Kotlin preflights duplicate IDs,
+  scene/object limits, and interval shape, and atomically rolls back staged
+  helpers on a later factory failure; JSXGraph `1.13.3` can retain partial
+  helpers for malformed intervals. Locale formatting, automatic/none digits,
+  adaptive source plotting, and the remaining mutable Integral API are not
+  translated.
 - `createSlopeTriangle` accepts the upstream `[Tangent]`, `[Glider]`, and
   `[Line, Point]` forms within the translated Glider/Tangent subset, including
   Line/Segment-backed Gliders and ordinary Curve-backed Gliders through the

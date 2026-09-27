@@ -36,7 +36,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(100, cases.size)
+        assertEquals(101, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -48,7 +48,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            70,
+            71,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -96,6 +96,53 @@ class ParitySourceTest {
             plotProbe.coordinates.y,
             absoluteTolerance = 1.0e-12,
         )
+    }
+
+    @Test
+    fun integralFocusedCaseTracksDynamicBoundFillAndLabel() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("integrals"),
+        ).value
+        val paritySession = assertIs<GMResult.Ok<JsxGraphParitySession>>(
+            createParitySession(parityCase.source),
+        ).value
+        val jessieCodeSession =
+            assertIs<JsxGraphParitySession.JessieCode>(paritySession)
+        val initial = jessieCodeSession.scene
+
+        assertTrue("integral" in parityCase.features)
+        assertEquals(8, initial.elements.size)
+        val area = curve(initial, "area")
+        assertEquals(JsxGraphColor(86, 180, 233), area.style.fillColor)
+        assertEquals(0.45, area.style.fillOpacity)
+        assertEquals(JsxGraphPoint2D(-3.0, 0.0), area.points.first())
+        assertEquals(area.points.first(), area.points.last())
+        assertFalse(point(initial, "leftBound").style.visible)
+        assertFalse(point(initial, "leftBound").draggable)
+        assertTrue(point(initial, "rightBound").style.visible)
+        assertTrue(point(initial, "rightBound").draggable)
+        val initialLabel = assertIs<JsxGraphSceneElement.Text>(
+            initial.elements.single { element -> element.id == "areaLabel" },
+        )
+        assertEquals("\u222b = -10.010", initialLabel.content)
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            jessieCodeSession.session.movePoint(
+                id = "driver",
+                coordinates = JsxGraphPoint2D(-1.0, -5.0),
+            ),
+        ).value
+        val movedArea = curve(moved, "area")
+        assertNotEquals(area.points, movedArea.points)
+        assertEquals(JsxGraphPoint2D(-1.0, 0.0), movedArea.points.first())
+        assertEquals(
+            JsxGraphPoint2D(-1.0, -2.16),
+            point(moved, "leftBound").coordinates,
+        )
+        val movedLabel = assertIs<JsxGraphSceneElement.Text>(
+            moved.elements.single { element -> element.id == "areaLabel" },
+        )
+        assertEquals("\u222b = -7.290", movedLabel.content)
     }
 
     @Test

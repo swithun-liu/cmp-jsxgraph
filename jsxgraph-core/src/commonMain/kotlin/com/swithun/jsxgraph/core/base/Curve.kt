@@ -445,6 +445,20 @@ private data class CurveRiemannDefinition(
     var sum: Double = 0.0,
 )
 
+internal data class CurveIntegralDefinition(
+    val source: Curve,
+    val curveLeft: Glider,
+    val curveLeftDynamic: Boolean,
+    val baseLeft: Point,
+    val curveRight: Glider,
+    val curveRightDynamic: Boolean,
+    val baseRight: Point,
+    val axis: String,
+    val labelDigits: Int,
+    var label: Text? = null,
+    var labelUpdateError: TextError? = null,
+)
+
 internal data class CurveBoxPlotSnapshot(
     val quantiles: DoubleArray,
     val outliers: DoubleArray?,
@@ -535,6 +549,7 @@ internal class Curve private constructor(
     private val splineDefinition: CurveSplineDefinition? = null,
     private val cardinalSplineDefinition: CurveCardinalSplineDefinition? = null,
     private val riemannDefinition: CurveRiemannDefinition? = null,
+    internal val integralDefinition: CurveIntegralDefinition? = null,
     private val boxPlotDefinition: CurveBoxPlotDefinition? = null,
     private val combDefinition: CurveCombDefinition? = null,
     private val inequalityDefinition: CurveInequalityDefinition? = null,
@@ -576,6 +591,8 @@ internal class Curve private constructor(
         get() = cardinalSplineDefinition != null
     internal val isRiemannSum: Boolean
         get() = riemannDefinition != null
+    internal val isIntegral: Boolean
+        get() = integralDefinition != null
     internal val isBoxPlot: Boolean
         get() = boxPlotDefinition != null
     internal val isComb: Boolean
@@ -745,6 +762,11 @@ internal class Curve private constructor(
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
             }
+        }
+
+        val integral = integralDefinition
+        if (integral != null) {
+            updateIntegralDefinition(integral)
         }
 
         val spline = splineDefinition
@@ -1491,6 +1513,133 @@ internal class Curve private constructor(
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3:
+    // src/element/composition.js -> createIntegral.updateDataArray.
+    private fun updateIntegralDefinition(
+        definition: CurveIntegralDefinition,
+    ) {
+        val source = definition.source
+        val xCoordinates = mutableListOf<Double>()
+        val yCoordinates = mutableListOf<Double>()
+        if (definition.axis == "y") {
+            val lower: Glider
+            val upper: Glider
+            if (definition.curveLeft.Y() < definition.curveRight.Y()) {
+                lower = definition.curveLeft
+                upper = definition.curveRight
+            } else {
+                lower = definition.curveRight
+                upper = definition.curveLeft
+            }
+            val left = minOf(lower.X(), upper.X())
+            val right = maxOf(lower.X(), upper.X())
+            xCoordinates += 0.0
+            yCoordinates += lower.Y()
+            xCoordinates += lower.X()
+            yCoordinates += lower.Y()
+            for (point in source.points) {
+                val coordinates = point.usrCoords
+                if (
+                    lower.Y() <= coordinates[2] &&
+                    left <= coordinates[1] &&
+                    coordinates[2] <= upper.Y() &&
+                    coordinates[1] <= right
+                ) {
+                    xCoordinates += coordinates[1]
+                    yCoordinates += coordinates[2]
+                }
+            }
+            xCoordinates += upper.X()
+            yCoordinates += upper.Y()
+            xCoordinates += 0.0
+            yCoordinates += upper.Y()
+            xCoordinates += 0.0
+            yCoordinates += lower.Y()
+        } else {
+            val left = minOf(
+                definition.baseLeft.X(),
+                definition.baseRight.X(),
+            )
+            val right = maxOf(
+                definition.baseLeft.X(),
+                definition.baseRight.X(),
+            )
+            xCoordinates += left
+            yCoordinates += 0.0
+            xCoordinates += left
+            yCoordinates += source.Y(left)
+            for (point in source.points) {
+                val coordinates = point.usrCoords
+                if (left <= coordinates[1] && coordinates[1] <= right) {
+                    xCoordinates += coordinates[1]
+                    yCoordinates += coordinates[2]
+                }
+            }
+            xCoordinates += right
+            yCoordinates += source.Y(right)
+            xCoordinates += right
+            yCoordinates += 0.0
+            xCoordinates += left
+            yCoordinates += 0.0
+        }
+        dataX = xCoordinates.toDoubleArray()
+        dataY = yCoordinates.toDoubleArray()
+        updateIntegralLabel(definition)
+    }
+
+    private fun updateIntegralLabel(
+        definition: CurveIntegralDefinition,
+    ) {
+        val label = definition.label ?: return
+        val boundingBox = board.getBoundingBox()
+        val dx = (boundingBox[2] - boundingBox[0]) * 0.1
+        val dy = (boundingBox[1] - boundingBox[3]) * 0.1
+        val curveX = definition.curveRight.X()
+        val x = when {
+            curveX < boundingBox[0] -> boundingBox[0] + dx
+            curveX > boundingBox[2] -> boundingBox[2] - dx
+            else -> curveX
+        }
+        val curveY = definition.curveRight.Y()
+        val y = when {
+            curveY > boundingBox[1] -> boundingBox[1] - dy
+            curveY < boundingBox[3] -> boundingBox[3] + dy
+            else -> curveY
+        }
+        label.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(x, y),
+        )
+        when (
+            val result = label.setText(
+                "\u222b = " +
+                    com.swithun.jsxgraph.core.utils.JsNumberFormat.fixed(
+                        integralValue(definition),
+                        definition.labelDigits,
+                    ),
+            )
+        ) {
+            is GMResult.Ok -> definition.labelUpdateError = null
+            is GMResult.Err -> definition.labelUpdateError = result.error
+        }
+    }
+
+    private fun integralValue(
+        definition: CurveIntegralDefinition,
+    ): Double =
+        when (
+            val result = Numerics.I(
+                interval = doubleArrayOf(
+                    definition.baseLeft.X(),
+                    definition.baseRight.X(),
+                ),
+                function = definition.source::Y,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> Double.NaN
+        }
+
     // JSXGraph 1.13.3: src/base/curve.js -> createRiemannsum.updateDataArray.
     private fun updateRiemannDefinition(
         definition: CurveRiemannDefinition,
@@ -1859,7 +2008,10 @@ internal class Curve private constructor(
 
     internal fun maxX(): Double = evaluateMaximum().valueOrNaN()
 
-    internal fun Value(): Double = riemannDefinition?.sum ?: Double.NaN
+    internal fun Value(): Double =
+        integralDefinition?.let(::integralValue)
+            ?: riemannDefinition?.sum
+            ?: Double.NaN
 
     internal fun boxPlotSnapshot(): CurveBoxPlotSnapshot? =
         boxPlotDefinition?.snapshot
@@ -2453,6 +2605,7 @@ internal class Curve private constructor(
         private const val RIEMANN_DEFAULT_FALLBACK_TYPE =
             "__riemann_default__"
         private const val DATA_CURVE_TYPE = "plot"
+        private const val INTEGRAL_ELEMENT_TYPE = "integral"
         private const val PARAMETRIC_CURVE_TYPE = "parameter"
         private const val FUNCTION_GRAPH_CURVE_TYPE = "functiongraph"
         private const val COMB_POINTS_PER_TOOTH = 3
@@ -3116,6 +3269,43 @@ internal class Curve private constructor(
                     maximum,
                 ),
             )
+
+        // JSXGraph 1.13.3:
+        // src/element/composition.js -> createIntegral.
+        internal fun createIntegral(
+            board: Board,
+            definition: CurveIntegralDefinition,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> =
+            when (
+                val result = register(
+                    curve = Curve(
+                        board = board,
+                        curveType = DATA_CURVE_TYPE,
+                        xTerm = null,
+                        yTerm = null,
+                        minimumTerm = null,
+                        maximumTerm = null,
+                        dataX = null,
+                        dataY = null,
+                        sampleCount = 0,
+                        integralDefinition = definition,
+                        id = id,
+                        name = name,
+                        needsRegularUpdate = needsRegularUpdate,
+                    ),
+                    expressions = emptyList(),
+                )
+            ) {
+                is GMResult.Ok -> {
+                    result.value.elType = INTEGRAL_ELEMENT_TYPE
+                    result.value.isDraggable = false
+                    result
+                }
+                is GMResult.Err -> result
+            }
 
         // JSXGraph 1.13.3: src/base/curve.js -> createBoxPlot.
         internal fun createBoxPlot(

@@ -1056,6 +1056,37 @@ INPUT_DIR=captures/local/riemann-sums/interaction-desktop \
   npm --prefix tools/visual-parity run audit
 ```
 
+Capture the focused Integral case and replay its dynamic-bound driver drag:
+
+```bash
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/integrals/static-desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=integrals \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/integrals/static-desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.93 \
+  PARITY_CASE_IDS=integrals \
+  npm --prefix tools/visual-parity run audit
+
+BASE_URL=http://127.0.0.1:8093/ \
+  OUTPUT_DIR=captures/local/integrals/interaction-desktop \
+  VIEWPORT_WIDTH=1200 \
+  VIEWPORT_HEIGHT=900 \
+  MIN_CAPTURE_BYTES=5000 \
+  PARITY_CASE_IDS=integrals \
+  INTERACTION_TRACE=integral_bound_drag \
+  npm --prefix tools/visual-parity run capture
+INPUT_DIR=captures/local/integrals/interaction-desktop \
+  MIN_CAPTURE_BYTES=5000 \
+  MIN_BOARD_SSIM=0.93 \
+  PARITY_CASE_IDS=integrals \
+  npm --prefix tools/visual-parity run audit
+```
+
 Replay the focused BoxPlot driver drag:
 
 ```bash
@@ -1319,8 +1350,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 100 cases:
-30 generated production scenarios followed by 70 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 101 cases:
+30 generated production scenarios followed by 71 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1333,7 +1364,7 @@ separate demo schema into handwritten native geometry. The focused
 `derivative_curve`, `normal_constructions`, `spline_curves`, `riemann_sums`,
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
 `ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`, `glider_slider`,
-`curve_glider`, `slope_triangle`,
+`curve_glider`, `integrals`, `slope_triangle`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1394,7 +1425,7 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest same-source workbench evidence (2026-09-26):
+Latest same-source workbench evidence (2026-09-27):
 
 `Compact` is the scheduled `390 x 844` profile unless a case paragraph records
 a different reviewed viewport; the new BisectorLines evidence uses
@@ -1415,6 +1446,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `image_2d` | 0.985178 | 0.985329 |
 | `glider_slider` | 0.987490 | 0.980515 |
 | `curve_glider` | 0.986233 | 0.977524 |
+| `integrals` | 0.984526 | 0.974454 |
 | `slope_triangle` | 0.982474 | 0.966707 |
 | `step_functions` | 0.987344 | 0.975382 |
 | `polygons` | 0.986562 | 0.973171 |
@@ -1958,6 +1990,21 @@ Curves, the two-stage drag-versus-parent update state, `setGliderPosition`,
 dynamic evaluation failures, cleanup, cross-Board and Conic rejection,
 resource accounting, and atomic duplicate-ID rollback. This remains a focused
 preview outside the 30-case Stable corpus.
+The focused `integrals` capture uses one JessieCode source for a FunctionGraph
+and an Integral whose left bound follows a draggable Point. Static captures
+scored `0.984526` on Desktop and `0.974454` on Compact. After moving the
+driver from `(-3,-5)` toward `(-1,-5)`, both renderers updated the hidden bound,
+closed fill, visible fixed bound, and fixed-digit label, scoring `0.984815`
+and `0.975287`, respectively. Compact pointer quantization produced a small
+final numeric-label difference while preserving the same update direction and
+filled region. All four contact sheets passed nonblank/browser checks and
+manual review for fill closure, helper visibility, label placement, clipping,
+and overlap. The official fixture and common tests additionally cover both
+parent orders, fixed and function bounds, reverse signed values, y-axis
+closure, helper identity/order and removal behavior, method-map access,
+resource limits, structured failures, and atomic rollback. Adaptive plotting,
+locale and automatic/none digits, complete attributes/APIs, and Stable
+qualification remain pending.
 The focused `slope_triangle` capture uses one JessieCode source for the
 Tangent parent form. It scored `0.982474` on Desktop and `0.966707` on
 Compact. Both contact sheets passed nonblank/browser checks and manual review
@@ -1970,10 +2017,10 @@ and atomic rollback. Automatic/none digits, locale and `formatValue`,
 function-valued visual attributes, hit testing, and complete APIs remain
 pending. This is a focused preview outside the 30-case Stable corpus.
 Together with the two-dimensional
-Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/SlopeTriangle,
+Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 100 cases while the independently
+the development corpus now contains 101 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

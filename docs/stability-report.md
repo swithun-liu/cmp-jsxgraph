@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **70 development parity scenarios.** These remain focused regression
+3. **71 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -199,6 +199,21 @@ resource accounting, and atomic duplicate-ID rollback. Circle, Conic,
 Polygon, Ticks, Turtle, Point, transformed-slide, attractor, animation, and
 the remaining Glider APIs remain pending. This evidence remains outside the
 30-case Stable production corpus.
+The focused `integrals` fixture verifies a FunctionGraph Integral with a
+function-valued hidden left bound, a visible fixed right bound, closed fill,
+and a fixed-digit value label. Static captures scored `0.984526` on Desktop
+and `0.974454` on Compact. After dragging the bound driver, the dependent
+helper, fill, and label updated with scores of `0.984815` and `0.975287`,
+respectively. Compact pointer quantization caused a small final label-value
+difference, while both renderers preserved the same geometry and update
+direction. All four contact sheets passed nonblank/browser checks and manual
+review. The official fixture and common tests additionally cover parent-order
+selection, fixed/function bounds, reverse signed values, y-axis closure,
+helper identity/order and removal behavior, method-map access, resource
+limits, structured failures, and atomic rollback. Adaptive plotting, locale,
+automatic/none digits, complete attributes/APIs, and Stable qualification
+remain pending. This evidence remains outside the 30-case Stable production
+corpus.
 The focused `slope_triangle` fixture verifies a Segment Tangent parent,
 official default red fill, horizontal and vertical arrowheads, the arrowless
 parallel edge, and a fixed-digit prefix/suffix label with its 10 CSS-pixel
@@ -223,7 +238,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 70 focused cases, but this does not change the
+contains 30 production and 71 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary

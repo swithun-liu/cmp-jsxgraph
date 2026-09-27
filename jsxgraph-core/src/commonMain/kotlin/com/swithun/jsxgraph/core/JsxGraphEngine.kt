@@ -907,6 +907,29 @@ object JsxGraphEngine {
                                     }
                                     created += expanded
                                     creationCount += expanded.size
+                                } else if (creatorName == "integral") {
+                                    val integral = value.element as? Curve
+                                    val expanded = integral?.let {
+                                        integralCreatedSourceElements(
+                                            source = source.copy(
+                                                index = creationCount,
+                                            ),
+                                            integral = it,
+                                        )
+                                    }
+                                    if (expanded == null) {
+                                        return@JessieCodeCreator GMResult.Err(
+                                            JessieCodeRuntimeError.InvalidAst(
+                                                reason =
+                                                    "Native integral creator " +
+                                                        "returned an " +
+                                                        "incomplete Curve.",
+                                                location = location,
+                                            ),
+                                        )
+                                    }
+                                    created += expanded
+                                    creationCount += expanded.size
                                 } else {
                                     created += CreatedSourceElement(
                                         source = source,
@@ -2298,6 +2321,145 @@ object JsxGraphEngine {
         return result
     }
 
+    // JSXGraph 1.13.3: src/element/composition.js -> createIntegral;
+    // src/options.js -> integral.
+    private fun integralCreatedSourceElements(
+        source: ParsedObject,
+        integral: Curve,
+    ): List<CreatedSourceElement>? {
+        val definition = integral.integralDefinition ?: return null
+        val integralVisible = (
+            source.attributes["visible"] as? JsonPrimitive
+            )?.booleanOrNull ?: true
+
+        fun helperAttributes(
+            role: String,
+            defaults: Map<String, JsonElement>,
+            removed: Set<String> = emptySet(),
+            forceHidden: Boolean = false,
+        ): JsonObject {
+            val result = nestedAttributes(
+                attributes = source.attributes,
+                name = role,
+                defaults = defaults,
+            ).toMutableMap()
+            if (
+                (result["visible"] as? JsonPrimitive)
+                    ?.content == "inherit"
+            ) {
+                result["visible"] = JsonPrimitive(integralVisible)
+            }
+            removed.forEach(result::remove)
+            if (forceHidden) {
+                result["visible"] = JsonPrimitive(false)
+            }
+            return JsonObject(result)
+        }
+
+        val curvePointDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(integralVisible),
+            "fixed" to JsonPrimitive(false),
+            "withlabel" to JsonPrimitive(false),
+            "size" to JsonPrimitive(3),
+            "layer" to JsonPrimitive(9),
+            "strokecolor" to JsonPrimitive("#D55E00"),
+            "fillcolor" to JsonPrimitive("#D55E00"),
+            "fillopacity" to JsonPrimitive(0.8),
+        )
+        val basePointDefaults = mapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(false),
+            "fixed" to JsonPrimitive(false),
+            "withlabel" to JsonPrimitive(false),
+        )
+        val rootAttributes = linkedMapOf<String, JsonElement>(
+            "visible" to JsonPrimitive(integralVisible),
+            "fixed" to JsonPrimitive(true),
+            "withlabel" to JsonPrimitive(false),
+            "strokewidth" to JsonPrimitive(0),
+            "strokeopacity" to JsonPrimitive(0),
+            "fillcolor" to JsonPrimitive("#D55E00"),
+            "fillopacity" to JsonPrimitive(0.3),
+        )
+        rootAttributes.putAll(
+            source.attributes.filterKeys { name ->
+                name in COMMON_ATTRIBUTES || name in CURVE_ATTRIBUTES
+            },
+        )
+        rootAttributes["withlabel"] = JsonPrimitive(false)
+
+        val result = mutableListOf<CreatedSourceElement>()
+        fun add(
+            element: GeometryElement,
+            type: String,
+            attributes: JsonObject,
+        ) {
+            result += CreatedSourceElement(
+                source = ParsedObject(
+                    index = source.index + result.size,
+                    id = element.id,
+                    type = type,
+                    parents = JsonArray(emptyList()),
+                    attributes = attributes,
+                ),
+                element = element,
+            )
+        }
+
+        add(
+            definition.curveLeft,
+            "glider",
+            helperAttributes(
+                role = "curveleft",
+                defaults = curvePointDefaults,
+                forceHidden = definition.curveLeftDynamic,
+            ),
+        )
+        add(
+            definition.baseLeft,
+            "point",
+            helperAttributes("baseleft", basePointDefaults),
+        )
+        add(
+            definition.curveRight,
+            "glider",
+            helperAttributes(
+                role = "curveright",
+                defaults = curvePointDefaults,
+                forceHidden = definition.curveRightDynamic,
+            ),
+        )
+        add(
+            definition.baseRight,
+            "point",
+            helperAttributes("baseright", basePointDefaults),
+        )
+        add(
+            integral,
+            "integral",
+            JsonObject(rootAttributes),
+        )
+        definition.label?.let { label ->
+            add(
+                label,
+                "text",
+                helperAttributes(
+                    role = "label",
+                    defaults = mapOf(
+                        "visible" to JsonPrimitive(integralVisible),
+                        "withlabel" to JsonPrimitive(false),
+                        "strokecolor" to JsonPrimitive("#000000"),
+                        "fontsize" to JsonPrimitive(20),
+                        "digits" to JsonPrimitive(4),
+                        "anchorx" to JsonPrimitive("left"),
+                        "anchory" to JsonPrimitive("middle"),
+                    ),
+                    removed = setOf("offset"),
+                ),
+            )
+        }
+        return result
+    }
+
     // JSXGraph 1.13.3: src/base/line.js -> createAxis defaultTicks.
     private fun axisCreatedSourceElements(
         source: ParsedObject,
@@ -3360,6 +3522,23 @@ object JsxGraphEngine {
                     ),
                 )
                 created += expanded
+            } else if (sourceObject.type == "integral") {
+                val integral = element as? Curve
+                val expanded = integral?.let {
+                    integralCreatedSourceElements(
+                        source = sourceObject,
+                        integral = it,
+                    )
+                } ?: return GMResult.Err(
+                    JsxGraphDocumentError.ElementCreation(
+                        objectIndex = sourceObject.index,
+                        id = sourceObject.id,
+                        type = sourceObject.type,
+                        reason =
+                            "creator did not return a complete Integral Curve",
+                    ),
+                )
+                created += expanded
             } else if (sourceObject.type == "polyhedron3d") {
                 val polyhedron = element as? Polyhedron3D
                     ?: return GMResult.Err(
@@ -4408,6 +4587,7 @@ object JsxGraphEngine {
                         allowFill =
                             element.isBooleanComposition ||
                                 element.isRiemannSum ||
+                                element.isIntegral ||
                                 element.isBoxPlot ||
                                 element.isInequality ||
                                 element.isGrid,
@@ -8639,6 +8819,7 @@ object JsxGraphEngine {
             "axis", "grid" -> 2
             "slider" -> 7
             "slopetriangle" -> 9
+            "integral" -> 6
             in NON_SCENE_CREATORS -> 0
             else -> 1
         }
@@ -8670,6 +8851,17 @@ object JsxGraphEngine {
             return 5 +
                 if (withLabel) 1 else 0 +
                 if (withTicks) 1 else 0
+        }
+        if (creatorName == "integral") {
+            val withLabel = (
+                attributes.properties["withlabel"] as?
+                    JessieCodeRuntimeValue.BooleanValue
+                )?.value ?: true
+            val axis = (
+                attributes.properties["axis"] as?
+                    JessieCodeRuntimeValue.StringValue
+                )?.value ?: "x"
+            return 5 + if (withLabel && axis != "y") 1 else 0
         }
         if (creatorName == "slopetriangle") {
             val firstParent = when (val value = parents.firstOrNull()) {
@@ -8757,6 +8949,15 @@ object JsxGraphEngine {
             return 5 +
                 if (withLabel) 1 else 0 +
                 if (withTicks) 1 else 0
+        }
+        if (source.type == "integral") {
+            val withLabel = (
+                source.attributes["withlabel"] as? JsonPrimitive
+                )?.booleanOrNull ?: true
+            val axis = (
+                source.attributes["axis"] as? JsonPrimitive
+                )?.takeIf(JsonPrimitive::isString)?.content ?: "x"
+            return 5 + if (withLabel && axis != "y") 1 else 0
         }
         if (source.type == "slopetriangle") {
             val parentId = (

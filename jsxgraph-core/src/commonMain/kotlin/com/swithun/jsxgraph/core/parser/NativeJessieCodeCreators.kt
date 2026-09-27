@@ -126,6 +126,12 @@ import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.ImageError
 import com.swithun.jsxgraph.core.base.IncenterPoint
 import com.swithun.jsxgraph.core.base.IncircleCircle
+import com.swithun.jsxgraph.core.base.Integral
+import com.swithun.jsxgraph.core.base.IntegralAttributes
+import com.swithun.jsxgraph.core.base.IntegralBoundary
+import com.swithun.jsxgraph.core.base.IntegralElementAttributes
+import com.swithun.jsxgraph.core.base.IntegralError
+import com.swithun.jsxgraph.core.base.IntegralLabelAttributes
 import com.swithun.jsxgraph.core.base.IntersectionCircle3D
 import com.swithun.jsxgraph.core.base.IntersectionCircle3DError
 import com.swithun.jsxgraph.core.base.IntersectionLine3D
@@ -280,6 +286,10 @@ internal sealed interface JessieCodeCreatorError {
 
     data class SlopeTriangleFactory(
         val error: SlopeTriangleError,
+    ) : JessieCodeCreatorError
+
+    data class IntegralFactory(
+        val error: IntegralError,
     ) : JessieCodeCreatorError
 
     data class View3DFactory(
@@ -1410,6 +1420,19 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createRiemannSum(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+            )
+        },
+        "integral" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createIntegral(
                 board = board,
                 parents = parents,
                 attributes = attributes,
@@ -14066,6 +14089,344 @@ internal object NativeJessieCodeCreators {
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3:
+    // src/element/composition.js -> createIntegral.
+    private fun createIntegral(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "integral"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val firstInterval = parents[0] as?
+            JessieCodeRuntimeValue.ArrayValue
+        val secondInterval = parents[1] as?
+            JessieCodeRuntimeValue.ArrayValue
+        val interval: JessieCodeRuntimeValue.ArrayValue
+        val source: Curve
+        when {
+            firstInterval != null -> {
+                interval = firstInterval
+                source = resolveElement(resolvedBoard, parents[1]) as?
+                    Curve
+                    ?: return unsupported(creatorName, parents, location)
+            }
+            secondInterval != null -> {
+                interval = secondInterval
+                source = resolveElement(resolvedBoard, parents[0]) as?
+                    Curve
+                    ?: return unsupported(creatorName, parents, location)
+            }
+            else -> return unsupported(creatorName, parents, location)
+        }
+        if (interval.values.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val start = when (val result = integralBoundary(
+            board = resolvedBoard,
+            value = interval.values[0],
+            role = "curveLeft",
+            location = location,
+        )) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val end = when (val result = integralBoundary(
+            board = resolvedBoard,
+            value = interval.values[1],
+            role = "curveRight",
+            location = location,
+        )) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val axis = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "axis",
+                default = "x",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val withLabel = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "withlabel",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val curveLeft = when (
+            val result = integralElementAttributes(
+                creatorName,
+                attributes,
+                "curveleft",
+                defaultName = null,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val baseLeft = when (
+            val result = integralElementAttributes(
+                creatorName,
+                attributes,
+                "baseleft",
+                defaultName = "",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val curveRight = when (
+            val result = integralElementAttributes(
+                creatorName,
+                attributes,
+                "curveright",
+                defaultName = null,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val baseRight = when (
+            val result = integralElementAttributes(
+                creatorName,
+                attributes,
+                "baseright",
+                defaultName = "",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelSource = when (
+            val result = nestedObjectAttribute(
+                creatorName,
+                attributes,
+                "label",
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelIdentity = when (
+            val result = creatorAttributes(
+                creatorName,
+                labelSource,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelDigits = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = labelSource,
+                name = "digits",
+                default = 4,
+                minimum = 0,
+                maximum = 100,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val labelOffset = when (
+            val result = numberArrayAttribute(
+                creatorName = creatorName,
+                attributes = labelSource,
+                name = "offset",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok ->
+                if (result.value.isEmpty()) {
+                    doubleArrayOf(10.0, 10.0)
+                } else if (result.value.size == 2) {
+                    result.value
+                } else {
+                    return invalidAttribute(
+                        creatorName = creatorName,
+                        attribute = "label.offset",
+                        expected = "array of two finite numbers",
+                        actual = labelSource.properties["offset"]
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = location,
+                    )
+                }
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Integral.create(
+                board = resolvedBoard,
+                interval = start to end,
+                source = source,
+                attributes = IntegralAttributes(
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    axis = axis,
+                    withLabel = withLabel,
+                    curveLeft = curveLeft,
+                    baseLeft = baseLeft,
+                    curveRight = curveRight,
+                    baseRight = baseRight,
+                    label = IntegralLabelAttributes(
+                        id = labelIdentity.id,
+                        name = labelIdentity.name,
+                        needsRegularUpdate =
+                            labelIdentity.needsRegularUpdate,
+                        digits = labelDigits,
+                        offset = labelOffset,
+                    ),
+                ),
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.IntegralFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
+    private fun integralBoundary(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        role: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<IntegralBoundary, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(IntegralBoundary.Fixed(value.value))
+            is JessieCodeRuntimeValue.StringValue ->
+                when (
+                    val result = JessieCodeExpressionFunction.compile(
+                        source = value.value,
+                        board = board,
+                    )
+                ) {
+                    is GMResult.Ok -> GMResult.Ok(
+                        IntegralBoundary.Dynamic(result.value),
+                    )
+                    is GMResult.Err -> failure(
+                        creatorName = "integral",
+                        error = JessieCodeCreatorError.CurveFactory(
+                            CurveError.ExpressionCompile(
+                                term = "integral.$role",
+                                error = result.error,
+                            ),
+                        ),
+                        location = location,
+                    )
+                }
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(
+                    IntegralBoundary.Dynamic(
+                        JessieCodeRuntimeCoordinateFunction(
+                            function = value,
+                            location = location,
+                            returnsCoordinateArray = false,
+                        ),
+                    ),
+                )
+            else -> failure(
+                creatorName = "integral",
+                error = JessieCodeCreatorError.UnsupportedParents(
+                    listOf(typeName(value)),
+                ),
+                location = location,
+            )
+        }
+
+    private fun integralElementAttributes(
+        creatorName: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+        defaultName: String?,
+        location: JessieCodeAstLocation,
+    ): GMResult<IntegralElementAttributes, JessieCodeRuntimeError> {
+        val nested = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = name,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = nested,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fixed = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = nested,
+                name = "fixed",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            IntegralElementAttributes(
+                id = identity.id,
+                name = identity.name ?: defaultName,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                fixed = fixed,
             ),
         )
     }

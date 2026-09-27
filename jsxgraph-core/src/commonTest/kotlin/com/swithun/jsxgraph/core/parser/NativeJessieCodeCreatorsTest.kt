@@ -24,6 +24,7 @@ import com.swithun.jsxgraph.core.base.HyperbolaError
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.IncenterPoint
 import com.swithun.jsxgraph.core.base.IncircleCircle
+import com.swithun.jsxgraph.core.base.IntegralError
 import com.swithun.jsxgraph.core.base.IntersectionError
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
@@ -4309,6 +4310,182 @@ class NativeJessieCodeCreatorsTest {
             )
             assertTrue(invalidBoard.objects.isEmpty())
         }
+    }
+
+    @Test
+    fun integralCreatorMatchesOfficialParentsHelpersAndRuntimeProperties() {
+        val board = board("integral")
+        val integral = curve(
+            evaluate(
+                source =
+                    """
+                    A = point(-2, 0) << id: "A", name: "" >>;
+                    f = functiongraph(
+                        "x * x - 2",
+                        -5,
+                        5
+                    ) <<
+                        id: "source", name: "",
+                        doAdvancedPlot: false, numberPointsHigh: 256
+                    >>;
+                    I = integral(
+                        [
+                            function () { return A.X(); },
+                            3
+                        ],
+                        f
+                    ) <<
+                        id: "I", name: "", axis: "x", withLabel: true,
+                        curveLeft: << id: "curveLeft", name: "" >>,
+                        baseLeft: << id: "baseLeft", name: "" >>,
+                        curveRight: << id: "curveRight", name: "" >>,
+                        baseRight: << id: "baseRight", name: "" >>,
+                        label: <<
+                            id: "integralLabel", name: "",
+                            digits: 4, offset: [12, -8]
+                        >>
+                    >>;
+                    I;
+                    """.trimIndent(),
+                board = board,
+            ),
+        )
+        val definition =
+            integral.integralDefinition ?: error("missing definition")
+
+        assertTrue("integral" in NativeJessieCodeCreators.names)
+        assertTrue(integral.isIntegral)
+        assertEquals("integral", integral.elType)
+        assertEquals(1.6666666666666683, integral.Value(), 1.0e-6)
+        assertEquals(listOf("source"), integral.parents)
+        assertEquals(
+            listOf(
+                "A",
+                "source",
+                "curveLeft",
+                "baseLeft",
+                "curveRight",
+                "baseRight",
+                "I",
+                "integralLabel",
+            ),
+            board.objectsList.map(GeometryElement::id),
+        )
+        assertFalse(definition.curveLeft.isDraggable)
+        assertTrue(definition.curveRight.isDraggable)
+        assertEquals(
+            "\u222b = 1.6667",
+            definition.label?.plaintext,
+        )
+
+        val curveLeft = point(
+            evaluate("I.curveLeft;", board),
+        )
+        assertSame(definition.curveLeft, curveLeft)
+        assertSame(
+            definition.baseLeft,
+            point(evaluate("I.subs.baseLeft;", board)),
+        )
+        assertEquals(
+            1.6666666666666683,
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate("I.Value();", board),
+            ).value,
+            1.0e-6,
+        )
+
+        val driver = assertIs<Point>(board.select("A"))
+        driver.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-1.0, 0.0),
+        )
+        board.fullUpdate()
+        assertEquals(-1.0, definition.curveLeft.X(), 1.0e-6)
+        assertEquals(4.0 / 3.0, integral.Value(), 1.0e-6)
+
+        val reverseBoard = board("integral-reverse")
+        val reverse = curve(
+            evaluate(
+                source =
+                    """
+                    f = functiongraph(
+                        "x + 1",
+                        -5,
+                        5
+                    ) <<
+                        id: "source", name: "",
+                        doAdvancedPlot: false, numberPointsHigh: 64
+                    >>;
+                    integral(f, [3, -2]) <<
+                        id: "reverse", name: "", withLabel: false
+                    >>;
+                    """.trimIndent(),
+                board = reverseBoard,
+            ),
+        )
+        assertEquals(-7.5, reverse.Value(), 1.0e-6)
+    }
+
+    @Test
+    fun integralCreatorFailuresAreStructuredAndAtomic() {
+        for (source in listOf(
+            "integral();",
+            "integral([-1], f);",
+            "integral([true, 1], f);",
+            "integral([0, 1], 5);",
+        )) {
+            val board = board("invalid-integral")
+            evaluate(
+                source =
+                    """
+                    f = functiongraph(
+                        "x * x",
+                        -4,
+                        4
+                    ) <<
+                        id: "f", name: "",
+                        doAdvancedPlot: false, numberPointsHigh: 32
+                    >>;
+                    """.trimIndent(),
+                board = board,
+            )
+            val before = board.objects.keys.toList()
+            val failure = creatorError(source, board)
+
+            assertEquals("integral", failure.creatorName)
+            assertIs<JessieCodeCreatorError.UnsupportedParents>(
+                failure.error,
+            )
+            assertEquals(before, board.objects.keys.toList())
+        }
+
+        val duplicateBoard = board("integral-duplicate")
+        val failure = creatorError(
+            source =
+                """
+                point(0, 0) << id: "taken", name: "" >>;
+                f = functiongraph(
+                    "x * x",
+                    -4,
+                    4
+                ) <<
+                    id: "f", name: "",
+                    doAdvancedPlot: false, numberPointsHigh: 32
+                >>;
+                integral([-1, 1], f) <<
+                    id: "candidate", name: "",
+                    baseRight: << id: "taken" >>
+                >>;
+                """.trimIndent(),
+            board = duplicateBoard,
+        )
+        assertEquals(
+            IntegralError.DuplicateElementId("taken"),
+            assertIs<JessieCodeCreatorError.IntegralFactory>(
+                failure.error,
+            ).error,
+        )
+        assertEquals(listOf("taken", "f"), duplicateBoard.objects.keys.toList())
     }
 
     @Test

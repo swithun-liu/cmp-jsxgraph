@@ -225,6 +225,23 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "integrals",
+            title = "Dynamic integral",
+            scenario = "A driver controls one hidden integration bound while the filled area and value label update.",
+            source = INTEGRALS_SOURCE,
+            features = setOf(
+                "jessiecode",
+                "point",
+                "functiongraph",
+                "integral",
+                "dynamic-bound",
+                "fill",
+                "label",
+                "dependency-update",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "slope_triangle",
             title = "Slope triangle",
             scenario = "A Segment tangent drives the default filled triangle, arrows, and slope label.",
@@ -1686,6 +1703,21 @@ private const val CURVE_GLIDER_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\ngraph = functiongraph(\"0.18 * x * x + 1.2\", -5, 5) << id: \"graph\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 96, strokeColor: \"#0072B2\", strokeWidth: 3, fixed: true, highlight: false >>;\ngraphProbe = glider(2.2, 4.2, graph) << id: \"graphProbe\", name: \"\", withLabel: false, size: 8, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 3, fixed: false, highlight: false >>;\nplot = curve([-5, -3, -1, 1, 3, 5], [-3.2, -1.0, -2.2, 1.8, 0.4, 2.6]) << id: \"plot\", name: \"\", withLabel: false, strokeColor: \"#009E73\", strokeWidth: 3, dash: 2, fixed: true, highlight: false >>;\nplotProbe = glider(-0.2, -0.2, plot) << id: \"plotProbe\", name: \"\", withLabel: false, size: 8, strokeColor: \"#7B4EA3\", fillColor: \"#FCFDFE\", strokeWidth: 3, fixed: false, highlight: false >>;"
+}
+"""
+
+private const val INTEGRALS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-7, 6, 7, -6],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ndriver = point(-3, -5) << id: \"driver\", name: \"\", withLabel: false, size: 7, strokeColor: \"#7B4EA3\", fillColor: \"#F4D44D\", strokeWidth: 2, fixed: false, highlight: false >>;\nsource = functiongraph(\"0.24 * x * x - 2.4\", -6, 6) << id: \"source\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 192, strokeColor: \"#0072B2\", strokeWidth: 3, fixed: true, highlight: false >>;\narea = integral([function () { return driver.X(); }, 3.5], source) << id: \"area\", name: \"\", fillColor: \"#56B4E9\", fillOpacity: 0.45, fixed: true, highlight: false, curveLeft: << id: \"leftBound\", name: \"\", withLabel: false, visible: true >>, baseLeft: << id: \"leftBase\", name: \"\", withLabel: false >>, curveRight: << id: \"rightBound\", name: \"\", withLabel: false, visible: true, size: 7, strokeColor: \"#B44335\", fillColor: \"#F4D44D\", strokeWidth: 2 >>, baseRight: << id: \"rightBase\", name: \"\", withLabel: false >>, label: << id: \"areaLabel\", name: \"\", digits: 3, offset: [10, -10], fontSize: 16, strokeColor: \"#B44335\" >> >>;"
 }
 """
 

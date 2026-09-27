@@ -18,6 +18,7 @@ import com.swithun.jsxgraph.core.math.GeometryError
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.ParametricCurve2D
 import com.swithun.jsxgraph.core.math.ProjectionResult
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.utils.JsMath
 import kotlin.math.abs
 
@@ -59,6 +60,7 @@ internal open class Glider internal constructor(
     needsRegularUpdate: Boolean,
     fixed: Boolean,
     internal val slideElement: GeometryElement,
+    coordinateConstraint: JessieCodeCoordinateFunction? = null,
     internal var snapWidth: Double = -1.0,
     internal var snapValues: DoubleArray = doubleArrayOf(),
     internal var snapValueDistance: Double = 0.0,
@@ -69,6 +71,7 @@ internal open class Glider internal constructor(
     name = name,
     needsRegularUpdate = needsRegularUpdate,
     fixed = fixed,
+    coordinateFunctions = listOfNotNull(coordinateConstraint),
 ) {
     internal var sliderMinimum: Double? = null
     internal var sliderMaximum: Double? = null
@@ -86,8 +89,9 @@ internal open class Glider internal constructor(
         if (!needsUpdate) {
             return this
         }
-        updateConstraint()
-        val result = if (fromParent) {
+        val result = if (coordinateFunctions.isNotEmpty()) {
+            updateGlider()
+        } else if (fromParent) {
             updateGliderFromParent()
         } else {
             updateGlider()
@@ -103,6 +107,7 @@ internal open class Glider internal constructor(
     // JSXGraph: src/base/coordselement.js -> updateGlider,
     // Line and untransformed non-Arc/Sector Curve branches.
     internal fun updateGlider(): GMResult<Glider, GliderError> {
+        updateConstraint()
         needsUpdateFromParent = false
         return when (val slide = slideElement) {
             is Line -> updateLineGlider(slide)
@@ -194,7 +199,6 @@ internal open class Glider internal constructor(
     private fun updateCurveGlider(
         curve: Curve,
     ): GMResult<Glider, GliderError> {
-        updateConstraint()
         return when (
             val result = projectToCurve(
                 curve = curve,
@@ -391,6 +395,7 @@ internal open class Glider internal constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            coordinateConstraint: JessieCodeCoordinateFunction? = null,
         ): GMResult<Glider, GliderError> {
             if (coordinates.size !in 2..3) {
                 return GMResult.Err(
@@ -435,6 +440,7 @@ internal open class Glider internal constructor(
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
                 slideElement = supportedSlideObject,
+                coordinateConstraint = coordinateConstraint,
             )
             return register(glider)
         }
@@ -462,8 +468,12 @@ internal open class Glider internal constructor(
                     glider.slideObject = glider.slideElement
                     glider.slideObjects += glider.slideElement
                     glider.addParents(listOf(glider.slideElement))
+                    glider.addParentsFromJCFunctions(
+                        glider.coordinateFunctions,
+                    )
                     glider.slideElement.addChild(glider)
-                    glider.isDraggable = true
+                    glider.isDraggable =
+                        glider.coordinateFunctions.isEmpty()
                     GMResult.Ok(glider)
                 }
                 is GMResult.Err -> GMResult.Err(
