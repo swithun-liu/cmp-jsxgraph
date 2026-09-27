@@ -99,9 +99,14 @@ qualification batches pass.
   suspension, smoothness/cusp/jump/undefined/border decisions, canonical
   bbox-derived pixel projection, parameter metadata, and bounded point
   growth. Native Ellipse/Hyperbola/Parabola, Derivative, Spline, and
-  CardinalSpline wrappers inherit the same adaptive default. Plot v1/v3/v4,
-  the v3 Extrapolate consumer, and FunctionGraph RDP simplification remain
-  pending.
+  CardinalSpline wrappers inherit the same adaptive default. The experimental
+  `updateParametricCurve_v3` path is also translated as an explicit opt-in,
+  including its iterative stack, cusp/jump/border classification, one-sided
+  limits through `Extrapolate`, FunctionGraph-only 30% bounding-box crop,
+  callback suspension, parameter metadata, and bounded point growth. Its
+  official fixture, common/JVM tests, 106-case workbench, and focused
+  Desktop/Compact parity gates pass at `0.987021`/`0.976125`. Plot v2 remains
+  the default. Plot v1/v4 and FunctionGraph RDP simplification remain pending.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed
@@ -203,7 +208,7 @@ qualification batches pass.
   function-valued coordinates and Measurement-specific attributes; custom
   coordinate/direction formatters; script markup; translated method aliases;
   dependency updates; structured failures; and atomic rollback. Core,
-  creator, document/session, official fixture, common tests, 105-case
+  creator, document/session, official fixture, common tests, 106-case
   workbench, and focused Desktop/Compact static plus radius-Point-drag parity
   gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
   `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
@@ -217,7 +222,7 @@ qualification batches pass.
   thresholds, Angle rotation and final-viewport 12 CSS-pixel offset, CSS box
   kinds, method-map access, dependency updates, JessieCode HTML sanitization,
   structured failures, and atomic rollback. Core, creator, session, official
-  fixture, common tests, 105-case workbench, and focused Desktop/Compact
+  fixture, common tests, 106-case workbench, and focused Desktop/Compact
   static plus Angle-parent-drag parity gates pass. Static scores are
   `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale,
   MathJax/KaTeX, user-defined CSS, complete Text APIs, an independent

@@ -36,6 +36,23 @@ internal sealed interface PlotError<out E> {
         val attemptedCount: Int,
         val maximum: Int,
     ) : PlotError<Nothing>
+
+    data class Numerics(
+        val operation: String,
+        val error: NumericsError,
+    ) : PlotError<Nothing>
+
+    data class Extrapolation(
+        val coordinate: PlotCoordinate,
+        val parameter: Double,
+        val message: String,
+    ) : PlotError<Nothing>
+
+    data class InvalidSpecialInterval(
+        val type: String,
+        val start: Double,
+        val end: Double,
+    ) : PlotError<Nothing>
 }
 
 internal data class PlotResult(
@@ -73,6 +90,30 @@ internal object Plot {
             y = y,
             random = random,
         ).updateParametricCurveV2(minimum, maximum)
+
+    // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurve_v3.
+    internal fun <E> updateParametricCurveV3(
+        board: Board,
+        minimum: Double,
+        maximum: Double,
+        identityXTerm: Boolean,
+        recursionDepthHigh: Int,
+        maximumPointCount: Int,
+        x: PlotFunction<E>,
+        y: PlotFunction<E>,
+        random: () -> Double = { Random.nextDouble() },
+    ): GMResult<PlotResult, PlotError<E>> =
+        updateParametricCurveV3Impl(
+            board = board,
+            minimum = minimum,
+            maximum = maximum,
+            identityXTerm = identityXTerm,
+            recursionDepthHigh = recursionDepthHigh,
+            maximumPointCount = maximumPointCount,
+            x = x,
+            y = y,
+            random = random,
+        )
 }
 
 private class PlotV2State<E>(

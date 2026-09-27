@@ -211,12 +211,13 @@ practical.
   become explicit scene path breaks. Boolean-composition Curves accept fill
   styling because their Greiner-Hormann output is a closed path. Native
   Ellipse/Hyperbola/Parabola, Derivative, Spline, and CardinalSpline creators
-  inherit the same adaptive-v2 default and retain the explicit naive fallback.
-  Plot versions 1, 3, and 4, FunctionGraph RDP simplification, omitted domains,
-  function-valued and mixed-array terms, transformations, polar curves, cubic
-  Bezier paths, ordinary Curve fills, non-round caps, arrows, labels, and hit
-  testing return structured unsupported or creation errors until their
-  upstream slices are translated.
+  inherit the same adaptive-v2 default, support the explicit experimental
+  Plot v3 path, and retain the explicit naive fallback. Plot versions 1 and 4,
+  FunctionGraph RDP simplification, omitted domains, function-valued and
+  mixed-array terms, transformations, polar curves, cubic Bezier paths,
+  ordinary Curve fills, non-round caps, arrows, labels, and hit testing return
+  structured unsupported or creation errors until their upstream slices are
+  translated.
 - The translated Polygon subset accepts registered Point references or
   coordinate arrays, closes the vertex list, creates Segment borders in the
   upstream storage and Board-creation orders, and preserves
@@ -1373,9 +1374,13 @@ practical.
   `infty` settings, sparse-array `NaN` propagation, positive-ratio infinite
   test, convergence order, and reliability calculation. Kotlin rejects
   negative state indexes, non-positive `upper`, and unknown iteration methods
-  with `GMResult.Err`; callback failures and thrown exceptions are likewise
+  with `GMResult.Err`; callback failures and ordinary exceptions are likewise
   contained instead of escaping. Raw adaptive Plot v2 does not call
-  `Extrapolate`; its Plot v3 consumer remains pending.
+  `Extrapolate`; explicit Plot v3 uses it for all four one-sided coordinate
+  limits and converts infinite classifications to signed infinities. Plot v3
+  Numerics, extrapolation, evaluator, special-interval, and point-limit
+  failures are returned structurally. Plot v2 remains the default because the
+  upstream source marks Plot v3 experimental and not recommended.
 - Statistics filters `NaN` values before sorting percentile and boxplot data.
   Upstream filters after sorting, which makes results depend on the
   JavaScript engine's sort behavior when the comparator receives `NaN`.

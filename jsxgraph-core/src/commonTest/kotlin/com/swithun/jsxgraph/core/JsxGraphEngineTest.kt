@@ -5238,7 +5238,7 @@ class JsxGraphEngineTest {
                       "attributes":{
                         "name":"",
                         "withLabel":false,
-                        "plotVersion":3
+                        "plotVersion":4
                       }
                     }
                     """.trimIndent(),

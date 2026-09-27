@@ -234,7 +234,8 @@ values, sparse-state `NaN` behavior, and structured index, configuration,
 method, callback-result, and callback-exception failures. The tangent fixture
 uses a narrow cross-platform tolerance because Darwin and JavaScript math
 libraries diverge near the pole. This math-only fixture does not add a visual
-corpus case; the Extrapolate-consuming Plot v3 path remains pending.
+corpus case. The translated Plot v3 path now consumes this kernel through
+structured limit results.
 
 Capture the raw JSXGraph `1.13.3` adaptive Plot v2 point sequence:
 
@@ -258,8 +259,25 @@ through their native adaptive defaults. Desktop `1200 x 900` and Compact
 `390 x 844` captures scored `0.987022` and `0.976101`; both contact sheets
 passed nonblank/browser checks and manual review for continuous geometry,
 Hyperbola breaks, the Parabola singularity, clipping, overlap, and
-Native/Official agreement. Plot v1/v3/v4, RDP simplification, and Stable
+Native/Official agreement. Plot v1/v4, RDP simplification, and Stable
 qualification remain pending.
+
+Capture the experimental JSXGraph `1.13.3` adaptive Plot v3 point sequence:
+
+```bash
+node tools/upstream-fixtures/plot-v3.mjs
+```
+
+The fixture records smooth, wide-domain FunctionGraph, cusp, jump, border,
+isolated-`NaN`, parametric, Ellipse, Hyperbola, Parabola, Derivative, Spline,
+and CardinalSpline cases. `PlotTest` locks the official point counts,
+FunctionGraph-only 30% bounding-box domain crop, callback suspension order,
+one-sided finite/infinite limits, `NaN` separators, and structured
+evaluation, extrapolation, Numerics, interval, and point-limit failures.
+`NativeJessieCodeCreatorsTest` locks all six continuous wrapper point counts
+and explicit Plot v1/v4 rejection. Plot v2 remains the default; Plot v3 is
+enabled only by `plotVersion: 3`. Plot v1/v4, FunctionGraph RDP
+simplification, and Stable qualification remain pending.
 
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
@@ -1511,8 +1529,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 105 cases:
-30 generated production scenarios followed by 75 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 106 cases:
+30 generated production scenarios followed by 76 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -2166,8 +2184,18 @@ callback suspension, smoothness/cusp/jump/undefined decisions, parameter
 metadata, canonical screen projection, the repeated `_borderCase` midpoint
 probe observed in JSXGraph `1.13.3`, evaluator failures, point limits, and each
 wrapper's point count. This remains a focused preview outside the 30-case
-Stable corpus; Plot v1/v3/v4 and FunctionGraph RDP simplification remain
+Stable corpus; Plot v1/v4 and FunctionGraph RDP simplification remain
 pending.
+The focused `adaptive_plot_v3` capture uses the same six continuous wrappers
+with explicit `plotVersion: 3`. Static captures scored `0.987021` on Desktop
+and `0.976125` on Compact. Both contact sheets passed nonblank/browser checks
+and manual review for continuous geometry, Hyperbola breaks, the Parabola
+singularity, clipping, overlap, and Native/Official agreement. The official
+fixture and common tests additionally lock smooth/cusp/jump/border/isolated
+`NaN` behavior, one-sided limits through `Extrapolate`, FunctionGraph domain
+cropping, callback suspension, evaluator failures, point limits, and wrapper
+point counts. This remains a focused preview outside the 30-case Stable
+corpus; Plot v1/v4 and FunctionGraph RDP simplification remain pending.
 The focused `tapemeasures` capture uses one JessieCode source for a default
 horizontal tape and a label-only diagonal tape. Static captures scored
 `0.984781` on Desktop and `0.969197` on Compact. After dragging the horizontal
@@ -2247,7 +2275,7 @@ Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
 SmartLabel/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 105 cases while the independently
+the development corpus now contains 106 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

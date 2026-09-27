@@ -416,7 +416,7 @@ object Extrapolate {
                     ExtrapolateError.Evaluation(result.error),
                 )
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             GMResult.Err(
                 ExtrapolateError.EvaluationException(
                     error.message ?: "Extrapolation callback failed",

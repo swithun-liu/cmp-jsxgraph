@@ -214,6 +214,162 @@ class PlotTest {
     }
 
     @Test
+    fun versionThreeSmoothSamplingAndCallbackSuspensionMatchOfficialReference() {
+        val calls = mutableListOf<Pair<PlotCoordinate, Boolean>>()
+        val result = plotV3(
+            x = { parameter, suspendedUpdate ->
+                calls += PlotCoordinate.X to suspendedUpdate
+                parameter
+            },
+            y = { parameter, suspendedUpdate ->
+                calls += PlotCoordinate.Y to suspendedUpdate
+                parameter * parameter
+            },
+        )
+
+        assertEquals(453, result.points.size)
+        assertContentEquals(
+            doubleArrayOf(-2.0, 2.0),
+            result.visibleArea,
+        )
+        assertPoint(
+            result.points[1],
+            parameter = -1.9951171875,
+            x = -1.9951171875,
+            y = 3.98049259185791,
+        )
+        assertEquals(8_194, calls.size)
+        assertEquals(
+            listOf(
+                PlotCoordinate.X to false,
+                PlotCoordinate.Y to false,
+                PlotCoordinate.X to true,
+                PlotCoordinate.Y to true,
+            ),
+            calls.take(4),
+        )
+        assertEquals(2, calls.count { !it.second })
+        assertEquals(8_192, calls.count { it.second })
+    }
+
+    @Test
+    fun versionThreeCropsOnlyIdentityXFunctionGraphs() {
+        val functionGraph = plotV3(
+            minimum = -20.0,
+            maximum = 20.0,
+            identityXTerm = true,
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ -> parameter },
+        )
+        assertEquals(684, functionGraph.points.size)
+        assertContentEquals(
+            doubleArrayOf(-8.0, 8.0),
+            functionGraph.visibleArea,
+        )
+        assertPoint(
+            functionGraph.points.first(),
+            parameter = -8.0,
+            x = -8.0,
+            y = -8.0,
+        )
+        assertPoint(
+            functionGraph.points.last(),
+            parameter = 8.0,
+            x = 8.0,
+            y = 8.0,
+        )
+
+        val parametric = plotV3(
+            minimum = -20.0,
+            maximum = 20.0,
+            identityXTerm = false,
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ -> parameter },
+        )
+        assertContentEquals(
+            doubleArrayOf(-20.0, 20.0),
+            parametric.visibleArea,
+        )
+    }
+
+    @Test
+    fun versionThreeLimitPointsMatchOfficialJumpReference() {
+        val result = plotV3(
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ -> 1.0 / parameter },
+        )
+
+        assertEquals(592, result.points.size)
+        assertEquals(
+            listOf(295),
+            result.points.indices.filter { index ->
+                val point = result.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
+        assertPoint(
+            result.points[294],
+            parameter = -0.0001220703125,
+            x = -0.000008400730446532596,
+            y = Double.NEGATIVE_INFINITY,
+        )
+        assertPoint(
+            result.points[296],
+            parameter = -0.0001220703125,
+            x = 0.000007550984046750604,
+            y = -1176747.9318879026,
+            tolerance = 1.0e-6,
+        )
+    }
+
+    @Test
+    fun versionThreeBorderAndIsolatedNanHandlingMatchOfficialReference() {
+        val border = plotV3(
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ ->
+                if (parameter < 0.0) {
+                    Double.NaN
+                } else {
+                    kotlin.math.sqrt(parameter)
+                }
+            },
+        )
+        assertEquals(132, border.points.size)
+        assertEquals(
+            listOf(0, 1, 3),
+            border.points.indices.filter { index ->
+                val point = border.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
+        assertPoint(
+            border.points[2],
+            parameter = -0.0001220703125,
+            x = 0.000007022181982346117,
+            y = 0.0000908579407821851,
+            tolerance = 1.0e-12,
+        )
+
+        val isolated = plotV3(
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ ->
+                if (parameter == 0.0) Double.NaN else parameter
+            },
+        )
+        assertEquals(234, isolated.points.size)
+        assertEquals(
+            listOf(115, 118),
+            isolated.points.indices.filter { index ->
+                val point = isolated.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
+    }
+
+    @Test
     fun evaluatorAndPointLimitFailuresAreStructured() {
         val evaluation = Plot.updateParametricCurveV2(
             board = board(),
@@ -283,6 +439,28 @@ class PlotTest {
             ).error
         assertEquals(11, limitError.attemptedCount)
         assertEquals(10, limitError.maximum)
+
+        val versionThreeLimit = Plot.updateParametricCurveV3(
+            board = board(),
+            minimum = -2.0,
+            maximum = 2.0,
+            identityXTerm = false,
+            recursionDepthHigh = 17,
+            maximumPointCount = 10,
+            x = PlotFunction<Nothing> { parameter, _ ->
+                GMResult.Ok(parameter)
+            },
+            y = PlotFunction<Nothing> { parameter, _ ->
+                GMResult.Ok(parameter * parameter)
+            },
+            random = { 0.375 },
+        )
+        val versionThreeLimitError =
+            assertIs<GMResult.Err<PlotError.PointLimitExceeded>>(
+                versionThreeLimit,
+            ).error
+        assertEquals(11, versionThreeLimitError.attemptedCount)
+        assertEquals(10, versionThreeLimitError.maximum)
     }
 
     private fun plot(
@@ -309,15 +487,42 @@ class PlotTest {
             ),
         ).value
 
+    private fun plotV3(
+        minimum: Double = -2.0,
+        maximum: Double = 2.0,
+        identityXTerm: Boolean = false,
+        x: (Double, Boolean) -> Double,
+        y: (Double, Boolean) -> Double,
+        random: () -> Double = { 0.375 },
+    ): PlotResult =
+        assertIs<GMResult.Ok<PlotResult>>(
+            Plot.updateParametricCurveV3(
+                board = board(),
+                minimum = minimum,
+                maximum = maximum,
+                identityXTerm = identityXTerm,
+                recursionDepthHigh = 17,
+                maximumPointCount = 10_000,
+                x = PlotFunction<Nothing> { parameter, suspendedUpdate ->
+                    GMResult.Ok(x(parameter, suspendedUpdate))
+                },
+                y = PlotFunction<Nothing> { parameter, suspendedUpdate ->
+                    GMResult.Ok(y(parameter, suspendedUpdate))
+                },
+                random = random,
+            ),
+        ).value
+
     private fun assertPoint(
         point: com.swithun.jsxgraph.core.base.Coords,
         parameter: Double?,
         x: Double,
         y: Double,
+        tolerance: Double = 1.0e-15,
     ) {
         assertEquals(parameter, point.curveParameter)
-        assertEquals(x, point.usrCoords[1], absoluteTolerance = 1.0e-15)
-        assertEquals(y, point.usrCoords[2], absoluteTolerance = 1.0e-15)
+        assertEquals(x, point.usrCoords[1], absoluteTolerance = tolerance)
+        assertEquals(y, point.usrCoords[2], absoluteTolerance = tolerance)
     }
 
     private fun board(): Board =

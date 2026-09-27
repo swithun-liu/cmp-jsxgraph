@@ -69,6 +69,23 @@ internal sealed interface CurveError {
         val message: String,
     ) : CurveError
 
+    data class PlotNumerics(
+        val operation: String,
+        val error: NumericsError,
+    ) : CurveError
+
+    data class PlotExtrapolation(
+        val coordinate: String,
+        val parameter: Double,
+        val message: String,
+    ) : CurveError
+
+    data class PlotInvalidSpecialInterval(
+        val type: String,
+        val start: Double,
+        val end: Double,
+    ) : CurveError
+
     data class ExpressionCompile(
         val term: String,
         val error: JessieCodeExpressionCompileError,
@@ -574,6 +591,7 @@ internal class Curve private constructor(
     dataY: DoubleArray?,
     internal val sampleCount: Int,
     private val plotOptions: CurvePlotOptions = CurvePlotOptions(),
+    private val identityXTerm: Boolean = false,
     private val booleanDefinition: CurveBooleanDefinition? = null,
     private val stepDefinition: CurveStepDefinition? = null,
     private val derivativeDefinition: CurveDerivativeDefinition? = null,
@@ -844,38 +862,57 @@ internal class Curve private constructor(
         }
 
         if (plotOptions.doAdvancedPlot) {
-            if (plotOptions.plotVersion != DEFAULT_PLOT_VERSION) {
+            if (plotOptions.plotVersion !in SUPPORTED_PLOT_VERSIONS) {
                 return GMResult.Err(
                     CurveError.UnsupportedPlotVersion(
                         plotOptions.plotVersion,
                     ),
                 )
             }
-            val result = Plot.updateParametricCurveV2(
-                board = board,
-                minimum = minimum,
-                maximum = maximum,
-                recursionDepthHigh = plotOptions.recursionDepthHigh,
-                maximumPointCount = board.maxCurvePoints,
-                x = PlotFunction { parameter, suspendedUpdate ->
-                    evaluateX(
-                        parameter = parameter,
-                        arguments = listOf(
-                            JessieCodeRuntimeValue.NumberValue(parameter),
-                        ),
-                        suspendedUpdate = suspendedUpdate,
-                    )
-                },
-                y = PlotFunction { parameter, suspendedUpdate ->
-                    evaluateY(
-                        parameter = parameter,
-                        arguments = listOf(
-                            JessieCodeRuntimeValue.NumberValue(parameter),
-                        ),
-                        suspendedUpdate = suspendedUpdate,
-                    )
-                },
-            )
+            val xFunction = PlotFunction { parameter, suspendedUpdate ->
+                evaluateX(
+                    parameter = parameter,
+                    arguments = listOf(
+                        JessieCodeRuntimeValue.NumberValue(parameter),
+                    ),
+                    suspendedUpdate = suspendedUpdate,
+                )
+            }
+            val yFunction = PlotFunction { parameter, suspendedUpdate ->
+                evaluateY(
+                    parameter = parameter,
+                    arguments = listOf(
+                        JessieCodeRuntimeValue.NumberValue(parameter),
+                    ),
+                    suspendedUpdate = suspendedUpdate,
+                )
+            }
+            val result = when (plotOptions.plotVersion) {
+                2 -> Plot.updateParametricCurveV2(
+                    board = board,
+                    minimum = minimum,
+                    maximum = maximum,
+                    recursionDepthHigh = plotOptions.recursionDepthHigh,
+                    maximumPointCount = board.maxCurvePoints,
+                    x = xFunction,
+                    y = yFunction,
+                )
+                3 -> Plot.updateParametricCurveV3(
+                    board = board,
+                    minimum = minimum,
+                    maximum = maximum,
+                    identityXTerm = identityXTerm,
+                    recursionDepthHigh = plotOptions.recursionDepthHigh,
+                    maximumPointCount = board.maxCurvePoints,
+                    x = xFunction,
+                    y = yFunction,
+                )
+                else -> return GMResult.Err(
+                    CurveError.UnsupportedPlotVersion(
+                        plotOptions.plotVersion,
+                    ),
+                )
+            }
             return when (result) {
                 is GMResult.Ok -> {
                     points.clear()
@@ -896,6 +933,26 @@ internal class Curve private constructor(
                         CurveError.InvalidAdaptivePointCount(
                             count = error.attemptedCount,
                             maximum = error.maximum,
+                        ),
+                    )
+                    is PlotError.Numerics -> GMResult.Err(
+                        CurveError.PlotNumerics(
+                            operation = error.operation,
+                            error = error.error,
+                        ),
+                    )
+                    is PlotError.Extrapolation -> GMResult.Err(
+                        CurveError.PlotExtrapolation(
+                            coordinate = error.coordinate.name,
+                            parameter = error.parameter,
+                            message = error.message,
+                        ),
+                    )
+                    is PlotError.InvalidSpecialInterval -> GMResult.Err(
+                        CurveError.PlotInvalidSpecialInterval(
+                            type = error.type,
+                            start = error.start,
+                            end = error.end,
                         ),
                     )
                 }
@@ -2682,6 +2739,7 @@ internal class Curve private constructor(
         internal const val DEFAULT_SAMPLE_COUNT: Int = 1600
         internal const val MAX_SAMPLE_COUNT: Int = 10_000
         internal const val DEFAULT_PLOT_VERSION: Int = 2
+        private val SUPPORTED_PLOT_VERSIONS: Set<Int> = setOf(2, 3)
         internal const val DEFAULT_RECURSION_DEPTH_HIGH: Int = 17
         internal const val MAX_RECURSION_DEPTH: Int = 30
         internal const val COMB_DEFAULT_FREQUENCY: Double = 0.2
@@ -3241,6 +3299,7 @@ internal class Curve private constructor(
                         dataY = null,
                         sampleCount = sampleCount,
                         plotOptions = plotOptions,
+                        identityXTerm = true,
                         splineDefinition = CurveSplineDefinition(points),
                         id = id,
                         name = name,
@@ -3707,6 +3766,7 @@ internal class Curve private constructor(
                     dataY = null,
                     sampleCount = sampleCount,
                     plotOptions = plotOptions,
+                    identityXTerm = xSource == "x",
                     id = id,
                     name = name,
                     needsRegularUpdate = needsRegularUpdate,
@@ -3781,7 +3841,7 @@ internal class Curve private constructor(
             }
             if (
                 plotOptions.doAdvancedPlot &&
-                plotOptions.plotVersion != DEFAULT_PLOT_VERSION
+                plotOptions.plotVersion !in SUPPORTED_PLOT_VERSIONS
             ) {
                 return GMResult.Err(
                     CurveError.UnsupportedPlotVersion(

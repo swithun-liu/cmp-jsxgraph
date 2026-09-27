@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 105 source-controlled cases: 30 independent production scenarios and
-75 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 106 source-controlled cases: 30 independent production scenarios and
+76 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -294,8 +294,9 @@ The standalone `src/math/extrapolate.js -> Mat.Extrapolate` translation
 preserves all four sequence transformations, iterative limit estimation,
 mutable `upper`/`infty` settings, sparse-state `NaN` propagation, and official
 finite/infinite/NaN reliability results. Kotlin exposes callback and
-configuration failures through `GMResult`; raw Plot v2 is translated
-independently, while the Extrapolate-consuming Plot v3 path remains pending.
+configuration failures through `GMResult`. Raw Plot v2 remains the native
+default, while the Extrapolate-consuming experimental Plot v3 path is
+translated and available through explicit `plotVersion: 3`.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.
@@ -378,7 +379,8 @@ Native `curve`, `functiongraph`, and `plot` use the translated adaptive
 `src/math/plot.js` v2 sampler by default. Set `doAdvancedPlot: false` to use
 the translated right-open naive sampler and `numberPointsHigh`. Ellipse,
 Hyperbola, Parabola, Derivative, Spline, and CardinalSpline inherit the same
-native adaptive default. Plot versions 1, 3, and 4 and FunctionGraph RDP
+native adaptive default, and explicit `plotVersion: 3` selects the translated
+experimental Plot v3 sampler. Plot versions 1 and 4 and FunctionGraph RDP
 simplification remain explicit gaps. Polygon,
 PolygonalChain, Parallelogram, and RegularPolygon currently support Point or
 coordinate-array vertices,
@@ -774,8 +776,9 @@ parametric, and linearly interpolated data-Plot parents are supported, including
 the viewport-padded default data domain, regular Board recomputation, and the
 official behavior where removing the source does not recursively remove the
 Derivative. Invalid parents, duplicate IDs, and point-count overflow return
-structured errors. Native creation uses adaptive Plot v2 by default and
-retains the explicit naive fallback. Focused static and coefficient-Point-drag
+structured errors. Native creation uses adaptive Plot v2 by default, supports
+explicit Plot v3, and retains the explicit naive fallback. Focused static and
+coefficient-Point-drag
 Desktop/Compact parity evidence remains outside the 30-case Stable corpus.
 
 Normal translates the Line/Point, Circle/Point, and Curve/Point branches of
@@ -806,7 +809,8 @@ centripetal, and chordal parameterization, and the upstream `createPoints` and
 `isArrayOfCoordinates` modes. Both creators have bounded JSON/JessieCode paths,
 structured evaluation failures, official lifecycle fixtures, and focused
 static plus tension-drag Desktop/Compact parity. Native creation uses adaptive
-Plot v2 by default and retains the explicit naive fallback. Kotlin rejects
+Plot v2 by default, supports explicit Plot v3, and retains the explicit naive
+fallback. Kotlin rejects
 fewer than two interpolation points instead of allowing the upstream delayed
 invalid geometry. This slice remains outside the 30-case Stable corpus.
 

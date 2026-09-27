@@ -225,7 +225,83 @@ class CurveTest {
     }
 
     @Test
-    fun adaptiveFunctionGraphRejectsUnsupportedVersionsAndDepths() {
+    fun adaptiveFunctionGraphSupportsVersionThreeAndRejectsOtherVersions() {
+        val versionThree = curve(
+            Curve.createFunctionGraph(
+                board = Board(
+                    originX = 250.0,
+                    originY = 250.0,
+                    unitX = 50.0,
+                    unitY = 50.0,
+                    boundingBox =
+                        doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+                    id = "adaptive-v3-board",
+                ),
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 3,
+                ),
+                name = "",
+            ),
+        )
+        assertEquals(453, versionThree.numberPoints)
+        assertEquals(-2.0, versionThree.points.first().curveParameter)
+        assertEquals(2.0, versionThree.points.last().curveParameter)
+
+        val croppedFunctionGraph = curve(
+            Curve.createFunctionGraph(
+                board = Board(
+                    originX = 250.0,
+                    originY = 250.0,
+                    unitX = 50.0,
+                    unitY = 50.0,
+                    boundingBox =
+                        doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+                    id = "adaptive-v3-crop-board",
+                ),
+                ySource = "x",
+                minimumSource = "-20",
+                maximumSource = "20",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 3,
+                ),
+            ),
+        )
+        assertEquals(
+            -8.0,
+            croppedFunctionGraph.points.first().curveParameter,
+        )
+        assertEquals(
+            8.0,
+            croppedFunctionGraph.points.last().curveParameter,
+        )
+
+        val stringParametric = curve(
+            Curve.createStringParametric(
+                board = board(),
+                xSource = "2 * x",
+                ySource = "x",
+                minimumSource = "-20",
+                maximumSource = "20",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 3,
+                ),
+            ),
+        )
+        assertEquals(
+            -20.0,
+            stringParametric.points.first().curveParameter,
+        )
+        assertEquals(
+            20.0,
+            stringParametric.points.last().curveParameter,
+        )
+
         val unsupported = assertIs<
             GMResult.Err<CurveError.UnsupportedPlotVersion>,
             >(
@@ -236,11 +312,11 @@ class CurveTest {
                 maximumSource = "1",
                 plotOptions = CurvePlotOptions(
                     doAdvancedPlot = true,
-                    plotVersion = 3,
+                    plotVersion = 4,
                 ),
             ),
         ).error
-        assertEquals(3, unsupported.version)
+        assertEquals(4, unsupported.version)
 
         val invalidDepth = assertIs<
             GMResult.Err<CurveError.InvalidRecursionDepth>,

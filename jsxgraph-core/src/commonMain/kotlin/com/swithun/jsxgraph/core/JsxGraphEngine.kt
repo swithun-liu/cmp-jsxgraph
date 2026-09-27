@@ -9038,6 +9038,8 @@ object JsxGraphEngine {
     private val CURVE_ATTRIBUTES = setOf(
         "doadvancedplot",
         "numberpointshigh",
+        "plotversion",
+        "recursiondepthhigh",
         "firstarrow",
         "lastarrow",
         "linecap",

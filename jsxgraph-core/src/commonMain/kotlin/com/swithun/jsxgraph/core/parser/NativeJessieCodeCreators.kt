@@ -16208,7 +16208,7 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        if (plotVersion != Curve.DEFAULT_PLOT_VERSION) {
+        if (plotVersion !in 2..3) {
             return failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.UnsupportedAttributeValue(
