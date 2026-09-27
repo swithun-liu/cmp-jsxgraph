@@ -90,6 +90,11 @@ qualification batches pass.
   proxy cleanup. Curve3D, Circle3D, and
   Surface3D parametric projection now use the source-mapped
   `src/math/nlp.js -> Nlp.FindMinimum` translation.
+  `src/math/extrapolate.js -> Mat.Extrapolate` is also translated as a
+  standalone pure Kotlin kernel with all four sequence transformations,
+  iterative limit classification, exact official fixtures, sparse-state
+  propagation, and structured boundary failures. Its `src/math/plot.js`
+  adaptive-sampling consumer remains pending.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
 - Function-coordinate Points: native JessieCode now supports mixed
@@ -566,7 +571,8 @@ artifacts assemble.
 
 ### 2. Geometry And Numerics
 
-- statistics, numerical integration/root finding and interpolation
+- statistics, numerical integration/root finding, interpolation, and sequence
+  extrapolation
 - core geometry intersections, projections and distances
 - curves, clipping, implicit plotting and quadtrees
 

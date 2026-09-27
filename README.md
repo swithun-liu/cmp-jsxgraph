@@ -133,6 +133,9 @@ Implemented translation slices:
   integration, natural cubic splines, scalar and multidimensional root
   finding, complex polynomial roots, domain search, minimization, and
   Runge-Kutta ODE solvers from `src/math/numerics.js`;
+- Wynn epsilon, Aitken, iterated Brezinski, and Levin sequence
+  transformations plus finite/infinite/NaN limit classification from
+  `src/math/extrapolate.js`;
 - foundational angles, distances, orientation, transformations,
   perpendicular/circumcenter constructions, and analytic intersections from
   `src/math/geometry.js`;
@@ -287,6 +290,12 @@ Stable qualification, or the complete 3D APIs.
 Curve3D, Circle3D, and
 Surface3D parametric projection now use the source-mapped
 `src/math/nlp.js -> Nlp.FindMinimum` COBYLA translation.
+The standalone `src/math/extrapolate.js -> Mat.Extrapolate` translation
+preserves all four sequence transformations, iterative limit estimation,
+mutable `upper`/`infty` settings, sparse-state `NaN` propagation, and official
+finite/infinite/NaN reliability results. Kotlin exposes callback and
+configuration failures through `GMResult`; wiring this kernel into the
+still-pending adaptive `src/math/plot.js` path remains future work.
 
 Symbolic algebra (`src/unused/symbolic.js`) is intentionally out of scope for
 the initial implementation.

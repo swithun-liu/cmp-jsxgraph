@@ -89,6 +89,14 @@ Surface3D parametric projection use the source-mapped `math/nlp.js` COBYLA
 translation and match official numerical fixtures. Global View3D
 `depthOrder`/layer configuration, camera controls, Point3D gliders and
 animations, and the remaining 3D APIs are still pending.
+The standalone `math/extrapolate.js` translation covers Wynn epsilon, Aitken,
+iterated Brezinski, and Levin transforms, both iterative limit paths,
+classification, reliability, mutable upstream settings, and sparse-array
+numeric behavior. Official and common fixtures cover finite, infinite,
+degenerate, and `NaN` cases. Kotlin returns structured failures for invalid
+indices, unsupported method names, invalid iteration bounds, and failed or
+throwing callbacks. Adaptive Plot does not consume this kernel yet, so this
+addition does not expand the rendering or Stable scope.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.
 Intersection and OtherIntersection now have source-mapped Line/Segment/Circle,

@@ -1358,6 +1358,13 @@ practical.
   print level, and evaluation limits before allocation. Callback failures are
   returned as `GMResult.Err(NlpError.Evaluation)` instead of escaping through
   the optimizer.
+- `Extrapolate` preserves the upstream transformations, mutable `upper` and
+  `infty` settings, sparse-array `NaN` propagation, positive-ratio infinite
+  test, convergence order, and reliability calculation. Kotlin rejects
+  negative state indexes, non-positive `upper`, and unknown iteration methods
+  with `GMResult.Err`; callback failures and thrown exceptions are likewise
+  contained instead of escaping. The translated kernel is not yet wired into
+  the pending adaptive `src/math/plot.js` sampler.
 - Statistics filters `NaN` values before sorting percentile and boxplot data.
   Upstream filters after sorting, which makes results depend on the
   JavaScript engine's sort behavior when the comparator receives `NaN`.

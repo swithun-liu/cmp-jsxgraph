@@ -218,6 +218,23 @@ Surface3D parameters `[0.7333332582827766, -0.4666667008424886]` and point
 browser produces the complete JSON evidence before the local sandbox rejects
 Chrome Crashpad shutdown access.
 
+Capture the official sequence transformations and extrapolated limit
+classification:
+
+```bash
+node tools/upstream-fixtures/extrapolate.mjs
+```
+
+The fixture records the default `upper=15` and `infty=10000` settings; Wynn
+epsilon, Aitken, iterated Brezinski, and Levin estimates; the `1e20`
+degenerate denominator sentinel; direct and Levin iteration reliability; and
+finite, infinite, and `NaN` classifications. It also records the documented
+logarithm, tangent, and reciprocal limits. `ExtrapolateTest` checks the same
+values, sparse-state `NaN` behavior, and structured index, configuration,
+method, callback-result, and callback-exception failures. This math-only
+fixture does not add a visual corpus case; adaptive Plot integration remains
+pending.
+
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
 
