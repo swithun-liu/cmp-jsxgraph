@@ -95,8 +95,14 @@ classification, reliability, mutable upstream settings, and sparse-array
 numeric behavior. Official and common fixtures cover finite, infinite,
 degenerate, and `NaN` cases. Kotlin returns structured failures for invalid
 indices, unsupported method names, invalid iteration bounds, and failed or
-throwing callbacks. Adaptive Plot does not consume this kernel yet, so this
-addition does not expand the rendering or Stable scope.
+throwing callbacks. Explicit Plot v3 consumes this kernel for one-sided limit
+classification. Explicit Plot v4 now translates the separate difference-table
+sampler, including FunctionGraph cropping, critical-point classification,
+border and singularity refinement, bounded JessieCode interval arithmetic,
+scalar `fminbr` fallback, callback suspension, and structured failures. Plot
+v2 remains the default. Plot v3 and Plot v4 have official numerical fixtures,
+common tests, and focused Desktop/Compact parity evidence, but neither expands
+the current Stable scope.
 Semicircle, CircumcircleArc, MinorArc, and MajorArc now have the same
 source-mapped construction, update, lifecycle, and focused parity evidence.
 Intersection and OtherIntersection now have source-mapped Line/Segment/Circle,

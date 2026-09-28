@@ -370,6 +370,133 @@ class PlotTest {
     }
 
     @Test
+    fun versionFourDifferenceSamplingMatchesOfficialSmoothReference() {
+        val result = plotV4(
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ -> parameter * parameter },
+        )
+
+        assertEquals(417, result.points.size)
+        assertContentEquals(
+            doubleArrayOf(-2.0, 2.0),
+            result.visibleArea,
+        )
+        assertPoint(
+            result.points.first(),
+            parameter = -2.0039177277179236,
+            x = -2.0039177277179236,
+            y = 4.015686259462166,
+            tolerance = 1.0e-12,
+        )
+        assertPoint(
+            result.points[1],
+            parameter = -2.0000000000000044,
+            x = -2.0000000000000044,
+            y = 4.000000000000018,
+            tolerance = 1.0e-12,
+        )
+        assertPoint(
+            result.points.last(),
+            parameter = 2.0039177277179494,
+            x = 2.0039177277179494,
+            y = 4.01568625946227,
+            tolerance = 1.0e-12,
+        )
+    }
+
+    @Test
+    fun versionFourSingularityHandlingMatchesOfficialReference() {
+        val result = plotV4(
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ -> 1.0 / parameter },
+        )
+
+        assertEquals(551, result.points.size)
+        assertEquals(
+            listOf(281),
+            result.points.indices.filter { index ->
+                val point = result.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
+        assertPoint(
+            result.points[280],
+            parameter = -0.0004897159647253794,
+            x = -0.0004897159647253794,
+            y = -2042.0000000628431,
+            tolerance = 1.0e-6,
+        )
+        assertEquals(
+            9.412501160432907e-16,
+            result.points[281].curveParameter ?: Double.NaN,
+            absoluteTolerance = 1.0e-24,
+        )
+        assertPoint(
+            result.points[282],
+            parameter = 9.412501160432907e-16,
+            x = 9.412501160432907e-16,
+            y = 66351853049521.07,
+            tolerance = 1.0e-2,
+        )
+    }
+
+    @Test
+    fun versionFourDomainCroppingAndCallbackSuspensionMatchOfficialReference() {
+        val calls = mutableListOf<Pair<PlotCoordinate, Boolean>>()
+        val functionGraph = plotV4(
+            minimum = -20.0,
+            maximum = 20.0,
+            identityXTerm = true,
+            intervalY = { minimum, maximum ->
+                PlotInterval(minimum, maximum)
+            },
+            x = { parameter, suspendedUpdate ->
+                calls += PlotCoordinate.X to suspendedUpdate
+                parameter
+            },
+            y = { parameter, suspendedUpdate ->
+                calls += PlotCoordinate.Y to suspendedUpdate
+                parameter
+            },
+        )
+
+        assertEquals(1020, functionGraph.points.size)
+        assertContentEquals(
+            doubleArrayOf(-8.0, 8.0),
+            functionGraph.visibleArea,
+        )
+        assertPoint(
+            functionGraph.points.first(),
+            parameter = -8.016160626836434,
+            x = -8.016160626836434,
+            y = -8.016160626836434,
+            tolerance = 1.0e-12,
+        )
+        assertEquals(
+            listOf(
+                PlotCoordinate.X to false,
+                PlotCoordinate.Y to false,
+                PlotCoordinate.X to true,
+                PlotCoordinate.Y to true,
+            ),
+            calls.take(4),
+        )
+
+        val parametric = plotV4(
+            minimum = -20.0,
+            maximum = 20.0,
+            identityXTerm = false,
+            x = { parameter, _ -> parameter },
+            y = { parameter, _ -> parameter },
+        )
+        assertContentEquals(
+            doubleArrayOf(-20.0, 20.0),
+            parametric.visibleArea,
+        )
+    }
+
+    @Test
     fun evaluatorAndPointLimitFailuresAreStructured() {
         val evaluation = Plot.updateParametricCurveV2(
             board = board(),
@@ -461,6 +588,26 @@ class PlotTest {
             ).error
         assertEquals(11, versionThreeLimitError.attemptedCount)
         assertEquals(10, versionThreeLimitError.maximum)
+
+        val versionFourLimit = Plot.updateParametricCurveV4(
+            board = board(),
+            minimum = -2.0,
+            maximum = 2.0,
+            identityXTerm = false,
+            maximumPointCount = 10,
+            x = PlotFunction<Nothing> { parameter, _ ->
+                GMResult.Ok(parameter)
+            },
+            y = PlotFunction<Nothing> { parameter, _ ->
+                GMResult.Ok(parameter * parameter)
+            },
+        )
+        val versionFourLimitError =
+            assertIs<GMResult.Err<PlotError.PointLimitExceeded>>(
+                versionFourLimit,
+            ).error
+        assertEquals(11, versionFourLimitError.attemptedCount)
+        assertEquals(10, versionFourLimitError.maximum)
     }
 
     private fun plot(
@@ -510,6 +657,44 @@ class PlotTest {
                     GMResult.Ok(y(parameter, suspendedUpdate))
                 },
                 random = random,
+            ),
+        ).value
+
+    private fun plotV4(
+        minimum: Double = -2.0,
+        maximum: Double = 2.0,
+        identityXTerm: Boolean = false,
+        intervalY: ((Double, Double) -> PlotInterval?)? = null,
+        x: (Double, Boolean) -> Double,
+        y: (Double, Boolean) -> Double,
+    ): PlotResult =
+        assertIs<GMResult.Ok<PlotResult>>(
+            Plot.updateParametricCurveV4(
+                board = board(),
+                minimum = minimum,
+                maximum = maximum,
+                identityXTerm = identityXTerm,
+                maximumPointCount = 10_000,
+                x = PlotFunction<Nothing> { parameter, suspendedUpdate ->
+                    GMResult.Ok(x(parameter, suspendedUpdate))
+                },
+                y = PlotFunction<Nothing> { parameter, suspendedUpdate ->
+                    GMResult.Ok(y(parameter, suspendedUpdate))
+                },
+                intervalY = intervalY?.let { evaluator ->
+                    PlotIntervalFunction<Nothing> {
+                            intervalMinimum,
+                            intervalMaximum,
+                            _,
+                        ->
+                        GMResult.Ok(
+                            evaluator(
+                                intervalMinimum,
+                                intervalMaximum,
+                            ),
+                        )
+                    }
+                },
             ),
         ).value
 

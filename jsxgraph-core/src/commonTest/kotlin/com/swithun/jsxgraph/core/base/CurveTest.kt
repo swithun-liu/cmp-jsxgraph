@@ -225,7 +225,7 @@ class CurveTest {
     }
 
     @Test
-    fun adaptiveFunctionGraphSupportsVersionThreeAndRejectsOtherVersions() {
+    fun adaptiveFunctionGraphSupportsExplicitVersionsThreeAndFour() {
         val versionThree = curve(
             Curve.createFunctionGraph(
                 board = Board(
@@ -312,11 +312,55 @@ class CurveTest {
                 maximumSource = "1",
                 plotOptions = CurvePlotOptions(
                     doAdvancedPlot = true,
-                    plotVersion = 4,
+                    plotVersion = 1,
                 ),
             ),
         ).error
-        assertEquals(4, unsupported.version)
+        assertEquals(1, unsupported.version)
+
+        val versionFour = curve(
+            Curve.createFunctionGraph(
+                board = plotBoard(),
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 4,
+                ),
+            ),
+        )
+        assertEquals(417, versionFour.numberPoints)
+        assertEquals(
+            -2.0040401567091086,
+            versionFour.points.first().curveParameter,
+        )
+        assertEquals(
+            2.0039177277179494,
+            versionFour.points.last().curveParameter,
+        )
+
+        val versionFourIntervalJump = curve(
+            Curve.createFunctionGraph(
+                board = plotBoard(),
+                ySource = "1 / x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 4,
+                ),
+            ),
+        )
+        assertEquals(553, versionFourIntervalJump.numberPoints)
+        assertEquals(
+            listOf(282),
+            versionFourIntervalJump.points.indices.filter { index ->
+                val point = versionFourIntervalJump.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
 
         val invalidDepth = assertIs<
             GMResult.Err<CurveError.InvalidRecursionDepth>,
@@ -1762,6 +1806,16 @@ class CurveTest {
             unitX = 1.0,
             unitY = 1.0,
             id = "board",
+        )
+
+    private fun plotBoard(): Board =
+        Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+            id = "plot-board",
         )
 
     private fun point(

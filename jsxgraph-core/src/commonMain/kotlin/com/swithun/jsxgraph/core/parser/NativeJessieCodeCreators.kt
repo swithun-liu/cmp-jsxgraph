@@ -16208,7 +16208,7 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        if (plotVersion !in 2..3) {
+        if (plotVersion !in 2..4) {
             return failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.UnsupportedAttributeValue(

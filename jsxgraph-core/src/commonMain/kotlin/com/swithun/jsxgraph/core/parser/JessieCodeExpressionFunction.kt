@@ -11,6 +11,7 @@ package com.swithun.jsxgraph.core.parser
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.math.PlotInterval
 
 internal sealed interface JessieCodeExpressionCompileError {
     data class Parser(
@@ -61,6 +62,14 @@ internal class JessieCodeExpressionFunction private constructor(
             environment = baseEnvironment.copy(variables = variables),
         )
     }
+
+    internal fun evaluateInterval(
+        arguments: Map<String, PlotInterval>,
+    ): JessieCodeIntervalEvaluation =
+        JessieCodeIntervalEvaluator(
+            variables = baseEnvironment.variables,
+            intervalVariables = arguments,
+        ).evaluate(ast)
 
     internal companion object {
         // JSXGraph: src/utils/type.js -> createFunction string branch

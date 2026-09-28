@@ -7,6 +7,7 @@ import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.math.PlotInterval
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -16,6 +17,55 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class JessieCodeExpressionFunctionTest {
+    @Test
+    fun intervalEvaluationMatchesPlotV4MathLibSubset() {
+        val reciprocal = assertIs<GMResult.Ok<JessieCodeExpressionFunction>>(
+            JessieCodeExpressionFunction.compile(
+                source = "1 / x",
+                board = boardFixture().board,
+                variableNames = listOf("x"),
+            ),
+        ).value
+        val reciprocalResult =
+            assertIs<JessieCodeIntervalEvaluation.Value>(
+                reciprocal.evaluateInterval(
+                    mapOf("x" to PlotInterval(-1.0, 1.0)),
+                ),
+            ).interval
+        assertEquals(Double.NEGATIVE_INFINITY, reciprocalResult.lo)
+        assertEquals(Double.POSITIVE_INFINITY, reciprocalResult.hi)
+
+        val square = assertIs<GMResult.Ok<JessieCodeExpressionFunction>>(
+            JessieCodeExpressionFunction.compile(
+                source = "x * x",
+                board = boardFixture().board,
+                variableNames = listOf("x"),
+            ),
+        ).value
+        assertEquals(
+            PlotInterval(1.0, 4.0),
+            assertIs<JessieCodeIntervalEvaluation.Value>(
+                square.evaluateInterval(
+                    mapOf("x" to PlotInterval(-2.0, -1.0)),
+                ),
+            ).interval,
+        )
+
+        val conditional =
+            assertIs<GMResult.Ok<JessieCodeExpressionFunction>>(
+                JessieCodeExpressionFunction.compile(
+                    source = "x > 0 ? x : -x",
+                    board = boardFixture().board,
+                    variableNames = listOf("x"),
+                ),
+            ).value
+        assertIs<JessieCodeIntervalEvaluation.Unavailable>(
+            conditional.evaluateInterval(
+                mapOf("x" to PlotInterval(-1.0, 1.0)),
+            ),
+        )
+    }
+
     @Test
     fun nameReplacementMatchesOfficialStableIdCalls() {
         val fixture = boardFixture()

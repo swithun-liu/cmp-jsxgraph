@@ -259,7 +259,7 @@ through their native adaptive defaults. Desktop `1200 x 900` and Compact
 `390 x 844` captures scored `0.987022` and `0.976101`; both contact sheets
 passed nonblank/browser checks and manual review for continuous geometry,
 Hyperbola breaks, the Parabola singularity, clipping, overlap, and
-Native/Official agreement. Plot v1/v4, RDP simplification, and Stable
+Native/Official agreement. Plot v1, RDP simplification, and Stable
 qualification remain pending.
 
 Capture the experimental JSXGraph `1.13.3` adaptive Plot v3 point sequence:
@@ -275,9 +275,36 @@ FunctionGraph-only 30% bounding-box domain crop, callback suspension order,
 one-sided finite/infinite limits, `NaN` separators, and structured
 evaluation, extrapolation, Numerics, interval, and point-limit failures.
 `NativeJessieCodeCreatorsTest` locks all six continuous wrapper point counts
-and explicit Plot v1/v4 rejection. Plot v2 remains the default; Plot v3 is
-enabled only by `plotVersion: 3`. Plot v1/v4, FunctionGraph RDP
+and explicit Plot v1 rejection. Plot v2 remains the default; Plot v3 is
+enabled only by `plotVersion: 3`. Plot v1, FunctionGraph RDP
 simplification, and Stable qualification remain pending.
+
+Capture the JSXGraph `1.13.3` adaptive Plot v4 point sequence:
+
+```bash
+node tools/upstream-fixtures/plot-v4.mjs
+```
+
+The fixture records smooth and wide-domain FunctionGraphs, cusp, callback and
+JessieCode reciprocal jumps, border and isolated-`NaN` cases, extrema,
+parametric callback suspension, Ellipse, Hyperbola, Parabola, Derivative,
+Spline, and CardinalSpline. `PlotTest` and wrapper tests lock exact point
+counts, FunctionGraph-only 30% domain cropping, difference-table critical
+classification, border and singularity refinement, callback suspension,
+JessieCode interval arithmetic, scalar `fminbr` fallback, `NaN` separators,
+and structured evaluator, Numerics, interval, and point-limit failures.
+`plotVersion: 4` is an explicit opt-in and Plot v2 remains the default.
+
+The focused `adaptive_plot_v4` JessieCode source covers Ellipse, Hyperbola,
+Parabola, Spline, and CardinalSpline. Desktop `1200 x 900` and Compact
+`390 x 844` captures scored `0.987222` and `0.976707`; both contact sheets
+passed nonblank/browser checks and manual review. Derivative remains covered
+by the official callback fixture and Kotlin tests because JSXGraph `1.13.3`
+itself fails the same-source
+`derivative(functiongraph("expression"))` Plot v4 path with
+`Operation - not defined on operands string and number` during interval
+probing. Plot v1, FunctionGraph RDP simplification, and Stable qualification
+remain pending.
 
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
@@ -1529,8 +1556,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 106 cases:
-30 generated production scenarios followed by 76 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 107 cases:
+30 generated production scenarios followed by 77 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -2184,7 +2211,7 @@ callback suspension, smoothness/cusp/jump/undefined decisions, parameter
 metadata, canonical screen projection, the repeated `_borderCase` midpoint
 probe observed in JSXGraph `1.13.3`, evaluator failures, point limits, and each
 wrapper's point count. This remains a focused preview outside the 30-case
-Stable corpus; Plot v1/v4 and FunctionGraph RDP simplification remain
+Stable corpus; Plot v1 and FunctionGraph RDP simplification remain
 pending.
 The focused `adaptive_plot_v3` capture uses the same six continuous wrappers
 with explicit `plotVersion: 3`. Static captures scored `0.987021` on Desktop
@@ -2195,7 +2222,18 @@ fixture and common tests additionally lock smooth/cusp/jump/border/isolated
 `NaN` behavior, one-sided limits through `Extrapolate`, FunctionGraph domain
 cropping, callback suspension, evaluator failures, point limits, and wrapper
 point counts. This remains a focused preview outside the 30-case Stable
-corpus; Plot v1/v4 and FunctionGraph RDP simplification remain pending.
+corpus; Plot v1 and FunctionGraph RDP simplification remain pending.
+The focused `adaptive_plot_v4` capture uses five continuous wrappers with
+explicit `plotVersion: 4`. Static captures scored `0.987222` on Desktop and
+`0.976707` on Compact. Both contact sheets passed nonblank/browser checks and
+manual review. The official fixture and common tests additionally cover
+Derivative, smooth/cusp/jump/border/isolated-`NaN` behavior, extrema,
+difference-table critical-point detection, interval and scalar singularity
+paths, FunctionGraph domain cropping, callback suspension, evaluator failures,
+point limits, and wrapper point counts. The visual source excludes only the
+upstream-broken JessieCode string-FunctionGraph Derivative combination
+described above. This remains a focused preview outside the 30-case Stable
+corpus; Plot v1 and FunctionGraph RDP simplification remain pending.
 The focused `tapemeasures` capture uses one JessieCode source for a default
 horizontal tape and a label-only diagonal tape. Static captures scored
 `0.984781` on Desktop and `0.969197` on Compact. After dragging the horizontal
@@ -2275,7 +2313,7 @@ Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
 SmartLabel/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 106 cases while the independently
+the development corpus now contains 107 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

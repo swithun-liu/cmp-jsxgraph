@@ -5907,7 +5907,7 @@ class NativeJessieCodeCreatorsTest {
         assertEquals(-1.0, curve.points.first().curveParameter)
         assertEquals(1.0, curve.points.last().curveParameter)
 
-        for (version in listOf(1, 4)) {
+        for (version in listOf(1)) {
             val error = creatorError(
                 source =
                     "functiongraph(\"x\", -1, 1) " +
@@ -6064,36 +6064,61 @@ class NativeJessieCodeCreatorsTest {
             )
         }
 
-        val unsupportedSources = mapOf(
-            "ellipse" to
+        val versionFourCases = listOf(
+            Triple(
+                "ellipse",
                 "ellipse([-2, 0], [2, 0], 6) << plotVersion: 4 >>;",
-            "hyperbola" to
-                "hyperbola([-2, 0], [2, 0], 2) << plotVersion: 4 >>;",
-            "parabola" to
+                667 to 0,
+            ),
+            Triple(
+                "hyperbola",
+                "hyperbola([-2, 0], [2, 0], 2) " +
+                    "<< plotVersion: 4 >>;",
+                909 to 2,
+            ),
+            Triple(
+                "parabola",
                 "parabola([1, 0], [[-1, -2], [-1, 2]]) " +
                     "<< plotVersion: 4 >>;",
-            "spline" to
+                790 to 1,
+            ),
+            Triple(
+                "spline",
                 "spline([-3, -1, 1, 3], [0, 2, -1, 1]) " +
                     "<< plotVersion: 4 >>;",
-            "cardinalspline" to
+                458 to 0,
+            ),
+            Triple(
+                "cardinalspline",
                 "cardinalspline(" +
                     "[[-3, 0], [-1, 2], [1, -1], [3, 1]], " +
                     "0.5, \"uniform\"" +
                     ") << createPoints: false, plotVersion: 4 >>;",
-            "derivative" to
+                464 to 0,
+            ),
+            Triple(
+                "derivative",
                 "f = functiongraph(\"x * x * x\", -2, 2) << " +
                     "doAdvancedPlot: false, numberPointsHigh: 32 >>; " +
                     "derivative(f) << plotVersion: 4 >>;",
+                820 to 0,
+            ),
         )
-        for ((creatorName, source) in unsupportedSources) {
-            val error = creatorError(source, plotBoard("$creatorName-v3"))
-            assertEquals(creatorName, error.creatorName)
-            assertEquals(
-                JessieCodeCreatorError.UnsupportedAttributeValue(
-                    attribute = "plotVersion",
-                    actual = "4",
+        for ((creatorName, source, expected) in versionFourCases) {
+            val curve = curve(
+                evaluate(
+                    source,
+                    plotBoard("$creatorName-v4"),
                 ),
-                error.error,
+            )
+            assertEquals(expected.first, curve.numberPoints, creatorName)
+            assertEquals(
+                expected.second,
+                curve.points.count { point ->
+                    point.usrCoords[1].isNaN() ||
+                        point.usrCoords[2].isNaN()
+                },
+                creatorName,
             )
         }
     }

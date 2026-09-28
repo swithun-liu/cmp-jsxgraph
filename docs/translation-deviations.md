@@ -212,7 +212,14 @@ practical.
   styling because their Greiner-Hormann output is a closed path. Native
   Ellipse/Hyperbola/Parabola, Derivative, Spline, and CardinalSpline creators
   inherit the same adaptive-v2 default, support the explicit experimental
-  Plot v3 path, and retain the explicit naive fallback. Plot versions 1 and 4,
+  Plot v3 path, support the explicit difference-based Plot v4 path, and retain
+  the explicit naive fallback. Plot v4 uses bounded interval arithmetic for
+  supported JessieCode expressions and follows the upstream scalar `fminbr`
+  fallback when interval evaluation is unavailable. The dormant upstream
+  `differenceMethodExperiments` helper is not part of the production call
+  chain and is internally non-runnable in JSXGraph `1.13.3` because it calls
+  the absent `_criticalPoints` method; it is intentionally recorded rather
+  than exposed as translated runtime behavior. Plot v1,
   FunctionGraph RDP simplification, omitted domains, function-valued and
   mixed-array terms, transformations, polar curves, cubic Bezier paths,
   ordinary Curve fills, non-round caps, arrows, labels, and hit testing return

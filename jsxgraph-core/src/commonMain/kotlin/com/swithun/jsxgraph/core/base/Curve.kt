@@ -29,10 +29,13 @@ import com.swithun.jsxgraph.core.math.NumericsPoint2D
 import com.swithun.jsxgraph.core.math.Plot
 import com.swithun.jsxgraph.core.math.PlotError
 import com.swithun.jsxgraph.core.math.PlotFunction
+import com.swithun.jsxgraph.core.math.PlotInterval
+import com.swithun.jsxgraph.core.math.PlotIntervalFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeIntervalEvaluation
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import kotlin.math.abs
@@ -906,6 +909,40 @@ internal class Curve private constructor(
                     maximumPointCount = board.maxCurvePoints,
                     x = xFunction,
                     y = yFunction,
+                )
+                4 -> Plot.updateParametricCurveV4(
+                    board = board,
+                    minimum = minimum,
+                    maximum = maximum,
+                    identityXTerm = identityXTerm,
+                    maximumPointCount = board.maxCurvePoints,
+                    x = xFunction,
+                    y = yFunction,
+                    intervalY = yTerm?.let { expression ->
+                        PlotIntervalFunction {
+                                intervalMinimum,
+                                intervalMaximum,
+                                _,
+                            ->
+                            val interval = PlotInterval(
+                                lo = intervalMinimum,
+                                hi = intervalMaximum,
+                            )
+                            when (
+                                val intervalResult =
+                                    expression.evaluateInterval(
+                                        expression.variableNames.associateWith {
+                                            interval
+                                        },
+                                    )
+                            ) {
+                                is JessieCodeIntervalEvaluation.Value ->
+                                    GMResult.Ok(intervalResult.interval)
+                                is JessieCodeIntervalEvaluation.Unavailable ->
+                                    GMResult.Ok(null)
+                            }
+                        }
+                    },
                 )
                 else -> return GMResult.Err(
                     CurveError.UnsupportedPlotVersion(
@@ -2442,6 +2479,15 @@ internal class Curve private constructor(
                 )
             ) {
                 is GMResult.Ok -> result
+                is GMResult.Err
+                    if (
+                        result.error is
+                            NumericsError.SplineValueOutOfDomain
+                    ) ->
+                    // JSXGraph 1.13.3: Numerics.splineEval returns NaN
+                    // outside the knot domain. Plot v4 intentionally probes
+                    // beyond both borders while finding components.
+                    GMResult.Ok(Double.NaN)
                 is GMResult.Err -> GMResult.Err(
                     CurveError.Numerics("splineEval", result.error),
                 )
@@ -2739,7 +2785,7 @@ internal class Curve private constructor(
         internal const val DEFAULT_SAMPLE_COUNT: Int = 1600
         internal const val MAX_SAMPLE_COUNT: Int = 10_000
         internal const val DEFAULT_PLOT_VERSION: Int = 2
-        private val SUPPORTED_PLOT_VERSIONS: Set<Int> = setOf(2, 3)
+        private val SUPPORTED_PLOT_VERSIONS: Set<Int> = setOf(2, 3, 4)
         internal const val DEFAULT_RECURSION_DEPTH_HIGH: Int = 17
         internal const val MAX_RECURSION_DEPTH: Int = 30
         internal const val COMB_DEFAULT_FREQUENCY: Double = 0.2

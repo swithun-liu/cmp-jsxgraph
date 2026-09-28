@@ -38,7 +38,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(106, cases.size)
+        assertEquals(107, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -50,7 +50,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            76,
+            77,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -141,6 +141,29 @@ class ParitySourceTest {
             "spline",
             "cardinalSpline",
             "derivative",
+        )) {
+            assertTrue(curve(scene, id).points.size > 64, id)
+        }
+    }
+
+    @Test
+    fun adaptivePlotV4FocusedCaseRendersContinuousWrappers() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("adaptive_plot_v4"),
+        ).value
+        val sceneResult = parseParitySource(parityCase.source)
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            sceneResult,
+            sceneResult.toString(),
+        ).value
+
+        assertTrue("adaptive-plot-v4" in parityCase.features)
+        for (id in listOf(
+            "ellipse",
+            "hyperbola",
+            "parabola",
+            "spline",
+            "cardinalSpline",
         )) {
             assertTrue(curve(scene, id).points.size > 64, id)
         }

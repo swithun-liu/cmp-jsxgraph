@@ -156,6 +156,24 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "adaptive_plot_v4",
+            title = "Adaptive Plot v4",
+            scenario = "Continuous Curve wrappers explicitly use the difference-based adaptive Plot v4 sampler.",
+            source = ADAPTIVE_PLOT_V4_SOURCE,
+            features = setOf(
+                "axis",
+                "grid",
+                "curve",
+                "adaptive-plot-v4",
+                "ellipse",
+                "hyperbola",
+                "parabola",
+                "spline",
+                "cardinalspline",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "ticks_2d",
             title = "2D ticks",
             scenario = "Fixed, faced, one-sided infinite, polar, and curve ticks share one source.",
@@ -1714,6 +1732,21 @@ private const val ADAPTIVE_PLOT_V3_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nellipse([-8, 3], [-4, 3], 5) << id: \"ellipse\", name: \"\", withLabel: false, plotVersion: 3, strokeColor: \"#16877A\", strokeWidth: 4, fixed: true, highlight: false >>;\nhyperbola([-1, 3], [1, 3], 1, -1.2, 1.2) << id: \"hyperbola\", name: \"\", withLabel: false, plotVersion: 3, strokeColor: \"#D55E00\", strokeWidth: 4, fixed: true, highlight: false >>;\nparabola([6, 3], [[4, 1], [4, 5]], -1.2, 1.2) << id: \"parabola\", name: \"\", withLabel: false, plotVersion: 3, strokeColor: \"#7B4EA3\", strokeWidth: 4, fixed: true, highlight: false >>;\nspline([-9, -7, -5, -3], [-4, -2, -5, -3]) << id: \"spline\", name: \"\", withLabel: false, plotVersion: 3, strokeColor: \"#0072B2\", strokeWidth: 4, fixed: true, highlight: false >>;\ncardinalspline([[-2, -4], [0, -2], [2, -5], [4, -3]], 0.5, \"uniform\") << id: \"cardinalSpline\", name: \"\", withLabel: false, createPoints: false, plotVersion: 3, strokeColor: \"#009E73\", strokeWidth: 4, fixed: true, highlight: false >>;\nsource = functiongraph(\"0.15 * (x - 7) * (x - 7) * (x - 7) - 4 * x\", 5, 9) << id: \"source\", name: \"\", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 64, visible: false, fixed: true, highlight: false >>;\nderivative(source) << id: \"derivative\", name: \"\", withLabel: false, plotVersion: 3, strokeColor: \"#B44335\", strokeWidth: 4, fixed: true, highlight: false >>;"
+}
+"""
+
+private const val ADAPTIVE_PLOT_V4_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-10, 7, 10, -7],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\nellipse([-8, 3], [-4, 3], 5) << id: \"ellipse\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#16877A\", strokeWidth: 4, fixed: true, highlight: false >>;\nhyperbola([-1, 3], [1, 3], 1, -1.2, 1.2) << id: \"hyperbola\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#D55E00\", strokeWidth: 4, fixed: true, highlight: false >>;\nparabola([6, 3], [[4, 1], [4, 5]], -1.2, 1.2) << id: \"parabola\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#7B4EA3\", strokeWidth: 4, fixed: true, highlight: false >>;\nspline([-9, -7, -5, -3], [-4, -2, -5, -3]) << id: \"spline\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#0072B2\", strokeWidth: 4, fixed: true, highlight: false >>;\ncardinalspline([[-2, -4], [0, -2], [2, -5], [4, -3]], 0.5, \"uniform\") << id: \"cardinalSpline\", name: \"\", withLabel: false, createPoints: false, plotVersion: 4, strokeColor: \"#009E73\", strokeWidth: 4, fixed: true, highlight: false >>;"
 }
 """
 

@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 106 source-controlled cases: 30 independent production scenarios and
-76 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 107 source-controlled cases: 30 independent production scenarios and
+77 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -380,7 +380,9 @@ Native `curve`, `functiongraph`, and `plot` use the translated adaptive
 the translated right-open naive sampler and `numberPointsHigh`. Ellipse,
 Hyperbola, Parabola, Derivative, Spline, and CardinalSpline inherit the same
 native adaptive default, and explicit `plotVersion: 3` selects the translated
-experimental Plot v3 sampler. Plot versions 1 and 4 and FunctionGraph RDP
+experimental Plot v3 sampler. Explicit `plotVersion: 4` selects the translated
+difference-based Plot v4 sampler, including its bounded JessieCode interval
+arithmetic path and scalar-extrema fallback. Plot v1 and FunctionGraph RDP
 simplification remain explicit gaps. Polygon,
 PolygonalChain, Parallelogram, and RegularPolygon currently support Point or
 coordinate-array vertices,

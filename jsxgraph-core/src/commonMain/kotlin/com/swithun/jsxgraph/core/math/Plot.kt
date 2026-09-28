@@ -114,6 +114,28 @@ internal object Plot {
             y = y,
             random = random,
         )
+
+    // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurve_v4.
+    internal fun <E> updateParametricCurveV4(
+        board: Board,
+        minimum: Double,
+        maximum: Double,
+        identityXTerm: Boolean,
+        maximumPointCount: Int,
+        x: PlotFunction<E>,
+        y: PlotFunction<E>,
+        intervalY: PlotIntervalFunction<E>? = null,
+    ): GMResult<PlotResult, PlotError<E>> =
+        updateParametricCurveV4Impl(
+            board = board,
+            minimum = minimum,
+            maximum = maximum,
+            identityXTerm = identityXTerm,
+            maximumPointCount = maximumPointCount,
+            x = x,
+            y = y,
+            intervalY = intervalY,
+        )
 }
 
 private class PlotV2State<E>(
