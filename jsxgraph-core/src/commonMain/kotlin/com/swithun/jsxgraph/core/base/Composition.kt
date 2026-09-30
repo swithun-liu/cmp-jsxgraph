@@ -110,7 +110,7 @@ internal open class Composition(
     }
 
     // JSXGraph: src/base/composition.js -> getParents
-    internal fun getParents(): List<String>? = null
+    internal open fun getParents(): List<String>? = null
 
     // JSXGraph: src/base/composition.js -> getType
     internal fun getType(): String = elType

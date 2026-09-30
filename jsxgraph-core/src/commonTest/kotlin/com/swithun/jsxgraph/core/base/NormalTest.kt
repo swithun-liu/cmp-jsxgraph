@@ -355,6 +355,114 @@ class NormalTest {
     }
 
     @Test
+    fun cubicArcAndSectorBranchesMatchOfficialPositionMapping() {
+        val board = board("cubic-curves")
+        val arc = when (
+            val result = Arc.create(
+                board = board,
+                center = point(board, 0.0, 0.0, "arcCenter"),
+                radiuspoint = point(board, 2.0, 0.0, "arcRadius"),
+                anglepoint = point(board, -2.0, 0.0, "arcAngle"),
+                id = "arc",
+                name = "",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> throw AssertionError(result.error)
+        }
+        val arcGlider = assertIs<GMResult.Ok<Glider>>(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 1.8),
+                slideObject = arc,
+                id = "arcGlider",
+                name = "",
+            ),
+        ).value
+        val arcNormal = normal(
+            Normal.create(
+                board = board,
+                firstParent = arcGlider,
+                secondParent = arc,
+                id = "arcNormal",
+                name = "",
+            ),
+        )
+        val projectedPoint = point(board, 1.0, 1.8, "projectedPoint")
+        val projectedNormal = normal(
+            Normal.create(
+                board = board,
+                firstParent = arc,
+                secondParent = projectedPoint,
+                id = "projectedNormal",
+                name = "",
+            ),
+        )
+
+        val sector = when (
+            val result = Sector.create(
+                board = board,
+                center = point(board, 0.0, -2.0, "sectorCenter"),
+                radiuspoint = point(board, 2.0, -2.0, "sectorRadius"),
+                anglepoint = point(board, 0.0, 0.0, "sectorAngle"),
+                id = "sector",
+                name = "",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> throw AssertionError(result.error)
+        }
+        val sectorGlider = assertIs<GMResult.Ok<Glider>>(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, -1.0),
+                slideObject = sector,
+                id = "sectorGlider",
+                name = "",
+            ),
+        ).value
+        val sectorNormal = normal(
+            Normal.create(
+                board = board,
+                firstParent = sector,
+                secondParent = sectorGlider,
+                id = "sectorNormal",
+                name = "",
+            ),
+        )
+        board.update()
+
+        assertArrayMatches(
+            doubleArrayOf(
+                -0.001367383827745705,
+                0.8744891019608976,
+                -0.4850451634143187,
+            ),
+            arcNormal.stdform.copyOfRange(0, 3),
+            tolerance = CURVE_TOLERANCE,
+        )
+        assertArrayMatches(
+            doubleArrayOf(-1.8, 0.0, 1.0),
+            projectedNormal.stdform.copyOfRange(0, 3),
+            tolerance = CURVE_TOLERANCE,
+        )
+        assertArrayMatches(
+            doubleArrayOf(
+                -1.4142135623730951,
+                0.7071067811865476,
+                -0.7071067811865476,
+            ),
+            sectorNormal.stdform.copyOfRange(0, 3),
+            tolerance = CURVE_TOLERANCE,
+        )
+        assertEquals(listOf("arcGlider", "arc"), arcNormal.parents)
+        assertEquals(
+            listOf("sector", "sectorGlider"),
+            sectorNormal.parents,
+        )
+    }
+
+    @Test
     fun directAndParentRemovalRetainHelpersLikeOfficial() {
         for (kind in listOf("line", "circle", "curve")) {
             for (removedParent in listOf("object", "point", "normal")) {

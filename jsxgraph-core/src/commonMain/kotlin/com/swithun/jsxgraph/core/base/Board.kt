@@ -8,9 +8,21 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import kotlin.math.abs
+import kotlin.math.sign
 
 internal sealed interface BoardError {
     data class DuplicateElementId(val id: String) : BoardError
+
+    data class InvalidBoundingBoxCoordinateCount(
+        val count: Int,
+    ) : BoardError
+}
+
+internal enum class BoardZoomMode {
+    RESET,
+    KEEP,
+    UPDATE,
 }
 
 /**
@@ -25,15 +37,19 @@ internal class Board(
     originY: Double,
     unitX: Double,
     unitY: Double,
+    internal val canvasWidth: Double = DEFAULT_CANVAS_WIDTH,
+    internal val canvasHeight: Double = DEFAULT_CANVAS_HEIGHT,
+    internal var updateQuality: Int = BOARD_QUALITY_HIGH,
     internal var zoomX: Double = 1.0,
     internal var zoomY: Double = 1.0,
+    internal var keepAspectRatio: Boolean = false,
     internal val id: String = "jxgBoard1",
     internal val maxNameLength: Int = 1,
     boundingBox: DoubleArray = doubleArrayOf(
         -originX / (unitX * zoomX),
         originY / (unitY * zoomY),
-        (DEFAULT_CANVAS_WIDTH - originX) / (unitX * zoomX),
-        (originY - DEFAULT_CANVAS_HEIGHT) / (unitY * zoomY),
+        (canvasWidth - originX) / (unitX * zoomX),
+        (originY - canvasHeight) / (unitY * zoomY),
     ),
     internal val defaultCurveMinimum: Double =
         (-DEFAULT_CANVAS_WIDTH * CURVE_DOMAIN_PADDING - originX) /
@@ -45,6 +61,9 @@ internal class Board(
             ) / (unitX * zoomX),
     internal val maxCurvePoints: Int = 10_000,
 ) {
+    private val initialZoomX = zoomX
+    private val initialZoomY = zoomY
+
     internal class Origin(
         val usrCoords: DoubleArray,
         val scrCoords: DoubleArray,
@@ -65,6 +84,8 @@ internal class Board(
     internal val objects = linkedMapOf<String, GeometryElement>()
     internal val objectsList = mutableListOf<GeometryElement>()
     internal val elementsByName = linkedMapOf<String, GeometryElement>()
+    // JSXGraph 1.13.3: src/base/board.js -> Board constructor / groups.
+    internal val groups = linkedMapOf<String, Group>()
     // JSXGraph 1.13.3: src/base/board.js -> Board constructor / grids.
     internal val grids = mutableListOf<Curve>()
     internal var numObjects: Int = 0
@@ -119,29 +140,155 @@ internal class Board(
     internal fun elementByName(name: String): GeometryElement? =
         elementsByName[name]
 
+    internal fun groupById(id: String): Group? = groups[id]
+
     // JSXGraph: src/base/board.js -> getBoundingBox
     internal fun getBoundingBox(): DoubleArray = boundingBox.copyOf()
 
+    // JSXGraph 1.13.3: src/base/board.js -> setBoundingBox.
+    internal fun setBoundingBox(
+        bbox: DoubleArray,
+        keepAspectRatio: Boolean = false,
+        setZoom: BoardZoomMode = BoardZoomMode.RESET,
+    ): GMResult<Board, BoardError> {
+        if (bbox.size < BOUNDING_BOX_COORDINATE_COUNT) {
+            return GMResult.Err(
+                BoardError.InvalidBoundingBoxCoordinateCount(bbox.size),
+            )
+        }
+
+        val previousUnitX = unitX
+        val previousUnitY = unitY
+        var offsetX = 0.0
+        var offsetY = 0.0
+        var zoomRatio = 1.0
+        if (keepAspectRatio) {
+            var ratio =
+                if (this.keepAspectRatio) {
+                    previousUnitX / previousUnitY
+                } else {
+                    1.0
+                }
+            if (ratio.isNaN()) {
+                ratio = 1.0
+            }
+            if (setZoom == BoardZoomMode.KEEP) {
+                zoomRatio = zoomX / zoomY
+            }
+            val width = bbox[2] - bbox[0]
+            val height = bbox[1] - bbox[3]
+            val previousWidth = previousUnitX * width
+            val previousHeight = previousUnitY * height
+            if (canvasWidth >= canvasHeight) {
+                if (previousWidth >= previousHeight) {
+                    unitY = canvasHeight / height
+                    unitX = unitY * ratio
+                } else {
+                    unitY =
+                        canvasHeight / abs(width) *
+                            height.sign / zoomRatio
+                    unitX = unitY * ratio
+                }
+            } else if (previousHeight > previousWidth) {
+                unitX = canvasWidth / width
+                unitY = unitX / ratio
+            } else {
+                unitX =
+                    canvasWidth / abs(height) *
+                        width.sign * zoomRatio
+                unitY = unitX / ratio
+            }
+            offsetX = (canvasWidth / unitX - width) * 0.5
+            offsetY = (canvasHeight / unitY - height) * 0.5
+            this.keepAspectRatio = true
+        } else {
+            unitX = canvasWidth / (bbox[2] - bbox[0])
+            unitY = canvasHeight / (bbox[1] - bbox[3])
+            this.keepAspectRatio = false
+        }
+
+        origin.scrCoords[1] = -unitX * (bbox[0] - offsetX)
+        origin.scrCoords[2] = unitY * (bbox[1] + offsetY)
+        when (setZoom) {
+            BoardZoomMode.UPDATE -> {
+                zoomX *= unitX / previousUnitX
+                zoomY *= unitY / previousUnitY
+            }
+            BoardZoomMode.RESET -> {
+                zoomX = initialZoomX
+                zoomY = initialZoomY
+            }
+            BoardZoomMode.KEEP -> Unit
+        }
+        updateBoundingBoxFromViewport()
+        return GMResult.Ok(this)
+    }
+
+    private fun updateBoundingBoxFromViewport() {
+        boundingBox[0] = -origin.scrCoords[1] / unitX
+        boundingBox[1] = origin.scrCoords[2] / unitY
+        boundingBox[2] =
+            (canvasWidth - origin.scrCoords[1]) / unitX
+        boundingBox[3] =
+            (origin.scrCoords[2] - canvasHeight) / unitY
+    }
+
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> read coordinate reset.
+    internal fun setCoordinateSystem(
+        originX: Double,
+        originY: Double,
+        unitX: Double,
+        unitY: Double,
+    ): Board {
+        origin.usrCoords[0] = 1.0
+        origin.usrCoords[1] = 0.0
+        origin.usrCoords[2] = 0.0
+        origin.scrCoords[0] = 1.0
+        origin.scrCoords[1] = originX
+        origin.scrCoords[2] = originY
+        this.unitX = unitX
+        this.unitY = unitY
+        updateBoundingBoxFromViewport()
+        return this
+    }
+
     // JSXGraph: src/base/board.js -> generateName
     internal fun generateName(element: GeometryElement): String {
-        if (element.type == Const.OBJECT_TYPE_TICKS || maxNameLength <= 0) {
+        return generateName(
+            type = element.type,
+            elementClass = element.elementClass,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/group.js -> Group name initialization.
+    internal fun generateGroupName(): String =
+        "group_" + generateName(
+            type = Const.OBJECT_TYPE_POINT,
+            elementClass = Const.OBJECT_CLASS_POINT,
+        )
+
+    private fun generateName(
+        type: Int,
+        elementClass: Int,
+    ): String {
+        if (type == Const.OBJECT_TYPE_TICKS || maxNameLength <= 0) {
             return ""
         }
 
         val possibleNames = when {
-            element.elementClass == Const.OBJECT_CLASS_POINT ||
-                element.type == Const.OBJECT_TYPE_POINT3D -> CAPITAL_NAMES
-            element.type == Const.OBJECT_TYPE_ANGLE -> ANGLE_NAMES
+            elementClass == Const.OBJECT_CLASS_POINT ||
+                type == Const.OBJECT_TYPE_POINT3D -> CAPITAL_NAMES
+            type == Const.OBJECT_TYPE_ANGLE -> ANGLE_NAMES
             else -> LOWERCASE_NAMES
         }
         val (prefix, suffix) = when {
-            element.elementClass == Const.OBJECT_CLASS_POINT ||
-                element.type == Const.OBJECT_TYPE_POINT3D ||
-                element.elementClass == Const.OBJECT_CLASS_LINE ||
-                element.type == Const.OBJECT_TYPE_ANGLE -> "" to ""
-            element.type == Const.OBJECT_TYPE_POLYGON -> "P_{" to "}"
-            element.elementClass == Const.OBJECT_CLASS_CIRCLE -> "k_{" to "}"
-            element.elementClass == Const.OBJECT_CLASS_TEXT -> "t_{" to "}"
+            elementClass == Const.OBJECT_CLASS_POINT ||
+                type == Const.OBJECT_TYPE_POINT3D ||
+                elementClass == Const.OBJECT_CLASS_LINE ||
+                type == Const.OBJECT_TYPE_ANGLE -> "" to ""
+            type == Const.OBJECT_TYPE_POLYGON -> "P_{" to "}"
+            elementClass == Const.OBJECT_CLASS_CIRCLE -> "k_{" to "}"
+            elementClass == Const.OBJECT_CLASS_TEXT -> "t_{" to "}"
             else -> "s_{" to "}"
         }
         val indices = IntArray(maxNameLength)
@@ -171,6 +318,23 @@ internal class Board(
         }
 
         return ""
+    }
+
+    // JSXGraph 1.13.3: src/base/group.js -> Group constructor registration.
+    internal fun registerGroup(
+        group: Group,
+        requestedId: String,
+    ): String {
+        val creationIndex = numObjects
+        numObjects += 1
+        val groupId =
+            if (requestedId.isEmpty()) {
+                "${id}Group$creationIndex"
+            } else {
+                requestedId
+            }
+        groups[groupId] = group
+        return groupId
     }
 
     // JSXGraph: src/base/board.js -> select
@@ -297,6 +461,10 @@ internal class Board(
             element.needsUpdate =
                 element.needsRegularUpdate || needsFullUpdate
         }
+        for (group in groups.values) {
+            group.needsUpdate =
+                group.needsRegularUpdate || needsFullUpdate
+        }
         return this
     }
 
@@ -315,6 +483,9 @@ internal class Board(
                 )
                 .updateVisibility()
             index += 1
+        }
+        for (group in groups.values.toList()) {
+            group.update(draggedElement)
         }
         return this
     }
@@ -371,10 +542,64 @@ internal class Board(
         return this
     }
 
-    private companion object {
+    internal companion object {
+        // JSXGraph 1.13.3: src/jsxgraph.js -> JSXGraph.initBoard.
+        internal fun fromBoundingBox(
+            boundingBox: DoubleArray,
+            keepAspectRatio: Boolean,
+            id: String = "jxgBoard1",
+            canvasWidth: Double = DEFAULT_CANVAS_WIDTH,
+            canvasHeight: Double = DEFAULT_CANVAS_HEIGHT,
+            defaultCurveMinimum: Double,
+            defaultCurveMaximum: Double,
+            maxCurvePoints: Int = 10_000,
+        ): Board {
+            var unitX =
+                canvasWidth / (boundingBox[2] - boundingBox[0])
+            var unitY =
+                canvasHeight / (boundingBox[1] - boundingBox[3])
+            var offsetX = 0.0
+            var offsetY = 0.0
+            if (keepAspectRatio) {
+                if (abs(unitX) < abs(unitY)) {
+                    unitY = abs(unitX) * unitY / abs(unitY)
+                    offsetY = (
+                        canvasHeight / unitY -
+                            (boundingBox[1] - boundingBox[3])
+                        ) * 0.5
+                } else {
+                    unitX = abs(unitY) * unitX / abs(unitX)
+                    offsetX = (
+                        canvasWidth / unitX -
+                            (boundingBox[2] - boundingBox[0])
+                        ) * 0.5
+                }
+            }
+            val originX = -unitX * (boundingBox[0] - offsetX)
+            val originY = unitY * (boundingBox[1] + offsetY)
+            return Board(
+                originX = originX,
+                originY = originY,
+                unitX = unitX,
+                unitY = unitY,
+                canvasWidth = canvasWidth,
+                canvasHeight = canvasHeight,
+                keepAspectRatio = keepAspectRatio,
+                id = id,
+                defaultCurveMinimum = defaultCurveMinimum,
+                defaultCurveMaximum = defaultCurveMaximum,
+                maxCurvePoints = maxCurvePoints,
+            )
+        }
+
+        // JSXGraph 1.13.3: src/base/board.js -> BOARD_QUALITY_*.
+        const val BOARD_QUALITY_LOW = 0x1
+        const val BOARD_QUALITY_HIGH = 0x2
+
         const val DEFAULT_CANVAS_WIDTH = 500.0
         const val DEFAULT_CANVAS_HEIGHT = 500.0
         const val CURVE_DOMAIN_PADDING = 0.1
+        const val BOUNDING_BOX_COORDINATE_COUNT = 4
 
         val CAPITAL_NAMES = listOf(
             "",

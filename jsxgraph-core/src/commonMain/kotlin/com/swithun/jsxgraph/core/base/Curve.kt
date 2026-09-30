@@ -1,15 +1,17 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/base/curve.js -> Curve, generateTerm, updateCurve,
- * createStepfunction, createDerivative, interpolationFunctionFromArray,
- * createSpline, createCardinalSpline, createRiemannsum, createBoxPlot,
+ * createStepfunction, createDerivative, createSketchCurve,
+ * interpolationFunctionFromArray,
+ * createSpline, createCardinalSpline, createMetapostSpline,
+ * createRiemannsum, createBoxPlot,
  * src/math/plot.js -> updateParametricCurveNaive /
- * updateParametricCurve_v2,
+ * updateParametricCurveOld / updateParametricCurve_v2,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality,
  * src/element/vectorfield.js -> createVectorField / createSlopeField,
  * src/element/conic.js ->
- * createEllipse / createHyperbola / createParabola
+ * createEllipse / createHyperbola / createParabola / createConic
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -22,7 +24,15 @@ import com.swithun.jsxgraph.core.math.Clip
 import com.swithun.jsxgraph.core.math.ClipBooleanOperation
 import com.swithun.jsxgraph.core.math.ClipError
 import com.swithun.jsxgraph.core.math.Geometry
+import com.swithun.jsxgraph.core.math.ImplicitPlot
+import com.swithun.jsxgraph.core.math.ImplicitPlotConfig
+import com.swithun.jsxgraph.core.math.ImplicitPlotError
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.MetaPost
+import com.swithun.jsxgraph.core.math.MetaPostControlPair
+import com.swithun.jsxgraph.core.math.MetaPostControls
+import com.swithun.jsxgraph.core.math.MetaPostPoint
+import com.swithun.jsxgraph.core.math.MetaPostPointControl
 import com.swithun.jsxgraph.core.math.Numerics
 import com.swithun.jsxgraph.core.math.NumericsError
 import com.swithun.jsxgraph.core.math.NumericsPoint2D
@@ -113,6 +123,19 @@ internal sealed interface CurveError {
         val error: BoardError,
     ) : CurveError
 
+    data object EmptyTransformationList : CurveError
+
+    data object TransformationSourceBoardMismatch : CurveError
+
+    data class TransformationSourceNotRegistered(
+        val id: String,
+    ) : CurveError
+
+    data class TransformationEvaluation(
+        val index: Int,
+        val error: TransformationError,
+    ) : CurveError
+
     data class BooleanClipping(
         val error: ClipError,
     ) : CurveError
@@ -128,6 +151,12 @@ internal sealed interface CurveError {
         val minimum: Int,
     ) : CurveError
 
+    data class InvalidMetaPostControl(
+        val control: String,
+        val expected: String,
+        val actualType: String,
+    ) : CurveError
+
     data class InvalidCombFrequency(
         val frequency: Double,
     ) : CurveError
@@ -135,6 +164,27 @@ internal sealed interface CurveError {
     data class InvalidInequalitySource(
         val elementType: String,
         val curveType: String?,
+    ) : CurveError
+
+    data class TraceParentBoardMismatch(
+        val role: String,
+    ) : CurveError
+
+    data class TraceParentNotRegistered(
+        val role: String,
+        val id: String,
+    ) : CurveError
+
+    data class UnsupportedTraceSlideObject(
+        val elementType: String,
+    ) : CurveError
+
+    data class TraceGliderPosition(
+        val error: CoordinateTransformationError,
+    ) : CurveError
+
+    data class TraceGliderEvaluation(
+        val error: GliderError,
     ) : CurveError
 
     data class DataUpdate(
@@ -146,6 +196,8 @@ internal data class CurvePlotOptions(
     val doAdvancedPlot: Boolean = false,
     val plotVersion: Int = 2,
     val recursionDepthHigh: Int = 17,
+    val rdpSmoothing: Boolean = false,
+    val rdpThreshold: Double = 0.2,
 )
 
 internal sealed interface CurveDataUpdateError {
@@ -160,6 +212,10 @@ internal sealed interface CurveDataUpdateError {
     data class Mesh3D(
         val error: Mesh3DError,
     ) : CurveDataUpdateError
+
+    data class ImplicitCurve(
+        val error: CurveImplicitUpdateError,
+    ) : CurveDataUpdateError
 }
 
 internal data class CurveDataUpdate(
@@ -171,6 +227,81 @@ internal fun interface CurveDataUpdater {
     fun update(): GMResult<CurveDataUpdate, CurveDataUpdateError>
 }
 
+internal sealed interface CurveImplicitUpdateError {
+    data class ExpressionEvaluation(
+        val term: String,
+        val error: JessieCodeRuntimeError,
+    ) : CurveImplicitUpdateError
+
+    data class InvalidValue(
+        val term: String,
+        val expected: String,
+        val actualType: String,
+    ) : CurveImplicitUpdateError
+
+    data class InvalidDomain(
+        val axis: String,
+        val values: DoubleArray,
+    ) : CurveImplicitUpdateError
+
+    data class Plot(
+        val error: ImplicitPlotError,
+    ) : CurveImplicitUpdateError
+}
+
+internal data class CurveImplicitDefinition(
+    val f: JessieCodeCoordinateFunction,
+    val dfx: JessieCodeCoordinateFunction?,
+    val dfy: JessieCodeCoordinateFunction?,
+    val domainX: JessieCodeCoordinateFunction?,
+    val domainY: JessieCodeCoordinateFunction?,
+    val margin: JessieCodeCoordinateFunction,
+    val resolutionOuter: JessieCodeCoordinateFunction,
+    val resolutionInner: JessieCodeCoordinateFunction,
+    val maxSteps: JessieCodeCoordinateFunction,
+    val alpha0: JessieCodeCoordinateFunction,
+    val tolU0: JessieCodeCoordinateFunction,
+    val tolNewton: JessieCodeCoordinateFunction,
+    val tolCusp: JessieCodeCoordinateFunction,
+    val tolProgress: JessieCodeCoordinateFunction,
+    val qdtBox: JessieCodeCoordinateFunction,
+    val kappa0: JessieCodeCoordinateFunction,
+    val delta0: JessieCodeCoordinateFunction,
+    val hInitial: JessieCodeCoordinateFunction,
+    val hCritical: JessieCodeCoordinateFunction,
+    val hMax: JessieCodeCoordinateFunction,
+    val loopDist: JessieCodeCoordinateFunction,
+    val loopDir: JessieCodeCoordinateFunction,
+    val loopDetection: JessieCodeCoordinateFunction,
+) {
+    internal fun expressions(): List<JessieCodeCoordinateFunction> =
+        listOfNotNull(
+            f,
+            dfx,
+            dfy,
+            domainX,
+            domainY,
+            margin,
+            resolutionOuter,
+            resolutionInner,
+            maxSteps,
+            alpha0,
+            tolU0,
+            tolNewton,
+            tolCusp,
+            tolProgress,
+            qdtBox,
+            kappa0,
+            delta0,
+            hInitial,
+            hCritical,
+            hMax,
+            loopDist,
+            loopDir,
+            loopDetection,
+        )
+}
+
 internal data class CurveMesh3DDefinition(
     var requestedPointCount: Long = 0L,
 )
@@ -179,6 +310,12 @@ private data class CurveBooleanDefinition(
     val subject: GeometryElement,
     val clip: GeometryElement,
     val operation: ClipBooleanOperation,
+)
+
+internal data class CurveTraceDefinition(
+    val glider: Glider,
+    val tracePoint: Point,
+    val sampleCount: Int,
 )
 
 internal interface CurveStepTerm {
@@ -485,6 +622,25 @@ private data class CurveCardinalSplineDefinition(
         com.swithun.jsxgraph.core.math.CardinalSplineInterpolation? = null,
 )
 
+internal data class CurveMetaPostPointControlDefinition(
+    val index: Int,
+    val type: String?,
+    val curlTerm: JessieCodeCoordinateFunction?,
+    val directionTerm: JessieCodeCoordinateFunction?,
+    val tensionTerm: JessieCodeCoordinateFunction?,
+)
+
+internal data class CurveMetaPostControlsDefinition(
+    val tensionTerm: JessieCodeCoordinateFunction,
+    val isClosedTerm: JessieCodeCoordinateFunction,
+    val pointControls: List<CurveMetaPostPointControlDefinition>,
+)
+
+private data class CurveMetaPostSplineDefinition(
+    val points: List<NumericsPoint2D>,
+    val controls: CurveMetaPostControlsDefinition,
+)
+
 private data class CurveRiemannDefinition(
     val upperFunction: JessieCodeCoordinateFunction,
     val lowerFunction: JessieCodeCoordinateFunction?,
@@ -586,20 +742,23 @@ private data class CurveVectorFieldDefinition(
 internal class Curve private constructor(
     board: Board,
     internal val curveType: String,
-    private val xTerm: JessieCodeExpressionFunction?,
-    private val yTerm: JessieCodeExpressionFunction?,
-    private val minimumTerm: JessieCodeExpressionFunction?,
-    private val maximumTerm: JessieCodeExpressionFunction?,
+    private val xTerm: JessieCodeCoordinateFunction?,
+    private val yTerm: JessieCodeCoordinateFunction?,
+    private val minimumTerm: JessieCodeCoordinateFunction?,
+    private val maximumTerm: JessieCodeCoordinateFunction?,
     dataX: DoubleArray?,
     dataY: DoubleArray?,
     internal val sampleCount: Int,
     private val plotOptions: CurvePlotOptions = CurvePlotOptions(),
     private val identityXTerm: Boolean = false,
     private val booleanDefinition: CurveBooleanDefinition? = null,
+    private val traceDefinition: CurveTraceDefinition? = null,
     private val stepDefinition: CurveStepDefinition? = null,
     private val derivativeDefinition: CurveDerivativeDefinition? = null,
     private val splineDefinition: CurveSplineDefinition? = null,
     private val cardinalSplineDefinition: CurveCardinalSplineDefinition? = null,
+    private val metaPostSplineDefinition:
+        CurveMetaPostSplineDefinition? = null,
     private val riemannDefinition: CurveRiemannDefinition? = null,
     internal val integralDefinition: CurveIntegralDefinition? = null,
     private val boxPlotDefinition: CurveBoxPlotDefinition? = null,
@@ -609,6 +768,7 @@ internal class Curve private constructor(
     private val ellipseDefinition: CurveEllipseDefinition? = null,
     private val hyperbolaDefinition: CurveHyperbolaDefinition? = null,
     private val parabolaDefinition: CurveParabolaDefinition? = null,
+    private val conicDefinition: CurveConicDefinition? = null,
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
@@ -629,10 +789,16 @@ internal class Curve private constructor(
         private set
     internal var bezierDegree: Int = 1
         private set
+    internal var transformMat: Array<DoubleArray> = Mat.identity(3)
+        private set
+    internal var transformationSource: Curve? = null
+        private set
     internal var evaluationError: CurveError? = null
         private set
     internal val isBooleanComposition: Boolean
         get() = booleanDefinition != null
+    internal val isTraceCurve: Boolean
+        get() = traceDefinition != null
     internal val isStepFunction: Boolean
         get() = stepDefinition != null
     internal val isDerivative: Boolean
@@ -641,6 +807,12 @@ internal class Curve private constructor(
         get() = splineDefinition != null
     internal val isCardinalSpline: Boolean
         get() = cardinalSplineDefinition != null
+    internal val isMetaPostSpline: Boolean
+        get() = metaPostSplineDefinition != null
+    internal val isImplicitCurve: Boolean
+        get() = elType == IMPLICIT_CURVE_ELEMENT_TYPE
+    internal val isSketchCurve: Boolean
+        get() = elType == SKETCH_CURVE_ELEMENT_TYPE
     internal val isRiemannSum: Boolean
         get() = riemannDefinition != null
     internal val isIntegral: Boolean
@@ -659,6 +831,8 @@ internal class Curve private constructor(
         get() = hyperbolaDefinition != null
     internal val isParabola: Boolean
         get() = parabolaDefinition != null
+    internal val isGenericConic: Boolean
+        get() = conicDefinition != null
     internal val isGrid: Boolean
         get() = gridDefinition != null
     internal val isTicks3D: Boolean
@@ -670,6 +844,7 @@ internal class Curve private constructor(
             ellipseDefinition?.center
                 ?: hyperbolaDefinition?.center
                 ?: parabolaDefinition?.center
+                ?: conicDefinition?.center
     internal val midpoint: Point?
         get() = center
     internal val foci: List<Point>
@@ -701,12 +876,26 @@ internal class Curve private constructor(
         private set
     internal var mesh3DDefinition: CurveMesh3DDefinition? = null
         private set
+    // JSXGraph 1.13.3: src/base/turtle.js -> _attributes / copyAttr.
+    // Turtle snapshots the active pen attributes on every generated Curve.
+    internal var turtlePenAttributes: TurtlePenAttributes? = null
 
     internal fun requestedPointCount(): Long? =
         mesh3DDefinition?.requestedPointCount
             ?: vectorFieldDefinition?.requestedPointCount
             ?: inequalityDefinition?.requestedPointCount
             ?: combDefinition?.requestedPointCount
+            ?: traceDefinition?.let { definition ->
+                definition.sampleCount.toLong() +
+                    if (
+                        definition.glider.slideObject
+                            ?.elementClass != Const.OBJECT_CLASS_CURVE
+                    ) {
+                        1L
+                    } else {
+                        0L
+                    }
+            }
             ?: stepDefinition?.xTerm?.length?.let { sourceCount ->
             if (sourceCount == 0) {
                 0L
@@ -738,6 +927,20 @@ internal class Curve private constructor(
 
     // JSXGraph: src/base/curve.js -> updateCurve
     internal fun updateCurve(): GMResult<Curve, CurveError> {
+        when (val result = updateTransformMatrix()) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        transformationSource?.let { source ->
+            val count = minOf(source.numberPoints, source.points.size)
+            dataX = DoubleArray(count) { index ->
+                source.points[index].usrCoords[1]
+            }
+            dataY = DoubleArray(count) { index ->
+                source.points[index].usrCoords[2]
+            }
+            bezierDegree = source.bezierDegree
+        }
         dataUpdater?.let { updater ->
             when (val result = updater.update()) {
                 is GMResult.Ok -> {
@@ -747,6 +950,12 @@ internal class Curve private constructor(
                 is GMResult.Err -> return GMResult.Err(
                     CurveError.DataUpdate(result.error),
                 )
+            }
+        }
+        traceDefinition?.let { definition ->
+            when (val result = updateTraceDefinition(definition)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
             }
         }
         val clipping = booleanDefinition
@@ -760,7 +969,7 @@ internal class Curve private constructor(
             ) {
                 is GMResult.Ok -> {
                     replaceDataPoints(result.value.x, result.value.y)
-                    GMResult.Ok(this)
+                    finishCurveUpdate()
                 }
                 is GMResult.Err -> GMResult.Err(
                     CurveError.BooleanClipping(result.error),
@@ -837,10 +1046,18 @@ internal class Curve private constructor(
             }
         }
 
+        val metaPostSpline = metaPostSplineDefinition
+        if (metaPostSpline != null) {
+            when (val result = updateMetaPostSplineDefinition(metaPostSpline)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+        }
+
         val xData = dataX
         if (xData != null) {
             replaceDataPoints(xData, dataY ?: DoubleArray(0))
-            return GMResult.Ok(this)
+            return finishCurveUpdate()
         }
 
         val minimum = when (val result = evaluateMinimum()) {
@@ -891,6 +1108,14 @@ internal class Curve private constructor(
                 )
             }
             val result = when (plotOptions.plotVersion) {
+                1 -> Plot.updateParametricCurveV1(
+                    board = board,
+                    minimum = minimum,
+                    maximum = maximum,
+                    maximumPointCount = board.maxCurvePoints,
+                    x = xFunction,
+                    y = yFunction,
+                )
                 2 -> Plot.updateParametricCurveV2(
                     board = board,
                     minimum = minimum,
@@ -918,7 +1143,10 @@ internal class Curve private constructor(
                     maximumPointCount = board.maxCurvePoints,
                     x = xFunction,
                     y = yFunction,
-                    intervalY = yTerm?.let { expression ->
+                    intervalY =
+                        (yTerm as? JessieCodeExpressionFunction)?.let {
+                                expression,
+                            ->
                         PlotIntervalFunction {
                                 intervalMinimum,
                                 intervalMaximum,
@@ -950,14 +1178,13 @@ internal class Curve private constructor(
                     ),
                 )
             }
-            return when (result) {
+            when (result) {
                 is GMResult.Ok -> {
                     points.clear()
                     points.addAll(result.value.points)
                     numberPoints = points.size
-                    GMResult.Ok(this)
                 }
-                is GMResult.Err -> when (val error = result.error) {
+                is GMResult.Err -> return when (val error = result.error) {
                     is PlotError.Evaluation -> GMResult.Err(error.error)
                     is PlotError.EvaluationException -> GMResult.Err(
                         CurveError.PlotEvaluationException(
@@ -994,6 +1221,7 @@ internal class Curve private constructor(
                     )
                 }
             }
+            return finishCurveUpdate()
         }
 
         // JSXGraph: src/math/plot.js -> updateParametricCurveNaive.
@@ -1034,7 +1262,139 @@ internal class Curve private constructor(
             points += point
         }
         numberPoints = sampleCount
+        return finishCurveUpdate()
+    }
+
+    private fun finishCurveUpdate(): GMResult<Curve, CurveError> {
+        when (val result = applyRdpSmoothing()) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        for (index in 0 until minOf(numberPoints, points.size)) {
+            updateTransform(points[index])
+        }
         return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> updateCurve RDPsmoothing branch.
+    private fun applyRdpSmoothing(): GMResult<Curve, CurveError> {
+        if (!plotOptions.rdpSmoothing || bezierDegree != 1) {
+            return GMResult.Ok(this)
+        }
+        val boundingBox = board.getBoundingBox()
+        val tolerance = plotOptions.rdpThreshold * sqrt(
+            (boundingBox[2] - boundingBox[0]) *
+                (boundingBox[1] - boundingBox[3]),
+        ) * 0.00125
+        return when (
+            val result = Numerics.RamerDouglasPeucker(
+                points = points,
+                tolerance = tolerance,
+                useUserCoordinates = true,
+            )
+        ) {
+            is GMResult.Ok -> {
+                points.clear()
+                points.addAll(result.value)
+                numberPoints = points.size
+                GMResult.Ok(this)
+            }
+            is GMResult.Err -> GMResult.Err(
+                CurveError.Numerics(
+                    operation = "RamerDouglasPeucker",
+                    error = result.error,
+                ),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> updateTransformMatrix.
+    internal fun updateTransformMatrix(): GMResult<Curve, CurveError> {
+        var composite = Mat.identity(3)
+        for ((index, transformation) in transformations.withIndex()) {
+            when (val result = transformation.updateResult()) {
+                is GMResult.Ok -> {
+                    composite = Mat.matMatMult(
+                        transformation.matrix,
+                        composite,
+                    )
+                }
+                is GMResult.Err -> return GMResult.Err(
+                    CurveError.TransformationEvaluation(
+                        index = index,
+                        error = result.error,
+                    ),
+                )
+            }
+        }
+        transformMat = composite
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> updateTransform.
+    internal fun updateTransform(point: Coords): Coords {
+        if (transformations.isNotEmpty()) {
+            point.setCoordinates(
+                coordType = Const.COORDS_BY_USER,
+                coordinates = Mat.matVecMult(
+                    transformMat,
+                    point.usrCoords,
+                ),
+                doRound = false,
+            )
+        }
+        return point
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> Ft.
+    internal fun Ft(parameter: Double): DoubleArray {
+        var coordinates = doubleArrayOf(
+            1.0,
+            X(parameter),
+            Y(parameter),
+        )
+        if (transformations.isNotEmpty()) {
+            coordinates = Mat.matVecMult(transformMat, coordinates)
+        }
+        coordinates[1] /= coordinates[0]
+        coordinates[2] /= coordinates[0]
+        coordinates[0] /= coordinates[0]
+        return coordinates
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> addTransform.
+    internal fun addTransform(
+        transformation: Transformation,
+    ): Curve = addTransform(listOf(transformation))
+
+    internal fun addTransform(
+        values: Iterable<Transformation>,
+    ): Curve {
+        transformations.addAll(values)
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> removeTransform.
+    internal fun removeTransform(
+        transformation: Transformation,
+    ): Curve = removeTransform(listOf(transformation))
+
+    internal fun removeTransform(
+        values: Iterable<Transformation>,
+    ): Curve {
+        for (transformation in values) {
+            val index = transformations.indexOf(transformation)
+            if (index >= 0) {
+                transformations.removeAt(index)
+            }
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> clearTransforms.
+    internal fun clearTransforms(): Curve {
+        transformations.clear()
+        return this
     }
 
     // JSXGraph 1.13.3: src/base/curve.js -> createSpline.funcs.
@@ -1098,6 +1458,312 @@ internal class Curve private constructor(
             type = definition.type,
         )
         return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3:
+    // src/base/curve.js -> createMetapostSpline.updateDataArray;
+    // src/math/metapost.js -> curve.
+    private fun updateMetaPostSplineDefinition(
+        definition: CurveMetaPostSplineDefinition,
+    ): GMResult<Unit, CurveError> {
+        val pointList = definition.points.map { point ->
+            MetaPostPoint(point.X(), point.Y())
+        }
+        val tension = when (
+            val result = evaluateCoordinateNumber(
+                termName = "metapostspline.controls.tension",
+                term = definition.controls.tensionTerm,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val isClosed = when (
+            val result = evaluateCoordinateBoolean(
+                termName = "metapostspline.controls.isClosed",
+                term = definition.controls.isClosedTerm,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val pointControls = mutableListOf<MetaPostPointControl>()
+        for (control in definition.controls.pointControls) {
+            when (val result = evaluateMetaPostPointControl(control)) {
+                is GMResult.Ok -> pointControls += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        val result = MetaPost.curve(
+            pointList = pointList,
+            controls = MetaPostControls(
+                tension = tension,
+                isClosed = isClosed,
+                pointControls = pointControls,
+            ),
+        )
+        dataX = result.x
+        dataY = result.y
+        return GMResult.Ok(Unit)
+    }
+
+    private fun evaluateMetaPostPointControl(
+        definition: CurveMetaPostPointControlDefinition,
+    ): GMResult<MetaPostPointControl, CurveError> {
+        val prefix = "metapostspline.controls.${definition.index}"
+        val curl = if (definition.type == "curl") {
+            definition.curlTerm?.let { term ->
+                when (
+                    val result = evaluateCoordinateNumber(
+                        termName = "$prefix.curl",
+                        term = term,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            } ?: 0.0
+        } else {
+            null
+        }
+        val direction = definition.directionTerm?.let { term ->
+            when (
+                val result = evaluateMetaPostControlPair(
+                    termName = "$prefix.direction",
+                    term = term,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        }
+        val tension = definition.tensionTerm?.let { term ->
+            when (
+                val result = evaluateMetaPostControlPair(
+                    termName = "$prefix.tension",
+                    term = term,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(
+            MetaPostPointControl(
+                index = definition.index,
+                type = definition.type,
+                curl = curl,
+                direction = direction,
+                tension = tension,
+            ),
+        )
+    }
+
+    private fun evaluateMetaPostControlPair(
+        termName: String,
+        term: JessieCodeCoordinateFunction,
+    ): GMResult<MetaPostControlPair, CurveError> =
+        when (val result = term.evaluate()) {
+            is GMResult.Err -> GMResult.Err(
+                CurveError.ExpressionEvaluation(
+                    term = termName,
+                    error = result.error,
+                ),
+            )
+            is GMResult.Ok -> when (val value = result.value) {
+                is JessieCodeRuntimeValue.NumberValue -> GMResult.Ok(
+                    MetaPostControlPair(
+                        left = value.value,
+                        right = value.value,
+                    ),
+                )
+                is JessieCodeRuntimeValue.ArrayValue -> {
+                    if (value.values.size < 2) {
+                        return GMResult.Err(
+                            CurveError.InvalidMetaPostControl(
+                                control = termName,
+                                expected =
+                                    "a number or a two-entry array",
+                                actualType = "array",
+                            ),
+                        )
+                    }
+                    val left = when (
+                        val side = metaPostControlSide(
+                            termName = "$termName[0]",
+                            value = value.values[0],
+                        )
+                    ) {
+                        is GMResult.Ok -> side.value
+                        is GMResult.Err -> return side
+                    }
+                    val right = when (
+                        val side = metaPostControlSide(
+                            termName = "$termName[1]",
+                            value = value.values[1],
+                        )
+                    ) {
+                        is GMResult.Ok -> side.value
+                        is GMResult.Err -> return side
+                    }
+                    GMResult.Ok(
+                        MetaPostControlPair(
+                            left = left,
+                            right = right,
+                        ),
+                    )
+                }
+                else -> GMResult.Err(
+                    CurveError.InvalidMetaPostControl(
+                        control = termName,
+                        expected = "a number or a two-entry array",
+                        actualType = curveRuntimeType(value),
+                    ),
+                )
+            }
+        }
+
+    private fun metaPostControlSide(
+        termName: String,
+        value: JessieCodeRuntimeValue,
+    ): GMResult<Double?, CurveError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.BooleanValue
+                if (!value.value) -> GMResult.Ok(null)
+            else -> GMResult.Err(
+                CurveError.InvalidMetaPostControl(
+                    control = termName,
+                    expected = "a number or false",
+                    actualType = curveRuntimeType(value),
+                ),
+            )
+        }
+
+    // JSXGraph 1.13.3: src/base/curve.js ->
+    // createTracecurve.updateDataArray.
+    private fun updateTraceDefinition(
+        definition: CurveTraceDefinition,
+    ): GMResult<Unit, CurveError> {
+        val glider = definition.glider
+        val tracePoint = definition.tracePoint
+        val slideObject = glider.slideObject ?: glider.slideElement
+        val minimum: Double
+        val maximum: Double
+        val closed: Boolean
+        val coordinatesAt: (Double) -> DoubleArray
+        when (slideObject) {
+            is Circle -> {
+                minimum = slideObject.minX()
+                maximum = slideObject.maxX()
+                closed = true
+                coordinatesAt = { parameter ->
+                    val z = slideObject.Z(parameter)
+                    doubleArrayOf(
+                        slideObject.X(parameter) / z,
+                        slideObject.Y(parameter) / z,
+                    )
+                }
+            }
+            is Line -> {
+                minimum = slideObject.minX()
+                maximum = slideObject.maxX()
+                closed = true
+                coordinatesAt = { parameter ->
+                    val z = slideObject.Z(parameter)
+                    doubleArrayOf(
+                        slideObject.X(parameter) / z,
+                        slideObject.Y(parameter) / z,
+                    )
+                }
+            }
+            is Curve -> {
+                minimum = slideObject.minX()
+                maximum = slideObject.maxX()
+                closed = false
+                coordinatesAt = { parameter ->
+                    doubleArrayOf(
+                        slideObject.X(parameter),
+                        slideObject.Y(parameter),
+                    )
+                }
+            }
+            else -> return GMResult.Err(
+                CurveError.UnsupportedTraceSlideObject(
+                    elementType = slideObject.elType.ifEmpty { "element" },
+                ),
+            )
+        }
+
+        val pointCount =
+            definition.sampleCount + if (closed) 1 else 0
+        val step = (maximum - minimum) / definition.sampleCount
+        val tracedX = DoubleArray(pointCount)
+        val tracedY = DoubleArray(pointCount)
+        val savedPosition = glider.position
+        var failure: CurveError? = null
+
+        try {
+            for (index in 0 until pointCount) {
+                val parameter = minimum + index * step
+                when (
+                    val result = glider.setPositionDirectlyResult(
+                        method = Const.COORDS_BY_USER,
+                        coordinates = coordinatesAt(parameter),
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> {
+                        failure = CurveError.TraceGliderPosition(
+                            result.error,
+                        )
+                        break
+                    }
+                }
+                glider.evaluationError?.let { error ->
+                    failure = CurveError.TraceGliderEvaluation(error)
+                }
+                if (failure != null) {
+                    break
+                }
+                replayTraceElements(glider, tracePoint)
+                tracedX[index] = tracePoint.X()
+                tracedY[index] = tracePoint.Y()
+            }
+        } finally {
+            glider.position = savedPosition
+            replayTraceElements(glider, tracePoint)
+        }
+
+        failure?.let { return GMResult.Err(it) }
+        dataX = tracedX
+        dataY = tracedY
+        return GMResult.Ok(Unit)
+    }
+
+    private fun replayTraceElements(
+        glider: Glider,
+        tracePoint: Point,
+    ) {
+        var fromGlider = false
+        for (element in board.objectsList) {
+            if (element === glider) {
+                fromGlider = true
+            }
+            if (
+                !fromGlider ||
+                element === this ||
+                !element.needsRegularUpdate
+            ) {
+                continue
+            }
+            element.needsUpdate = true
+            element.update(fromParent = true)
+            if (element === tracePoint) {
+                break
+            }
+        }
     }
 
     // JSXGraph 1.13.3:
@@ -2165,6 +2831,21 @@ internal class Curve private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/turtle.js -> forward / moveTo,
+    // curve.dataX.push / curve.dataY.push.
+    internal fun appendDataPoint(
+        x: Double,
+        y: Double,
+    ): Curve {
+        val currentX = dataX ?: DoubleArray(0)
+        val currentY = dataY ?: DoubleArray(0)
+        replaceData(
+            xData = currentX + x,
+            yData = currentY + y,
+        )
+        return this
+    }
+
     // JSXGraph: src/base/curve.js -> updateDataArray assignment.
     internal fun setDataUpdater(
         updater: CurveDataUpdater,
@@ -2205,6 +2886,15 @@ internal class Curve private constructor(
     internal fun vectorFieldSnapshot(): CurveVectorFieldSnapshot? =
         vectorFieldDefinition?.snapshot
 
+    internal fun initializeConic(): GMResult<Curve, CurveError> =
+        when (val result = updateCurve()) {
+            is GMResult.Ok -> {
+                needsUpdate = false
+                result
+            }
+            is GMResult.Err -> result
+        }
+
     internal fun majorAxis(): Double =
         ellipseDefinition
             ?.let(::evaluateEllipseMajorAxis)
@@ -2231,6 +2921,9 @@ internal class Curve private constructor(
         ).valueOrNaN()
 
     private fun evaluateMinimum(): GMResult<Double, CurveError> {
+        conicDefinition?.let { definition ->
+            return GMResult.Ok(definition.minimum)
+        }
         ellipseDefinition?.let { definition ->
             return GMResult.Ok(definition.minimum)
         }
@@ -2264,6 +2957,9 @@ internal class Curve private constructor(
     }
 
     private fun evaluateMaximum(): GMResult<Double, CurveError> {
+        conicDefinition?.let { definition ->
+            return GMResult.Ok(definition.maximum)
+        }
         ellipseDefinition?.let { definition ->
             return GMResult.Ok(definition.maximum)
         }
@@ -2301,6 +2997,18 @@ internal class Curve private constructor(
         arguments: List<JessieCodeRuntimeValue>,
         suspendedUpdate: Boolean = false,
     ): GMResult<Double, CurveError> {
+        conicDefinition?.let { definition ->
+            return when (
+                val result = evaluateConic(
+                    definition = definition,
+                    parameter = parameter,
+                    suspendedUpdate = suspendedUpdate,
+                )
+            ) {
+                is GMResult.Ok -> GMResult.Ok(result.value[1])
+                is GMResult.Err -> result
+            }
+        }
         ellipseDefinition?.let { definition ->
             val radius = when (
                 val result = evaluateEllipseMajorAxis(definition)
@@ -2406,6 +3114,18 @@ internal class Curve private constructor(
         arguments: List<JessieCodeRuntimeValue>,
         suspendedUpdate: Boolean = false,
     ): GMResult<Double, CurveError> {
+        conicDefinition?.let { definition ->
+            return when (
+                val result = evaluateConic(
+                    definition = definition,
+                    parameter = parameter,
+                    suspendedUpdate = suspendedUpdate,
+                )
+            ) {
+                is GMResult.Ok -> GMResult.Ok(result.value[2])
+                is GMResult.Err -> result
+            }
+        }
         ellipseDefinition?.let { definition ->
             val radius = when (
                 val result = evaluateEllipseMajorAxis(definition)
@@ -2714,6 +3434,189 @@ internal class Curve private constructor(
         )
     }
 
+    // JSXGraph 1.13.3: src/element/conic.js -> createConic polarForm
+    private fun evaluateConic(
+        definition: CurveConicDefinition,
+        parameter: Double,
+        suspendedUpdate: Boolean,
+    ): GMResult<DoubleArray, CurveError> {
+        if (!suspendedUpdate) {
+            when (val result = updateConicPolarForm(definition)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+        }
+
+        val eigenvalues = definition.eigenvalues
+            ?: return GMResult.Ok(
+                doubleArrayOf(1.0, Double.NaN, Double.NaN),
+            )
+        val vector = when {
+            eigenvalues[1][1] <= 0.0 &&
+                eigenvalues[2][2] <= 0.0 ->
+                Mat.matVecMult(
+                    definition.rotationMatrix,
+                    doubleArrayOf(
+                        1.0 / definition.c,
+                        cos(parameter) / definition.a,
+                        sin(parameter) / definition.b,
+                    ),
+                )
+            eigenvalues[1][1] <= 0.0 &&
+                eigenvalues[2][2] > 0.0 ->
+                Mat.matVecMult(
+                    definition.rotationMatrix,
+                    doubleArrayOf(
+                        cos(parameter) / definition.c,
+                        1.0 / definition.a,
+                        sin(parameter) / definition.b,
+                    ),
+                )
+            eigenvalues[2][2] < 0.0 ->
+                Mat.matVecMult(
+                    definition.rotationMatrix,
+                    doubleArrayOf(
+                        sin(parameter) / definition.c,
+                        cos(parameter) / definition.a,
+                        1.0 / definition.b,
+                    ),
+                )
+            else -> doubleArrayOf(1.0, Double.NaN, Double.NaN)
+        }
+        vector[1] /= vector[0]
+        vector[2] /= vector[0]
+        vector[0] = 1.0
+        return GMResult.Ok(vector)
+    }
+
+    // JSXGraph 1.13.3: src/element/conic.js ->
+    // createConic sym / degconic / fitConic / polarForm
+    private fun updateConicPolarForm(
+        definition: CurveConicDefinition,
+    ): GMResult<Unit, CurveError> {
+        val matrix = when (val source = definition.source) {
+            is CurveConicSource.Points -> {
+                val pointCoordinates = source.points.map {
+                    it.coords.usrCoords
+                }
+                val firstDegenerate = conicDegenerateForm(
+                    Mat.crossProduct(
+                        pointCoordinates[0],
+                        pointCoordinates[1],
+                    ),
+                    Mat.crossProduct(
+                        pointCoordinates[2],
+                        pointCoordinates[3],
+                    ),
+                )
+                val secondDegenerate = conicDegenerateForm(
+                    Mat.crossProduct(
+                        pointCoordinates[0],
+                        pointCoordinates[2],
+                    ),
+                    Mat.crossProduct(
+                        pointCoordinates[1],
+                        pointCoordinates[3],
+                    ),
+                )
+                fitConic(
+                    first = firstDegenerate,
+                    second = secondDegenerate,
+                    point = pointCoordinates[4],
+                )
+            }
+            is CurveConicSource.Coefficients -> {
+                val coefficients = DoubleArray(source.terms.size)
+                for ((index, term) in source.terms.withIndex()) {
+                    coefficients[index] = when (
+                        val result = evaluateCoordinateNumber(
+                            termName = "conic.coefficient[$index]",
+                            term = term,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                arrayOf(
+                    doubleArrayOf(
+                        coefficients[2],
+                        coefficients[4],
+                        coefficients[5],
+                    ),
+                    doubleArrayOf(
+                        coefficients[4],
+                        coefficients[0],
+                        coefficients[3],
+                    ),
+                    doubleArrayOf(
+                        coefficients[5],
+                        coefficients[3],
+                        coefficients[1],
+                    ),
+                )
+            }
+        }
+        quadraticform = matrix
+
+        val eigen = Numerics.Jacobi(matrix)
+        val eigenvalues = eigen.diagonalizedMatrix
+        if (eigenvalues[0][0] < 0.0) {
+            eigenvalues[0][0] *= -1.0
+            eigenvalues[1][1] *= -1.0
+            eigenvalues[2][2] *= -1.0
+        }
+        definition.eigenvalues = eigenvalues
+        definition.rotationMatrix = eigen.eigenvectors
+        definition.c = sqrt(abs(eigenvalues[0][0]))
+        definition.a = sqrt(abs(eigenvalues[1][1]))
+        definition.b = sqrt(abs(eigenvalues[2][2]))
+        return GMResult.Ok(Unit)
+    }
+
+    private fun conicDegenerateForm(
+        first: DoubleArray,
+        second: DoubleArray,
+    ): Array<DoubleArray> {
+        val matrix = Array(3) { row ->
+            DoubleArray(3) { column ->
+                first[row] * second[column]
+            }
+        }
+        for (row in 0 until 3) {
+            for (column in row until 3) {
+                matrix[row][column] += matrix[column][row]
+            }
+        }
+        for (row in 0 until 3) {
+            for (column in 0 until row) {
+                matrix[row][column] = matrix[column][row]
+            }
+        }
+        return matrix
+    }
+
+    private fun fitConic(
+        first: Array<DoubleArray>,
+        second: Array<DoubleArray>,
+        point: DoubleArray,
+    ): Array<DoubleArray> {
+        val pointSecondPoint = Mat.innerProduct(
+            point,
+            Mat.matVecMult(second, point),
+        )
+        val pointFirstPoint = Mat.innerProduct(
+            point,
+            Mat.matVecMult(first, point),
+        )
+        return Array(3) { row ->
+            DoubleArray(3) { column ->
+                pointSecondPoint * first[row][column] -
+                    pointFirstPoint * second[row][column]
+            }
+        }
+    }
+
     // JSXGraph 1.13.3:
     // src/base/curve.js -> interpolationFunctionFromArray.
     private fun interpolateData(
@@ -2725,6 +3628,34 @@ internal class Curve private constructor(
         }
         if (parameter < 0.0) {
             return values[0]
+        }
+        if (bezierDegree == 3) {
+            val last = (values.size - 1) / 3.0
+            if (parameter >= last) {
+                return values[values.lastIndex]
+            }
+            val index = floor(parameter).toInt() * 3
+            val localParameter = parameter % 1.0
+            val inverseParameter = 1.0 - localParameter
+            val first = values.getOrNull(index) ?: return Double.NaN
+            val firstControl =
+                values.getOrNull(index + 1) ?: return Double.NaN
+            val secondControl =
+                values.getOrNull(index + 2) ?: return Double.NaN
+            val second =
+                values.getOrNull(index + 3) ?: return Double.NaN
+            return (
+                inverseParameter * inverseParameter *
+                    (
+                        inverseParameter * first +
+                            3.0 * localParameter * firstControl
+                        ) +
+                    (
+                        3.0 * inverseParameter * secondControl +
+                            localParameter * second
+                        ) *
+                    localParameter * localParameter
+                )
         }
         val index =
             if (parameter > values.size - 2) {
@@ -2742,7 +3673,7 @@ internal class Curve private constructor(
 
     private fun evaluateNumber(
         term: String,
-        expression: JessieCodeExpressionFunction?,
+        expression: JessieCodeCoordinateFunction?,
         arguments: List<JessieCodeRuntimeValue> = emptyList(),
     ): GMResult<Double, CurveError> {
         val function = expression
@@ -2785,7 +3716,7 @@ internal class Curve private constructor(
         internal const val DEFAULT_SAMPLE_COUNT: Int = 1600
         internal const val MAX_SAMPLE_COUNT: Int = 10_000
         internal const val DEFAULT_PLOT_VERSION: Int = 2
-        private val SUPPORTED_PLOT_VERSIONS: Set<Int> = setOf(2, 3, 4)
+        private val SUPPORTED_PLOT_VERSIONS: Set<Int> = setOf(1, 2, 3, 4)
         internal const val DEFAULT_RECURSION_DEPTH_HIGH: Int = 17
         internal const val MAX_RECURSION_DEPTH: Int = 30
         internal const val COMB_DEFAULT_FREQUENCY: Double = 0.2
@@ -2799,8 +3730,12 @@ internal class Curve private constructor(
 
         private const val CURVE_ID_PREFIX = "G"
         private const val CURVE_ELEMENT_TYPE = "curve"
+        private const val SKETCH_CURVE_ELEMENT_TYPE = "sketchcurve"
+        private const val IMPLICIT_CURVE_ELEMENT_TYPE = "implicitcurve"
+        internal const val TRACE_DEFAULT_SAMPLE_COUNT: Int = 100
         private const val SPLINE_ELEMENT_TYPE = "spline"
         private const val CARDINAL_SPLINE_ELEMENT_TYPE = "cardinalspline"
+        private const val METAPOST_SPLINE_ELEMENT_TYPE = "metapostspline"
         private const val RIEMANN_DEFAULT_FALLBACK_TYPE =
             "__riemann_default__"
         private const val DATA_CURVE_TYPE = "plot"
@@ -2812,6 +3747,62 @@ internal class Curve private constructor(
         private const val INEQUALITY_SEGMENT_EXTRA_POINT_COUNT = 5L
         private const val VECTOR_FIELD_BODY_POINT_COUNT = 3L
         private const val VECTOR_FIELD_ARROW_POINT_COUNT = 4L
+
+        // JSXGraph 1.13.3: src/element/conic.js -> createConic.
+        internal fun createConicShell(
+            board: Board,
+            definition: CurveConicDefinition,
+            sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            val curve = Curve(
+                board = board,
+                curveType = PARAMETRIC_CURVE_TYPE,
+                xTerm = null,
+                yTerm = null,
+                minimumTerm = null,
+                maximumTerm = null,
+                dataX = null,
+                dataY = null,
+                sampleCount = sampleCount,
+                plotOptions = plotOptions,
+                conicDefinition = definition,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+            return when (
+                val registration = board.setId(
+                    curve,
+                    CURVE_ID_PREFIX,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    val coefficientTerms = (
+                        definition.source as?
+                            CurveConicSource.Coefficients
+                        )?.terms.orEmpty()
+                    curve.addParentsFromJCFunctions(coefficientTerms)
+                    curve.type = Const.OBJECT_TYPE_CONIC
+                    GMResult.Ok(curve)
+                }
+                is GMResult.Err -> GMResult.Err(
+                    CurveError.Registration(registration.error),
+                )
+            }
+        }
 
         // JSXGraph 1.13.3: src/element/conic.js -> createEllipse.
         internal fun createEllipse(
@@ -3054,6 +4045,201 @@ internal class Curve private constructor(
                 ),
                 expressions = emptyList(),
             )
+
+        // JSXGraph 1.13.3: src/base/curve.js -> createSketchCurve.
+        internal fun createSketchCurve(
+            board: Board,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> =
+            when (
+                val result = createData(
+                    board = board,
+                    dataX = doubleArrayOf(),
+                    dataY = doubleArrayOf(),
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    result.value.elType = SKETCH_CURVE_ELEMENT_TYPE
+                    result
+                }
+                is GMResult.Err -> result
+            }
+
+        // JSXGraph 1.13.3: src/base/curve.js -> createImplicitCurve.
+        internal fun createImplicitCurve(
+            board: Board,
+            definition: CurveImplicitDefinition,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            val curve = Curve(
+                board = board,
+                curveType = DATA_CURVE_TYPE,
+                xTerm = null,
+                yTerm = null,
+                minimumTerm = null,
+                maximumTerm = null,
+                dataX = doubleArrayOf(),
+                dataY = doubleArrayOf(),
+                sampleCount = 0,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+            curve.setDataUpdater(
+                CurveDataUpdater {
+                    updateImplicitCurveData(
+                        board = board,
+                        definition = definition,
+                    )
+                },
+            )
+            when (val result = curve.updateCurve()) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            return when (
+                val registration = board.setId(curve, CURVE_ID_PREFIX)
+            ) {
+                is GMResult.Ok -> {
+                    curve.elType = IMPLICIT_CURVE_ELEMENT_TYPE
+                    curve.addParentsFromJCFunctions(
+                        definition.expressions(),
+                    )
+                    curve.needsUpdate = false
+                    GMResult.Ok(curve)
+                }
+                is GMResult.Err -> GMResult.Err(
+                    CurveError.Registration(registration.error),
+                )
+            }
+        }
+
+        // JSXGraph 1.13.3: src/base/curve.js -> createTracecurve.
+        internal fun createTraceCurve(
+            board: Board,
+            glider: Glider,
+            tracePoint: Point,
+            sampleCount: Int = TRACE_DEFAULT_SAMPLE_COUNT,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            if (sampleCount !in 1..MAX_SAMPLE_COUNT) {
+                return GMResult.Err(
+                    CurveError.InvalidSampleCount(
+                        count = sampleCount,
+                        maximum = MAX_SAMPLE_COUNT,
+                    ),
+                )
+            }
+            validateTraceParent(board, glider, "glider")?.let {
+                return GMResult.Err(it)
+            }
+            validateTraceParent(board, tracePoint, "tracepoint")?.let {
+                return GMResult.Err(it)
+            }
+            val slideObject = glider.slideObject ?: glider.slideElement
+            if (
+                slideObject !is Circle &&
+                slideObject !is Line &&
+                slideObject !is Curve
+            ) {
+                return GMResult.Err(
+                    CurveError.UnsupportedTraceSlideObject(
+                        elementType =
+                            slideObject.elType.ifEmpty { "element" },
+                    ),
+                )
+            }
+            return register(
+                curve = Curve(
+                    board = board,
+                    curveType = DATA_CURVE_TYPE,
+                    xTerm = null,
+                    yTerm = null,
+                    minimumTerm = null,
+                    maximumTerm = null,
+                    dataX = null,
+                    dataY = null,
+                    sampleCount = sampleCount,
+                    traceDefinition = CurveTraceDefinition(
+                        glider = glider,
+                        tracePoint = tracePoint,
+                        sampleCount = sampleCount,
+                    ),
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                ),
+                expressions = emptyList(),
+            )
+        }
+
+        // JSXGraph 1.13.3: src/base/curve.js -> createCurve transformed
+        // curve branch / updateDataArray.
+        internal fun createTransformed(
+            board: Board,
+            source: Curve,
+            transformations: List<Transformation>,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            if (transformations.isEmpty()) {
+                return GMResult.Err(CurveError.EmptyTransformationList)
+            }
+            if (source.board !== board) {
+                return GMResult.Err(
+                    CurveError.TransformationSourceBoardMismatch,
+                )
+            }
+            if (
+                source.id.isEmpty() ||
+                board.elementById(source.id) !== source
+            ) {
+                return GMResult.Err(
+                    CurveError.TransformationSourceNotRegistered(source.id),
+                )
+            }
+
+            val curve = Curve(
+                board = board,
+                curveType = DATA_CURVE_TYPE,
+                xTerm = null,
+                yTerm = null,
+                minimumTerm = null,
+                maximumTerm = null,
+                dataX = doubleArrayOf(),
+                dataY = doubleArrayOf(),
+                sampleCount = source.numberPoints,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+            curve.transformationSource = source
+            curve.addTransform(transformations)
+
+            return when (
+                val result = register(
+                    curve = curve,
+                    expressions = emptyList(),
+                )
+            ) {
+                is GMResult.Ok -> {
+                    source.addChild(curve)
+                    curve.setParents(listOf(source))
+                    result
+                }
+                is GMResult.Err -> result
+            }
+        }
 
         // JSXGraph 1.13.3: src/base/curve.js -> createStepfunction.
         internal fun createStepfunction(
@@ -3441,6 +4627,74 @@ internal class Curve private constructor(
             }
         }
 
+        // JSXGraph 1.13.3:
+        // src/base/curve.js -> createMetapostSpline.
+        internal fun createMetaPostSpline(
+            board: Board,
+            points: List<NumericsPoint2D>,
+            controls: CurveMetaPostControlsDefinition,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            if (points.size < 2) {
+                return GMResult.Err(
+                    CurveError.InvalidInterpolationPointCount(
+                        creator = METAPOST_SPLINE_ELEMENT_TYPE,
+                        count = points.size,
+                        minimum = 2,
+                    ),
+                )
+            }
+            val curve = Curve(
+                board = board,
+                curveType = DATA_CURVE_TYPE,
+                xTerm = null,
+                yTerm = null,
+                minimumTerm = null,
+                maximumTerm = null,
+                dataX = null,
+                dataY = null,
+                sampleCount = 0,
+                metaPostSplineDefinition =
+                    CurveMetaPostSplineDefinition(
+                        points = points,
+                        controls = controls,
+                    ),
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+            curve.bezierDegree = 3
+            return when (
+                val result = register(
+                    curve = curve,
+                    expressions = listOfNotNull(
+                        controls.tensionTerm,
+                        controls.isClosedTerm,
+                    ) + controls.pointControls.flatMap { control ->
+                        listOfNotNull(
+                            control.curlTerm,
+                            control.directionTerm,
+                            control.tensionTerm,
+                        )
+                    },
+                )
+            ) {
+                is GMResult.Ok -> {
+                    val registered = result.value
+                    registered.elType = METAPOST_SPLINE_ELEMENT_TYPE
+                    val pointElements = points.filterIsInstance<Point>()
+                    registered.setParents(pointElements)
+                    for (point in pointElements) {
+                        point.addChild(registered)
+                    }
+                    result
+                }
+                is GMResult.Err -> result
+            }
+        }
+
         // JSXGraph 1.13.3: src/base/curve.js -> createRiemannsum.
         internal fun createRiemannSum(
             board: Board,
@@ -3585,6 +4839,7 @@ internal class Curve private constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
+            parameterName: String = "x",
         ): GMResult<Curve, CurveError> =
             createContinuous(
                 board = board,
@@ -3593,6 +4848,7 @@ internal class Curve private constructor(
                 ySource = ySource,
                 minimumSource = minimumSource,
                 maximumSource = maximumSource,
+                parameterName = parameterName,
                 sampleCount = sampleCount,
                 plotOptions = plotOptions,
                 id = id,
@@ -3614,6 +4870,7 @@ internal class Curve private constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
+            parameterName: String = "x",
         ): GMResult<Curve, CurveError> =
             createContinuous(
                 board = board,
@@ -3622,6 +4879,7 @@ internal class Curve private constructor(
                 ySource = ySource,
                 minimumSource = minimumSource,
                 maximumSource = maximumSource,
+                parameterName = parameterName,
                 sampleCount = sampleCount,
                 plotOptions = plotOptions,
                 id = id,
@@ -3648,12 +4906,77 @@ internal class Curve private constructor(
                 ySource = ySource,
                 minimumSource = minimumSource,
                 maximumSource = maximumSource,
+                parameterName = "x",
                 sampleCount = sampleCount,
                 plotOptions = plotOptions,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
             )
+
+        // JSXGraph 1.13.3: src/base/curve.js -> createFunctiongraph.
+        // Native composite factories pass an already compiled function just
+        // as the JavaScript factory accepts a Function parent.
+        internal fun createFunctionGraph(
+            board: Board,
+            yTerm: JessieCodeCoordinateFunction,
+            minimumTerm: JessieCodeCoordinateFunction,
+            maximumTerm: JessieCodeCoordinateFunction,
+            sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Curve, CurveError> {
+            when (
+                val result = validateContinuousPlotting(
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            val xTerm = object : JessieCodeCoordinateFunction {
+                override val origin: String? = null
+                override val dependencies: Map<String, GeometryElement> =
+                    emptyMap()
+
+                override fun evaluate(
+                    arguments: List<JessieCodeRuntimeValue>,
+                ): GMResult<
+                    JessieCodeRuntimeValue,
+                    JessieCodeRuntimeError,
+                    > = GMResult.Ok(
+                    arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.NumberValue(Double.NaN),
+                )
+            }
+            return register(
+                curve = Curve(
+                    board = board,
+                    curveType = FUNCTION_GRAPH_CURVE_TYPE,
+                    xTerm = xTerm,
+                    yTerm = yTerm,
+                    minimumTerm = minimumTerm,
+                    maximumTerm = maximumTerm,
+                    dataX = null,
+                    dataY = null,
+                    sampleCount = sampleCount,
+                    plotOptions = plotOptions,
+                    identityXTerm = true,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                ),
+                expressions = listOf(
+                    xTerm,
+                    yTerm,
+                    minimumTerm,
+                    maximumTerm,
+                ),
+            )
+        }
 
         // JSXGraph 1.13.3: src/base/curve.js -> createDerivative.
         internal fun createDerivative(
@@ -3751,6 +5074,7 @@ internal class Curve private constructor(
             ySource: String,
             minimumSource: String,
             maximumSource: String,
+            parameterName: String,
             sampleCount: Int,
             plotOptions: CurvePlotOptions,
             id: String,
@@ -3771,7 +5095,7 @@ internal class Curve private constructor(
                     term = "xterm",
                     source = xSource,
                     board = board,
-                    variableNames = listOf("x"),
+                    variableNames = listOf(parameterName),
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -3782,7 +5106,7 @@ internal class Curve private constructor(
                     term = "yterm",
                     source = ySource,
                     board = board,
-                    variableNames = listOf("x"),
+                    variableNames = listOf(parameterName),
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -3812,7 +5136,7 @@ internal class Curve private constructor(
                     dataY = null,
                     sampleCount = sampleCount,
                     plotOptions = plotOptions,
-                    identityXTerm = xSource == "x",
+                    identityXTerm = xSource == parameterName,
                     id = id,
                     name = name,
                     needsRegularUpdate = needsRegularUpdate,
@@ -3847,6 +5171,303 @@ internal class Curve private constructor(
                     ),
                 )
             }
+
+        // JSXGraph 1.13.3:
+        // src/base/curve.js -> createImplicitCurve.updateDataArray.
+        private fun updateImplicitCurveData(
+            board: Board,
+            definition: CurveImplicitDefinition,
+        ): GMResult<CurveDataUpdate, CurveDataUpdateError> {
+            val boundingBox = if (
+                definition.domainX == null &&
+                definition.domainY == null
+            ) {
+                val margin = when (
+                    val result = evaluateImplicitNumber(
+                        term = "implicitcurve.margin",
+                        function = definition.margin,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return implicitUpdateFailure(
+                        result.error,
+                    )
+                }
+                board.getBoundingBox().also { bounds ->
+                    bounds[0] -= margin
+                    bounds[1] += margin
+                    bounds[2] += margin
+                    bounds[3] -= margin
+                }
+            } else {
+                val rangeX = when (
+                    val result = evaluateImplicitRange(
+                        axis = "x",
+                        function = definition.domainX,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return implicitUpdateFailure(
+                        result.error,
+                    )
+                }
+                val rangeY = when (
+                    val result = evaluateImplicitRange(
+                        axis = "y",
+                        function = definition.domainY,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return implicitUpdateFailure(
+                        result.error,
+                    )
+                }
+                doubleArrayOf(
+                    minOf(rangeX[0], rangeX[1]),
+                    maxOf(rangeY[0], rangeY[1]),
+                    maxOf(rangeX[0], rangeX[1]),
+                    minOf(rangeY[0], rangeY[1]),
+                )
+            }
+
+            val numericTerms = listOf(
+                "resolutionOuter" to definition.resolutionOuter,
+                "resolutionInner" to definition.resolutionInner,
+                "maxSteps" to definition.maxSteps,
+                "alpha0" to definition.alpha0,
+                "tolU0" to definition.tolU0,
+                "tolNewton" to definition.tolNewton,
+                "tolCusp" to definition.tolCusp,
+                "tolProgress" to definition.tolProgress,
+                "qdtBox" to definition.qdtBox,
+                "kappa0" to definition.kappa0,
+                "delta0" to definition.delta0,
+                "hInitial" to definition.hInitial,
+                "hCritical" to definition.hCritical,
+                "hMax" to definition.hMax,
+                "loopDist" to definition.loopDist,
+                "loopDir" to definition.loopDir,
+            )
+            val values = linkedMapOf<String, Double>()
+            for ((name, function) in numericTerms) {
+                when (
+                    val result = evaluateImplicitNumber(
+                        term = "implicitcurve.$name",
+                        function = function,
+                    )
+                ) {
+                    is GMResult.Ok -> values[name] = result.value
+                    is GMResult.Err -> return implicitUpdateFailure(
+                        result.error,
+                    )
+                }
+            }
+            val loopDetection = when (
+                val result = evaluateImplicitBoolean(
+                    term = "implicitcurve.loopDetection",
+                    function = definition.loopDetection,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return implicitUpdateFailure(
+                    result.error,
+                )
+            }
+
+            var evaluationError: CurveImplicitUpdateError? = null
+            fun adapter(
+                term: String,
+                function: JessieCodeCoordinateFunction,
+            ): (Double, Double) -> Double = { x, y ->
+                if (evaluationError != null) {
+                    Double.NaN
+                } else {
+                    when (
+                        val result = evaluateImplicitNumber(
+                            term = "implicitcurve.$term",
+                            function = function,
+                            arguments = listOf(
+                                JessieCodeRuntimeValue.NumberValue(x),
+                                JessieCodeRuntimeValue.NumberValue(y),
+                            ),
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> {
+                            evaluationError = result.error
+                            Double.NaN
+                        }
+                    }
+                }
+            }
+
+            val plot = ImplicitPlot(
+                boundingBox = boundingBox,
+                config = ImplicitPlotConfig(
+                    resolutionOuter =
+                        maxOf(0.01, values.getValue("resolutionOuter")),
+                    resolutionInner =
+                        maxOf(0.01, values.getValue("resolutionInner")),
+                    maxSteps = values.getValue("maxSteps"),
+                    alpha0 = values.getValue("alpha0"),
+                    tolU0 = values.getValue("tolU0"),
+                    tolNewton = values.getValue("tolNewton"),
+                    tolCusp = values.getValue("tolCusp"),
+                    tolProgress = values.getValue("tolProgress"),
+                    qdtBox = values.getValue("qdtBox"),
+                    kappa0 = values.getValue("kappa0"),
+                    delta0 = values.getValue("delta0"),
+                    hInitial = values.getValue("hInitial"),
+                    hCritical = values.getValue("hCritical"),
+                    hMax = values.getValue("hMax"),
+                    loopDist = values.getValue("loopDist"),
+                    loopDir = values.getValue("loopDir"),
+                    loopDetection = loopDetection,
+                    unitX = board.unitX,
+                    unitY = board.unitY,
+                ),
+                f = adapter("f", definition.f),
+                dfx = definition.dfx?.let { adapter("dfx", it) },
+                dfy = definition.dfy?.let { adapter("dfy", it) },
+                maximumPointCount = board.maxCurvePoints,
+            )
+            val result = plot.plot()
+            evaluationError?.let {
+                return implicitUpdateFailure(it)
+            }
+            return when (result) {
+                is GMResult.Ok -> GMResult.Ok(
+                    CurveDataUpdate(
+                        x = result.value.dataX,
+                        y = result.value.dataY,
+                    ),
+                )
+                is GMResult.Err -> implicitUpdateFailure(
+                    CurveImplicitUpdateError.Plot(result.error),
+                )
+            }
+        }
+
+        private fun evaluateImplicitNumber(
+            term: String,
+            function: JessieCodeCoordinateFunction,
+            arguments: List<JessieCodeRuntimeValue> = emptyList(),
+        ): GMResult<Double, CurveImplicitUpdateError> =
+            when (val result = function.evaluate(arguments)) {
+                is GMResult.Err -> GMResult.Err(
+                    CurveImplicitUpdateError.ExpressionEvaluation(
+                        term = term,
+                        error = result.error,
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val number = result.value as?
+                        JessieCodeRuntimeValue.NumberValue
+                    if (number != null) {
+                        GMResult.Ok(number.value)
+                    } else {
+                        GMResult.Err(
+                            CurveImplicitUpdateError.InvalidValue(
+                                term = term,
+                                expected = "number",
+                                actualType = runtimeType(result.value),
+                            ),
+                        )
+                    }
+                }
+            }
+
+        private fun evaluateImplicitBoolean(
+            term: String,
+            function: JessieCodeCoordinateFunction,
+        ): GMResult<Boolean, CurveImplicitUpdateError> =
+            when (val result = function.evaluate()) {
+                is GMResult.Err -> GMResult.Err(
+                    CurveImplicitUpdateError.ExpressionEvaluation(
+                        term = term,
+                        error = result.error,
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val boolean = result.value as?
+                        JessieCodeRuntimeValue.BooleanValue
+                    if (boolean != null) {
+                        GMResult.Ok(boolean.value)
+                    } else {
+                        GMResult.Err(
+                            CurveImplicitUpdateError.InvalidValue(
+                                term = term,
+                                expected = "boolean",
+                                actualType = runtimeType(result.value),
+                            ),
+                        )
+                    }
+                }
+            }
+
+        private fun evaluateImplicitRange(
+            axis: String,
+            function: JessieCodeCoordinateFunction?,
+        ): GMResult<DoubleArray, CurveImplicitUpdateError> {
+            val rangeFunction = function ?: return GMResult.Err(
+                CurveImplicitUpdateError.InvalidValue(
+                    term = "implicitcurve.domain$axis",
+                    expected = "array of two finite numbers",
+                    actualType = "undefined",
+                ),
+            )
+            return when (val result = rangeFunction.evaluate()) {
+                is GMResult.Err -> GMResult.Err(
+                    CurveImplicitUpdateError.ExpressionEvaluation(
+                        term = "implicitcurve.domain$axis",
+                        error = result.error,
+                    ),
+                )
+                is GMResult.Ok -> {
+                    val values = (
+                        result.value as?
+                            JessieCodeRuntimeValue.ArrayValue
+                        )?.values
+                    if (
+                        values == null ||
+                        values.size != 2 ||
+                        values.any {
+                            it !is JessieCodeRuntimeValue.NumberValue
+                        }
+                    ) {
+                        GMResult.Err(
+                            CurveImplicitUpdateError.InvalidValue(
+                                term = "implicitcurve.domain$axis",
+                                expected = "array of two finite numbers",
+                                actualType = runtimeType(result.value),
+                            ),
+                        )
+                    } else {
+                        val numbers = DoubleArray(2) { index ->
+                            (
+                                values[index] as
+                                    JessieCodeRuntimeValue.NumberValue
+                                ).value
+                        }
+                        if (numbers.any { !it.isFinite() }) {
+                            GMResult.Err(
+                                CurveImplicitUpdateError.InvalidDomain(
+                                    axis = axis,
+                                    values = numbers,
+                                ),
+                            )
+                        } else {
+                            GMResult.Ok(numbers)
+                        }
+                    }
+                }
+            }
+        }
+
+        private fun <T> implicitUpdateFailure(
+            error: CurveImplicitUpdateError,
+        ): GMResult<T, CurveDataUpdateError> =
+            GMResult.Err(CurveDataUpdateError.ImplicitCurve(error))
 
         private fun register(
             curve: Curve,
@@ -3907,6 +5528,26 @@ internal class Curve private constructor(
                 )
             }
             return GMResult.Ok(Unit)
+        }
+
+        private fun validateTraceParent(
+            board: Board,
+            parent: GeometryElement,
+            role: String,
+        ): CurveError? {
+            if (parent.board !== board) {
+                return CurveError.TraceParentBoardMismatch(role)
+            }
+            if (
+                parent.id.isEmpty() ||
+                board.elementById(parent.id) !== parent
+            ) {
+                return CurveError.TraceParentNotRegistered(
+                    role = role,
+                    id = parent.id,
+                )
+            }
+            return null
         }
 
         private fun runtimeType(

@@ -52,6 +52,10 @@ internal sealed interface TangentError {
         val degree: Int,
     ) : TangentError
 
+    data class InvalidCurveParameter(
+        val parameter: Double,
+    ) : TangentError
+
     data class CurveProjection(
         val error: GeometryError,
     ) : TangentError
@@ -64,6 +68,52 @@ internal sealed interface TangentError {
 internal object Tangent {
     private const val TANGENT_ELEMENT_TYPE = "tangent"
     private const val POLAR_LINE_ELEMENT_TYPE = "polarline"
+
+    // JSXGraph: src/base/line.js -> createTangent one-Glider branch.
+    internal fun create(
+        board: Board,
+        glider: Glider,
+        id: String = "",
+        name: String? = null,
+        needsRegularUpdate: Boolean = true,
+        straightFirst: Boolean = true,
+        straightLast: Boolean = true,
+        point1Id: String = "",
+        point1Name: String? = null,
+        point1NeedsRegularUpdate: Boolean = true,
+        point2Id: String = "",
+        point2Name: String? = null,
+        point2NeedsRegularUpdate: Boolean = true,
+    ): GMResult<Line, TangentError> {
+        val slideObject = glider.slideObject
+            ?: return GMResult.Err(
+                TangentError.UnsupportedParents(listOf(glider.elType)),
+            )
+        return when (
+            val result = create(
+                board = board,
+                firstParent = glider,
+                secondParent = slideObject,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                point1Id = point1Id,
+                point1Name = point1Name,
+                point1NeedsRegularUpdate = point1NeedsRegularUpdate,
+                point2Id = point2Id,
+                point2Name = point2Name,
+                point2NeedsRegularUpdate = point2NeedsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> {
+                result.value.setParents(listOf(glider))
+                result
+            }
+            is GMResult.Err -> result
+        }
+    }
 
     // JSXGraph: src/base/line.js -> createTangent Line/Point and
     // Circle/Point branches.
@@ -114,14 +164,14 @@ internal object Tangent {
             )
         }
         val curveParents = when {
-            firstParent is Curve && secondParent is Point ->
+            isCurveElement(firstParent) && secondParent is Point ->
                 CurveParents(
                     curve = firstParent,
                     point = secondParent,
                     curveIndex = 0,
                     pointIndex = 1,
                 )
-            firstParent is Point && secondParent is Curve ->
+            firstParent is Point && isCurveElement(secondParent) ->
                 CurveParents(
                     curve = secondParent,
                     point = firstParent,
@@ -131,6 +181,26 @@ internal object Tangent {
             else -> null
         }
         if (curveParents != null) {
+            if (curveParents.curve.type == Const.OBJECT_TYPE_CONIC) {
+                return createConicTangent(
+                    board = board,
+                    firstParent = firstParent,
+                    secondParent = secondParent,
+                    canonicalizeParents = false,
+                    resultElementType = TANGENT_ELEMENT_TYPE,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                    point1Id = point1Id,
+                    point1Name = point1Name,
+                    point1NeedsRegularUpdate = point1NeedsRegularUpdate,
+                    point2Id = point2Id,
+                    point2Name = point2Name,
+                    point2NeedsRegularUpdate = point2NeedsRegularUpdate,
+                )
+            }
             return createCurveTangent(
                 board = board,
                 firstParent = firstParent,
@@ -149,7 +219,7 @@ internal object Tangent {
                 point2NeedsRegularUpdate = point2NeedsRegularUpdate,
             )
         }
-        return createCircleTangent(
+        return createConicTangent(
             board = board,
             firstParent = firstParent,
             secondParent = secondParent,
@@ -186,10 +256,7 @@ internal object Tangent {
         point2Name: String? = null,
         point2NeedsRegularUpdate: Boolean = true,
     ): GMResult<Line, TangentError> {
-        conicParentIndex(firstParent, secondParent)?.let { parentIndex ->
-            return GMResult.Err(TangentError.UnsupportedConic(parentIndex))
-        }
-        return createCircleTangent(
+        return createConicTangent(
             board = board,
             firstParent = firstParent,
             secondParent = secondParent,
@@ -294,12 +361,6 @@ internal object Tangent {
         )?.let {
             return GMResult.Err(it)
         }
-        if (parents.curve.type == Const.OBJECT_TYPE_CONIC) {
-            return GMResult.Err(
-                TangentError.UnsupportedConic(parents.curveIndex),
-            )
-        }
-
         val coefficients = CurveTangentCoefficientFunction(
             curve = parents.curve,
             point = parents.point,
@@ -380,8 +441,8 @@ internal object Tangent {
         return GMResult.Ok(line)
     }
 
-    // JSXGraph: src/base/line.js -> createTangent Circle/Point branch.
-    private fun createCircleTangent(
+    // JSXGraph: src/base/line.js -> createTangent Circle-or-Conic/Point branch.
+    private fun createConicTangent(
         board: Board,
         firstParent: GeometryElement,
         secondParent: GeometryElement,
@@ -400,18 +461,18 @@ internal object Tangent {
         point2NeedsRegularUpdate: Boolean,
     ): GMResult<Line, TangentError> {
         val canonicalParents = when {
-            firstParent is Circle && secondParent is Point ->
+            isConic(firstParent) && secondParent is Point ->
                 CanonicalParents(
-                    circle = firstParent,
+                    conic = firstParent,
                     point = secondParent,
-                    circleIndex = 0,
+                    conicIndex = 0,
                     pointIndex = 1,
                 )
-            firstParent is Point && secondParent is Circle ->
+            firstParent is Point && isConic(secondParent) ->
                 CanonicalParents(
-                    circle = secondParent,
+                    conic = secondParent,
                     point = firstParent,
-                    circleIndex = 1,
+                    conicIndex = 1,
                     pointIndex = 0,
                 )
             else -> return GMResult.Err(
@@ -425,8 +486,8 @@ internal object Tangent {
         }
         validateParent(
             board = board,
-            element = canonicalParents.circle,
-            parentIndex = canonicalParents.circleIndex,
+            element = canonicalParents.conic,
+            parentIndex = canonicalParents.conicIndex,
         )?.let {
             return GMResult.Err(it)
         }
@@ -438,8 +499,8 @@ internal object Tangent {
             return GMResult.Err(it)
         }
 
-        val coefficients = CircleTangentCoefficientFunction(
-            circle = canonicalParents.circle,
+        val coefficients = ConicTangentCoefficientFunction(
+            conic = canonicalParents.conic,
             point = canonicalParents.point,
         )
         val point1 = when (
@@ -512,7 +573,7 @@ internal object Tangent {
         line.setParents(
             if (canonicalizeParents) {
                 listOf(
-                    canonicalParents.circle,
+                    canonicalParents.conic,
                     canonicalParents.point,
                 )
             } else {
@@ -522,6 +583,13 @@ internal object Tangent {
         canonicalParents.point.addChild(line)
         return GMResult.Ok(line)
     }
+
+    private fun isConic(element: GeometryElement): Boolean =
+        element is Circle ||
+            element is Curve && element.type == Const.OBJECT_TYPE_CONIC
+
+    private fun isCurveElement(element: GeometryElement): Boolean =
+        element is Curve || element is Arc || element is Sector
 
     private fun createEndpoint(
         board: Board,
@@ -561,20 +629,10 @@ internal object Tangent {
             else -> null
         }
 
-    private fun conicParentIndex(
-        firstParent: GeometryElement,
-        secondParent: GeometryElement,
-    ): Int? =
-        when {
-            firstParent.type == Const.OBJECT_TYPE_CONIC -> 0
-            secondParent.type == Const.OBJECT_TYPE_CONIC -> 1
-            else -> null
-        }
-
     private data class CanonicalParents(
-        val circle: Circle,
+        val conic: GeometryElement,
         val point: Point,
-        val circleIndex: Int,
+        val conicIndex: Int,
         val pointIndex: Int,
     )
 
@@ -586,7 +644,7 @@ internal object Tangent {
     )
 
     private data class CurveParents(
-        val curve: Curve,
+        val curve: GeometryElement,
         val point: Point,
         val curveIndex: Int,
         val pointIndex: Int,
@@ -597,21 +655,21 @@ private fun interface TangentCoefficientProvider {
     fun evaluate(): DoubleArray
 }
 
-// JSXGraph: src/base/line.js -> createTangent Circle/Point coefficient closure.
-private class CircleTangentCoefficientFunction(
-    private val circle: Circle,
+// JSXGraph: src/base/line.js -> createTangent Circle-or-Conic/Point closure.
+private class ConicTangentCoefficientFunction(
+    private val conic: GeometryElement,
     private val point: Point,
 ) : TangentCoefficientProvider {
     override fun evaluate(): DoubleArray =
         Mat.matVecMult(
-            matrix = circle.quadraticform,
+            matrix = conic.quadraticform,
             vector = point.coords.usrCoords,
         )
 }
 
 // JSXGraph: src/base/line.js -> createTangent Curve/Point coefficient closure.
 private class CurveTangentCoefficientFunction(
-    private val curve: Curve,
+    private val curve: GeometryElement,
     private val point: Point,
 ) : TangentCoefficientProvider {
     override fun evaluate(): DoubleArray =
@@ -625,15 +683,26 @@ private class CurveTangentCoefficientFunction(
         }
 
     fun evaluateResult(): GMResult<DoubleArray, TangentError> =
-        if (curve.curveType == PLOT_CURVE_TYPE) {
-            evaluatePlot()
-        } else {
-            evaluateContinuous()
+        when (curve) {
+            is Curve ->
+                if (curve.curveType == PLOT_CURVE_TYPE) {
+                    evaluatePlot()
+                } else {
+                    evaluateContinuous(curve)
+                }
+            is Arc, is Sector -> evaluatePlot()
+            else -> GMResult.Err(
+                TangentError.UnsupportedParents(
+                    listOf(curve.elType, point.elType),
+                ),
+            )
         }
 
-    private fun evaluateContinuous(): GMResult<DoubleArray, TangentError> {
+    private fun evaluateContinuous(
+        source: Curve,
+    ): GMResult<DoubleArray, TangentError> {
         val parameter =
-            if (curve.curveType == FUNCTION_GRAPH_CURVE_TYPE) {
+            if (source.curveType == FUNCTION_GRAPH_CURVE_TYPE) {
                 point.X()
             } else {
                 when (
@@ -643,11 +712,11 @@ private class CurveTangentCoefficientFunction(
                         initialParameter = 0.0,
                         continuousCurve = ContinuousCurve2D(
                             curve = ParametricCurve2D(
-                                x = curve::X,
-                                y = curve::Y,
+                                x = source::X,
+                                y = source::Y,
                             ),
-                            minimumParameter = curve.minX(),
-                            maximumParameter = curve.maxX(),
+                            minimumParameter = source.minX(),
+                            maximumParameter = source.maxX(),
                             type = ContinuousCurveType.PARAMETER,
                         ),
                     )
@@ -658,8 +727,8 @@ private class CurveTangentCoefficientFunction(
                     )
                 }
             }
-        val verticalDerivative = Numerics.D(curve::Y)(parameter)
-        val horizontalDerivative = Numerics.D(curve::X)(parameter)
+        val verticalDerivative = Numerics.D(source::Y)(parameter)
+        val horizontalDerivative = Numerics.D(source::X)(parameter)
         val coordinates = point.coords.usrCoords
         return GMResult.Ok(
             doubleArrayOf(
@@ -672,41 +741,71 @@ private class CurveTangentCoefficientFunction(
     }
 
     private fun evaluatePlot(): GMResult<DoubleArray, TangentError> {
-        if (curve.numberPoints < 2) {
-            return GMResult.Err(
-                TangentError.InvalidCurvePointCount(curve.numberPoints),
-            )
-        }
-        if (curve.bezierDegree != 1) {
-            return GMResult.Err(
-                TangentError.UnsupportedCurveDegree(curve.bezierDegree),
-            )
-        }
-        val projection = when (
-            val result = Geometry.projectCoordsToCurve(
-                point = point.coords.usrCoords,
-                curve = DiscreteCurve2D(
-                    points = curve.points.map { it.usrCoords.copyOf() },
-                    bezierDegree = curve.bezierDegree,
+        val plot = curve.toPlotCurveGeometry()
+            ?: return GMResult.Err(
+                TangentError.UnsupportedParents(
+                    listOf(curve.elType, point.elType),
                 ),
             )
+        if (
+            plot.numberPoints < 2 ||
+            plot.numberPoints > plot.points.size
         ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return GMResult.Err(
-                TangentError.CurveProjection(result.error),
+            return GMResult.Err(
+                TangentError.InvalidCurvePointCount(plot.numberPoints),
             )
         }
-        var index = floor(projection.parameter).toInt()
-        if (index == curve.numberPoints - 1) {
+        if (plot.bezierDegree !in setOf(1, 3)) {
+            return GMResult.Err(
+                TangentError.UnsupportedCurveDegree(plot.bezierDegree),
+            )
+        }
+        val gliderPosition =
+            if (point.type == Const.OBJECT_TYPE_GLIDER) {
+                point.position
+            } else {
+                null
+            }
+        val parameter = if (gliderPosition != null) {
+            gliderPosition
+        } else {
+            when (
+                val result = Geometry.projectCoordsToCurve(
+                    point = point.coords.usrCoords,
+                    curve = DiscreteCurve2D(
+                        points = plot.points.take(plot.numberPoints),
+                        bezierDegree = plot.bezierDegree,
+                    ),
+                )
+            ) {
+                is GMResult.Ok -> result.value.parameter
+                is GMResult.Err -> return GMResult.Err(
+                    TangentError.CurveProjection(result.error),
+                )
+            }
+        }
+        return if (plot.bezierDegree == 3) {
+            evaluateCubicPlot(parameter, plot)
+        } else {
+            evaluateLinearPlot(parameter, plot)
+        }
+    }
+
+    private fun evaluateLinearPlot(
+        parameter: Double,
+        plot: PlotCurveGeometry,
+    ): GMResult<DoubleArray, TangentError> {
+        var index = floor(parameter).toInt()
+        if (index == plot.numberPoints - 1) {
             index -= 1
         }
-        if (index !in 0 until curve.numberPoints - 1) {
+        if (index !in 0 until plot.numberPoints - 1) {
             return GMResult.Err(
-                TangentError.InvalidCurvePointCount(curve.numberPoints),
+                TangentError.InvalidCurvePointCount(plot.numberPoints),
             )
         }
-        val first = curve.points[index].usrCoords
-        val second = curve.points[index + 1].usrCoords
+        val first = plot.points[index]
+        val second = plot.points[index + 1]
         return GMResult.Ok(
             doubleArrayOf(
                 first[2] * second[1] - first[1] * second[2],
@@ -714,6 +813,99 @@ private class CurveTangentCoefficientFunction(
                 first[1] - second[1],
             ),
         )
+    }
+
+    // JSXGraph: src/base/line.js -> getCurveTangentDir,
+    // bezierDegree === 3 branch.
+    private fun evaluateCubicPlot(
+        parameter: Double,
+        plot: PlotCurveGeometry,
+    ): GMResult<DoubleArray, TangentError> {
+        val points = cubicPoints(plot)
+            ?: return GMResult.Err(
+                TangentError.InvalidCurvePointCount(plot.numberPoints),
+            )
+        val length = points.size
+        val scaledParameter = parameter * (length - 1)
+        var indexValue = floor(scaledParameter / 3.0) * 3.0
+        var localParameter = (scaledParameter - indexValue) / 3.0
+        if (indexValue >= length - 1) {
+            indexValue = (length - 4).toDouble()
+            localParameter = 1.0
+        }
+        if (
+            indexValue.isNaN() ||
+            indexValue < 0.0 ||
+            indexValue > Int.MAX_VALUE
+        ) {
+            return GMResult.Err(
+                TangentError.InvalidCurveParameter(parameter),
+            )
+        }
+        val index = indexValue.toInt()
+        if (index + 3 >= length) {
+            return GMResult.Err(
+                TangentError.InvalidCurvePointCount(plot.numberPoints),
+            )
+        }
+
+        val first = points[index]
+        val firstControl = points[index + 1]
+        val secondControl = points[index + 2]
+        val last = points[index + 3]
+        val inverse = 1.0 - localParameter
+        var dx =
+            inverse * inverse * (firstControl[1] - first[1]) +
+                2.0 * inverse * localParameter *
+                (secondControl[1] - firstControl[1]) +
+                localParameter * localParameter *
+                (last[1] - secondControl[1])
+        var dy =
+            inverse * inverse * (firstControl[2] - first[2]) +
+                2.0 * inverse * localParameter *
+                (secondControl[2] - firstControl[2]) +
+                localParameter * localParameter *
+                (last[2] - secondControl[2])
+        val distance = Mat.hypot(dx, dy)
+        dx /= distance
+        dy /= distance
+
+        val anchor = point.coords.usrCoords
+        val directionPoint = doubleArrayOf(
+            1.0,
+            anchor[1] + dx,
+            anchor[2] + dy,
+        )
+        return GMResult.Ok(
+            doubleArrayOf(
+                anchor[2] * directionPoint[1] -
+                    anchor[1] * directionPoint[2],
+                directionPoint[2] - anchor[2],
+                anchor[1] - directionPoint[1],
+            ),
+        )
+    }
+
+    private fun cubicPoints(
+        plot: PlotCurveGeometry,
+    ): List<DoubleArray>? {
+        val points = if (plot.hasSectorLegs) {
+            val end = plot.numberPoints - 3
+            if (end < 3 || end > plot.points.size) {
+                return null
+            }
+            plot.points.subList(3, end)
+        } else {
+            plot.points.take(plot.numberPoints)
+        }
+        return if (
+            points.size >= 4 &&
+            (points.size - 1) % 3 == 0
+        ) {
+            points
+        } else {
+            null
+        }
     }
 
     private companion object {

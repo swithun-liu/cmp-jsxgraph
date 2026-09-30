@@ -23,6 +23,13 @@ import kotlin.random.Random
 internal sealed interface LineError {
     data class UnsupportedAngleUnit(val unit: String) : LineError
 
+    data class InvalidCoefficientCount(val count: Int) : LineError
+
+    data class CoefficientPointCreation(
+        val pointIndex: Int,
+        val cause: PointError,
+    ) : LineError
+
     data class ParentBoardMismatch(val parentIndex: Int) : LineError
 
     data class ParentNotRegistered(
@@ -89,10 +96,17 @@ internal open class Line internal constructor(
         private set
     internal var straightLast: Boolean = true
         private set
+    // JSXGraph: src/base/element.js -> visProp.firstarrow / lastarrow.
+    internal var firstArrowEnabled: Boolean = false
+        private set
+    internal var lastArrowEnabled: Boolean = false
+        private set
     // JSXGraph: src/base/line.js -> Line constructor / createLine.
     internal var constrained: Boolean = false
     // JSXGraph: src/base/line.js -> createTangent.
     internal var glider: Point? = null
+    // JSXGraph 1.13.3: src/reader/geonext.js -> parallel compositions.
+    internal var parallelPoint: Point? = null
     internal val inherits = mutableListOf<GeometryElement>()
     // JSXGraph: src/base/line.js -> createNormal Line/Point branch.
     internal var normalPoint: Point? = null
@@ -420,6 +434,31 @@ internal open class Line internal constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/line.js -> createArrow.
+    internal fun configureArrow(
+        elementType: String = ARROW_ELEMENT_TYPE,
+    ): Line {
+        type = Const.OBJECT_TYPE_VECTOR
+        elType = elementType
+        configureVisualArrows(
+            firstArrow = false,
+            lastArrow = true,
+        )
+        return configureVisibleRange(
+            straightFirst = false,
+            straightLast = false,
+        )
+    }
+
+    internal fun configureVisualArrows(
+        firstArrow: Boolean,
+        lastArrow: Boolean,
+    ): Line {
+        firstArrowEnabled = firstArrow
+        lastArrowEnabled = lastArrow
+        return this
+    }
+
     // JSXGraph: src/base/line.js -> getRise
     internal fun getRise(): Double =
         if (abs(stdform[2]) >= Mat.eps) {
@@ -578,9 +617,11 @@ internal open class Line internal constructor(
 
     internal companion object {
         private const val IDEAL_POINT_SCALE = 1.0e5
+        private const val COEFFICIENT_COUNT = 3
         private const val LINE_ID_PREFIX = "L"
         private const val LINE_ELEMENT_TYPE = "line"
         private const val SEGMENT_ELEMENT_TYPE = "segment"
+        private const val ARROW_ELEMENT_TYPE = "arrow"
         private val DEFAULT_RANDOM_SOURCE =
             RandomSource { Random.nextDouble() }
 
@@ -623,6 +664,90 @@ internal open class Line internal constructor(
                 is GMResult.Err -> GMResult.Err(
                     LineError.Registration(registration.error),
                 )
+            }
+        }
+
+        // JSXGraph 1.13.3: src/base/line.js -> createLine coefficient form.
+        fun create(
+            board: Board,
+            coefficients: DoubleArray,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+        ): GMResult<Line, LineError> {
+            if (coefficients.size != COEFFICIENT_COUNT) {
+                return GMResult.Err(
+                    LineError.InvalidCoefficientCount(coefficients.size),
+                )
+            }
+            val constant = coefficients[0]
+            val xCoefficient = coefficients[1]
+            val yCoefficient = coefficients[2]
+            val homogeneous =
+                yCoefficient * yCoefficient +
+                    xCoefficient * xCoefficient
+            val point1 = when (
+                val result = Point.create(
+                    board = board,
+                    coordinates = doubleArrayOf(
+                        homogeneous,
+                        yCoefficient -
+                            xCoefficient * constant +
+                            yCoefficient,
+                        -xCoefficient -
+                            yCoefficient * constant -
+                            xCoefficient,
+                    ),
+                    name = "",
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return GMResult.Err(
+                        LineError.CoefficientPointCreation(
+                            pointIndex = 0,
+                            cause = result.error,
+                        ),
+                    )
+                }
+            }
+            val point2 = when (
+                val result = Point.create(
+                    board = board,
+                    coordinates = doubleArrayOf(
+                        homogeneous,
+                        -xCoefficient * constant + yCoefficient,
+                        -yCoefficient * constant - xCoefficient,
+                    ),
+                    name = "",
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    board.removeObject(point1)
+                    return GMResult.Err(
+                        LineError.CoefficientPointCreation(
+                            pointIndex = 1,
+                            cause = result.error,
+                        ),
+                    )
+                }
+            }
+            return when (
+                val result = create(
+                    board = board,
+                    point1 = point1,
+                    point2 = point2,
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Ok -> result
+                is GMResult.Err -> {
+                    board.removeObjects(listOf(point1, point2))
+                    result
+                }
             }
         }
 

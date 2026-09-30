@@ -52,6 +52,10 @@ internal sealed interface NormalError {
         val degree: Int,
     ) : NormalError
 
+    data class InvalidCurveParameter(
+        val parameter: Double,
+    ) : NormalError
+
     data class CurveProjection(
         val error: GeometryError,
     ) : NormalError
@@ -63,6 +67,58 @@ internal sealed interface NormalError {
 
 internal object Normal {
     private const val NORMAL_ELEMENT_TYPE = "normal"
+
+    // JSXGraph: src/base/line.js -> createNormal one-Glider branch.
+    internal fun create(
+        board: Board,
+        glider: Glider,
+        id: String = "",
+        name: String? = null,
+        needsRegularUpdate: Boolean = true,
+        straightFirst: Boolean = true,
+        straightLast: Boolean = true,
+        pointId: String = "",
+        pointName: String? = null,
+        pointNeedsRegularUpdate: Boolean = true,
+        point1Id: String = "",
+        point1Name: String? = null,
+        point1NeedsRegularUpdate: Boolean = true,
+        point2Id: String = "",
+        point2Name: String? = null,
+        point2NeedsRegularUpdate: Boolean = true,
+    ): GMResult<Line, NormalError> {
+        val slideObject = glider.slideObject
+            ?: return GMResult.Err(
+                NormalError.UnsupportedParents(listOf(glider.elType)),
+            )
+        return when (
+            val result = create(
+                board = board,
+                firstParent = glider,
+                secondParent = slideObject,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                pointId = pointId,
+                pointName = pointName,
+                pointNeedsRegularUpdate = pointNeedsRegularUpdate,
+                point1Id = point1Id,
+                point1Name = point1Name,
+                point1NeedsRegularUpdate = point1NeedsRegularUpdate,
+                point2Id = point2Id,
+                point2Name = point2Name,
+                point2NeedsRegularUpdate = point2NeedsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> {
+                result.value.setParents(listOf(glider))
+                result
+            }
+            is GMResult.Err -> result
+        }
+    }
 
     // JSXGraph: src/base/line.js -> createNormal.
     internal fun create(
@@ -133,33 +189,24 @@ internal object Normal {
                 straightFirst = straightFirst,
                 straightLast = straightLast,
             )
-            is Curve ->
-                if (element.type == Const.OBJECT_TYPE_CONIC) {
-                    GMResult.Err(
-                        NormalError.UnsupportedConic(parents.elementIndex),
-                    )
-                } else {
-                    createCurveNormal(
-                        board = board,
-                        firstParent = firstParent,
-                        secondParent = secondParent,
-                        source = element,
-                        point = parents.point,
-                        id = id,
-                        name = name,
-                        needsRegularUpdate = needsRegularUpdate,
-                        straightFirst = straightFirst,
-                        straightLast = straightLast,
-                        point1Id = point1Id,
-                        point1Name = point1Name,
-                        point1NeedsRegularUpdate =
-                            point1NeedsRegularUpdate,
-                        point2Id = point2Id,
-                        point2Name = point2Name,
-                        point2NeedsRegularUpdate =
-                            point2NeedsRegularUpdate,
-                    )
-                }
+            is Curve, is Arc, is Sector -> createCurveNormal(
+                board = board,
+                firstParent = firstParent,
+                secondParent = secondParent,
+                source = element,
+                point = parents.point,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                point1Id = point1Id,
+                point1Name = point1Name,
+                point1NeedsRegularUpdate = point1NeedsRegularUpdate,
+                point2Id = point2Id,
+                point2Name = point2Name,
+                point2NeedsRegularUpdate = point2NeedsRegularUpdate,
+            )
             else -> GMResult.Err(
                 NormalError.UnsupportedParents(
                     listOf(firstParent.elType, secondParent.elType),
@@ -281,7 +328,7 @@ internal object Normal {
         board: Board,
         firstParent: GeometryElement,
         secondParent: GeometryElement,
-        source: Curve,
+        source: GeometryElement,
         point: Point,
         id: String,
         name: String?,
@@ -432,7 +479,11 @@ internal object Normal {
         }
 
     private fun isSupportedElement(element: GeometryElement): Boolean =
-        element is Line || element is Circle || element is Curve
+        element is Line ||
+            element is Circle ||
+            element is Curve ||
+            element is Arc ||
+            element is Sector
 
     private fun validateParent(
         board: Board,
@@ -486,7 +537,7 @@ private class NormalLineDirectionFunction(
 
 // JSXGraph: src/base/line.js -> createNormal Curve/Point coefficient closure.
 private class CurveNormalCoefficientFunction(
-    private val curve: Curve,
+    private val curve: GeometryElement,
     private val point: Point,
 ) : NormalCoefficientProvider {
     override fun evaluate(): DoubleArray =
@@ -496,15 +547,26 @@ private class CurveNormalCoefficientFunction(
         }
 
     fun evaluateResult(): GMResult<DoubleArray, NormalError> =
-        if (curve.curveType == PLOT_CURVE_TYPE) {
-            evaluatePlot()
-        } else {
-            evaluateContinuous()
+        when (curve) {
+            is Curve ->
+                if (curve.curveType == PLOT_CURVE_TYPE) {
+                    evaluatePlot()
+                } else {
+                    evaluateContinuous(curve)
+                }
+            is Arc, is Sector -> evaluatePlot()
+            else -> GMResult.Err(
+                NormalError.UnsupportedParents(
+                    listOf(curve.elType, point.elType),
+                ),
+            )
         }
 
-    private fun evaluateContinuous(): GMResult<DoubleArray, NormalError> {
+    private fun evaluateContinuous(
+        source: Curve,
+    ): GMResult<DoubleArray, NormalError> {
         val parameter =
-            if (curve.curveType == FUNCTION_GRAPH_CURVE_TYPE) {
+            if (source.curveType == FUNCTION_GRAPH_CURVE_TYPE) {
                 point.X()
             } else {
                 when (
@@ -514,11 +576,11 @@ private class CurveNormalCoefficientFunction(
                         initialParameter = 0.0,
                         continuousCurve = ContinuousCurve2D(
                             curve = ParametricCurve2D(
-                                x = curve::X,
-                                y = curve::Y,
+                                x = source::X,
+                                y = source::Y,
                             ),
-                            minimumParameter = curve.minX(),
-                            maximumParameter = curve.maxX(),
+                            minimumParameter = source.minX(),
+                            maximumParameter = source.maxX(),
                             type = ContinuousCurveType.PARAMETER,
                         ),
                     )
@@ -529,8 +591,8 @@ private class CurveNormalCoefficientFunction(
                     )
                 }
             }
-        val verticalDerivative = Numerics.D(curve::Y)(parameter)
-        val horizontalDerivative = Numerics.D(curve::X)(parameter)
+        val verticalDerivative = Numerics.D(source::Y)(parameter)
+        val horizontalDerivative = Numerics.D(source::X)(parameter)
         val coordinates = point.coords.usrCoords
         return GMResult.Ok(
             doubleArrayOf(
@@ -543,42 +605,72 @@ private class CurveNormalCoefficientFunction(
     }
 
     private fun evaluatePlot(): GMResult<DoubleArray, NormalError> {
-        if (curve.numberPoints < 2) {
-            return GMResult.Err(
-                NormalError.InvalidCurvePointCount(curve.numberPoints),
-            )
-        }
-        if (curve.bezierDegree != 1) {
-            return GMResult.Err(
-                NormalError.UnsupportedCurveDegree(curve.bezierDegree),
-            )
-        }
-        val projection = when (
-            val result = Geometry.projectCoordsToCurve(
-                point = point.coords.usrCoords,
-                curve = DiscreteCurve2D(
-                    points = curve.points.map { it.usrCoords.copyOf() },
-                    bezierDegree = curve.bezierDegree,
+        val plot = curve.toPlotCurveGeometry()
+            ?: return GMResult.Err(
+                NormalError.UnsupportedParents(
+                    listOf(curve.elType, point.elType),
                 ),
             )
+        if (
+            plot.numberPoints < 2 ||
+            plot.numberPoints > plot.points.size
         ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return GMResult.Err(
-                NormalError.CurveProjection(result.error),
+            return GMResult.Err(
+                NormalError.InvalidCurvePointCount(plot.numberPoints),
             )
         }
-        var index = floor(projection.parameter).toInt()
-        if (index == curve.numberPoints - 1) {
+        if (plot.bezierDegree !in setOf(1, 3)) {
+            return GMResult.Err(
+                NormalError.UnsupportedCurveDegree(plot.bezierDegree),
+            )
+        }
+        val gliderPosition =
+            if (point.type == Const.OBJECT_TYPE_GLIDER) {
+                point.position
+            } else {
+                null
+            }
+        val parameter = if (gliderPosition != null) {
+            gliderPosition
+        } else {
+            when (
+                val result = Geometry.projectCoordsToCurve(
+                    point = point.coords.usrCoords,
+                    curve = DiscreteCurve2D(
+                        points = plot.points.take(plot.numberPoints),
+                        bezierDegree = plot.bezierDegree,
+                    ),
+                )
+            ) {
+                is GMResult.Ok -> result.value.parameter
+                is GMResult.Err -> return GMResult.Err(
+                    NormalError.CurveProjection(result.error),
+                )
+            }
+        }
+        return if (plot.bezierDegree == 3) {
+            evaluateCubicPlot(parameter, plot)
+        } else {
+            evaluateLinearPlot(parameter, plot)
+        }
+    }
+
+    private fun evaluateLinearPlot(
+        parameter: Double,
+        plot: PlotCurveGeometry,
+    ): GMResult<DoubleArray, NormalError> {
+        var index = floor(parameter).toInt()
+        if (index == plot.numberPoints - 1) {
             index -= 1
         }
-        if (index !in 0 until curve.numberPoints - 1) {
+        if (index !in 0 until plot.numberPoints - 1) {
             return GMResult.Err(
-                NormalError.InvalidCurvePointCount(curve.numberPoints),
+                NormalError.InvalidCurvePointCount(plot.numberPoints),
             )
         }
-        val lambda = projection.parameter - index
-        val first = curve.points[index].usrCoords
-        val second = curve.points[index + 1].usrCoords
+        val lambda = parameter - index
+        val first = plot.points[index]
+        val second = plot.points[index + 1]
         val projected = DoubleArray(3) { coordinateIndex ->
             first[coordinateIndex] +
                 lambda * (second[coordinateIndex] - first[coordinateIndex])
@@ -590,6 +682,99 @@ private class CurveNormalCoefficientFunction(
             -tangent[2],
         )
         return GMResult.Ok(Mat.crossProduct(projected, idealNormal))
+    }
+
+    // JSXGraph: src/base/line.js -> getCurveNormalDir,
+    // bezierDegree === 3 branch.
+    private fun evaluateCubicPlot(
+        parameter: Double,
+        plot: PlotCurveGeometry,
+    ): GMResult<DoubleArray, NormalError> {
+        val points = cubicPoints(plot)
+            ?: return GMResult.Err(
+                NormalError.InvalidCurvePointCount(plot.numberPoints),
+            )
+        val length = points.size
+        val scaledParameter = parameter * (length - 1)
+        var indexValue = floor(scaledParameter / 3.0) * 3.0
+        var localParameter = (scaledParameter - indexValue) / 3.0
+        if (indexValue >= length - 1) {
+            indexValue = (length - 4).toDouble()
+            localParameter = 1.0
+        }
+        if (
+            indexValue.isNaN() ||
+            indexValue < 0.0 ||
+            indexValue > Int.MAX_VALUE
+        ) {
+            return GMResult.Err(
+                NormalError.InvalidCurveParameter(parameter),
+            )
+        }
+        val index = indexValue.toInt()
+        if (index + 3 >= length) {
+            return GMResult.Err(
+                NormalError.InvalidCurvePointCount(plot.numberPoints),
+            )
+        }
+
+        val first = points[index]
+        val firstControl = points[index + 1]
+        val secondControl = points[index + 2]
+        val last = points[index + 3]
+        val inverse = 1.0 - localParameter
+        var dx =
+            inverse * inverse * (firstControl[1] - first[1]) +
+                2.0 * inverse * localParameter *
+                (secondControl[1] - firstControl[1]) +
+                localParameter * localParameter *
+                (last[1] - secondControl[1])
+        var dy =
+            inverse * inverse * (firstControl[2] - first[2]) +
+                2.0 * inverse * localParameter *
+                (secondControl[2] - firstControl[2]) +
+                localParameter * localParameter *
+                (last[2] - secondControl[2])
+        val distance = Mat.hypot(dx, dy)
+        dx /= distance
+        dy /= distance
+
+        val anchor = point.coords.usrCoords
+        val directionPoint = doubleArrayOf(
+            1.0,
+            anchor[1] - dy,
+            anchor[2] + dx,
+        )
+        return GMResult.Ok(
+            doubleArrayOf(
+                anchor[2] * directionPoint[1] -
+                    anchor[1] * directionPoint[2],
+                directionPoint[2] - anchor[2],
+                anchor[1] - directionPoint[1],
+            ),
+        )
+    }
+
+    private fun cubicPoints(
+        plot: PlotCurveGeometry,
+    ): List<DoubleArray>? {
+        val points = if (plot.hasSectorLegs) {
+            val end = plot.numberPoints - 3
+            if (end < 3 || end > plot.points.size) {
+                return null
+            }
+            plot.points.subList(3, end)
+        } else {
+            plot.points.take(plot.numberPoints)
+        }
+        return if (
+            points.size >= 4 &&
+            (points.size - 1) % 3 == 0
+        ) {
+            points
+        } else {
+            null
+        }
     }
 
     private companion object {

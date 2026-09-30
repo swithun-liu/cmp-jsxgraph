@@ -259,8 +259,7 @@ through their native adaptive defaults. Desktop `1200 x 900` and Compact
 `390 x 844` captures scored `0.987022` and `0.976101`; both contact sheets
 passed nonblank/browser checks and manual review for continuous geometry,
 Hyperbola breaks, the Parabola singularity, clipping, overlap, and
-Native/Official agreement. Plot v1, RDP simplification, and Stable
-qualification remain pending.
+Native/Official agreement. Plot v1 and Stable qualification remain pending.
 
 Capture the experimental JSXGraph `1.13.3` adaptive Plot v3 point sequence:
 
@@ -276,8 +275,8 @@ one-sided finite/infinite limits, `NaN` separators, and structured
 evaluation, extrapolation, Numerics, interval, and point-limit failures.
 `NativeJessieCodeCreatorsTest` locks all six continuous wrapper point counts
 and explicit Plot v1 rejection. Plot v2 remains the default; Plot v3 is
-enabled only by `plotVersion: 3`. Plot v1, FunctionGraph RDP
-simplification, and Stable qualification remain pending.
+enabled only by `plotVersion: 3`. Plot v1 and Stable qualification remain
+pending.
 
 Capture the JSXGraph `1.13.3` adaptive Plot v4 point sequence:
 
@@ -303,8 +302,24 @@ by the official callback fixture and Kotlin tests because JSXGraph `1.13.3`
 itself fails the same-source
 `derivative(functiongraph("expression"))` Plot v4 path with
 `Operation - not defined on operands string and number` during interval
-probing. Plot v1, FunctionGraph RDP simplification, and Stable qualification
-remain pending.
+probing. Plot v1 and Stable qualification remain pending.
+
+Capture the JSXGraph `1.13.3` post-sampling Ramer-Douglas-Peucker behavior:
+
+```bash
+node tools/upstream-fixtures/functiongraph-rdp.mjs
+```
+
+The fixture records FunctionGraph's default-on versus ordinary Curve's
+default-off `RDPsmoothing` behavior, the default `RDPthreshold: 0.2`,
+explicit threshold overrides, and preservation of a reciprocal FunctionGraph
+path separator. `CurveTest` and `NativeJessieCodeCreatorsTest` lock the
+official linear count `2`; quadratic default/disabled/threshold-zero/
+threshold-one counts `43`/`523`/`523`/`20`; reciprocal count `67` with its
+separator at index `38`; and parametric default/explicit counts `374`/`65`.
+They also cover adaptive and naive update paths, the `plot` alias,
+construction-document attributes, invalid attribute types, and structured
+atomic failure for a negative threshold.
 
 Capture the official Plane3D rectangle/triangle tiling, color-array, shader,
 colormap, and Axes3D rear-plane defaults:
@@ -1556,8 +1571,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 107 cases:
-30 generated production scenarios followed by 77 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 108 cases:
+30 generated production scenarios followed by 78 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1571,7 +1586,7 @@ separate demo schema into handwritten native geometry. The focused
 `box_plots`, `combs`, `inequalities`, `vector_fields`, `slope_fields`,
 `ticks_2d`, `axis_2d`, `grid_2d`, `hatch_2d`, `image_2d`, `glider_slider`,
 `curve_glider`, `tapemeasures`, `measurements`, `smartlabels`, `integrals`,
-`slope_triangle`,
+`slope_triangle`, `functiongraph_rdp`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
 `curve_boolean_clipping` cases instead use a strict debug envelope around one
@@ -1632,7 +1647,7 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest same-source workbench evidence (2026-09-27):
+Latest same-source workbench evidence (2026-09-28):
 
 `Compact` is the scheduled `390 x 844` profile unless a case paragraph records
 a different reviewed viewport; the new BisectorLines evidence uses
@@ -1646,6 +1661,7 @@ a different reviewed viewport; the new BisectorLines evidence uses
 | `coordinate_parents` | 0.986543 | 0.978321 |
 | `shifted_geometry` | 0.986997 | 0.974236 |
 | `curves` | 0.986698 | 0.975236 |
+| `functiongraph_rdp` | 0.986736 | 0.977750 |
 | `ticks_2d` | 0.987918 | 0.983795 |
 | `axis_2d` | 0.986872 | 0.970148 |
 | `grid_2d` | 0.988817 | 0.980518 |
@@ -2211,8 +2227,7 @@ callback suspension, smoothness/cusp/jump/undefined decisions, parameter
 metadata, canonical screen projection, the repeated `_borderCase` midpoint
 probe observed in JSXGraph `1.13.3`, evaluator failures, point limits, and each
 wrapper's point count. This remains a focused preview outside the 30-case
-Stable corpus; Plot v1 and FunctionGraph RDP simplification remain
-pending.
+Stable corpus; Plot v1 remains pending.
 The focused `adaptive_plot_v3` capture uses the same six continuous wrappers
 with explicit `plotVersion: 3`. Static captures scored `0.987021` on Desktop
 and `0.976125` on Compact. Both contact sheets passed nonblank/browser checks
@@ -2222,7 +2237,7 @@ fixture and common tests additionally lock smooth/cusp/jump/border/isolated
 `NaN` behavior, one-sided limits through `Extrapolate`, FunctionGraph domain
 cropping, callback suspension, evaluator failures, point limits, and wrapper
 point counts. This remains a focused preview outside the 30-case Stable
-corpus; Plot v1 and FunctionGraph RDP simplification remain pending.
+corpus; Plot v1 remains pending.
 The focused `adaptive_plot_v4` capture uses five continuous wrappers with
 explicit `plotVersion: 4`. Static captures scored `0.987222` on Desktop and
 `0.976707` on Compact. Both contact sheets passed nonblank/browser checks and
@@ -2233,7 +2248,15 @@ paths, FunctionGraph domain cropping, callback suspension, evaluator failures,
 point limits, and wrapper point counts. The visual source excludes only the
 upstream-broken JessieCode string-FunctionGraph Derivative combination
 described above. This remains a focused preview outside the 30-case Stable
-corpus; Plot v1 and FunctionGraph RDP simplification remain pending.
+corpus; Plot v1 remains pending.
+The focused `functiongraph_rdp` capture overlays the default-smoothed and
+explicitly unsmoothed quadratic, renders both reciprocal branches around the
+preserved non-finite separator, and compares ordinary parametric Curves with
+default-off and explicit-on smoothing. Static Desktop `1200 x 900` and
+Compact `390 x 844` captures scored `0.986736` and `0.977750`. Both contact
+sheets passed nonblank/browser checks and manual review for geometry,
+branch separation, clipping, overlap, and Native/Official agreement. This is
+a focused preview outside the 30-case Stable corpus.
 The focused `tapemeasures` capture uses one JessieCode source for a default
 horizontal tape and a label-only diagonal tape. Static captures scored
 `0.984781` on Desktop and `0.969197` on Compact. After dragging the horizontal
@@ -2313,7 +2336,7 @@ Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
 SmartLabel/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 107 cases while the independently
+the development corpus now contains 108 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

@@ -28,6 +28,10 @@ internal sealed interface JessieCodeSessionError {
         val error: JessieCodeParserError,
     ) : JessieCodeSessionError
 
+    data class ComputerAlgebra(
+        val error: JessieCodeComputerAlgebraError,
+    ) : JessieCodeSessionError
+
     data class Runtime(
         val error: JessieCodeRuntimeError,
     ) : JessieCodeSessionError
@@ -44,6 +48,11 @@ internal class JessieCodeSession(
         JessieCodeRuntimeEnvironment(),
     lexerLimits: JessieCodeLexerLimits = JessieCodeLexerLimits(),
     parserLimits: JessieCodeParserLimits = JessieCodeParserLimits(),
+    computerAlgebraLimits: JessieCodeComputerAlgebraLimits =
+        JessieCodeComputerAlgebraLimits(
+            maxOutputNodes = parserLimits.maxAstNodes,
+            maxOutputDepth = parserLimits.maxAstDepth,
+        ),
     evaluatorLimits: JessieCodeEvaluatorLimits =
         JessieCodeEvaluatorLimits(),
     private val sessionLimits: JessieCodeSessionLimits =
@@ -53,6 +62,8 @@ internal class JessieCodeSession(
         lexerLimits = lexerLimits,
         parserLimits = parserLimits,
     )
+    private val computerAlgebra =
+        JessieCodeComputerAlgebra(computerAlgebraLimits)
     private val evaluator = JessieCodeEvaluationSession(
         limits = evaluatorLimits,
         environment = environment,
@@ -61,6 +72,9 @@ internal class JessieCodeSession(
 
     internal val code: String
         get() = sourceHistory.toString()
+
+    internal val log: List<List<JessieCodeRuntimeValue>>
+        get() = evaluator.log
 
     // JSXGraph: src/parser/jessiecode.js -> _genericParse, parse
     internal fun parse(
@@ -95,7 +109,15 @@ internal class JessieCodeSession(
                 JessieCodeSessionError.Parser(result.error),
             )
         }
-        return when (val result = evaluator.evaluate(ast)) {
+        val transformedAst = when (
+            val result = computerAlgebra.transform(ast)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                JessieCodeSessionError.ComputerAlgebra(result.error),
+            )
+        }
+        return when (val result = evaluator.evaluate(transformedAst)) {
             is GMResult.Ok -> result
             is GMResult.Err -> GMResult.Err(
                 JessieCodeSessionError.Runtime(result.error),

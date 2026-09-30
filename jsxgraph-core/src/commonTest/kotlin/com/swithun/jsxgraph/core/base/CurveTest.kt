@@ -5,6 +5,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.NumericsError
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
@@ -225,6 +226,242 @@ class CurveTest {
     }
 
     @Test
+    fun adaptiveFunctionGraphSupportsLegacyPlotVersionOne() {
+        val quadratic = curve(
+            Curve.createFunctionGraph(
+                board = rdpBoard(),
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 1,
+                ),
+                name = "",
+            ),
+        )
+
+        assertEquals(43, quadratic.numberPoints)
+        assertEquals(null, quadratic.points.first().curveParameter)
+        assertEquals(-2.0, quadratic.points.first().usrCoords[1])
+        assertEquals(4.0, quadratic.points.first().usrCoords[2])
+        assertEquals(-1.70703125, quadratic.points[1].curveParameter)
+        assertEquals(-1.703125, quadratic.points[1].usrCoords[1])
+        assertEquals(1.998046875, quadratic.points.last().curveParameter)
+        assertEquals(2.0, quadratic.points.last().usrCoords[1])
+        assertEquals(4.0, quadratic.points.last().usrCoords[2])
+
+        val lowQualityBoard = rdpBoard().also {
+            it.updateQuality = Board.BOARD_QUALITY_LOW
+        }
+        val lowQuality = curve(
+            Curve.createFunctionGraph(
+                board = lowQualityBoard,
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 1,
+                ),
+                name = "",
+            ),
+        )
+        assertEquals(65, lowQuality.numberPoints)
+        assertEquals(-1.96875, lowQuality.points[1].curveParameter)
+        assertEquals(-1.9375, lowQuality.points[1].usrCoords[1])
+        assertEquals(1.96875, lowQuality.points.last().curveParameter)
+        assertEquals(2.0, lowQuality.points.last().usrCoords[1])
+
+        val reciprocal = curve(
+            Curve.createFunctionGraph(
+                board = rdpBoard(),
+                ySource = "1 / x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 1,
+                ),
+            ),
+        )
+        assertEquals(59, reciprocal.numberPoints)
+        assertEquals(
+            listOf(33),
+            reciprocal.points.indices.filter { index ->
+                val point = reciprocal.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
+
+        val limitedBoard = Board(
+            originX = 250.0,
+            originY = 250.0,
+            unitX = 50.0,
+            unitY = 50.0,
+            boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+            id = "adaptive-v1-limited-board",
+            maxCurvePoints = 2,
+        )
+        val limited = assertIs<
+            GMResult.Err<CurveError.InvalidAdaptivePointCount>,
+            >(
+            Curve.createFunctionGraph(
+                board = limitedBoard,
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 1,
+                ),
+            ),
+        ).error
+        assertEquals(3, limited.count)
+        assertEquals(2, limited.maximum)
+        assertTrue(limitedBoard.objects.isEmpty())
+    }
+
+    @Test
+    fun functionGraphRdpSmoothingMatchesOfficialCountsAndSeparators() {
+        fun create(
+            source: String,
+            threshold: Double = 0.2,
+        ): Curve = curve(
+            Curve.createFunctionGraph(
+                board = rdpBoard(),
+                ySource = source,
+                minimumSource = "-2",
+                maximumSource = "2",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 2,
+                    recursionDepthHigh = 17,
+                    rdpSmoothing = true,
+                    rdpThreshold = threshold,
+                ),
+                name = "",
+            ),
+        )
+
+        assertEquals(2, create("x").numberPoints)
+        assertEquals(43, create("x * x").numberPoints)
+        assertEquals(20, create("x * x", threshold = 1.0).numberPoints)
+        assertEquals(523, create("x * x", threshold = 0.0).numberPoints)
+
+        val reciprocal = create("1 / x")
+        assertEquals(67, reciprocal.numberPoints)
+        assertEquals(
+            listOf(38),
+            reciprocal.points.indices.filter { index ->
+                val point = reciprocal.points[index]
+                point.usrCoords[1].isNaN() ||
+                    point.usrCoords[2].isNaN()
+            },
+        )
+    }
+
+    @Test
+    fun dynamicFunctionGraphRdpMatchesOfficialAfterPointMove() {
+        val board = Board.fromBoundingBox(
+            boundingBox = doubleArrayOf(-8.0, 6.0, 8.0, -6.0),
+            keepAspectRatio = true,
+            defaultCurveMinimum = -9.6,
+            defaultCurveMaximum = 9.6,
+        )
+        val driver = point(
+            board = board,
+            coordinates = doubleArrayOf(1.0, -5.8),
+            name = "A",
+        )
+        val graph = curve(
+            Curve.createFunctionGraph(
+                board = board,
+                ySource =
+                    "x == 4 ? 0 / 0 : " +
+                        "0.25 * A.X() * (x - 4) * (x - 4) - 2",
+                minimumSource = "0",
+                maximumSource = "8",
+                sampleCount = 128,
+                plotOptions = CurvePlotOptions(
+                    rdpSmoothing = true,
+                ),
+                name = "",
+            ),
+        )
+
+        driver.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(2.0, -5.8),
+        )
+        board.update(draggedElement = driver)
+
+        assertContentEquals(
+            doubleArrayOf(-8.0, 8.0, 8.0, -8.0),
+            board.getBoundingBox(),
+        )
+        assertEquals(47, graph.numberPoints)
+    }
+
+    @Test
+    fun parametricCurveRdpSmoothingIsExplicitAndReportsInvalidTolerance() {
+        val unsmoothed = curve(
+            Curve.createParametric(
+                board = rdpBoard(),
+                xSource = "cos(x)",
+                ySource = "sin(x)",
+                minimumSource = "0",
+                maximumSource = "6.283185307179586",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 2,
+                ),
+                name = "",
+            ),
+        )
+        val smoothed = curve(
+            Curve.createParametric(
+                board = rdpBoard(),
+                xSource = "cos(x)",
+                ySource = "sin(x)",
+                minimumSource = "0",
+                maximumSource = "6.283185307179586",
+                plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = true,
+                    plotVersion = 2,
+                    rdpSmoothing = true,
+                ),
+                name = "",
+            ),
+        )
+
+        assertEquals(374, unsmoothed.numberPoints)
+        assertEquals(65, smoothed.numberPoints)
+
+        val invalidBoard = rdpBoard()
+        val error = assertIs<GMResult.Err<CurveError.Numerics>>(
+            Curve.createFunctionGraph(
+                board = invalidBoard,
+                ySource = "x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                sampleCount = 4,
+                plotOptions = CurvePlotOptions(
+                    rdpSmoothing = true,
+                    rdpThreshold = -1.0,
+                ),
+            ),
+        ).error
+        assertEquals("RamerDouglasPeucker", error.operation)
+        assertEquals(
+            NumericsError.InvalidSimplificationTolerance(-0.0125),
+            error.error,
+        )
+        assertTrue(invalidBoard.objects.isEmpty())
+    }
+
+    @Test
     fun adaptiveFunctionGraphSupportsExplicitVersionsThreeAndFour() {
         val versionThree = curve(
             Curve.createFunctionGraph(
@@ -301,22 +538,6 @@ class CurveTest {
             20.0,
             stringParametric.points.last().curveParameter,
         )
-
-        val unsupported = assertIs<
-            GMResult.Err<CurveError.UnsupportedPlotVersion>,
-            >(
-            Curve.createFunctionGraph(
-                board = board(),
-                ySource = "x",
-                minimumSource = "-1",
-                maximumSource = "1",
-                plotOptions = CurvePlotOptions(
-                    doAdvancedPlot = true,
-                    plotVersion = 1,
-                ),
-            ),
-        ).error
-        assertEquals(1, unsupported.version)
 
         val versionFour = curve(
             Curve.createFunctionGraph(
@@ -1816,6 +2037,16 @@ class CurveTest {
             unitY = 1.0,
             boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
             id = "plot-board",
+        )
+
+    private fun rdpBoard(): Board =
+        Board(
+            originX = 250.0,
+            originY = 250.0,
+            unitX = 50.0,
+            unitY = 50.0,
+            boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+            id = "rdp-board",
         )
 
     private fun point(

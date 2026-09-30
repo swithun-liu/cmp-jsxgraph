@@ -110,6 +110,52 @@ class GridTest {
     }
 
     @Test
+    fun gridCanBackAGliderThroughTheCurveProjectionBranch() {
+        val board = board()
+        val major = grid(
+            Grid.create(
+                board = board,
+                parentAxes = emptyList(),
+                definition = definition().copy(
+                    majorStep = JsxGraphGridPair(
+                        JsxGraphGridLength.User(2.0),
+                        JsxGraphGridLength.User(2.0),
+                    ),
+                    includeBoundaries = true,
+                ),
+                id = "grid",
+                name = "",
+            ),
+        )
+        val glider = assertIs<GMResult.Ok<Glider>>(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(1.2, 1.1),
+                slideObject = major,
+                id = "glider",
+                name = "",
+            ),
+        ).value
+
+        assertEquals(
+            2.0,
+            glider.X(),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            1.1,
+            glider.Y(),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertEquals(
+            27.39,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertSame(major, glider.slideObject)
+    }
+
+    @Test
     fun minorRegistrationFailureRollsBackMajorCurve() {
         val board = board()
         val occupied = assertIs<GMResult.Ok<Point>>(
@@ -285,4 +331,8 @@ class GridTest {
             parentMajorStep = parentMajorStep,
             parentMinorElements = parentMinorElements,
         )
+
+    private companion object {
+        const val TOLERANCE = 1.0e-10
+    }
 }

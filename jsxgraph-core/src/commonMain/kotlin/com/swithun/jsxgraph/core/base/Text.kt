@@ -61,6 +61,12 @@ internal sealed interface TextError {
         val error: SmartLabelError,
     ) : TextError
 
+    data object AnchorBoardMismatch : TextError
+
+    data class AnchorNotRegistered(
+        val id: String,
+    ) : TextError
+
     data class Registration(
         val error: BoardError,
     ) : TextError
@@ -82,7 +88,12 @@ internal class Text private constructor(
     plaintext: String,
     contentSegments: List<ContentSegment>,
     parse: Boolean,
-    digits: Int,
+    internal val digits: Int,
+    internal val anchor: Line? = null,
+    internal val relativeCoordinates: DoubleArray? = null,
+    internal val isFixed: Boolean = false,
+    internal val isVisible: Boolean = true,
+    internal val strokeColor: String? = null,
     id: String = "",
     name: String? = null,
     needsRegularUpdate: Boolean = true,
@@ -106,12 +117,14 @@ internal class Text private constructor(
         (() -> GMResult<String, TextError>)? = null
     private var parseDynamicContent: Boolean = false
     private val parse: Boolean = parse
-    private val digits: Int = digits
     internal var contentEvaluationError: TextError? = null
         private set
     internal var measurementDefinition: MeasurementDefinition? = null
     // JSXGraph 1.13.3: src/element/smartlabel.js -> createSmartLabel.
     internal var smartLabelDefinition: SmartLabelDefinition? = null
+    // JSXGraph 1.13.3: src/element/button.js, checkbox.js, input.js and
+    // src/base/text.js -> createHTMLSlider. These creators extend Text.
+    internal var htmlControlDefinition: HtmlControlDefinition? = null
     // JSXGraph: src/base/text.js -> relativeCoords. Stored in CSS pixels and
     // resolved by the platform renderer after the user-coordinate transform.
     internal var screenOffset: DoubleArray = doubleArrayOf(0.0, 0.0)
@@ -164,7 +177,17 @@ internal class Text private constructor(
         if (!needsUpdate) {
             return this
         }
-        updateCoords(fromParent)
+        if (anchor == null || relativeCoordinates == null) {
+            updateCoords(fromParent)
+        } else {
+            coords.setCoordinates(
+                coordType = Const.COORDS_BY_USER,
+                coordinates = anchoredCoordinates(
+                    anchor = anchor,
+                    relativeCoordinates = relativeCoordinates,
+                ),
+            )
+        }
         val result = dynamicContent?.invoke()
             ?: evaluateContent(contentSegments, digits)
         when (result) {
@@ -208,11 +231,18 @@ internal class Text private constructor(
             needsRegularUpdate: Boolean = true,
             parse: Boolean = true,
             digits: Int = 2,
+            anchor: Line? = null,
+            fixed: Boolean = false,
+            visible: Boolean = true,
+            strokeColor: String? = null,
         ): GMResult<Text, TextError> {
             if (coordinates.size !in 2..3) {
                 return GMResult.Err(
                     TextError.InvalidCoordinateCount(coordinates.size),
                 )
+            }
+            validateAnchor(board, anchor)?.let {
+                return GMResult.Err(it)
             }
             val compiledContent = when (
                 val result = compileContent(
@@ -225,14 +255,30 @@ internal class Text private constructor(
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
+            val relativeCoordinates =
+                affineCoordinates(coordinates)
             val text = Text(
                 board = board,
-                coordinates = coordinates,
+                coordinates =
+                    if (anchor == null) {
+                        coordinates
+                    } else {
+                        anchoredCoordinates(
+                            anchor = anchor,
+                            relativeCoordinates = relativeCoordinates,
+                        )
+                    },
                 content = content,
                 plaintext = compiledContent.plaintext,
                 contentSegments = compiledContent.segments,
                 parse = parse,
                 digits = digits,
+                anchor = anchor,
+                relativeCoordinates =
+                    if (anchor == null) null else relativeCoordinates,
+                isFixed = fixed,
+                isVisible = visible,
+                strokeColor = strokeColor,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -243,6 +289,7 @@ internal class Text private constructor(
                     text.addParentsFromJCFunctions(
                         compiledContent.functions,
                     )
+                    anchor?.addChild(text)
                     registration
                 }
                 is GMResult.Err -> registration
@@ -421,6 +468,47 @@ internal class Text private constructor(
                 is GMResult.Ok -> GMResult.Ok(text)
                 is GMResult.Err -> GMResult.Err(
                     TextError.Registration(registration.error),
+                )
+            }
+
+        private fun validateAnchor(
+            board: Board,
+            anchor: Line?,
+        ): TextError? {
+            if (anchor == null) {
+                return null
+            }
+            if (anchor.board !== board) {
+                return TextError.AnchorBoardMismatch
+            }
+            if (board.elementById(anchor.id) !== anchor) {
+                return TextError.AnchorNotRegistered(anchor.id)
+            }
+            return null
+        }
+
+        // JSXGraph: src/base/coordselement.js -> addAnchor;
+        // src/base/line.js -> getTextAnchor.
+        private fun anchoredCoordinates(
+            anchor: Line,
+            relativeCoordinates: DoubleArray,
+        ): DoubleArray =
+            doubleArrayOf(
+                0.5 * (anchor.point1.X() + anchor.point2.X()) +
+                    relativeCoordinates[0],
+                0.5 * (anchor.point1.Y() + anchor.point2.Y()) +
+                    relativeCoordinates[1],
+            )
+
+        private fun affineCoordinates(
+            coordinates: DoubleArray,
+        ): DoubleArray =
+            if (coordinates.size == 2) {
+                coordinates.copyOf()
+            } else {
+                doubleArrayOf(
+                    coordinates[1] / coordinates[0],
+                    coordinates[2] / coordinates[0],
                 )
             }
 

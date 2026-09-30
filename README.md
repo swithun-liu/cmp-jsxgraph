@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 107 source-controlled cases: 30 independent production scenarios and
-77 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 108 source-controlled cases: 30 independent production scenarios and
+78 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -382,8 +382,11 @@ Hyperbola, Parabola, Derivative, Spline, and CardinalSpline inherit the same
 native adaptive default, and explicit `plotVersion: 3` selects the translated
 experimental Plot v3 sampler. Explicit `plotVersion: 4` selects the translated
 difference-based Plot v4 sampler, including its bounded JessieCode interval
-arithmetic path and scalar-extrema fallback. Plot v1 and FunctionGraph RDP
-simplification remain explicit gaps. Polygon,
+arithmetic path and scalar-extrema fallback. FunctionGraph and its `plot` alias
+apply the official post-sampling Ramer-Douglas-Peucker defaults
+(`RDPsmoothing: true`, `RDPthreshold: 0.2`); ordinary Curve keeps smoothing
+disabled unless explicitly enabled, and non-finite path separators remain
+intact. Plot v1 remains an explicit gap. Polygon,
 PolygonalChain, Parallelogram, and RegularPolygon currently support Point or
 coordinate-array vertices,
 `withLines`, top-level fill styling, and default border/vertex styles.
@@ -965,6 +968,19 @@ creators, parent forms, attributes, properties, and methods return
 `GMResult.Err<JsxGraphJessieCodeError>`. The JSON JessieCode envelope used by
 the case workbench is a debug-only parity transport, not a production input
 format.
+
+## Legacy Construction Syntax
+
+`JsxGraphJessieScript.parse(source)` compiles the legacy
+`Board.construct(...)` syntax from `src/parser/jessiescript.js` into the
+native JessieCode/Board pipeline. `createSession(...)` additionally preserves
+interactive Point updates. The compatibility layer covers the upstream
+construction and macro forms without executing JavaScript; unsupported
+runtime property mutation and draft styling return typed errors.
+
+Both JSON documents and JessieCode Board options accept
+`theme = "mono_thin"`. The registered JSXGraph `1.13.3` theme is applied to
+supported scene defaults before explicit element attributes.
 
 ## Build
 

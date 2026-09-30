@@ -40,6 +40,8 @@ data class JsxGraphScene(
     val grid: Boolean,
     val keepAspectRatio: Boolean,
     val elements: List<JsxGraphSceneElement>,
+    val unsupportedRenderFeatures: List<JsxGraphUnsupportedRenderFeature> =
+        emptyList(),
 )
 
 data class JsxGraphBoundingBox(
@@ -105,6 +107,53 @@ data class JsxGraphColor(
     companion object {
         val Transparent = JsxGraphColor(0, 0, 0, 0)
     }
+}
+
+enum class JsxGraphUnsupportedRenderCapability {
+    ARBITRARY_HTML,
+}
+
+data class JsxGraphUnsupportedRenderFeature(
+    val elementId: String,
+    val elementType: String,
+    val capability: JsxGraphUnsupportedRenderCapability,
+    val reason: String,
+)
+
+sealed interface JsxGraphForeignObjectSize {
+    object ContentIntrinsic : JsxGraphForeignObjectSize
+
+    data class UserSpace(
+        val width: Double,
+        val height: Double,
+    ) : JsxGraphForeignObjectSize
+}
+
+sealed interface JsxGraphHtmlControl {
+    data class Button(
+        val disabled: Boolean,
+    ) : JsxGraphHtmlControl
+
+    data class Checkbox(
+        val checked: Boolean,
+        val disabled: Boolean,
+    ) : JsxGraphHtmlControl
+
+    data class Input(
+        val value: String,
+        val maxLength: Int,
+        val disabled: Boolean,
+    ) : JsxGraphHtmlControl
+
+    data class Slider(
+        val minimum: Double,
+        val maximum: Double,
+        val value: Double,
+        val step: Double,
+        val widthRange: Double,
+        val widthOut: Double,
+        val withLabel: Boolean,
+    ) : JsxGraphHtmlControl
 }
 
 /**
@@ -1554,6 +1603,7 @@ sealed interface JsxGraphSceneElement {
         val screenOffset: JsxGraphPoint2D = JsxGraphPoint2D(0.0, 0.0),
         val ticks3DLabel: JsxGraphTicks3DLabel? = null,
         val smartLabel: JsxGraphSmartLabel? = null,
+        val htmlControl: JsxGraphHtmlControl? = null,
     ) : JsxGraphSceneElement
 
     data class Image(
@@ -1566,5 +1616,15 @@ sealed interface JsxGraphSceneElement {
         val heightVector: JsxGraphPoint2D,
         val userWidth: Double,
         val userHeight: Double,
+    ) : JsxGraphSceneElement
+
+    data class ForeignObject(
+        override val id: String,
+        override val name: String,
+        override val style: JsxGraphElementStyle,
+        val content: String,
+        val anchor: JsxGraphPoint2D,
+        val size: JsxGraphForeignObjectSize,
+        val evaluateOnlyOnce: Boolean,
     ) : JsxGraphSceneElement
 }

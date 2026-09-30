@@ -140,6 +140,30 @@ internal class ParallelPoint private constructor(
             }
         }
 
+        /*
+         * JSXGraph 1.13.3: src/element/composition.js ->
+         * createParallelPoint [line, point] branch.
+         */
+        fun create(
+            board: Board,
+            sourceLine: Line,
+            throughPoint: Point,
+            id: String = "",
+            name: String? = null,
+            needsRegularUpdate: Boolean = true,
+            fixed: Boolean = false,
+        ): GMResult<ParallelPoint, ParallelConstructionError> =
+            create(
+                board = board,
+                point1 = sourceLine.point1,
+                point2 = sourceLine.point2,
+                point3 = throughPoint,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                fixed = fixed,
+            )
+
         private fun parallelCoordinates(
             point1: Point,
             point2: Point,

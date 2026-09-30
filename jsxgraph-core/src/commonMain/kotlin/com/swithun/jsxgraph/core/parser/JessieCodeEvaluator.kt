@@ -13,6 +13,9 @@ import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Group
+import com.swithun.jsxgraph.core.base.GroupCenter
+import com.swithun.jsxgraph.core.base.GroupError
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.math.Geometry
@@ -71,6 +74,9 @@ internal class JessieCodeEvaluationSession(
         node: JessieCodeAstNode,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
         state.evaluateRoot(node)
+
+    internal val log: List<List<JessieCodeRuntimeValue>>
+        get() = state.log
 }
 
 private class EvaluationState(
@@ -85,6 +91,11 @@ private class EvaluationState(
         locals = environment.variables.toMutableMap(),
         previous = null,
     )
+    private val logEntries =
+        mutableListOf<List<JessieCodeRuntimeValue>>()
+
+    internal val log: List<List<JessieCodeRuntimeValue>>
+        get() = logEntries
 
     fun evaluateRoot(
         node: JessieCodeAstNode,
@@ -436,8 +447,11 @@ private class EvaluationState(
             when (val value = local.locals.getValue(name)) {
                 is JessieCodeRuntimeValue.ElementReference ->
                     currentBoard?.removeObject(value.element)
-                is JessieCodeRuntimeValue.CompositionReference ->
-                    currentBoard?.removeObject(value.composition)
+                is JessieCodeRuntimeValue.CompositionReference -> {
+                    if (value.composition !is Group) {
+                        currentBoard?.removeObject(value.composition)
+                    }
+                }
                 else -> Unit
             }
         } else {
@@ -1510,9 +1524,12 @@ private class EvaluationState(
         }
 
         val element = currentBoard?.select(name)
+        val group = currentBoard?.groupById(name)
         return GMResult.Ok(
             element?.let {
                 JessieCodeRuntimeValue.ElementReference(it)
+            } ?: group?.let {
+                JessieCodeRuntimeValue.CompositionReference(it)
             } ?: JessieCodeRuntimeValue.UndefinedValue,
         )
     }
@@ -1959,6 +1976,14 @@ private class EvaluationState(
         location: JessieCodeAstLocation,
     ): EvaluationResult {
         val composition = receiver.composition
+        if (composition is Group) {
+            return resolveGroupProperty(
+                receiver = receiver,
+                group = composition,
+                property = property,
+                location = location,
+            )
+        }
         composition.member(property)?.let { member ->
             return GMResult.Ok(
                 JessieCodeRuntimeValue.ElementReference(member),
@@ -2074,6 +2099,591 @@ private class EvaluationState(
         }
     }
 
+    // JSXGraph 1.13.3: src/base/group.js -> Group properties and methodMap.
+    private fun resolveGroupProperty(
+        receiver: JessieCodeRuntimeValue.CompositionReference,
+        group: Group,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult =
+        when (property) {
+            "id" -> string(group.id)
+            "name" -> string(group.name)
+            "elType" -> string(group.elType)
+            "needsRegularUpdate" -> GMResult.Ok(
+                JessieCodeRuntimeValue.BooleanValue(
+                    group.needsRegularUpdate,
+                ),
+            )
+            "needsUpdate" -> GMResult.Ok(
+                JessieCodeRuntimeValue.BooleanValue(group.needsUpdate),
+            )
+            "parents" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    group.parentIds.map(
+                        JessieCodeRuntimeValue::StringValue,
+                    ),
+                ),
+            )
+            "objects" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    group.groupObjects.mapValues { (_, element) ->
+                        JessieCodeRuntimeValue.ElementReference(element)
+                    },
+                ),
+            )
+            "coords" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    group.coords.mapValues { (_, coordinates) ->
+                        JessieCodeRuntimeValue.ObjectValue(
+                            mapOf(
+                                "usrCoords" to
+                                    JessieCodeRuntimeValue.ArrayValue(
+                                        coordinates.map(
+                                            JessieCodeRuntimeValue::NumberValue,
+                                        ),
+                                    ),
+                            ),
+                        )
+                    },
+                ),
+            )
+            "rotationCenter" -> GMResult.Ok(
+                groupCenterRuntimeValue(group.rotationCenter),
+            )
+            "scaleCenter" -> GMResult.Ok(
+                group.scaleCenter?.let(::groupCenterRuntimeValue)
+                    ?: JessieCodeRuntimeValue.NullValue,
+            )
+            "rotationPoints" -> GMResult.Ok(
+                groupElementArray(group.rotationPoints),
+            )
+            "translationPoints" -> GMResult.Ok(
+                groupElementArray(group.translationPoints),
+            )
+            "scalePoints" -> GMResult.Ok(
+                groupElementArray(group.scalePoints),
+            )
+            "scaleDirections" -> GMResult.Ok(
+                JessieCodeRuntimeValue.ObjectValue(
+                    group.scaleDirections.mapValues { (_, direction) ->
+                        JessieCodeRuntimeValue.StringValue(direction)
+                    },
+                ),
+            )
+            "getParents" -> groupFunction("getParents") { _, _ ->
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.ArrayValue(
+                        group.getParents().map(
+                            JessieCodeRuntimeValue::StringValue,
+                        ),
+                    ),
+                )
+            }
+            "getType" -> groupFunction("getType") { _, _ ->
+                string(group.getType())
+            }
+            "ungroup" -> groupFunction("ungroup") { _, _ ->
+                group.ungroup()
+                GMResult.Ok(receiver)
+            }
+            "add", "addPoint" -> groupFunction("addPoint") {
+                    arguments,
+                    callLocation,
+                ->
+                val point = when (
+                    val result = groupPointArgument(
+                        group = group,
+                        functionName = "addPoint",
+                        arguments = arguments,
+                        index = 0,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@groupFunction result
+                }
+                group.addPoint(point)
+                GMResult.Ok(receiver)
+            }
+            "addPoints" -> groupFunction("addPoints") {
+                    arguments,
+                    callLocation,
+                ->
+                val points = when (
+                    val result = groupPointList(
+                        group = group,
+                        functionName = "addPoints",
+                        values = (
+                            arguments.firstOrNull() as?
+                                JessieCodeRuntimeValue.ArrayValue
+                            )?.values ?: arguments,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@groupFunction result
+                }
+                group.addPoints(points)
+                GMResult.Ok(receiver)
+            }
+            "addGroup" -> groupFunction("addGroup") {
+                    arguments,
+                    callLocation,
+                ->
+                val other = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.CompositionReference
+                    )?.composition as? Group
+                    ?: return@groupFunction invalidArgumentType(
+                        functionName = "addGroup",
+                        argumentIndex = 0,
+                        expected = "group",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                group.addGroup(other)
+                GMResult.Ok(receiver)
+            }
+            "remove", "removePoint" -> groupFunction("removePoint") {
+                    arguments,
+                    callLocation,
+                ->
+                val point = when (
+                    val result = groupPointArgument(
+                        group = group,
+                        functionName = "removePoint",
+                        arguments = arguments,
+                        index = 0,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@groupFunction result
+                }
+                group.removePoint(point)
+                GMResult.Ok(receiver)
+            }
+            "addParents", "setParents" -> groupFunction(property) {
+                    arguments,
+                    callLocation,
+                ->
+                val values = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values ?: arguments
+                val ids = mutableListOf<String>()
+                for ((index, value) in values.withIndex()) {
+                    val id = groupParentId(group, value)
+                        ?: return@groupFunction invalidArgumentType(
+                            functionName = property,
+                            argumentIndex = index,
+                            expected = "element, group, or registered id",
+                            actual = value,
+                            location = callLocation,
+                        )
+                    ids += id
+                }
+                if (property == "setParents") {
+                    group.setParentIds(ids)
+                } else {
+                    group.addParentIds(ids)
+                }
+                GMResult.Ok(receiver)
+            }
+            "setRotationCenter", "setScaleCenter" ->
+                groupFunction(property) { arguments, callLocation ->
+                    val center = when (
+                        val result = groupCenter(
+                            group = group,
+                            functionName = property,
+                            value = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return@groupFunction result
+                    }
+                    if (property == "setRotationCenter") {
+                        group.setRotationCenter(center)
+                    } else {
+                        group.setScaleCenter(center)
+                    }
+                    GMResult.Ok(receiver)
+                }
+            "setRotationPoints", "setTranslationPoints" ->
+                groupFunction(property) { arguments, callLocation ->
+                    val values = (
+                        arguments.firstOrNull() as?
+                            JessieCodeRuntimeValue.ArrayValue
+                        )?.values ?: arguments
+                    val points = when (
+                        val result = groupPointList(
+                            group = group,
+                            functionName = property,
+                            values = values,
+                            location = callLocation,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return@groupFunction result
+                    }
+                    if (property == "setRotationPoints") {
+                        group.setRotationPoints(points)
+                    } else {
+                        group.setTranslationPoints(points)
+                    }
+                    GMResult.Ok(receiver)
+                }
+            "addRotationPoint", "addTranslationPoint",
+            "removeRotationPoint", "removeTranslationPoint",
+            "removeScalePoint",
+            -> groupFunction(property) { arguments, callLocation ->
+                val point = when (
+                    val result = groupPointArgument(
+                        group = group,
+                        functionName = property,
+                        arguments = arguments,
+                        index = 0,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@groupFunction result
+                }
+                when (property) {
+                    "addRotationPoint" -> group.addRotationPoint(point)
+                    "addTranslationPoint" ->
+                        group.addTranslationPoint(point)
+                    "removeRotationPoint" ->
+                        group.removeRotationPoint(point)
+                    "removeTranslationPoint" ->
+                        group.removeTranslationPoint(point)
+                    else -> group.removeScalePoint(point)
+                }
+                GMResult.Ok(receiver)
+            }
+            "setScalePoints" -> groupFunction("setScalePoints") {
+                    arguments,
+                    callLocation,
+                ->
+                val array = arguments.firstOrNull() as?
+                    JessieCodeRuntimeValue.ArrayValue
+                val values = array?.values ?: arguments.takeWhile {
+                    it !is JessieCodeRuntimeValue.StringValue
+                }
+                val directionValue =
+                    if (array != null) arguments.getOrNull(1)
+                    else arguments.getOrNull(values.size)
+                val direction = when (directionValue) {
+                    null, JessieCodeRuntimeValue.UndefinedValue -> "xy"
+                    is JessieCodeRuntimeValue.StringValue ->
+                        directionValue.value
+                    else -> return@groupFunction invalidArgumentType(
+                        functionName = "setScalePoints",
+                        argumentIndex =
+                            if (array != null) 1 else values.size,
+                        expected = "string or undefined",
+                        actual = directionValue,
+                        location = callLocation,
+                    )
+                }
+                val points = when (
+                    val result = groupPointList(
+                        group = group,
+                        functionName = "setScalePoints",
+                        values = values,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@groupFunction result
+                }
+                group.setScalePoints(points, direction)
+                GMResult.Ok(receiver)
+            }
+            "addScalePoint" -> groupFunction("addScalePoint") {
+                    arguments,
+                    callLocation,
+                ->
+                val point = when (
+                    val result = groupPointArgument(
+                        group = group,
+                        functionName = "addScalePoint",
+                        arguments = arguments,
+                        index = 0,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@groupFunction result
+                }
+                val direction = when (
+                    val value = arguments.getOrNull(1)
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> "xy"
+                    is JessieCodeRuntimeValue.StringValue -> value.value
+                    else -> return@groupFunction invalidArgumentType(
+                        functionName = "addScalePoint",
+                        argumentIndex = 1,
+                        expected = "string or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                group.addScalePoint(point, direction)
+                GMResult.Ok(receiver)
+            }
+            "update" -> groupFunction("update") { _, _ ->
+                when (val result = group.updateResult()) {
+                    is GMResult.Ok -> GMResult.Ok(receiver)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = group.id,
+                            method = "update",
+                            reason = result.error.toString(),
+                            location = location,
+                        ),
+                    )
+                }
+            }
+            else -> unknownProperty(receiver, property, location)
+        }
+
+    private fun groupFunction(
+        name: String,
+        callable: JessieCodeCallable,
+    ): EvaluationResult =
+        GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(
+                name = name,
+                callable = callable,
+            ),
+        )
+
+    private fun groupElementArray(
+        elements: List<CoordsElement>,
+    ): JessieCodeRuntimeValue.ArrayValue =
+        JessieCodeRuntimeValue.ArrayValue(
+            elements.map(JessieCodeRuntimeValue::ElementReference),
+        )
+
+    private fun groupPointArgument(
+        group: Group,
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        index: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<CoordsElement, JessieCodeRuntimeError> {
+        val value = arguments.getOrNull(index)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val point = when (value) {
+            is JessieCodeRuntimeValue.ElementReference ->
+                value.element as? CoordsElement
+            is JessieCodeRuntimeValue.StringValue ->
+                group.board.select(value.value) as? CoordsElement
+            else -> null
+        }
+        return if (point != null && point.board === group.board) {
+            GMResult.Ok(point)
+        } else {
+            invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "coordinate element on the group board",
+                actual = value,
+                location = location,
+            )
+        }
+    }
+
+    private fun groupPointList(
+        group: Group,
+        functionName: String,
+        values: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<CoordsElement>, JessieCodeRuntimeError> {
+        val result = mutableListOf<CoordsElement>()
+        for ((index, value) in values.withIndex()) {
+            when (
+                val point = groupPointArgument(
+                    group = group,
+                    functionName = functionName,
+                    arguments = values,
+                    index = index,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result += point.value
+                is GMResult.Err -> return point
+            }
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun groupParentId(
+        group: Group,
+        value: JessieCodeRuntimeValue,
+    ): String? =
+        when (value) {
+            is JessieCodeRuntimeValue.ElementReference ->
+                value.element.id.takeIf {
+                    value.element.board === group.board
+                }
+            is JessieCodeRuntimeValue.CompositionReference ->
+                (value.composition as? Group)
+                    ?.takeIf { it.board === group.board }
+                    ?.id
+            is JessieCodeRuntimeValue.StringValue ->
+                value.value.takeIf {
+                    group.board.elementById(it) != null ||
+                        group.board.groupById(it) != null
+                }
+            else -> null
+        }
+
+    private fun groupCenter(
+        group: Group,
+        functionName: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<GroupCenter, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.ElementReference -> {
+                val element = value.element as? CoordsElement
+                if (element != null && element.board === group.board) {
+                    GMResult.Ok(GroupCenter.Element(element))
+                } else {
+                    invalidArgumentType(
+                        functionName = functionName,
+                        argumentIndex = 0,
+                        expected =
+                            "coordinate element on the group board, " +
+                                "\"centroid\", coordinate array, or function",
+                        actual = value,
+                        location = location,
+                    )
+                }
+            }
+            is JessieCodeRuntimeValue.StringValue ->
+                if (value.value == "centroid") {
+                    GMResult.Ok(GroupCenter.Centroid)
+                } else {
+                    invalidArgumentType(
+                        functionName = functionName,
+                        argumentIndex = 0,
+                        expected = "\"centroid\"",
+                        actual = value,
+                        location = location,
+                    )
+                }
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val coordinates = DoubleArray(value.values.size)
+                for ((index, coordinate) in value.values.withIndex()) {
+                    coordinates[index] = (
+                        coordinate as?
+                            JessieCodeRuntimeValue.NumberValue
+                        )?.value ?: return invalidArgumentType(
+                        functionName = functionName,
+                        argumentIndex = 0,
+                        expected = "numeric coordinate array",
+                        actual = value,
+                        location = location,
+                    )
+                }
+                if (coordinates.size < 2) {
+                    invalidArgumentType(
+                        functionName = functionName,
+                        argumentIndex = 0,
+                        expected = "coordinate array of length at least 2",
+                        actual = value,
+                        location = location,
+                    )
+                } else {
+                    GMResult.Ok(
+                        GroupCenter.Coordinates(
+                            coordinates.copyOfRange(0, 2),
+                        ),
+                    )
+                }
+            }
+            is JessieCodeRuntimeValue.FunctionValue -> GMResult.Ok(
+                GroupCenter.Dynamic {
+                    when (
+                        val result = value.externalCallable.call(
+                            arguments = emptyList(),
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Err -> GMResult.Err(
+                            GroupError.CenterEvaluation(
+                                reason = result.error.toString(),
+                            ),
+                        )
+                        is GMResult.Ok -> {
+                            val coordinates = (
+                                result.value as?
+                                    JessieCodeRuntimeValue.ArrayValue
+                                )?.values?.mapNotNull {
+                                    (
+                                        it as?
+                                            JessieCodeRuntimeValue.NumberValue
+                                        )?.value
+                                }
+                            if (coordinates == null ||
+                                coordinates.size < 2
+                            ) {
+                                GMResult.Err(
+                                    GroupError.CenterEvaluation(
+                                        reason =
+                                            "Center function must return " +
+                                                "a numeric coordinate array",
+                                    ),
+                                )
+                            } else {
+                                GMResult.Ok(
+                                    doubleArrayOf(
+                                        coordinates[0],
+                                        coordinates[1],
+                                    ),
+                                )
+                            }
+                        }
+                    }
+                },
+            )
+            else -> invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = 0,
+                expected =
+                    "coordinate element, \"centroid\", " +
+                        "coordinate array, or function",
+                actual = value,
+                location = location,
+            )
+        }
+
+    private fun groupCenterRuntimeValue(
+        center: GroupCenter,
+    ): JessieCodeRuntimeValue =
+        when (center) {
+            GroupCenter.Centroid ->
+                JessieCodeRuntimeValue.StringValue("centroid")
+            is GroupCenter.Element ->
+                JessieCodeRuntimeValue.ElementReference(center.element)
+            is GroupCenter.Coordinates ->
+                JessieCodeRuntimeValue.ArrayValue(
+                    center.coordinates.map(
+                        JessieCodeRuntimeValue::NumberValue,
+                    ),
+                )
+            is GroupCenter.Dynamic ->
+                JessieCodeRuntimeValue.UndefinedValue
+        }
+
     private fun index(
         receiver: JessieCodeRuntimeValue,
         numericIndex: Double,
@@ -2121,9 +2731,12 @@ private class EvaluationState(
             "\$" -> JessieCodeCallable { arguments, _ ->
                 val id = arguments.firstOrNull()?.let(::propertyKey)
                 val element = id?.let { currentBoard?.elementById(it) }
+                val group = id?.let { currentBoard?.groupById(it) }
                 GMResult.Ok(
                     element?.let {
                         JessieCodeRuntimeValue.ElementReference(it)
+                    } ?: group?.let {
+                        JessieCodeRuntimeValue.CompositionReference(it)
                     } ?: JessieCodeRuntimeValue.UndefinedValue,
                 )
             }
@@ -2298,10 +2911,17 @@ private class EvaluationState(
                 when (val value = arguments.firstOrNull()) {
                     is JessieCodeRuntimeValue.ElementReference ->
                         currentBoard?.removeObject(value.element)
-                    is JessieCodeRuntimeValue.CompositionReference ->
-                        currentBoard?.removeObject(value.composition)
+                    is JessieCodeRuntimeValue.CompositionReference -> {
+                        if (value.composition !is Group) {
+                            currentBoard?.removeObject(value.composition)
+                        }
+                    }
                     else -> Unit
                 }
+                GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+            }
+            "\$log" -> JessieCodeCallable { arguments, _ ->
+                logEntries += arguments.toList()
                 GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
             }
             "sin" -> unaryNumber(::sin)

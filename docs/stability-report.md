@@ -63,7 +63,7 @@ expected. Unsupported source crosses the production boundary as
    families exercise geometry, curves, plots, polygons, text, circular
    regions, and interaction updates. These are robustness evidence, not
    official-renderer parity claims.
-3. **75 development parity scenarios.** These remain focused regression
+3. **78 development parity scenarios.** These remain focused regression
    fixtures for individual implementation batches and the source/official/
    native debug workflow.
 
@@ -282,8 +282,8 @@ singularity, clipping, overlap, and Native/Official agreement. Raw kernel and
 creator tests additionally lock official point counts, callback suspension,
 smoothness/cusp/jump/undefined decisions, parameter metadata, canonical
 screen projection, the repeated `_borderCase` midpoint probe observed in
-JSXGraph `1.13.3`, evaluator failures, and point limits. Plot v1,
-FunctionGraph RDP simplification, and Stable qualification remain pending.
+JSXGraph `1.13.3`, evaluator failures, and point limits. Plot v1 and Stable
+qualification remain pending.
 This evidence remains outside the 30-case Stable production corpus.
 The focused `adaptive_plot_v3` fixture explicitly enables the experimental
 sampler for the same six continuous wrappers. Static captures scored
@@ -294,8 +294,8 @@ agreement. Raw kernel and creator tests additionally lock official point
 counts, FunctionGraph-only domain cropping, callback suspension,
 smooth/cusp/jump/border/isolated-`NaN` decisions, one-sided limits through
 `Extrapolate`, evaluator failures, and point limits. Plot v2 remains the
-native default; Plot v3 requires explicit `plotVersion: 3`. Plot v1,
-FunctionGraph RDP simplification, and Stable qualification remain pending.
+native default; Plot v3 requires explicit `plotVersion: 3`. Plot v1 and Stable
+qualification remain pending.
 This evidence remains outside the 30-case Stable production corpus.
 The focused `adaptive_plot_v4` fixture explicitly enables the
 difference-based sampler for Ellipse, Hyperbola, Parabola, Spline, and
@@ -310,8 +310,21 @@ structured failures, and point limits. The visual source excludes
 `derivative(functiongraph("expression"))` because JSXGraph `1.13.3` itself
 throws `Operation - not defined on operands string and number` while probing
 that JessieCode combination with an interval. Plot v2 remains the native
-default; Plot v4 requires explicit `plotVersion: 4`. Plot v1, FunctionGraph
-RDP simplification, and Stable qualification remain pending. This evidence
+default; Plot v4 requires explicit `plotVersion: 4`. Plot v1 and Stable
+qualification remain pending. This evidence remains outside the 30-case
+Stable production corpus.
+The focused `functiongraph_rdp` fixture verifies the post-sampling
+Ramer-Douglas-Peucker branch shared by adaptive and naive Curve updates.
+Static captures scored `0.986736` on Desktop and `0.977750` on Compact.
+Both contact sheets passed nonblank/browser checks and manual review for the
+overlaid default/raw quadratic, reciprocal branches separated at the
+non-finite sample, explicit threshold behavior, parametric circles, clipping,
+overlap, and Native/Official agreement. The official fixture and common tests
+lock the official linear count `2`; quadratic default/disabled/threshold-zero/
+threshold-one counts `43`/`523`/`523`/`20`; reciprocal count `67` with its
+separator at index `38`; and parametric default/explicit counts `374`/`65`.
+They also verify the FunctionGraph/`plot` default-on versus Curve default-off
+split and structured atomic failure for a negative threshold. This evidence
 remains outside the 30-case Stable production corpus.
 The construction-document path now accepts ordered `transform` objects and
 resolves their IDs in subsequent transformed-Point parents without emitting
@@ -325,7 +338,7 @@ The focused `point3d_projection` visual case scored `0.986505` on Desktop and
 both renderers projected the movement to its constant-z plane and updated the
 transformed Point3D with scores of `0.986588` and `0.972885`, respectively.
 All four contact sheets passed manual review. The development workbench now
-contains 30 production and 77 focused cases, but this does not change the
+contains 30 production and 78 focused cases, but this does not change the
 independently qualified 30-case, 60-screenshot Stable corpus.
 The focused `polygon3d_projection` fixture verifies a coordinate-owned
 quadrilateral and an existing-Point3D-backed triangle through ordinary

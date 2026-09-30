@@ -68,8 +68,23 @@ function validateCorpus() {
         if (objectIds.size !== document.objects.length) {
             throw new Error(`Duplicate object id in ${entry.id}`);
         }
+        const generatedElementIds = new Set(entry.generatedElementIds);
+        if (generatedElementIds.size !== entry.generatedElementIds.length) {
+            throw new Error(`Duplicate generated element id in ${entry.id}`);
+        }
+        for (const generatedId of generatedElementIds) {
+            if (objectIds.has(generatedId)) {
+                throw new Error(
+                    `${entry.id} generated element id duplicates source id ` +
+                        generatedId
+                );
+            }
+        }
         for (const expectedId of entry.expectedElementIds) {
-            if (!objectIds.has(expectedId)) {
+            if (
+                !objectIds.has(expectedId) &&
+                !generatedElementIds.has(expectedId)
+            ) {
                 throw new Error(
                     `${entry.id} expects missing element id ${expectedId}`
                 );

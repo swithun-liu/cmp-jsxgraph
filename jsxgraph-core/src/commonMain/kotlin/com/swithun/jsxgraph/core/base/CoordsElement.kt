@@ -105,6 +105,8 @@ internal open class CoordsElement(
     internal var slideObject: GeometryElement? = null
     internal val slideObjects = mutableListOf<GeometryElement>()
     internal var needsUpdateFromParent: Boolean = true
+    // JSXGraph 1.13.3: src/base/coordselement.js -> groups.
+    internal val groups = mutableListOf<String>()
     internal var Xjc: String? = null
     internal var Yjc: String? = null
     internal var coordinateEvaluationError: CoordinateConstraintError? = null

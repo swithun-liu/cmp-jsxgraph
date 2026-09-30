@@ -38,7 +38,7 @@ class ParitySourceTest {
     @Test
     fun parityCorpusHasUniqueResolvableCases() {
         val cases = JsxGraphParityCorpus.cases
-        assertEquals(107, cases.size)
+        assertEquals(108, cases.size)
         assertEquals(
             JsxGraphParityCorpus.DEFAULT_CASE_ID,
             cases.first().id,
@@ -50,7 +50,7 @@ class ParitySourceTest {
             },
         )
         assertEquals(
-            77,
+            78,
             cases.count { parityCase ->
                 parityCase.suite == JsxGraphParitySuite.Focused
             },
@@ -110,16 +110,20 @@ class ParitySourceTest {
         ).value
 
         assertTrue("adaptive-plot-v2" in parityCase.features)
-        for (id in listOf(
-            "ellipse",
-            "hyperbola",
-            "parabola",
-            "spline",
-            "cardinalSpline",
-            "derivative",
-        )) {
-            assertTrue(curve(scene, id).points.size > 64, id)
-        }
+        assertEquals(
+            mapOf(
+                "ellipse" to 363,
+                "hyperbola" to 58,
+                "parabola" to 504,
+                "spline" to 276,
+                "cardinalSpline" to 266,
+                "derivative" to 162,
+            ),
+            adaptiveWrapperPointCounts(
+                scene,
+                includeDerivative = true,
+            ),
+        )
     }
 
     @Test
@@ -134,16 +138,20 @@ class ParitySourceTest {
         ).value
 
         assertTrue("adaptive-plot-v3" in parityCase.features)
-        for (id in listOf(
-            "ellipse",
-            "hyperbola",
-            "parabola",
-            "spline",
-            "cardinalSpline",
-            "derivative",
-        )) {
-            assertTrue(curve(scene, id).points.size > 64, id)
-        }
+        assertEquals(
+            mapOf(
+                "ellipse" to 310,
+                "hyperbola" to 52,
+                "parabola" to 466,
+                "spline" to 248,
+                "cardinalSpline" to 236,
+                "derivative" to 143,
+            ),
+            adaptiveWrapperPointCounts(
+                scene,
+                includeDerivative = true,
+            ),
+        )
     }
 
     @Test
@@ -158,15 +166,42 @@ class ParitySourceTest {
         ).value
 
         assertTrue("adaptive-plot-v4" in parityCase.features)
-        for (id in listOf(
-            "ellipse",
-            "hyperbola",
-            "parabola",
-            "spline",
-            "cardinalSpline",
-        )) {
-            assertTrue(curve(scene, id).points.size > 64, id)
-        }
+        assertEquals(
+            mapOf(
+                "ellipse" to 309,
+                "hyperbola" to 52,
+                "parabola" to 380,
+                "spline" to 272,
+                "cardinalSpline" to 254,
+            ),
+            adaptiveWrapperPointCounts(
+                scene,
+                includeDerivative = false,
+            ),
+        )
+    }
+
+    @Test
+    fun functionGraphRdpFocusedCasePreservesGeometryAndSeparators() {
+        val parityCase = assertIs<GMResult.Ok<JsxGraphParityCase>>(
+            JsxGraphParityCorpus.find("functiongraph_rdp"),
+        ).value
+        val sceneResult = parseParitySource(parityCase.source)
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            sceneResult,
+            sceneResult.toString(),
+        ).value
+
+        assertTrue("rdp-smoothing" in parityCase.features)
+        assertEquals(43, curve(scene, "defaultGraph").points.size)
+        assertEquals(523, curve(scene, "rawGraph").points.size)
+        assertEquals(374, curve(scene, "defaultCircle").points.size)
+        assertEquals(65, curve(scene, "smoothedCircle").points.size)
+        assertTrue(
+            curve(scene, "jumpGraph").points.any { point ->
+                point == null || point.x.isNaN() || point.y.isNaN()
+            },
+        )
     }
 
     @Test
@@ -1133,7 +1168,7 @@ class ParitySourceTest {
             listOf("A", "sourceCurve", "derivativeCurve"),
             jessieCodeSession.scene.elements.map { element -> element.id },
         )
-        assertEquals(128, initialSource.points.size)
+        assertEquals(48, initialSource.points.size)
         assertEquals(128, initialDerivative.points.size)
         assertEquals(
             JsxGraphColor(213, 94, 0),
@@ -1352,11 +1387,14 @@ class ParitySourceTest {
         val jessieCodeSession =
             assertIs<JsxGraphParitySession.JessieCode>(paritySession)
         val initialLine = curve(jessieCodeSession.scene, "lineRegion")
+        val initialSourceFunction =
+            curve(jessieCodeSession.scene, "sourceFunction")
         val initialFunction =
             curve(jessieCodeSession.scene, "functionRegion")
 
         assertEquals(5, initialLine.points.size)
-        assertEquals(138, initialFunction.points.size)
+        assertEquals(35, initialSourceFunction.points.size)
+        assertEquals(45, initialFunction.points.size)
         assertTrue(initialFunction.points.any { point -> point == null })
         assertEquals(
             JsxGraphColor(86, 180, 233),
@@ -1384,8 +1422,19 @@ class ParitySourceTest {
                 coordinates = JsxGraphPoint2D(2.0, -5.8),
             ),
         ).value
+        val movedSourceFunction =
+            curve(functionMoved, "sourceFunction")
         val movedFunction = curve(functionMoved, "functionRegion")
-        assertEquals(138, movedFunction.points.size)
+        assertEquals(
+            JsxGraphPoint2D(2.0, -5.8),
+            point(functionMoved, "functionDriver").coordinates,
+        )
+        assertPointEquals(
+            JsxGraphPoint2D(0.0, 6.0),
+            movedSourceFunction.points.first(),
+        )
+        assertEquals(44, movedSourceFunction.points.size)
+        assertEquals(54, movedFunction.points.size)
         assertTrue(movedFunction.points.any { point -> point == null })
         assertNotEquals(initialFunction.points, movedFunction.points)
     }
@@ -2151,11 +2200,22 @@ class ParitySourceTest {
             "reflexRegion",
         )
         assertEquals(
-            listOf("A", "B", "C") + ids,
+            listOf(
+                "A",
+                "B",
+                "C",
+                "circumRegion",
+                "minorRegion",
+                "majorRegion",
+                "nonreflexRegion",
+                "jxgBoardP8",
+                "reflexRegion",
+                "jxgBoardP10",
+            ),
             jessieCodeSession.scene.elements.map { element -> element.id },
         )
         assertEquals(
-            listOf(9, 9, 9, 3, 3, 3, 3, 3),
+            listOf(9, 9, 9, 3, 3, 3, 3, 9, 3, 9),
             jessieCodeSession.scene.elements.map { element ->
                 element.style.layer
             },
@@ -3055,6 +3115,21 @@ class ParitySourceTest {
         assertIs<JsxGraphSceneElement.Curve>(
             scene.elements.single { element -> element.id == id },
         )
+
+    private fun adaptiveWrapperPointCounts(
+        scene: JsxGraphScene,
+        includeDerivative: Boolean,
+    ): Map<String, Int> =
+        buildList {
+            add("ellipse")
+            add("hyperbola")
+            add("parabola")
+            add("spline")
+            add("cardinalSpline")
+            if (includeDerivative) {
+                add("derivative")
+            }
+        }.associateWith { id -> curve(scene, id).points.size }
 
     private fun point(
         scene: JsxGraphScene,

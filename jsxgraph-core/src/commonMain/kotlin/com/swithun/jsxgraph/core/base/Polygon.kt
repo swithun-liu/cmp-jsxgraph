@@ -36,8 +36,9 @@ internal sealed interface PolygonError {
  * Initial translated slice of JXG.Polygon.
  *
  * The polygon keeps the upstream closed vertex list and creates Segment
- * children when withLines is enabled. Transformations, mutable vertex lists,
- * polygon clipping, labels, and hit testing remain untranslated.
+ * children when withLines is enabled. Static `hasInnerPoints` incidence is
+ * supported. Transformations, mutable vertex lists, labels, and screen hit
+ * testing remain untranslated.
  */
 internal class Polygon private constructor(
     board: Board,
@@ -58,6 +59,8 @@ internal class Polygon private constructor(
     internal val vertices = vertices.toMutableList()
     internal val borders = mutableListOf<Line>()
     internal var implicitVertices: List<Point> = ownedVertices.toList()
+    // JSXGraph 1.13.3: src/options.js -> Polygon.hasInnerPoints.
+    internal var hasInnerPoints: Boolean = false
     internal val subs = linkedMapOf<String, GeometryElement>()
     internal val inherits = mutableListOf<GeometryElement>()
     // JSXGraph: src/base/polygon.js -> createParallelogram.parallelPoint
@@ -157,6 +160,8 @@ internal class Polygon private constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
+            borderIds: List<String> = emptyList(),
+            borderNames: List<String> = emptyList(),
         ): GMResult<Polygon, PolygonError> {
             for ((index, vertex) in vertices.withIndex()) {
                 validateParent(board, vertex, index)?.let {
@@ -192,6 +197,8 @@ internal class Polygon private constructor(
                             board = board,
                             point1 = polygon.vertices[firstIndex],
                             point2 = polygon.vertices[firstIndex + 1],
+                            id = borderIds.getOrNull(firstIndex).orEmpty(),
+                            name = borderNames.getOrNull(firstIndex),
                         )
                     ) {
                         is GMResult.Ok -> result.value

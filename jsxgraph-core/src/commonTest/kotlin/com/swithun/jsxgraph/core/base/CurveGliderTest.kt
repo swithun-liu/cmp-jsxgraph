@@ -196,6 +196,342 @@ class CurveGliderTest {
     }
 
     @Test
+    fun transformedCurveGliderMatchesOfficialNestedProjectionAndUpdates() {
+        val board = board("transformed")
+        val driver = point(board, 1.0, 0.0, "driver")
+        val source = curve(
+            Curve.createParametric(
+                board = board,
+                xSource = "x",
+                ySource = "x * x",
+                minimumSource = "-2",
+                maximumSource = "2",
+                sampleCount = 5,
+                id = "source",
+                name = "",
+            ),
+        )
+        val translate = transformation(
+            Transformation.create(
+                board = board,
+                type = "translate",
+                parameters = listOf(
+                    TransformationParameter.Dynamic(
+                        TransformationDynamicParameter {
+                            GMResult.Ok(driver.X())
+                        },
+                    ),
+                    TransformationParameter.Numeric(2.0),
+                ),
+            ),
+        )
+        val rotate = transformation("rotate", PI * 0.5)
+        val first = curve(
+            Curve.createTransformed(
+                board = board,
+                source = source,
+                transformations = listOf(translate),
+                id = "first",
+                name = "",
+            ),
+        )
+        val nested = curve(
+            Curve.createTransformed(
+                board = board,
+                source = first,
+                transformations = listOf(rotate),
+                id = "nested",
+                name = "",
+            ),
+        )
+        val glider = glider(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 4.0),
+                slideObject = nested,
+                id = "glider",
+                name = "",
+            ),
+        )
+
+        assertPoint(
+            x = -2.2892143018611795,
+            y = 1.537786483524065,
+            point = glider,
+        )
+        assertEquals(
+            0.537786483524065,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+
+        glider.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(-3.0, 4.0),
+        )
+        board.update(draggedElement = glider)
+        assertPoint(
+            x = -3.663132105131613,
+            y = 2.289624792384054,
+            point = glider,
+        )
+        assertEquals(
+            1.2896247923840534,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+
+        driver.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(3.0, 0.0),
+        )
+        board.update()
+        assertPoint(
+            x = -3.663132105131613,
+            y = 2.289624792384054,
+            point = glider,
+        )
+
+        board.update()
+        assertPoint(
+            x = -3.6631324551048388,
+            y = 4.289624928072049,
+            point = glider,
+        )
+        assertEquals(
+            1.2896247923840534,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+    }
+
+    @Test
+    fun transformedCurveGliderRejectsNonInvertibleMatrixAtomically() {
+        val board = board("transformed-noninvertible")
+        val source = curve(
+            Curve.createData(
+                board = board,
+                dataX = doubleArrayOf(-1.0, 1.0),
+                dataY = doubleArrayOf(0.0, 0.0),
+                id = "source",
+                name = "",
+            ),
+        )
+        val transformed = curve(
+            Curve.createTransformed(
+                board = board,
+                source = source,
+                transformations = listOf(
+                    transformation("scale", 0.0, 1.0),
+                ),
+                id = "transformed",
+                name = "",
+            ),
+        )
+        val before = board.objects.keys.toList()
+
+        val failure = assertIs<
+            GMResult.Err<GliderError.NonInvertibleCurveTransformation>
+            >(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 1.0),
+                slideObject = transformed,
+                id = "glider",
+                name = "",
+            ),
+        )
+
+        assertEquals("transformed", failure.error.curveId)
+        assertEquals(0, failure.error.chainIndex)
+        assertEquals(before, board.objects.keys.toList())
+        assertTrue("glider" !in transformed.childElements)
+    }
+
+    @Test
+    fun arcAndSectorGlidersMatchOfficialProjectionAndParentUpdates() {
+        val arcBoard = board("arc")
+        val arcCenter = point(arcBoard, 0.0, 0.0, "arcCenter")
+        val arcRadius = point(arcBoard, 2.0, 0.0, "arcRadius")
+        val arcAngle = point(arcBoard, -2.0, 0.0, "arcAngle")
+        val arc = assertIs<GMResult.Ok<Arc>>(
+            Arc.create(
+                board = arcBoard,
+                center = arcCenter,
+                radiuspoint = arcRadius,
+                anglepoint = arcAngle,
+                id = "arc",
+                name = "",
+            ),
+        ).value
+        val arcGlider = glider(
+            Glider.create(
+                board = arcBoard,
+                coordinates = doubleArrayOf(1.0, 1.8),
+                slideObject = arc,
+                id = "arcGlider",
+                name = "",
+            ),
+        )
+
+        assertPoint(
+            x = 0.9712858623572641,
+            y = 1.7483145522430756,
+            point = arcGlider,
+        )
+        assertEquals(
+            0.33858553278290476,
+            assertIs<Double>(arcGlider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertSame(arc, arcGlider.slideObject)
+        assertSame(arcGlider, arc.childElements["arcGlider"])
+        assertEquals(listOf("arc"), arcGlider.parents)
+
+        arcRadius.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(0.0, 3.0),
+        )
+        arcBoard.update()
+        arcBoard.update()
+        assertPoint(
+            x = -1.521383189632433,
+            y = 2.585612730148087,
+            point = arcGlider,
+        )
+
+        val sectorBoard = board("sector")
+        val sectorCenter = point(
+            sectorBoard,
+            0.0,
+            -2.0,
+            "sectorCenter",
+        )
+        val sectorRadius = point(
+            sectorBoard,
+            2.0,
+            -2.0,
+            "sectorRadius",
+        )
+        val sectorAngle = point(
+            sectorBoard,
+            0.0,
+            0.0,
+            "sectorAngle",
+        )
+        val sector = assertIs<GMResult.Ok<Sector>>(
+            Sector.create(
+                board = sectorBoard,
+                center = sectorCenter,
+                radiuspoint = sectorRadius,
+                anglepoint = sectorAngle,
+                id = "sector",
+                name = "",
+            ),
+        ).value
+        val sectorGlider = glider(
+            Glider.create(
+                board = sectorBoard,
+                coordinates = doubleArrayOf(1.0, -1.0),
+                slideObject = sector,
+                id = "sectorGlider",
+                name = "",
+            ),
+        )
+
+        assertPoint(
+            x = 1.4142135623730951,
+            y = -0.5857864376269051,
+            point = sectorGlider,
+        )
+        assertEquals(
+            0.5,
+            assertIs<Double>(sectorGlider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertSame(sector, sectorGlider.slideObject)
+        assertSame(sectorGlider, sector.childElements["sectorGlider"])
+        assertEquals(listOf("sector"), sectorGlider.parents)
+
+        sectorAngle.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-2.0, -2.0),
+        )
+        sectorBoard.update()
+        sectorBoard.update()
+        assertPoint(
+            x = 1.2246467991473532e-16,
+            y = 0.0,
+            point = sectorGlider,
+        )
+    }
+
+    @Test
+    fun arcGliderSelectionClampsAndNormalizesLikeOfficial() {
+        val board = board("arc-selection")
+        val center = point(board, 0.0, 0.0, "center")
+        val radius = point(board, 2.0, 0.0, "radius")
+        val angle = point(board, 0.0, 2.0, "angle")
+        val minorArc = assertIs<GMResult.Ok<Arc>>(
+            Arc.create(
+                board = board,
+                center = center,
+                radiuspoint = radius,
+                anglepoint = angle,
+                selection = Arc.SELECTION_MINOR,
+                id = "minorArc",
+                name = "",
+            ),
+        ).value
+        val minorGlider = glider(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(-2.0, 0.0),
+                slideObject = minorArc,
+                id = "minorGlider",
+                name = "",
+            ),
+        )
+        assertPoint(
+            x = 1.2246467991473532e-16,
+            y = 2.0,
+            point = minorGlider,
+        )
+        assertEquals(1.0, minorGlider.position)
+
+        val majorArc = assertIs<GMResult.Ok<Arc>>(
+            Arc.create(
+                board = board,
+                center = center,
+                radiuspoint = radius,
+                anglepoint = angle,
+                selection = Arc.SELECTION_MAJOR,
+                id = "majorArc",
+                name = "",
+            ),
+        ).value
+        val majorGlider = glider(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(-2.0, 0.0),
+                slideObject = majorArc,
+                id = "majorGlider",
+                name = "",
+            ),
+        )
+        assertPoint(
+            x = -2.0,
+            y = 2.4492935982947064e-16,
+            point = majorGlider,
+        )
+        assertEquals(
+            2.0 / 3.0,
+            assertIs<Double>(majorGlider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+    }
+
+    @Test
     fun curveRemovalAndFailuresRemainAtomicAndStructured() {
         val board = board("lifecycle")
         val curve = curve(
@@ -254,16 +590,30 @@ class CurveGliderTest {
                 centerId = "center",
             ),
         ).value
-        val beforeConic = board.objects.keys.toList()
-        assertIs<GMResult.Err<GliderError.UnsupportedSlideObject>>(
+        val conicGlider = glider(
             Glider.create(
                 board = board,
-                coordinates = doubleArrayOf(0.0, 2.0),
+                coordinates = doubleArrayOf(0.0, 4.0),
                 slideObject = ellipse,
                 id = "conicGlider",
+                name = "",
             ),
         )
-        assertEquals(beforeConic, board.objects.keys.toList())
+        assertEquals(
+            0.0,
+            conicGlider.X(),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
+        assertEquals(
+            2.236067977499285,
+            conicGlider.Y(),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
+        assertEquals(
+            0.8410691715470333,
+            assertIs<Double>(conicGlider.position),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
 
         point(board, 4.0, 4.0, "collision")
         val duplicateHost = curve(
@@ -361,6 +711,18 @@ class CurveGliderTest {
         result: GMResult<Glider, GliderError>,
     ): Glider = assertIs<GMResult.Ok<Glider>>(result).value
 
+    private fun transformation(
+        type: String,
+        vararg parameters: Double,
+    ): Transformation = transformation(
+        Transformation.create(type, parameters),
+    )
+
+    private fun transformation(
+        result: GMResult<Transformation, TransformationError>,
+    ): Transformation =
+        assertIs<GMResult.Ok<Transformation>>(result).value
+
     private fun assertPoint(
         x: Double,
         y: Double,
@@ -372,5 +734,6 @@ class CurveGliderTest {
 
     private companion object {
         const val TOLERANCE = 1.0e-6
+        const val CONIC_TOLERANCE = 3.0e-6
     }
 }

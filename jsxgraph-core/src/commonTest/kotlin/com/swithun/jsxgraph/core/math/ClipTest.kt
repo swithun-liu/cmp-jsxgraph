@@ -8,6 +8,8 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Const
+import com.swithun.jsxgraph.core.base.Coords
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Sector
@@ -139,6 +141,110 @@ class ClipTest {
         assertPoint(sectorPath[1], 3.0, 0.0)
         assertPoint(sectorPath[91], 0.0, 3.0)
         assertPoint(sectorPath.last(), 0.0, 0.0)
+    }
+
+    @Test
+    fun rawPathAcceptsMixedPointsCoordsAndCoordinatePairs() {
+        val board = board()
+        val point = point(board, 0.0, 0.0)
+        val coordinates = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(1.0, 1.0),
+            board = board,
+        )
+        val path = path(
+            Clip.getPath(
+                ClipPathInput.Raw(
+                    board = board,
+                    entries = listOf(
+                        ClipPathEntry.PointValue(point),
+                        ClipPathEntry.CoordsValue(coordinates),
+                        ClipPathEntry.CoordinatePair(
+                            doubleArrayOf(2.0, 2.0),
+                        ),
+                        ClipPathEntry.CoordinatePair(
+                            doubleArrayOf(2.0, 2.0),
+                        ),
+                        ClipPathEntry.CoordinatePair(
+                            doubleArrayOf(2.0, 6.0, 8.0),
+                        ),
+                        ClipPathEntry.CoordinatePair(
+                            doubleArrayOf(Double.NaN, Double.NaN),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(0, 1, 2, 4, 5), path.map { it.position })
+        assertPoint(path[0], 0.0, 0.0)
+        assertPoint(path[1], 1.0, 1.0)
+        assertPoint(path[2], 2.0, 2.0)
+        assertPoint(path[3], 3.0, 4.0)
+        assertTrue(path[4].coordinates[1].isNaN())
+        assertTrue(path[4].coordinates[2].isNaN())
+    }
+
+    @Test
+    fun rawCoordinatePairsSupportAllBooleanOperations() {
+        val board = board()
+        val first = rawPath(
+            board,
+            -3.0 to -2.0,
+            2.0 to -2.0,
+            2.0 to 2.0,
+            -3.0 to 2.0,
+        )
+        val second = rawPath(
+            board,
+            -1.0 to -3.0,
+            4.0 to -3.0,
+            4.0 to 1.0,
+            -1.0 to 1.0,
+        )
+
+        assertBooleanCoordinates(
+            operation = ClipBooleanOperation.INTERSECTION,
+            first = first,
+            second = second,
+            expected = listOf(
+                -1.0 to -2.0,
+                2.0 to -2.0,
+                2.0 to 1.0,
+                -1.0 to 1.0,
+                -1.0 to -2.0,
+            ),
+        )
+        assertBooleanCoordinates(
+            operation = ClipBooleanOperation.UNION,
+            first = first,
+            second = second,
+            expected = listOf(
+                -1.0 to -2.0,
+                -3.0 to -2.0,
+                -3.0 to 2.0,
+                2.0 to 2.0,
+                2.0 to 1.0,
+                4.0 to 1.0,
+                4.0 to -3.0,
+                -1.0 to -3.0,
+                -1.0 to -2.0,
+            ),
+        )
+        assertBooleanCoordinates(
+            operation = ClipBooleanOperation.DIFFERENCE,
+            first = first,
+            second = second,
+            expected = listOf(
+                -1.0 to -2.0,
+                -3.0 to -2.0,
+                -3.0 to 2.0,
+                2.0 to 2.0,
+                2.0 to 1.0,
+                -1.0 to 1.0,
+                -1.0 to -2.0,
+            ),
+        )
     }
 
     @Test
@@ -476,6 +582,18 @@ class ClipTest {
         first: Curve,
         second: Curve,
         expected: List<Pair<Double, Double>>,
+    ) = assertBooleanCoordinates(
+        operation = operation,
+        first = ClipPathInput.Element(first),
+        second = ClipPathInput.Element(second),
+        expected = expected,
+    )
+
+    private fun assertBooleanCoordinates(
+        operation: ClipBooleanOperation,
+        first: ClipPathInput,
+        second: ClipPathInput,
+        expected: List<Pair<Double, Double>>,
     ) {
         val result = assertIs<GMResult.Ok<ClipBooleanResult>>(
             Clip.booleanOperation(first, second, operation),
@@ -516,6 +634,19 @@ class ClipTest {
                 position = index,
             )
         }
+
+    private fun rawPath(
+        board: Board,
+        vararg coordinates: Pair<Double, Double>,
+    ): ClipPathInput.Raw =
+        ClipPathInput.Raw(
+            board = board,
+            entries = coordinates.map { coordinate ->
+                ClipPathEntry.CoordinatePair(
+                    doubleArrayOf(coordinate.first, coordinate.second),
+                )
+            },
+        )
 
     private fun path(
         result: GMResult<List<ClipPathNode>, ClipError>,

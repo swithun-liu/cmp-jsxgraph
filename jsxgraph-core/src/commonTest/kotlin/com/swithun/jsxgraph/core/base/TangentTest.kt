@@ -1146,6 +1146,111 @@ class TangentTest {
     }
 
     @Test
+    fun cubicArcAndSectorBranchesMatchOfficialPositionMapping() {
+        val board = board("cubic-curves")
+        val arc = assertIs<GMResult.Ok<Arc>>(
+            Arc.create(
+                board = board,
+                center = point(board, 0.0, 0.0, "arcCenter"),
+                radiuspoint = point(board, 2.0, 0.0, "arcRadius"),
+                anglepoint = point(board, -2.0, 0.0, "arcAngle"),
+                id = "arc",
+                name = "",
+            ),
+        ).value
+        val arcGlider = assertIs<GMResult.Ok<Glider>>(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 1.8),
+                slideObject = arc,
+                id = "arcGlider",
+                name = "",
+            ),
+        ).value
+        val arcTangent = tangent(
+            Tangent.create(
+                board = board,
+                firstParent = arcGlider,
+                secondParent = arc,
+                id = "arcTangent",
+                name = "",
+            ),
+        )
+        val projectedPoint = point(board, 1.0, 1.8, "projectedPoint")
+        val projectedTangent = tangent(
+            Tangent.create(
+                board = board,
+                firstParent = arc,
+                secondParent = projectedPoint,
+                id = "projectedTangent",
+                name = "",
+            ),
+        )
+
+        val sector = assertIs<GMResult.Ok<Sector>>(
+            Sector.create(
+                board = board,
+                center = point(board, 0.0, -2.0, "sectorCenter"),
+                radiuspoint = point(board, 2.0, -2.0, "sectorRadius"),
+                anglepoint = point(board, 0.0, 0.0, "sectorAngle"),
+                id = "sector",
+                name = "",
+            ),
+        ).value
+        val sectorGlider = assertIs<GMResult.Ok<Glider>>(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, -1.0),
+                slideObject = sector,
+                id = "sectorGlider",
+                name = "",
+            ),
+        ).value
+        val sectorTangent = tangent(
+            Tangent.create(
+                board = board,
+                firstParent = sector,
+                secondParent = sectorGlider,
+                id = "sectorTangent",
+                name = "",
+            ),
+        )
+        board.update()
+
+        assertArrayMatches(
+            doubleArrayOf(
+                1.999999532565313,
+                -0.4850451634143187,
+                -0.8744891019608976,
+            ),
+            arcTangent.stdform.copyOfRange(0, 3),
+            tolerance = CURVE_PROJECTION_TOLERANCE,
+        )
+        assertArrayMatches(
+            doubleArrayOf(-1.0, 1.0, 0.0),
+            projectedTangent.stdform.copyOfRange(0, 3),
+            tolerance = CURVE_PROJECTION_TOLERANCE,
+        )
+        assertArrayMatches(
+            doubleArrayOf(
+                0.5857864376269049,
+                -0.7071067811865475,
+                -0.7071067811865476,
+            ),
+            sectorTangent.stdform.copyOfRange(0, 3),
+            tolerance = CURVE_PROJECTION_TOLERANCE,
+        )
+        assertEquals(
+            listOf("arcGlider", "arc"),
+            arcTangent.parents,
+        )
+        assertEquals(
+            listOf("sector", "sectorGlider"),
+            sectorTangent.parents,
+        )
+    }
+
+    @Test
     fun curveBranchRemovalMatchesOfficialAsymmetricOwnership() {
         val directBoard = board("curve-direct-removal")
         val directCurve = functionCurve(directBoard, "directCurve")

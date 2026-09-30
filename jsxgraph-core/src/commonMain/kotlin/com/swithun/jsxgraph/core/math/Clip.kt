@@ -11,10 +11,13 @@ package com.swithun.jsxgraph.core.math
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Arc
+import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
+import com.swithun.jsxgraph.core.base.Coords
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Sector
 import kotlin.math.PI
@@ -46,6 +49,31 @@ internal sealed interface ClipError {
         val phase: String,
         val limit: Int,
     ) : ClipError
+}
+
+internal sealed interface ClipPathInput {
+    data class Element(
+        val value: GeometryElement,
+    ) : ClipPathInput
+
+    data class Raw(
+        val board: Board,
+        val entries: List<ClipPathEntry>,
+    ) : ClipPathInput
+}
+
+internal sealed interface ClipPathEntry {
+    data class PointValue(
+        val value: Point,
+    ) : ClipPathEntry
+
+    data class CoordsValue(
+        val value: Coords,
+    ) : ClipPathEntry
+
+    data class CoordinatePair(
+        val value: DoubleArray,
+    ) : ClipPathEntry
 }
 
 internal data class ClipPathNode(
@@ -83,6 +111,20 @@ internal object Clip {
     internal fun meetPathPath(
         first: GeometryElement,
         second: GeometryElement,
+        intersectionIndex: Double,
+        rawIndexIsFunction: Boolean = false,
+    ): GMResult<DoubleArray, ClipError> = meetPathPath(
+        first = ClipPathInput.Element(first),
+        second = ClipPathInput.Element(second),
+        intersectionIndex = intersectionIndex,
+        rawIndexIsFunction = rawIndexIsFunction,
+    )
+
+    // JSXGraph: src/math/geometry.js -> meetPathPath;
+    // src/math/clip.js -> _getPath array branch.
+    internal fun meetPathPath(
+        first: ClipPathInput,
+        second: ClipPathInput,
         intersectionIndex: Double,
         rawIndexIsFunction: Boolean = false,
     ): GMResult<DoubleArray, ClipError> {
@@ -134,64 +176,108 @@ internal object Clip {
         subject: GeometryElement,
         clip: GeometryElement,
         operation: ClipBooleanOperation,
+    ): GMResult<ClipBooleanResult, ClipError> = booleanOperation(
+        subject = ClipPathInput.Element(subject),
+        clip = ClipPathInput.Element(clip),
+        operation = operation,
+    )
+
+    // JSXGraph: src/math/clip.js -> greinerHormann / intersection / union /
+    // difference with raw path-array inputs.
+    internal fun booleanOperation(
+        subject: ClipPathInput,
+        clip: ClipPathInput,
+        operation: ClipBooleanOperation,
     ): GMResult<ClipBooleanResult, ClipError> =
         BooleanClip.greinerHormann(subject, clip, operation)
 
     // JSXGraph: src/math/clip.js -> _getPath.
     internal fun getPath(
         element: GeometryElement,
+    ): GMResult<List<ClipPathNode>, ClipError> =
+        getPath(ClipPathInput.Element(element))
+
+    // JSXGraph: src/math/clip.js -> _getPath, including mixed arrays of
+    // Points, Coords, and user-coordinate pairs.
+    internal fun getPath(
+        input: ClipPathInput,
     ): GMResult<List<ClipPathNode>, ClipError> {
         val path = mutableListOf<ClipPathNode>()
-        when (element) {
-            is Arc -> addArcPath(
-                path = path,
-                center = element.center.coords.usrCoords,
-                radiusPoint = element.radiuspoint.coords.usrCoords,
-                anglePoint = element.anglepoint.coords.usrCoords,
-                radius = element.Radius(),
-                includeCenter = false,
-            )
-
-            is Sector -> {
-                if (element.type == Const.OBJECT_TYPE_SECTOR) {
-                    addArcPath(
+        when (input) {
+            is ClipPathInput.Element -> {
+                val element = input.value
+                when (element) {
+                    is Arc -> addArcPath(
                         path = path,
                         center = element.center.coords.usrCoords,
-                        radiusPoint =
-                            element.radiuspoint.coords.usrCoords,
-                        anglePoint =
-                            element.anglepoint.coords.usrCoords,
+                        radiusPoint = element.radiuspoint.coords.usrCoords,
+                        anglePoint = element.anglepoint.coords.usrCoords,
                         radius = element.Radius(),
-                        includeCenter = true,
+                        includeCenter = false,
                     )
-                } else {
-                    addCoordinatePath(
+
+                    is Sector -> {
+                        if (element.type == Const.OBJECT_TYPE_SECTOR) {
+                            addArcPath(
+                                path = path,
+                                center = element.center.coords.usrCoords,
+                                radiusPoint =
+                                    element.radiuspoint.coords.usrCoords,
+                                anglePoint =
+                                    element.anglepoint.coords.usrCoords,
+                                radius = element.Radius(),
+                                includeCenter = true,
+                            )
+                        } else {
+                            addCoordinatePath(
+                                path = path,
+                                coordinates =
+                                    element.points.map { it.usrCoords },
+                            )
+                        }
+                    }
+
+                    is Curve -> addCoordinatePath(
                         path = path,
-                        coordinates = element.points.map { it.usrCoords },
+                        coordinates =
+                            element.points.map { it.usrCoords },
+                    )
+
+                    is Polygon -> addCoordinatePath(
+                        path = path,
+                        coordinates =
+                            element.vertices.map { it.coords.usrCoords },
+                    )
+
+                    is Circle -> addCirclePath(
+                        path = path,
+                        center = element.center.coords.usrCoords,
+                        radius = element.Radius(),
+                    )
+
+                    else -> return GMResult.Err(
+                        ClipError.UnsupportedPathElement(element.elType),
                     )
                 }
             }
 
-            is Curve -> addCoordinatePath(
-                path = path,
-                coordinates = element.points.map { it.usrCoords },
-            )
-
-            is Polygon -> addCoordinatePath(
-                path = path,
-                coordinates =
-                    element.vertices.map { it.coords.usrCoords },
-            )
-
-            is Circle -> addCirclePath(
-                path = path,
-                center = element.center.coords.usrCoords,
-                radius = element.Radius(),
-            )
-
-            else -> return GMResult.Err(
-                ClipError.UnsupportedPathElement(element.elType),
-            )
+            is ClipPathInput.Raw ->
+                for ((index, entry) in input.entries.withIndex()) {
+                    val coordinates = when (entry) {
+                        is ClipPathEntry.PointValue ->
+                            entry.value.coords.usrCoords
+                        is ClipPathEntry.CoordsValue ->
+                            entry.value.usrCoords
+                        is ClipPathEntry.CoordinatePair ->
+                            Coords(
+                                method = Const.COORDS_BY_USER,
+                                coordinates = entry.value,
+                                board = input.board,
+                                emitter = false,
+                            ).usrCoords
+                    }
+                    addToList(path, coordinates, index)
+                }
         }
         return GMResult.Ok(path)
     }

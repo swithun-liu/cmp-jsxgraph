@@ -104,15 +104,140 @@ qualification batches pass.
   including its iterative stack, cusp/jump/border classification, one-sided
   limits through `Extrapolate`, FunctionGraph-only 30% bounding-box crop,
   callback suspension, parameter metadata, and bounded point growth. Its
-  official fixture, common/JVM tests, 107-case workbench, and focused
+  official fixture, common/JVM tests, 108-case workbench, and focused
   Desktop/Compact parity gates pass at `0.987021`/`0.976125`. Plot v2 remains
   the default. The separate explicit Plot v4 path now covers difference-table
   critical-point detection, border/singularity refinement, bounded JessieCode
   interval arithmetic, and scalar `fminbr` fallback. Its focused
-  Desktop/Compact gates pass at `0.987222`/`0.976707`. Plot v1 and
-  FunctionGraph RDP simplification remain pending.
+  Desktop/Compact gates pass at `0.987222`/`0.976707`. The translated
+  post-sampling Ramer-Douglas-Peucker branch preserves FunctionGraph/`plot`
+  default-on and ordinary Curve default-off behavior, threshold overrides,
+  and non-finite path separators. Its official fixture, common tests, and
+  focused Desktop/Compact gates pass at `0.986736`/`0.977750`. The legacy
+  Plot v1 recursive sampler and callback-suspension order are also translated
+  with an official fixture and focused tests.
   The upstream 3D `generic`
   six-evaluator/16-read defect is preserved as a structured evaluation error.
+- Spatial, implicit, and polynomial math kernels:
+  `src/math/{bqdt,qdt,implicitplot,metapost,poly}.js` now have traceable
+  commonMain translations. They cover both quadtree variants, complete
+  implicit component search/tracing, Hobby/MetaPost control solving, and the
+  usable polynomial ring/monomial operations. Official fixtures and focused
+  tests preserve the separate direct-`ImplicitPlot` and
+  `ImplicitCurve` `h_max` defaults. Quadtree recursion, implicit output, and
+  invalid polynomial operations use structured bounds or failures; the
+  upstream nonfunctional polynomial string parser remains explicitly
+  unsupported.
+- Data sources: `src/parser/datasource.js` array loading, header extraction,
+  cell normalization, and row/column lookup are translated. Browser table
+  lookup is an injected host adapter, and upstream unimplemented mutations
+  remain structured unsupported results.
+- Compatibility parsers and the null renderer:
+  `src/parser/3dmodels.js`, `src/parser/geonext.js`, and
+  `src/renderer/no.js` now have traceable commonMain translations. They cover
+  ASCII STL polyhedra, the complete GEONExT expression-conversion and
+  dependency kernel, and every no-op renderer method. Malformed input and
+  resource exhaustion are contained as structured failures while successful
+  output, including historical GEONExT quirks, remains fixture-compatible.
+- Theme and package assembly: all values from `src/themes/dark.js`,
+  `gui.js`, and `mono_thin.js` are retained as typed commonMain option trees.
+  The package-registered `mono_thin` theme participates in supported JSON and
+  JessieCode Board rendering with upstream generic/primitive/creator/user
+  precedence. The legacy dark/GUI scripts remain non-global option patches,
+  and the `src/index.js`/`src/plot.js` side-effect bundle role maps to static
+  Kotlin module composition rather than runtime imports.
+- Legacy construction syntax: `src/parser/jessiescript.js` now has a bounded
+  commonMain compiler for all upstream construction branches and named macro
+  expansion. It delegates execution to the existing native JessieCode/Board
+  path, preserving element order and observable geometry without adding a
+  JavaScript runtime. Mutable property assignments and draft styling remain
+  explicit follow-up work.
+- JessieCode computer algebra: `src/parser/ca.js` is translated between AST
+  parsing and evaluation. It covers every upstream elementary derivative,
+  nested and higher-order `D`, map lookup and assignment wrapping, recursive
+  math marking, and the complete trivial-node simplification rule set.
+  Malformed input, unknown derivatives, transformation work, output size and
+  derivative order are reported through bounded `GMResult` failures.
+- Dump serialization: the pure `src/utils/dump.js` `str`,
+  `arrayToParamStr`, and `toJCAN` kernel is translated for typed Kotlin and
+  JSON values, including source-compatible escaping, non-finite numbers,
+  undefined markers, nested containers, and JavaScript property order.
+  Complete Board construction export remains pending on compatible
+  per-element attribute snapshots.
+- Type utilities: the pure `src/utils/type.js` predicates/defaults,
+  including `isFunction`, typed/map-backed Board and geometry predicates,
+  Board ID/name/group lookup, Point/Point3D parent-form recognition,
+  Transformation-array recognition, explicit prototype/method-map adapters,
+  adapter-driven trace clone/cache helpers,
+  JavaScript-ordered key/deduplication helpers,
+  deprecated CSS parse/key-value/stringify conversion with structured
+  malformed-input failures, translated-`Slider` `evalSlider`, bounded
+  recursive array/function `evaluate`, reference-preserving
+  `clone`/callable `cloneAndCopy`, bounded
+  standard/custom `toJSON`, bounded `deepCopy`/`keysToLowerCase` including
+  function and JSXGraph-handle behavior, bounded map-based `copyAttributes`,
+  explicit owner-aware `bind`, adapter-driven `filterElements`, bounded
+  mutable-container `merge`/`mergeAttr`, strict-equality list/object operations,
+  `swap`, `concat`,
+  `coordsArrayToMatrix`, `str2Bool`, `uniqueArray`,
+  `toUniqueArrayFloat`, `cmpArrays`, decimal adjustment, `toFixed`, `trunc`,
+  `autoDigits`, `parseNumber`, `parsePosition`, `escapeHTML`, `unescapeHTML`,
+  fallback `sanitizeHTML`, `capitalize`, `trimNumber`, `trim`, `toFraction`,
+  and `stack2jsxgraph` functions are translated with JavaScript
+  number/identity semantics, mutation order, stable sorting, unit precedence,
+  typed mixed-value results, structured callback/range/index/copy/merge
+  failures, and ECMAScript whitespace handling. Browser DOM predicates and
+  the remaining host-specific adapters remain pending in their owning slices.
+- Environment utilities: the platform-neutral `src/utils/env.js` kernel now
+  covers input-event classification and coordinates, legacy user-agent
+  predicates, non-browser default dimensions, inline CSS property parsing,
+  and CSS transform/zoom extraction. DOM capability probes, event listener
+  registration, timed browser chunks, offsets, and fullscreen mutation stay
+  in platform adapters.
+- Encoding, color, and normalization utilities:
+  `src/utils/encoding.js`, `base64.js`, `color.js`, `expect.js`, and `uuid.js`
+  now have pure commonMain translations. They cover UTF-8 and Windows-1252
+  conversion, filtered Base64 encode/decode, all pure color parsing and
+  transformation functions, the exact named-color and Wong palettes,
+  Point/Coords/array normalization, and pooled-random UUID generation.
+  Invalid Kotlin inputs return structured failures where applicable, UUID
+  randomness is injectable, and the renderer-facing CSS adapter remains
+  browser-free. Browser-native arbitrary CSS validation and global
+  `setClassicColors` mutation remain owned by future platform/options work.
+  Four official fixtures and 13 focused JVM tests pass, together with the Wasm
+  compilation gate.
+- Composite and HTML-backed base elements: `src/base/chart.js`,
+  `foreignobject.js`, `group.js`, `turtle.js`, and
+  `src/element/{button,checkbox,input}.js` now have traceable commonMain
+  implementations and official fixtures. The translated slice covers all
+  direct-array Chart styles and vertical Legend output, opaque ForeignObject
+  geometry, Group movement constraints, Turtle drawing/state operations, and
+  typed control state and interactions, including official missing-label
+  `undefined` rendering. DOM table ingestion, intrinsic HTML measurement,
+  transformed ForeignObject hit testing, renderer event nodes, and remaining
+  attribute/hit-testing APIs stay explicit follow-up work. The focused JVM
+  and Wasm gates cover this batch; it is not yet Stable.
+- XML and archive utilities: `src/utils/xml.js`, `src/utils/zip.js`, and
+  `src/compressor.js` now have pure commonMain implementations. They cover the
+  reader-facing DOM shape and internal entities; ZIP/GZIP/zlib containers;
+  stored, fixed-Huffman, and dynamic-Huffman DEFLATE blocks; multi-file and
+  data-descriptor archives; and first-entry Base64/URI decompression.
+  Malformed input and resource limits return structured failures. Two
+  official fixtures and 12 focused JVM tests pass; the same implementation
+  also passed the Reader Wasm compilation gate.
+- File readers: source-mapped, internal commonMain slices now cover
+  `src/reader/file.js`, `graph.js`, `geonext.js`, `intergeo.js`,
+  `geogebra.js`, `cinderella.js`, and `tracenpoche.js`. The batch includes
+  case-insensitive registry/string dispatch; bounded Base64/ZIP/XML
+  preparation; Graph parsing and drawing; format-specific properties,
+  expressions, tokenization, parsing, supported geometry creation, dynamic
+  dependencies, strict partial-import rejection, and atomic rollback.
+  Browser XMLHttpRequest/Blob loading remains platform-owned, and untranslated
+  format branches stay explicit diagnostics or structured failures. Ten
+  official fixtures, two direct upstream Geogebra worksheets, 106 focused JVM
+  tests, and the Wasm compilation gate pass. Public import APIs, remaining
+  format branches, production cases, visual parity, and Stable qualification
+  remain pending.
 - Function-coordinate Points: native JessieCode now supports mixed
   number/string/function coordinate terms and one function returning a
   numeric coordinate array, with fresh evaluation budgets, persistent Board
@@ -120,6 +245,17 @@ qualification batches pass.
   The documented function-parent route through `createMidpoint` remains
   rejected because JSXGraph `1.13.3` itself loses the function in its leading
   `board.select` pass.
+- Point incidence: `src/base/point.js -> isOn` now covers Point, ordinary
+  Line, finite Segment, circle boundary, Polygon border, and ordinary or
+  transformed data-Plot/continuous Curve targets with strict tolerance
+  comparisons. Static Point `alwaysIntersect` and Circle/Polygon
+  `hasInnerPoints` preserve the upstream infinite-Line and interior-area
+  branches. Transformed Curve incidence preserves the upstream
+  projection-then-transform order instead of projecting onto final rendered
+  geometry. Curve evaluation or projection failure returns `false`;
+  function-valued and runtime-mutated visual properties remain pending.
+  JSXGraph `1.13.3`'s Turtle branch dereferences the two-item projection result
+  incorrectly and always throws; Kotlin intentionally returns `false`.
 - StepFunction: `src/base/curve.js -> createStepfunction` now retains source
   arrays, rebuilds output during regular Board updates, preserves empty,
   mismatched-Y, and function-arity behavior, and enforces expanded point
@@ -174,8 +310,9 @@ qualification batches pass.
   tests, and focused Desktop/Compact static parity gates pass. Dragging, hit
   testing, arbitrary transform mutation, non-data-URI loading, complete APIs,
   independent production cases, and Stable qualification remain pending.
-- Glider/Slider: the finite-coordinate Line/Segment and ordinary untransformed
-  non-Conic Curve branches of
+- Glider/Slider: the Point, Circle, finite-coordinate Line/Segment,
+  Polygon-border, Arc/Sector, ordinary Curve, and transformed-Curve branches
+  of
   `src/base/point.js -> createGlider`,
   `src/base/coordselement.js -> updateGlider/updateGliderFromParent`, and
   `src/math/geometry.js -> projectCoordsToCurve`, plus
@@ -189,9 +326,11 @@ qualification batches pass.
   and atomic rollback. Core, creator, document/session, official fixtures, and
   focused Desktop/Compact static parity gates pass. The Curve Glider fixture
   scores `0.986233`/`0.977524` statically and `0.986150`/`0.977598` after a
-  data-Plot drag. Circle, Conic, Polygon, Ticks, Turtle, Point,
-  transformed-slide, attractor, animation, baseline-click, locale, independent
-  production cases, and Stable qualification remain pending.
+  data-Plot drag. JSXGraph `1.13.3` rejects Ticks and its public Turtle path
+  fails because Turtle is absent from `board.objects`; Kotlin preserves those
+  unavailable paths as structured failures without the upstream partial-Point
+  leak. Conic-specific behavior, attractor, animation, baseline-click, locale,
+  independent production cases, and Stable qualification remain pending.
 - Tapemeasure: `src/element/measure.js -> createTapemeasure` and the
   corresponding `src/options.js` defaults now cover coordinate endpoint
   creation, finite Segment composition, optional dynamic value label and
@@ -212,7 +351,7 @@ qualification batches pass.
   function-valued coordinates and Measurement-specific attributes; custom
   coordinate/direction formatters; script markup; translated method aliases;
   dependency updates; structured failures; and atomic rollback. Core,
-  creator, document/session, official fixture, common tests, 107-case
+  creator, document/session, official fixture, common tests, 108-case
   workbench, and focused Desktop/Compact static plus radius-Point-drag parity
   gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
   `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
@@ -226,7 +365,7 @@ qualification batches pass.
   thresholds, Angle rotation and final-viewport 12 CSS-pixel offset, CSS box
   kinds, method-map access, dependency updates, JessieCode HTML sanitization,
   structured failures, and atomic rollback. Core, creator, session, official
-  fixture, common tests, 107-case workbench, and focused Desktop/Compact
+  fixture, common tests, 108-case workbench, and focused Desktop/Compact
   static plus Angle-parent-drag parity gates pass. Static scores are
   `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale,
   MathJax/KaTeX, user-defined CSS, complete Text APIs, an independent
@@ -537,12 +676,14 @@ qualification batches pass.
   dispatch, dynamic visual-property forms, independent production cases, and
   full qualification remain pending.
 - Curve Boolean clipping: `createCurveIntersection`, `createCurveUnion`, and
-  `createCurveDifference` now cover Circle/Curve/Arc/Sector/Polygon paths,
-  degenerate intersection classification and chains, entry/exit marking,
-  empty/containment cases, multi-component output, path tracing, regular Board
-  updates, structured topology/traversal failures, native JessieCode and
-  construction-document entry points, and same-source static/parent-drag
-  parity. Raw coordinate-array paths, independent production cases, and
+  `createCurveDifference` now cover Circle/Curve/Arc/Sector/Polygon paths and
+  the low-level mixed Point/Coords/coordinate-pair array form, including
+  homogeneous normalization, original-position retention, and duplicate
+  filtering. Degenerate intersection classification and chains, entry/exit
+  marking, empty/containment cases, multi-component output, path tracing,
+  regular Board updates, structured topology/traversal failures, native
+  JessieCode and construction-document entry points, and same-source
+  static/parent-drag parity are translated. Independent production cases and
   Stable qualification remain pending.
 - Arc compositions: `createSemicircle`, `createCircumcircleArc`,
   `createMinorArc`, and `createMajorArc` now cover Point/reference/coordinate

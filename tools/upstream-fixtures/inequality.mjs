@@ -304,6 +304,72 @@ try {
             )
         };
 
+        const parityContainer = document.createElement("div");
+        parityContainer.id = "parity-board";
+        parityContainer.style.width = "500px";
+        parityContainer.style.height = "500px";
+        document.querySelector("#fixtures").appendChild(parityContainer);
+        const parityBoard = JXG.JSXGraph.initBoard("parity-board", {
+            boundingbox: [-10, 7, 10, -7],
+            keepaspectratio: true,
+            axis: false,
+            showCopyright: false,
+            showNavigation: false
+        });
+        const parityDriver = parityBoard.create("point", [1, -5.8], {
+            id: "parityDriver",
+            name: "",
+            withLabel: false
+        });
+        const paritySource = parityBoard.create(
+            "functiongraph",
+            [
+                (x) => (
+                    x === 4
+                        ? NaN
+                        : 0.25 * parityDriver.X() * (x - 4) * (x - 4) - 2
+                ),
+                0,
+                8
+            ],
+            {
+                id: "paritySource",
+                name: "",
+                withLabel: false,
+                doAdvancedPlot: false,
+                numberPointsHigh: 128
+            }
+        );
+        const parityInequality = parityBoard.create(
+            "inequality",
+            [paritySource],
+            {
+                id: "parityInequality",
+                name: "",
+                withLabel: false,
+                inverse: () => parityDriver.X() > 1.5
+            }
+        );
+        parityBoard.update();
+        const parityInitial = {
+            sourceNumberPoints: paritySource.numberPoints,
+            sourcePoints: paritySource.points.map((point) => [
+                classify(point.usrCoords[1]),
+                classify(point.usrCoords[2])
+            ]),
+            inequality: snapshot(parityInequality)
+        };
+        parityDriver.setPositionDirectly(JXG.COORDS_BY_USER, [2, -5.8]);
+        parityBoard.update();
+        const parityUpdated = {
+            sourceNumberPoints: paritySource.numberPoints,
+            sourcePoints: paritySource.points.map((point) => [
+                classify(point.usrCoords[1]),
+                classify(point.usrCoords[2])
+            ]),
+            inequality: snapshot(parityInequality)
+        };
+
         return {
             version: JXG.version,
             boundingBox: lineBoard.getBoundingBox(),
@@ -322,6 +388,11 @@ try {
             removal: {
                 before: beforeRemoval,
                 after: afterRemoval
+            },
+            parityFunctionGraph: {
+                boundingBox: parityBoard.getBoundingBox(),
+                initial: parityInitial,
+                updated: parityUpdated
             },
             invalid
         };

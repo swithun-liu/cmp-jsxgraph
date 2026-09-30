@@ -93,10 +93,25 @@ internal class Arc private constructor(
         private set
     internal val subs = linkedMapOf<String, GeometryElement>()
     internal val inherits = mutableListOf<GeometryElement>()
+    // JSXGraph 1.13.3: src/base/element.js -> visProp.firstarrow /
+    // visProp.lastarrow; src/reader/geonext.js -> readNode arc branch.
+    internal var firstArrowEnabled: Boolean = false
+        private set
+    internal var lastArrowEnabled: Boolean = false
+        private set
 
     init {
         elType = ARC_ELEMENT_TYPE
         isDraggable = true
+    }
+
+    internal fun configureVisualArrows(
+        firstArrow: Boolean,
+        lastArrow: Boolean,
+    ): Arc {
+        firstArrowEnabled = firstArrow
+        lastArrowEnabled = lastArrow
+        return this
     }
 
     // JSXGraph: src/element/arc.js -> updateDataArray

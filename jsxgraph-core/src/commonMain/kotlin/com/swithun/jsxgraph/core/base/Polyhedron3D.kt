@@ -156,6 +156,11 @@ internal data class Polyhedron3DFaceInput(
 )
 
 internal sealed interface Face3DError {
+    data class InvalidFaceNumber(
+        val faceNumber: Int,
+        val faceCount: Int,
+    ) : Face3DError
+
     data class VertexEvaluation(
         val key: String,
         val coordinateIndex: Int?,
@@ -635,6 +640,14 @@ internal class Face3D internal constructor(
             faceNumber: Int,
             attributes: Face3DAttributes,
         ): GMResult<Face3D, Face3DError> {
+            if (faceNumber !in definition.faceKeys.indices) {
+                return GMResult.Err(
+                    Face3DError.InvalidFaceNumber(
+                        faceNumber = faceNumber,
+                        faceCount = definition.faceKeys.size,
+                    ),
+                )
+            }
             val face = Face3D(
                 view = definition.view,
                 polyhedron = definition,

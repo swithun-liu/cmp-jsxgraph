@@ -8,8 +8,12 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.ContinuousCurve2D
+import com.swithun.jsxgraph.core.math.ContinuousCurveType
+import com.swithun.jsxgraph.core.math.DiscreteCurve2D
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.ParametricCurve2D
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
@@ -39,12 +43,13 @@ internal sealed interface PointError {
  *
  * This slice covers numeric free points, JessieCode string coordinate
  * constraints, board registration, coordinate updates, bounds, and incidence
- * checks against the currently translated point, line, and circle elements,
- * plus transformed-point construction, persistent 2D transformations, and
+ * checks against the translated Point, Line, Segment, Circle, Curve, and
+ * Polygon elements, including the static incidence visual flags. It also
+ * covers transformed-point construction, persistent 2D transformations, and
  * the Line/Segment/Circle Intersection wrappers in [IntersectionPoint] and
- * [OtherIntersectionPoint]. Visual attributes, screen hit testing, traces,
- * slider/Coords-object constraints, gliders, and the remaining intersection
- * parent families remain untranslated.
+ * [OtherIntersectionPoint]. Remaining visual attributes, screen hit testing,
+ * traces, slider/Coords-object constraints, and remaining intersection parent
+ * families remain untranslated.
  */
 internal open class Point internal constructor(
     board: Board,
@@ -53,6 +58,7 @@ internal open class Point internal constructor(
     name: String? = null,
     needsRegularUpdate: Boolean = true,
     fixed: Boolean = false,
+    internal open val alwaysIntersect: Boolean = false,
     coordinateFunctions: List<JessieCodeCoordinateFunction> = emptyList(),
 ) : CoordsElement(
     board = board,
@@ -123,13 +129,157 @@ internal open class Point internal constructor(
 
         return when (element) {
             is Point -> Dist(element) < resolvedTolerance
-            is Line ->
-                Geometry.distPointLine(coords.usrCoords, element.stdform) <
-                    resolvedTolerance
-            is Circle ->
-                abs(Dist(element.center) - element.Radius()) <
-                    resolvedTolerance
+            is Line -> {
+                if (
+                    element.elType == "segment" &&
+                    !alwaysIntersect
+                ) {
+                    val projection = Geometry.projectCoordsToSegment(
+                        point = coords.usrCoords,
+                        first = element.point1.coords.usrCoords,
+                        second = element.point2.coords.usrCoords,
+                    )
+                    projection.parameter in 0.0..1.0 &&
+                        Geometry.distPointLine(
+                            coords.usrCoords,
+                            element.stdform,
+                        ) < resolvedTolerance
+                } else {
+                    Geometry.distPointLine(
+                        coords.usrCoords,
+                        element.stdform,
+                    ) < resolvedTolerance
+                }
+            }
+            is Circle -> {
+                val centerDistance = Dist(element.center)
+                if (element.hasInnerPoints) {
+                    centerDistance <
+                        element.Radius() + resolvedTolerance
+                } else {
+                    abs(centerDistance - element.Radius()) <
+                        resolvedTolerance
+                }
+            }
+            is Curve -> isOnCurve(element, resolvedTolerance)
+            is Polygon -> {
+                val vertices = element.vertices.map {
+                    it.coords.usrCoords
+                }
+                if (
+                    element.hasInnerPoints &&
+                    Geometry.pnpoly(X(), Y(), vertices)
+                ) {
+                    true
+                } else {
+                    when (
+                        val projection = Geometry.projectCoordsToPolygon(
+                            point = coords.usrCoords,
+                            vertices = vertices,
+                        )
+                    ) {
+                        is GMResult.Ok ->
+                            Geometry.distance(
+                                coords.usrCoords,
+                                projection.value,
+                                3,
+                            ) < resolvedTolerance
+                        is GMResult.Err -> false
+                    }
+                }
+            }
             else -> false
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/point.js -> isOn Curve branch;
+    // src/math/geometry.js -> projectPointToCurve/projectCoordsToCurve.
+    private fun isOnCurve(
+        curve: Curve,
+        tolerance: Double,
+    ): Boolean {
+        if (curve.evaluationError != null) {
+            return false
+        }
+        val projection =
+            if (curve.curveType == DATA_CURVE_TYPE) {
+                val rawX = curve.dataX
+                val rawY = curve.dataY
+                val curvePoints =
+                    if (rawX != null) {
+                        List(minOf(curve.numberPoints, rawX.size)) { index ->
+                            doubleArrayOf(
+                                1.0,
+                                rawX[index],
+                                rawY?.getOrNull(index) ?: Double.NaN,
+                            )
+                        }
+                    } else {
+                        curve.points
+                            .take(curve.numberPoints)
+                            .map { it.usrCoords.copyOf() }
+                    }
+                Geometry.projectCoordsToCurve(
+                    point = coords.usrCoords,
+                    curve = DiscreteCurve2D(
+                        points = curvePoints,
+                        bezierDegree = curve.bezierDegree,
+                    ),
+                )
+            } else {
+                Geometry.projectCoordsToCurve(
+                    horizontal = X(),
+                    vertical = Y(),
+                    initialParameter =
+                        position ?: if (
+                            curve.curveType ==
+                            FUNCTION_GRAPH_CURVE_TYPE
+                        ) {
+                            X()
+                        } else {
+                            0.0
+                        },
+                    continuousCurve = ContinuousCurve2D(
+                        curve = ParametricCurve2D(
+                            x = curve::X,
+                            y = curve::Y,
+                        ),
+                        minimumParameter = curve.minX(),
+                        maximumParameter = curve.maxX(),
+                        type =
+                            if (
+                                curve.curveType ==
+                                FUNCTION_GRAPH_CURVE_TYPE
+                            ) {
+                                ContinuousCurveType.FUNCTION_GRAPH
+                            } else {
+                                ContinuousCurveType.PARAMETER
+                            },
+                    ),
+                )
+            }
+        return when (projection) {
+            is GMResult.Ok -> {
+                val projectedCoordinates =
+                    if (curve.transformations.isEmpty()) {
+                        projection.value.point
+                    } else {
+                        curve.updateTransform(
+                            Coords(
+                                method = Const.COORDS_BY_USER,
+                                coordinates = projection.value.point,
+                                board = board,
+                                emitter = false,
+                            ),
+                        ).usrCoords
+                    }
+                Geometry.distance(
+                    coords.usrCoords,
+                    projectedCoordinates,
+                    3,
+                ) < tolerance
+            }
+            is GMResult.Err -> false
         }
     }
 
@@ -179,6 +329,8 @@ internal open class Point internal constructor(
     internal companion object {
         private const val POINT_ID_PREFIX = "P"
         private const val POINT_ELEMENT_TYPE = "point"
+        private const val DATA_CURVE_TYPE = "plot"
+        private const val FUNCTION_GRAPH_CURVE_TYPE = "functiongraph"
 
         // JSXGraph: src/base/point.js -> createPoint / Point constructor
         fun create(
@@ -188,6 +340,7 @@ internal open class Point internal constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            alwaysIntersect: Boolean = false,
         ): GMResult<Point, PointError> {
             if (coordinates.size < 2) {
                 return GMResult.Err(
@@ -202,6 +355,7 @@ internal open class Point internal constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                alwaysIntersect = alwaysIntersect,
             )
             point.baseElement = point
             return when (val registration = board.setId(point, POINT_ID_PREFIX)) {
@@ -226,6 +380,7 @@ internal open class Point internal constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            alwaysIntersect: Boolean = false,
         ): GMResult<Point, PointError> {
             if (coordinateExpressions.size < 2) {
                 return GMResult.Err(
@@ -252,6 +407,7 @@ internal open class Point internal constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                alwaysIntersect = alwaysIntersect,
                 xjc = coordinateExpressions
                     .takeIf { it.size == 2 }
                     ?.get(0),
@@ -269,6 +425,7 @@ internal open class Point internal constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            alwaysIntersect: Boolean = false,
             xjc: String? = null,
             yjc: String? = null,
         ): GMResult<Point, PointError> {
@@ -290,6 +447,7 @@ internal open class Point internal constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                alwaysIntersect = alwaysIntersect,
                 coordinateFunctions = coordinateFunctions,
             )
             val initialCoordinates = when (
@@ -336,6 +494,7 @@ internal open class Point internal constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            alwaysIntersect: Boolean = false,
         ): GMResult<Point, PointError> {
             if (transformations.isEmpty()) {
                 return GMResult.Err(
@@ -350,6 +509,7 @@ internal open class Point internal constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                alwaysIntersect = alwaysIntersect,
             )
             point.addTransform(basePoint, transformations)
             point.isDraggable = false

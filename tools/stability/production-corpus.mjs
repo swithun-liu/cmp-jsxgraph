@@ -183,6 +183,7 @@ function productionCase({
     scenario,
     objects,
     expectedElementIds,
+    generatedElementIds = [],
     expectedTexts = [],
     features,
     document = {},
@@ -194,6 +195,7 @@ function productionCase({
         scenario,
         source: documentSource(objects, document),
         expectedElementIds,
+        generatedElementIds,
         expectedTexts,
         features,
         interaction
@@ -1314,8 +1316,10 @@ export const cases = [
             "thresholdFirst",
             "thresholdVertex",
             "thresholdThird",
-            "thresholdAngle"
+            "thresholdAngle",
+            "jxgBoardP4"
         ],
+        generatedElementIds: ["jxgBoardP4"],
         features: [
             "angle",
             "fixed-angle-radius",
@@ -1349,8 +1353,10 @@ export const cases = [
             "autoFirst",
             "autoVertex",
             "autoThird",
-            "autoAngle"
+            "autoAngle",
+            "jxgBoardP4"
         ],
+        generatedElementIds: ["jxgBoardP4"],
         features: [
             "angle",
             "auto-angle-radius",

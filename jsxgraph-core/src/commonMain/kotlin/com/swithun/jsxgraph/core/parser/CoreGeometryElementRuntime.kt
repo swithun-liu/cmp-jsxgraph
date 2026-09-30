@@ -15,8 +15,10 @@ import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.Curve
+import com.swithun.jsxgraph.core.base.ForeignObject
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Glider
+import com.swithun.jsxgraph.core.base.HtmlControlDefinition
 import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
@@ -24,6 +26,10 @@ import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Slider
 import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.base.TransformationDynamicParameter
+import com.swithun.jsxgraph.core.base.TransformationDynamicParameterError
+import com.swithun.jsxgraph.core.base.Turtle
+import com.swithun.jsxgraph.core.base.TurtleError
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
@@ -48,26 +54,42 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 )
             is Slider -> number(element.Value())
             is Text ->
-                element.smartLabelDefinition?.let { definition ->
-                    measurementValue(
-                        element = element,
-                        method = "Value",
-                        location = location,
-                        result = definition.Value(),
+                when (val control = element.htmlControlDefinition) {
+                    is HtmlControlDefinition.Checkbox ->
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.BooleanValue(
+                                control.checked,
+                            ),
+                        )
+                    is HtmlControlDefinition.Input ->
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.StringValue(control.value),
+                        )
+                    is HtmlControlDefinition.Slider ->
+                        number(control.value)
+                    is HtmlControlDefinition.Button,
+                    null,
+                    -> element.smartLabelDefinition?.let { definition ->
+                        measurementValue(
+                            element = element,
+                            method = "Value",
+                            location = location,
+                            result = definition.Value(),
+                        )
+                    } ?: element.measurementDefinition?.let { definition ->
+                        measurementValue(
+                            element = element,
+                            method = "Value",
+                            location = location,
+                            result = definition.Value(),
+                        )
+                    } ?: GMResult.Err(
+                        JessieCodeRuntimeError.ElementValueUnavailable(
+                            elementId = element.id,
+                            location = location,
+                        ),
                     )
-                } ?: element.measurementDefinition?.let { definition ->
-                    measurementValue(
-                        element = element,
-                        method = "Value",
-                        location = location,
-                        result = definition.Value(),
-                    )
-                } ?: GMResult.Err(
-                    JessieCodeRuntimeError.ElementValueUnavailable(
-                        elementId = element.id,
-                        location = location,
-                    ),
-                )
+                }
             is Line ->
                 element.tapemeasureDefinition?.let {
                     number(it.Value())
@@ -106,6 +128,9 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         resolveGeometryProperty(element, property)?.let {
             return it
         }
+        resolveTurtleProperty(element, property, location)?.let {
+            return it
+        }
         resolveSliderProperty(element, property)?.let {
             return it
         }
@@ -136,7 +161,13 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         resolveSmartLabelProperty(element, property, location)?.let {
             return it
         }
+        resolveHtmlControlProperty(element, property, location)?.let {
+            return it
+        }
         resolveTextProperty(element, property, location)?.let {
+            return it
+        }
+        resolveForeignObjectProperty(element, property, location)?.let {
             return it
         }
         resolveImageProperty(element, property, location)?.let {
@@ -148,12 +179,381 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         return unavailable(element, property, location)
     }
 
+    // JSXGraph 1.13.3: src/base/turtle.js -> methodMap.
+    private fun resolveTurtleProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val turtle = element as? Turtle ?: return null
+        return when (property) {
+            "forward", "fd" ->
+                turtleNumberMethod(turtle, "forward", turtle::forward)
+            "back", "bk" ->
+                turtleNumberMethod(turtle, "back", turtle::back)
+            "right", "rt" ->
+                turtleNumberMethod(turtle, "right") { angle ->
+                    turtle.right(angle)
+                    GMResult.Ok(turtle)
+                }
+            "left", "lt" ->
+                turtleNumberMethod(turtle, "left") { angle ->
+                    turtle.left(angle)
+                    GMResult.Ok(turtle)
+                }
+            "penUp", "pu", "up" -> turtleMutation("penUp", turtle) {
+                GMResult.Ok(turtle.penUp())
+            }
+            "penDown", "pd", "down" ->
+                turtleMutation("penDown", turtle, turtle::penDown)
+            "clearScreen", "cs" ->
+                turtleMutation("clearScreen", turtle, turtle::clearScreen)
+            "clean" -> turtleMutation("clean", turtle, turtle::clean)
+            "setPos" -> function("setPos") { arguments, callLocation ->
+                val result = when (
+                    val coordinates = arguments.firstOrNull()
+                ) {
+                    is JessieCodeRuntimeValue.ArrayValue ->
+                        turtleCoordinateArray(
+                            functionName = "setPos",
+                            value = coordinates,
+                            location = callLocation,
+                        ).let { parsed ->
+                            when (parsed) {
+                                is GMResult.Ok ->
+                                    turtle.setPos(parsed.value)
+                                is GMResult.Err -> return@function parsed
+                            }
+                        }
+                    else -> {
+                        val x = turtleNumberArgument(
+                            functionName = "setPos",
+                            arguments = arguments,
+                            index = 0,
+                            location = callLocation,
+                        )
+                        val y = turtleNumberArgument(
+                            functionName = "setPos",
+                            arguments = arguments,
+                            index = 1,
+                            location = callLocation,
+                        )
+                        val xValue = when (x) {
+                            is GMResult.Ok -> x.value
+                            is GMResult.Err -> return@function x
+                        }
+                        val yValue = when (y) {
+                            is GMResult.Ok -> y.value
+                            is GMResult.Err -> return@function y
+                        }
+                        turtle.setPos(xValue, yValue)
+                    }
+                }
+                turtleMutationResult(
+                    turtle = turtle,
+                    method = "setPos",
+                    location = callLocation,
+                    result = result,
+                )
+            }
+            "home" -> turtleMutation("home", turtle, turtle::home)
+            "hideTurtle", "ht", "hide" ->
+                turtleMutation("hideTurtle", turtle) {
+                    GMResult.Ok(turtle.hideTurtle())
+                }
+            "showTurtle", "st", "show" ->
+                turtleMutation(
+                    "showTurtle",
+                    turtle,
+                    turtle::showTurtle,
+                )
+            "penSize", "setPenSize" ->
+                turtleNumberMethod(
+                    turtle,
+                    "setPenSize",
+                    turtle::setPenSize,
+                )
+            "penColor", "setPenColor" ->
+                turtleStringMethod(
+                    turtle,
+                    "setPenColor",
+                    turtle::setPenColor,
+                )
+            "highlightPenColor", "setHighlightPenColor" ->
+                turtleStringMethod(
+                    turtle,
+                    "setHighlightPenColor",
+                    turtle::setHighlightPenColor,
+                )
+            "getPenColor", "Color" ->
+                stringFunction("getPenColor", turtle::getPenColor)
+            "getHighlightPenColor", "HighlightColor" ->
+                stringFunction(
+                    "getHighlightPenColor",
+                    turtle::getHighlightPenColor,
+                )
+            "getPenSize", "Size" ->
+                numberFunction("getPenSize", turtle::getPenSize)
+            "pushTurtle", "push" ->
+                turtleMutation("pushTurtle", turtle) {
+                    GMResult.Ok(turtle.pushTurtle())
+                }
+            "popTurtle", "pop" ->
+                turtleMutation("popTurtle", turtle, turtle::popTurtle)
+            "lookTo" -> function("lookTo") { arguments, callLocation ->
+                val result = when (
+                    val target = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    is JessieCodeRuntimeValue.NumberValue ->
+                        if (target.value.isFinite()) {
+                            GMResult.Ok(turtle.lookTo(target.value))
+                        } else {
+                            GMResult.Err(
+                                TurtleError.InvalidCoordinate(
+                                    coordinate = "target",
+                                    value = target.value,
+                                ),
+                            )
+                        }
+                    is JessieCodeRuntimeValue.ArrayValue ->
+                        when (
+                            val parsed = turtleCoordinateArray(
+                                functionName = "lookTo",
+                                value = target,
+                                location = callLocation,
+                            )
+                        ) {
+                            is GMResult.Ok -> turtle.lookTo(parsed.value)
+                            is GMResult.Err -> return@function parsed
+                        }
+                    else -> return@function invalidArgumentType(
+                        functionName = "lookTo",
+                        argumentIndex = 0,
+                        expected = "number or coordinate array",
+                        actual = target,
+                        location = callLocation,
+                    )
+                }
+                turtleMutationResult(
+                    turtle = turtle,
+                    method = "lookTo",
+                    location = callLocation,
+                    result = result,
+                )
+            }
+            "pos", "Pos" -> GMResult.Ok(array(turtle.position))
+            "moveTo" -> function("moveTo") { arguments, callLocation ->
+                val coordinates = when (
+                    val result = turtleCoordinateArray(
+                        functionName = "moveTo",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                turtleMutationResult(
+                    turtle = turtle,
+                    method = "moveTo",
+                    location = callLocation,
+                    result = turtle.moveTo(coordinates),
+                )
+            }
+            "X" -> turtleCoordinateFunction("X", turtle::X)
+            "Y" -> turtleCoordinateFunction("Y", turtle::Y)
+            "Z" -> turtleCoordinateFunction("Z", turtle::Z)
+            "minX" -> numberFunction("minX", turtle::minX)
+            "maxX" -> numberFunction("maxX", turtle::maxX)
+            else -> null
+        }
+    }
+
+    private fun turtleMutation(
+        method: String,
+        turtle: Turtle,
+        operation: () -> GMResult<Turtle, TurtleError>,
+    ): ElementPropertyResult =
+        function(method) { _, location ->
+            turtleMutationResult(
+                turtle = turtle,
+                method = method,
+                location = location,
+                result = operation(),
+            )
+        }
+
+    private fun turtleNumberMethod(
+        turtle: Turtle,
+        method: String,
+        operation: (Double) -> GMResult<Turtle, TurtleError>,
+    ): ElementPropertyResult =
+        function(method) { arguments, location ->
+            val value = when (
+                val result = turtleNumberArgument(
+                    functionName = method,
+                    arguments = arguments,
+                    index = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@function result
+            }
+            val operationResult =
+                if (value.isFinite()) {
+                    operation(value)
+                } else {
+                    GMResult.Err(
+                        TurtleError.InvalidCoordinate(
+                            coordinate = method,
+                            value = value,
+                        ),
+                    )
+                }
+            turtleMutationResult(
+                turtle = turtle,
+                method = method,
+                location = location,
+                result = operationResult,
+            )
+        }
+
+    private fun turtleStringMethod(
+        turtle: Turtle,
+        method: String,
+        operation: (String) -> GMResult<Turtle, TurtleError>,
+    ): ElementPropertyResult =
+        function(method) { arguments, location ->
+            val value = (
+                arguments.firstOrNull() as?
+                    JessieCodeRuntimeValue.StringValue
+                )?.value ?: return@function invalidArgumentType(
+                functionName = method,
+                argumentIndex = 0,
+                expected = "string",
+                actual = arguments.firstOrNull()
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+            turtleMutationResult(
+                turtle = turtle,
+                method = method,
+                location = location,
+                result = operation(value),
+            )
+        }
+
+    private fun turtleCoordinateFunction(
+        method: String,
+        operation: (Double?) -> Double,
+    ): ElementPropertyResult =
+        function(method) { arguments, location ->
+            val value = arguments.firstOrNull()
+            val parameter = when (value) {
+                null, JessieCodeRuntimeValue.UndefinedValue -> null
+                is JessieCodeRuntimeValue.NumberValue -> value.value
+                else -> return@function invalidArgumentType(
+                    functionName = method,
+                    argumentIndex = 0,
+                    expected = "number or undefined",
+                    actual = value,
+                    location = location,
+                )
+            }
+            number(operation(parameter))
+        }
+
+    private fun turtleNumberArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        index: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<Double, JessieCodeRuntimeError> {
+        val value = arguments.getOrNull(index)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val number = (value as? JessieCodeRuntimeValue.NumberValue)?.value
+            ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "number",
+                actual = value,
+                location = location,
+            )
+        return GMResult.Ok(number)
+    }
+
+    private fun turtleCoordinateArray(
+        functionName: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val values = (value as? JessieCodeRuntimeValue.ArrayValue)?.values
+            ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = 0,
+                expected = "coordinate array",
+                actual = value,
+                location = location,
+            )
+        if (values.size < 2) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidArgumentCount(
+                    functionName = "$functionName coordinate array",
+                    expected = "at least 2",
+                    actual = values.size,
+                    location = location,
+                ),
+            )
+        }
+        val coordinates = DoubleArray(2)
+        for (index in coordinates.indices) {
+            val coordinate = values[index]
+            val number = (
+                coordinate as? JessieCodeRuntimeValue.NumberValue
+                )?.value ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "number coordinate",
+                actual = coordinate,
+                location = location,
+            )
+            coordinates[index] = number
+        }
+        return GMResult.Ok(coordinates)
+    }
+
+    private fun turtleMutationResult(
+        turtle: Turtle,
+        method: String,
+        location: JessieCodeAstLocation,
+        result: GMResult<Turtle, TurtleError>,
+    ): ElementPropertyResult =
+        when (result) {
+            is GMResult.Ok -> elementReference(turtle)
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.ElementMethodUnavailable(
+                    elementId = turtle.id,
+                    method = method,
+                    reason = result.error.toString(),
+                    location = location,
+                ),
+            )
+        }
+
     private fun resolveCurveProperty(
         element: GeometryElement,
         property: String,
     ): ElementPropertyResult? {
         val curve = element as? Curve ?: return null
-        if (curve.isEllipse || curve.isHyperbola || curve.isParabola) {
+        if (
+            curve.isEllipse ||
+            curve.isHyperbola ||
+            curve.isParabola ||
+            curve.isGenericConic
+        ) {
             return when (property) {
                 "majorAxis" ->
                     if (curve.isEllipse || curve.isHyperbola) {
@@ -277,6 +677,141 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     },
                 ),
             )
+            "point" ->
+                if (
+                    element is Sector &&
+                    element.isAngle &&
+                    !element.isTwoLine
+                ) {
+                    elementReference(element.radiuspoint)
+                } else {
+                    unavailable(element, property, location)
+                }
+            "pointsquare" ->
+                if (
+                    element is Sector &&
+                    element.isAngle &&
+                    !element.isTwoLine
+                ) {
+                    elementReference(element.anglepoint)
+                } else {
+                    unavailable(element, property, location)
+                }
+            "line1" ->
+                if (element is Sector && element.isTwoLine) {
+                    element.line1?.let(::elementReference)
+                        ?: unavailable(element, property, location)
+                } else {
+                    unavailable(element, property, location)
+                }
+            "line2" ->
+                if (element is Sector && element.isTwoLine) {
+                    element.line2?.let(::elementReference)
+                        ?: unavailable(element, property, location)
+                } else {
+                    unavailable(element, property, location)
+                }
+            "dot" ->
+                if (element is Sector && element.isAngle) {
+                    element.dot?.let(::elementReference)
+                        ?: unavailable(element, property, location)
+                } else {
+                    unavailable(element, property, location)
+                }
+            "setAngle" ->
+                if (element is Sector && element.isAngle) {
+                    function("setAngle") { arguments, callLocation ->
+                        if (element.isTwoLine) {
+                            return@function GMResult.Ok(
+                                JessieCodeRuntimeValue.UndefinedValue,
+                            )
+                        }
+                        val result = when (
+                            val value = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue
+                        ) {
+                            is JessieCodeRuntimeValue.NumberValue ->
+                                element.setAngle(value.value)
+                            is JessieCodeRuntimeValue.FunctionValue ->
+                                element.setAngle(
+                                    TransformationDynamicParameter {
+                                        when (
+                                            val evaluated =
+                                                value.externalCallable.call(
+                                                    arguments = emptyList(),
+                                                    location = callLocation,
+                                                )
+                                        ) {
+                                            is GMResult.Ok -> {
+                                                val number =
+                                                    evaluated.value as?
+                                                        JessieCodeRuntimeValue
+                                                            .NumberValue
+                                                if (number == null) {
+                                                    GMResult.Err(
+                                                        TransformationDynamicParameterError
+                                                            .Rejected(
+                                                                "Expected " +
+                                                                    "number, " +
+                                                                    "got " +
+                                                                    typeName(
+                                                                        evaluated
+                                                                            .value,
+                                                                    ),
+                                                            ),
+                                                    )
+                                                } else {
+                                                    GMResult.Ok(number.value)
+                                                }
+                                            }
+                                            is GMResult.Err -> GMResult.Err(
+                                                TransformationDynamicParameterError
+                                                    .Rejected(
+                                                        evaluated.error
+                                                            .toString(),
+                                                    ),
+                                            )
+                                        }
+                                    },
+                                )
+                            else -> return@function invalidArgumentType(
+                                functionName = "setAngle",
+                                argumentIndex = 0,
+                                expected = "number or function",
+                                actual = value,
+                                location = callLocation,
+                            )
+                        }
+                        when (result) {
+                            is GMResult.Ok -> elementReference(element)
+                            is GMResult.Err -> GMResult.Err(
+                                JessieCodeRuntimeError
+                                    .ElementMethodUnavailable(
+                                        elementId = element.id,
+                                        method = "setAngle",
+                                        reason = result.error.toString(),
+                                        location = callLocation,
+                                    ),
+                            )
+                        }
+                    }
+                } else {
+                    unavailable(element, property, location)
+                }
+            "free" ->
+                if (element is Sector && element.isAngle) {
+                    function("free") { _, _ ->
+                        if (element.isTwoLine) {
+                            GMResult.Ok(
+                                JessieCodeRuntimeValue.UndefinedValue,
+                            )
+                        } else {
+                            elementReference(element.free())
+                        }
+                    }
+                } else {
+                    unavailable(element, property, location)
+                }
             "point4" -> when (element) {
                 is Arc -> element.directionpoint
                 is Sector -> element.directionpoint
@@ -780,6 +1315,62 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         }
     }
 
+    // JSXGraph 1.13.3: src/element/checkbox.js -> Value;
+    // src/element/input.js -> Value/set;
+    // src/base/text.js -> createHTMLSlider/Value.
+    private fun resolveHtmlControlProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val text = element as? Text ?: return null
+        return when (val control = text.htmlControlDefinition) {
+            is HtmlControlDefinition.Checkbox -> when (property) {
+                "V", "Value" ->
+                    booleanFunction("Value") { control.checked }
+                else -> null
+            }
+            is HtmlControlDefinition.Input -> when (property) {
+                "V", "Value" ->
+                    stringFunction("Value") { control.value }
+                "set" -> function("set") { arguments, callLocation ->
+                    val value = (
+                        arguments.firstOrNull() as?
+                            JessieCodeRuntimeValue.StringValue
+                        )?.value
+                    if (value == null) {
+                        GMResult.Err(
+                            JessieCodeRuntimeError.InvalidArgumentType(
+                                functionName = "set",
+                                argumentIndex = 0,
+                                expected = "string",
+                                actual = typeName(
+                                    arguments.firstOrNull()
+                                        ?: JessieCodeRuntimeValue
+                                            .UndefinedValue,
+                                ),
+                                location = callLocation,
+                            ),
+                        )
+                    } else {
+                        control.value = value
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.ElementReference(text),
+                        )
+                    }
+                }
+                else -> null
+            }
+            is HtmlControlDefinition.Slider -> when (property) {
+                "V", "Value" -> numberFunction("Value") { control.value }
+                else -> null
+            }
+            is HtmlControlDefinition.Button,
+            null,
+            -> null
+        }
+    }
+
     // JSXGraph: src/base/image.js -> methodMap / setSize.
     private fun resolveImageProperty(
         element: GeometryElement,
@@ -858,6 +1449,101 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     is GMResult.Err -> GMResult.Err(
                         JessieCodeRuntimeError.ElementMethodUnavailable(
                             elementId = image.id,
+                            method = "setSize",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
+            else -> null
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/foreignobject.js -> methodMap / setSize.
+    private fun resolveForeignObjectProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val foreignObject = element as? ForeignObject ?: return null
+        return when (property) {
+            "W", "Width" -> foreignObject.W()?.let { value ->
+                numberFunction("W") { value }
+            } ?: unavailable(foreignObject, property, location)
+            "H", "Height" -> foreignObject.H()?.let { value ->
+                numberFunction("H") { value }
+            } ?: unavailable(foreignObject, property, location)
+            "setSize" -> function("setSize") {
+                    arguments,
+                    callLocation,
+                ->
+                if (arguments.size != 2) {
+                    return@function GMResult.Err(
+                        JessieCodeRuntimeError.InvalidArgumentCount(
+                            functionName = "setSize",
+                            expected = "2",
+                            actual = arguments.size,
+                            location = callLocation,
+                        ),
+                    )
+                }
+                val terms = mutableListOf<JessieCodeCoordinateFunction>()
+                for ((index, value) in arguments.withIndex()) {
+                    when (value) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            terms += JessieCodeNumericCoordinateFunction(
+                                value.value,
+                            )
+                        is JessieCodeRuntimeValue.StringValue -> {
+                            when (
+                                val result =
+                                    JessieCodeExpressionFunction.compile(
+                                        source = value.value,
+                                        board = foreignObject.board,
+                                    )
+                            ) {
+                                is GMResult.Ok -> terms += result.value
+                                is GMResult.Err -> return@function GMResult.Err(
+                                    JessieCodeRuntimeError
+                                        .ElementMethodUnavailable(
+                                            elementId = foreignObject.id,
+                                            method = "setSize",
+                                            reason =
+                                                "size[$index]: " +
+                                                    result.error,
+                                            location = callLocation,
+                                        ),
+                                )
+                            }
+                        }
+                        is JessieCodeRuntimeValue.FunctionValue ->
+                            terms += JessieCodeRuntimeCoordinateFunction(
+                                function = value,
+                                location = callLocation,
+                                returnsCoordinateArray = false,
+                            )
+                        else -> return@function invalidArgumentType(
+                            functionName = "setSize",
+                            argumentIndex = index,
+                            expected = "number, string, or function",
+                            actual = value,
+                            location = callLocation,
+                        )
+                    }
+                }
+                when (val result = foreignObject.setSize(terms)) {
+                    is GMResult.Ok -> {
+                        foreignObject.board.update()
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.ElementReference(
+                                foreignObject,
+                            ),
+                        )
+                    }
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = foreignObject.id,
                             method = "setSize",
                             reason = result.error.toString(),
                             location = callLocation,
@@ -1080,6 +1766,21 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 callable = JessieCodeCallable { _, _ ->
                     GMResult.Ok(
                         JessieCodeRuntimeValue.StringValue(value()),
+                    )
+                },
+            ),
+        )
+
+    private fun booleanFunction(
+        name: String,
+        value: () -> Boolean,
+    ): ElementPropertyResult =
+        GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(
+                name = name,
+                callable = JessieCodeCallable { _, _ ->
+                    GMResult.Ok(
+                        JessieCodeRuntimeValue.BooleanValue(value()),
                     )
                 },
             ),

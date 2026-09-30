@@ -4,8 +4,12 @@
  * src/jxg.js -> registerElement,
  * src/base/element.js -> visual properties,
  * src/base/image.js -> Image / createImage,
+ * src/base/foreignobject.js -> ForeignObject / createForeignObject,
+ * src/element/button.js, checkbox.js, input.js;
+ * src/base/text.js -> createHTMLSlider,
  * src/base/ticks.js -> createHatchmark,
  * src/element/slider.js -> createSlider,
+ * src/base/group.js -> createGroup,
  * src/element/slopetriangle.js -> createSlopeTriangle,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality
@@ -26,9 +30,13 @@ import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.Curve3D
 import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
+import com.swithun.jsxgraph.core.base.ForeignObject
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Group
 import com.swithun.jsxgraph.core.base.Hatch
 import com.swithun.jsxgraph.core.base.Glider
+import com.swithun.jsxgraph.core.base.HtmlButtonHandler
+import com.swithun.jsxgraph.core.base.HtmlControlDefinition
 import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
@@ -52,12 +60,16 @@ import com.swithun.jsxgraph.core.base.Ticks
 import com.swithun.jsxgraph.core.base.TicksAnchor
 import com.swithun.jsxgraph.core.base.TicksSource
 import com.swithun.jsxgraph.core.base.Ticks3D
+import com.swithun.jsxgraph.core.base.Turtle
 import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.base.View3D
 import com.swithun.jsxgraph.core.base.boxPlotPointCount
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
+import com.swithun.jsxgraph.core.parser.JessieCodeComputerAlgebraError
+import com.swithun.jsxgraph.core.parser.JessieCodeComputerAlgebraLimits
+import com.swithun.jsxgraph.core.parser.JessieCodeCreatedSceneElement
 import com.swithun.jsxgraph.core.parser.JessieCodeCreator
 import com.swithun.jsxgraph.core.parser.JessieCodeEvaluatorLimits
 import com.swithun.jsxgraph.core.parser.JessieCodeLexerError
@@ -72,7 +84,9 @@ import com.swithun.jsxgraph.core.parser.JessieCodeSessionError
 import com.swithun.jsxgraph.core.parser.JessieCodeSessionLimits
 import com.swithun.jsxgraph.core.parser.JessieCodeSourceLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeSourcePosition
+import com.swithun.jsxgraph.core.parser.NativeChartCreator
 import com.swithun.jsxgraph.core.parser.NativeJessieCodeCreators
+import com.swithun.jsxgraph.core.utils.Color
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -279,6 +293,29 @@ data class JsxGraphInteractionState(
     val pointCoordinates: Map<String, JsxGraphPoint2D>,
 )
 
+sealed interface JsxGraphControlInteraction {
+    val id: String
+
+    data class ClickButton(
+        override val id: String,
+    ) : JsxGraphControlInteraction
+
+    data class ChangeCheckbox(
+        override val id: String,
+        val checked: Boolean,
+    ) : JsxGraphControlInteraction
+
+    data class ChangeInput(
+        override val id: String,
+        val value: String,
+    ) : JsxGraphControlInteraction
+
+    data class ChangeSlider(
+        override val id: String,
+        val value: Double,
+    ) : JsxGraphControlInteraction
+}
+
 sealed interface JsxGraphInteractionError {
     data class UnknownPoint(
         val id: String,
@@ -296,6 +333,30 @@ sealed interface JsxGraphInteractionError {
     data class StateSizeExceeded(
         val limit: Int,
         val actual: Int,
+    ) : JsxGraphInteractionError
+
+    data class UnknownControl(
+        val id: String,
+    ) : JsxGraphInteractionError
+
+    data class UnexpectedControlType(
+        val id: String,
+        val expected: String,
+        val actual: String,
+    ) : JsxGraphInteractionError
+
+    data class ControlDisabled(
+        val id: String,
+    ) : JsxGraphInteractionError
+
+    data class InvalidControlValue(
+        val id: String,
+        val reason: String,
+    ) : JsxGraphInteractionError
+
+    data class ControlHandlerFailure(
+        val id: String,
+        val reason: String,
     ) : JsxGraphInteractionError
 
     data class ResourceLimitExceeded(
@@ -323,6 +384,9 @@ class JsxGraphSession internal constructor(
         JsxGraphScene,
         JsxGraphDocumentError,
         >,
+    private val interactControlSource: (
+        interaction: JsxGraphControlInteraction,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
 ) {
     private val initialInteractionState = captureInteractionState()
 
@@ -367,6 +431,17 @@ class JsxGraphSession internal constructor(
             state = initialInteractionState,
             settleDirectionSelection = true,
         )
+
+    fun interactControl(
+        interaction: JsxGraphControlInteraction,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        when (val result = interactControlSource(interaction)) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
 
     private fun applyInteractionState(
         state: JsxGraphInteractionState,
@@ -533,18 +608,15 @@ object JsxGraphEngine {
             return GMResult.Err(error)
         }
 
-        val board = Board(
-            originX = 0.0,
-            originY = 0.0,
-            unitX = 1.0,
-            unitY = 1.0,
-            id = "jxgBoard",
+        val board = Board.fromBoundingBox(
             boundingBox = doubleArrayOf(
                 boardOptions.boundingBox.left,
                 boardOptions.boundingBox.top,
                 boardOptions.boundingBox.right,
                 boardOptions.boundingBox.bottom,
             ),
+            keepAspectRatio = boardOptions.keepAspectRatio,
+            id = "jxgBoard",
             defaultCurveMinimum =
                 boardOptions.boundingBox.left -
                     (
@@ -615,6 +687,8 @@ object JsxGraphEngine {
                                 "comb" -> COMB_SEMANTIC_ATTRIBUTES
                                 "inequality" ->
                                     INEQUALITY_SEMANTIC_ATTRIBUTES
+                                "implicitcurve" ->
+                                    IMPLICIT_CURVE_ATTRIBUTES
                                 "measurement" ->
                                     MEASUREMENT_DYNAMIC_ATTRIBUTES
                                 "smartlabel" ->
@@ -645,6 +719,15 @@ object JsxGraphEngine {
                     is GMResult.Err ->
                         return@JessieCodeCreator result
                 }
+                val initialCompositeObjects =
+                    if (
+                        creatorName == "chart" ||
+                        creatorName == "legend"
+                    ) {
+                        selectedBoard?.objectsList?.toSet()
+                    } else {
+                        null
+                    }
                 when (
                     val result = nativeCreator.create(
                         board = selectedBoard,
@@ -655,6 +738,77 @@ object JsxGraphEngine {
                 ) {
                     is GMResult.Err -> result
                     is GMResult.Ok -> {
+                        val nestedSceneElements =
+                            createdSceneElements(result.value)
+                        if (nestedSceneElements != null) {
+                            val expanded = mutableListOf<CreatedSourceElement>()
+                            for (nested in nestedSceneElements) {
+                                val nestedAttributes = when (
+                                    val snapshot =
+                                        JessieCodeAttributeSnapshotter(
+                                            maxDepth =
+                                                limits.maxAttributeDepth,
+                                            maxValues =
+                                                limits.maxCollectionSize,
+                                            location = location,
+                                            ignoredRootFunctionProperties =
+                                                emptySet(),
+                                            ignoredFunctionPropertiesByPath =
+                                                emptyMap(),
+                                        ).snapshot(nested.attributes)
+                                ) {
+                                    is GMResult.Ok -> snapshot.value
+                                    is GMResult.Err -> {
+                                        rollbackCreatedBoardObjects(
+                                            board = selectedBoard,
+                                            initialObjects =
+                                                initialCompositeObjects,
+                                        )
+                                        return@JessieCodeCreator snapshot
+                                    }
+                                }
+                                expanded += CreatedSourceElement(
+                                    source = ParsedObject(
+                                        index =
+                                            creationCount +
+                                                expanded.size,
+                                        id = nested.element.id,
+                                        type = nested.creatorName,
+                                        parents = JsonArray(emptyList()),
+                                        attributes = nestedAttributes,
+                                    ),
+                                    element = nested.element,
+                                )
+                            }
+                            val actualCount =
+                                createdSceneElementCount(expanded)
+                            if (
+                                creationCount.toLong() +
+                                    actualCount.toLong() >
+                                limits.maxObjects
+                            ) {
+                                rollbackCreatedBoardObjects(
+                                    board = selectedBoard,
+                                    initialObjects =
+                                        initialCompositeObjects,
+                                )
+                                return@JessieCodeCreator GMResult.Err(
+                                    JessieCodeRuntimeError
+                                        .ResourceLimitExceeded(
+                                            resource =
+                                                "created element count",
+                                            limit = limits.maxObjects,
+                                            requestedSize =
+                                                creationCount.toLong() +
+                                                    actualCount,
+                                            location = location,
+                                        ),
+                                )
+                            }
+                            created += expanded
+                            creationCount += actualCount
+                            return@JessieCodeCreator result
+                        }
                         when (val value = result.value) {
                             is JessieCodeRuntimeValue
                                 .TransformationReference ->
@@ -971,6 +1125,12 @@ object JsxGraphEngine {
                             }
                             is JessieCodeRuntimeValue.CompositionReference -> {
                                 if (!createsSceneElement) {
+                                    if (
+                                        creatorName == "group" &&
+                                        value.composition is Group
+                                    ) {
+                                        return@JessieCodeCreator result
+                                    }
                                     return@JessieCodeCreator GMResult.Err(
                                         JessieCodeRuntimeError.InvalidAst(
                                             reason =
@@ -1083,6 +1243,14 @@ object JsxGraphEngine {
                 maxAstDepth = limits.maxAstDepth,
                 maxParserNesting = limits.maxParserNesting,
             ),
+            computerAlgebraLimits =
+                JessieCodeComputerAlgebraLimits(
+                    maxTransformationSteps =
+                        limits.maxComputerAlgebraSteps,
+                    maxOutputNodes = limits.maxAstNodes,
+                    maxOutputDepth = limits.maxAstDepth,
+                    maxDerivativeOrder = limits.maxDerivativeOrder,
+                ),
             evaluatorLimits = JessieCodeEvaluatorLimits(
                 maxEvaluationSteps = limits.maxEvaluationSteps,
                 maxEvaluationDepth = limits.maxEvaluationDepth,
@@ -1097,6 +1265,7 @@ object JsxGraphEngine {
             axis = boardOptions.axis,
             grid = boardOptions.grid,
             keepAspectRatio = boardOptions.keepAspectRatio,
+            theme = boardOptions.theme,
             objects = emptyList(),
         )
         val initialScene = JsxGraphScene(
@@ -1108,8 +1277,7 @@ object JsxGraphEngine {
         )
         val snapshotCurrentScene = {
             val active = created.filter { sourceElement ->
-                board.elementById(sourceElement.element.id) ===
-                    sourceElement.element
+                isActiveSourceElement(board, sourceElement)
             }
             snapshotScene(
                 document = document.copy(
@@ -1123,8 +1291,7 @@ object JsxGraphEngine {
         val dynamicCurveLimitError = {
             created.asSequence()
                 .filter { sourceElement ->
-                    board.elementById(sourceElement.element.id) ===
-                        sourceElement.element
+                    isActiveSourceElement(board, sourceElement)
                 }
                 .flatMap { sourceElement ->
                     sourceCurvePointUsages(
@@ -1144,6 +1311,28 @@ object JsxGraphEngine {
                     )
                 }
         }
+        val dynamicObjectLimitError = {
+            val requested = created.asSequence()
+                .filter { sourceElement ->
+                    isActiveSourceElement(board, sourceElement)
+                }
+                .sumOf { sourceElement ->
+                    sceneElementOutputCount(sourceElement.element).toLong()
+                }
+            if (requested > limits.maxObjects) {
+                JsxGraphJessieCodeError.ResourceLimitExceeded(
+                    resource = "created element count",
+                    limit = limits.maxObjects,
+                    requestedSize = requested,
+                    location = null,
+                )
+            } else {
+                null
+            }
+        }
+        val dynamicResourceLimitError = {
+            dynamicObjectLimitError() ?: dynamicCurveLimitError()
+        }
         return GMResult.Ok(
             JsxGraphJessieCodeSession(
                 initialScene = initialScene,
@@ -1158,13 +1347,13 @@ object JsxGraphEngine {
                             publicJessieCodeError(parseResult.error),
                         )
                         is GMResult.Ok -> {
-                            val limitError = dynamicCurveLimitError()
+                            val limitError = dynamicResourceLimitError()
                             if (limitError != null) {
                                 GMResult.Err(limitError)
                             } else {
                                 board.fullUpdate()
                                 val updatedLimitError =
-                                    dynamicCurveLimitError()
+                                    dynamicResourceLimitError()
                                 if (updatedLimitError != null) {
                                     GMResult.Err(updatedLimitError)
                                 } else {
@@ -1293,6 +1482,165 @@ object JsxGraphEngine {
                         }
                     }
                 },
+                interactControlSource = interactControl@ { interaction ->
+                    val text = board.elementById(interaction.id) as? Text
+                        ?: return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.UnknownControl(
+                                interaction.id,
+                            ),
+                        )
+                    val control = text.htmlControlDefinition
+                        ?: return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.UnknownControl(
+                                interaction.id,
+                            ),
+                        )
+                    if (control.disabled) {
+                        return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.ControlDisabled(
+                                interaction.id,
+                            ),
+                        )
+                    }
+                    val expectedType = when (interaction) {
+                        is JsxGraphControlInteraction.ClickButton -> "button"
+                        is JsxGraphControlInteraction.ChangeCheckbox ->
+                            "checkbox"
+                        is JsxGraphControlInteraction.ChangeInput -> "input"
+                        is JsxGraphControlInteraction.ChangeSlider ->
+                            "htmlslider"
+                    }
+                    val actualType = when (control) {
+                        is HtmlControlDefinition.Button -> "button"
+                        is HtmlControlDefinition.Checkbox -> "checkbox"
+                        is HtmlControlDefinition.Input -> "input"
+                        is HtmlControlDefinition.Slider -> "htmlslider"
+                    }
+                    if (expectedType != actualType) {
+                        return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.UnexpectedControlType(
+                                id = interaction.id,
+                                expected = expectedType,
+                                actual = actualType,
+                            ),
+                        )
+                    }
+                    when (interaction) {
+                        is JsxGraphControlInteraction.ClickButton -> {
+                            val button =
+                                control as HtmlControlDefinition.Button
+                            when (val handler = button.handler) {
+                                null -> Unit
+                                is HtmlButtonHandler.JessieCode -> {
+                                    when (
+                                        val result = interpreter.parse(
+                                            source = handler.source,
+                                            storeSource = false,
+                                        )
+                                    ) {
+                                        is GMResult.Ok -> Unit
+                                        is GMResult.Err ->
+                                            return@interactControl GMResult.Err(
+                                                JsxGraphInteractionError
+                                                    .ControlHandlerFailure(
+                                                        id = interaction.id,
+                                                        reason =
+                                                            publicJessieCodeError(
+                                                                result.error,
+                                                            ).message,
+                                                    ),
+                                            )
+                                    }
+                                }
+                                is HtmlButtonHandler.Function -> {
+                                    when (
+                                        val result =
+                                            handler.value.externalCallable
+                                                .call(
+                                                    arguments = emptyList(),
+                                                    location =
+                                                        handler.location,
+                                                )
+                                    ) {
+                                        is GMResult.Ok -> Unit
+                                        is GMResult.Err ->
+                                            return@interactControl GMResult.Err(
+                                                JsxGraphInteractionError
+                                                    .ControlHandlerFailure(
+                                                        id = interaction.id,
+                                                        reason =
+                                                            result.error
+                                                                .toString(),
+                                                    ),
+                                            )
+                                    }
+                                }
+                            }
+                        }
+                        is JsxGraphControlInteraction.ChangeCheckbox -> {
+                            val checkbox =
+                                control as HtmlControlDefinition.Checkbox
+                            checkbox.checked = interaction.checked
+                        }
+                        is JsxGraphControlInteraction.ChangeInput -> {
+                            val input =
+                                control as HtmlControlDefinition.Input
+                            if (interaction.value.length > input.maxLength) {
+                                return@interactControl GMResult.Err(
+                                    JsxGraphInteractionError
+                                        .InvalidControlValue(
+                                            id = interaction.id,
+                                            reason =
+                                                "input length " +
+                                                    "${interaction.value.length} " +
+                                                    "exceeds maxlength " +
+                                                    input.maxLength,
+                                        ),
+                                )
+                            }
+                            input.value = interaction.value
+                        }
+                        is JsxGraphControlInteraction.ChangeSlider -> {
+                            val slider =
+                                control as HtmlControlDefinition.Slider
+                            if (
+                                !interaction.value.isFinite() ||
+                                interaction.value !in
+                                slider.minimum..slider.maximum
+                            ) {
+                                return@interactControl GMResult.Err(
+                                    JsxGraphInteractionError
+                                        .InvalidControlValue(
+                                            id = interaction.id,
+                                            reason =
+                                                "slider value must be finite " +
+                                                    "and within " +
+                                                    "[${slider.minimum}, " +
+                                                    "${slider.maximum}]",
+                                        ),
+                                )
+                            }
+                            slider.value = interaction.value
+                        }
+                    }
+                    board.update()
+                    val limitError = dynamicResourceLimitError()
+                    if (limitError != null) {
+                        return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.ResourceLimitExceeded(
+                                resource = limitError.resource,
+                                limit = limitError.limit,
+                                requestedSize = limitError.requestedSize,
+                            ),
+                        )
+                    }
+                    when (val result = snapshotCurrentScene()) {
+                        is GMResult.Ok -> result
+                        is GMResult.Err -> GMResult.Err(
+                            JsxGraphInteractionError.SceneUpdate(result.error),
+                        )
+                    }
+                },
                 storedSource = { interpreter.code },
             ),
         )
@@ -1323,6 +1671,10 @@ object JsxGraphEngine {
                 "maxAstDepth must be positive"
             limits.maxParserNesting !in 1..64 ->
                 "maxParserNesting must be in 1..64"
+            limits.maxComputerAlgebraSteps < 1 ->
+                "maxComputerAlgebraSteps must be positive"
+            limits.maxDerivativeOrder < 1 ->
+                "maxDerivativeOrder must be positive"
             limits.maxEvaluationSteps < 1 ->
                 "maxEvaluationSteps must be positive"
             limits.maxEvaluationDepth !in 1..64 ->
@@ -1400,6 +1752,11 @@ object JsxGraphEngine {
             else -> null
         }
         val requestedCurvePoints = when {
+            creatorName == "face3d" ->
+                runtimeFace3DVertexCount(
+                    board = board,
+                    parents = parents,
+                )?.let(::polyhedron3DCurvePointCount)
             creatorName == "polyhedron3d" ->
                 runtimePolyhedron3DMaximumCurvePointCount(
                     board = board,
@@ -1574,6 +1931,7 @@ object JsxGraphEngine {
             creatorName in
                 setOf(
                     "curve",
+                    "conic",
                     "ellipse",
                     "hyperbola",
                     "parabola",
@@ -1608,6 +1966,11 @@ object JsxGraphEngine {
             )
         }
         val requestedPolygonVertices = when {
+            creatorName == "face3d" ->
+                runtimeFace3DVertexCount(
+                    board = board,
+                    parents = parents,
+                )?.toLong()
             creatorName == "polygon3d" ->
                 runtimePolygon3DVertexCount(
                     board = board,
@@ -1659,16 +2022,30 @@ object JsxGraphEngine {
                 location = location,
             )
         }
-        if (creatorName == "text" || creatorName == "text3d") {
-            val requestedTextLength = when (
-                val content = parents.lastOrNull()
-            ) {
-                is JessieCodeRuntimeValue.StringValue ->
-                    content.value.length
-                is JessieCodeRuntimeValue.NumberValue ->
-                    JsNumberFormat.compact(content.value).length
-                else -> 0
+        if (
+            creatorName in
+            setOf(
+                "text",
+                "text3d",
+                "button",
+                "checkbox",
+                "input",
+            )
+        ) {
+            val textParents = when (creatorName) {
+                "button", "checkbox" -> parents.drop(2).take(1)
+                "input" -> parents.drop(2).take(2)
+                else -> listOfNotNull(parents.lastOrNull())
             }
+            val requestedTextLength = textParents.maxOfOrNull { content ->
+                when (content) {
+                    is JessieCodeRuntimeValue.StringValue ->
+                        content.value.length
+                    is JessieCodeRuntimeValue.NumberValue ->
+                        JsNumberFormat.compact(content.value).length
+                    else -> 0
+                }
+            } ?: 0
             if (requestedTextLength > limits.maxTextLength) {
                 return JessieCodeRuntimeError.ResourceLimitExceeded(
                     resource = "text length",
@@ -1737,6 +2114,60 @@ object JsxGraphEngine {
                     reason = error.error.toString(),
                     location = parserSourceRange(error.error),
                 )
+            is JessieCodeSessionError.ComputerAlgebra -> {
+                val algebraError = error.error
+                when (algebraError) {
+                    is JessieCodeComputerAlgebraError
+                        .TransformationStepLimitExceeded ->
+                        JsxGraphJessieCodeError.ResourceLimitExceeded(
+                            resource = "computer algebra steps",
+                            limit = algebraError.limit,
+                            requestedSize =
+                                algebraError.limit.toLong() + 1L,
+                            location = algebraError.location
+                                .toPublicSourceRange(),
+                        )
+                    is JessieCodeComputerAlgebraError
+                        .OutputNodeLimitExceeded ->
+                        JsxGraphJessieCodeError.ResourceLimitExceeded(
+                            resource = "computer algebra output nodes",
+                            limit = algebraError.limit,
+                            requestedSize = algebraError.requestedSize,
+                            location = algebraError.location
+                                .toPublicSourceRange(),
+                        )
+                    is JessieCodeComputerAlgebraError
+                        .OutputDepthLimitExceeded ->
+                        JsxGraphJessieCodeError.ResourceLimitExceeded(
+                            resource = "computer algebra output depth",
+                            limit = algebraError.limit,
+                            requestedSize =
+                                algebraError.requestedDepth.toLong(),
+                            location = algebraError.location
+                                .toPublicSourceRange(),
+                        )
+                    is JessieCodeComputerAlgebraError
+                        .DerivativeOrderLimitExceeded ->
+                        JsxGraphJessieCodeError.ResourceLimitExceeded(
+                            resource = "derivative order",
+                            limit = algebraError.limit,
+                            requestedSize = if (
+                                algebraError.requestedOrder.isFinite()
+                            ) {
+                                algebraError.requestedOrder.toLong()
+                            } else {
+                                Long.MAX_VALUE
+                            },
+                            location = algebraError.location
+                                .toPublicSourceRange(),
+                        )
+                    else -> JsxGraphJessieCodeError.Parse(
+                        reason = algebraError.toString(),
+                        location = algebraError.location
+                            ?.toPublicSourceRange(),
+                    )
+                }
+            }
             is JessieCodeSessionError.Runtime -> {
                 val runtimeError = error.error
                 if (
@@ -3453,18 +3884,15 @@ object JsxGraphEngine {
         document: ParsedDocument,
         limits: JsxGraphEngineLimits,
     ): GMResult<JsxGraphSession, JsxGraphDocumentError> {
-        val board = Board(
-            originX = 0.0,
-            originY = 0.0,
-            unitX = 1.0,
-            unitY = 1.0,
-            id = "jxgBoard",
+        val board = Board.fromBoundingBox(
             boundingBox = doubleArrayOf(
                 document.boundingBox.left,
                 document.boundingBox.top,
                 document.boundingBox.right,
                 document.boundingBox.bottom,
             ),
+            keepAspectRatio = document.keepAspectRatio,
+            id = "jxgBoard",
             defaultCurveMinimum =
                 document.boundingBox.left -
                     (
@@ -3553,6 +3981,56 @@ object JsxGraphEngine {
                     )
                 }
             }
+            val nestedSceneElements = createdSceneElements(value)
+            if (nestedSceneElements != null) {
+                val expanded = mutableListOf<CreatedSourceElement>()
+                for ((nestedIndex, nested) in
+                    nestedSceneElements.withIndex()
+                ) {
+                    val nestedAttributes = when (
+                        val result = JessieCodeAttributeSnapshotter(
+                            maxDepth = limits.maxJsonDepth,
+                            maxValues = limits.maxJsonValues,
+                            location = SOURCE_LOCATION,
+                            ignoredRootFunctionProperties = emptySet(),
+                            ignoredFunctionPropertiesByPath = emptyMap(),
+                        ).snapshot(nested.attributes)
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return GMResult.Err(
+                            JsxGraphDocumentError.ElementCreation(
+                                objectIndex = sourceObject.index,
+                                id = sourceObject.id,
+                                type = sourceObject.type,
+                                reason = result.error.toString(),
+                            ),
+                        )
+                    }
+                    expanded += CreatedSourceElement(
+                        source = ParsedObject(
+                            index = sourceObject.index + nestedIndex,
+                            id = nested.element.id,
+                            type = nested.creatorName,
+                            parents = JsonArray(emptyList()),
+                            attributes = nestedAttributes,
+                        ),
+                        element = nested.element,
+                    )
+                }
+                val actualCount =
+                    createdSceneElementCount(created) +
+                        createdSceneElementCount(expanded)
+                if (actualCount > limits.maxObjects) {
+                    return GMResult.Err(
+                        JsxGraphDocumentError.ObjectLimitExceeded(
+                            limit = limits.maxObjects,
+                            actual = actualCount,
+                        ),
+                    )
+                }
+                created += expanded
+                continue
+            }
             if (value is JessieCodeRuntimeValue.TransformationReference) {
                 if (
                     sourceObject.type !in
@@ -3573,6 +4051,12 @@ object JsxGraphEngine {
                 continue
             }
             if (value is JessieCodeRuntimeValue.CompositionReference) {
+                if (
+                    sourceObject.type == "group" &&
+                    value.composition is Group
+                ) {
+                    continue
+                }
                 if (sourceObject.type != "axes3d") {
                     return GMResult.Err(
                         JsxGraphDocumentError.ElementCreation(
@@ -3835,6 +4319,127 @@ object JsxGraphEngine {
                             limits.maxImageSourceLength,
                     )
                 },
+                interactControlSource = interactControl@ { interaction ->
+                    val text = board.elementById(interaction.id) as? Text
+                        ?: return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.UnknownControl(
+                                interaction.id,
+                            ),
+                        )
+                    val control = text.htmlControlDefinition
+                        ?: return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.UnknownControl(
+                                interaction.id,
+                            ),
+                        )
+                    if (control.disabled) {
+                        return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.ControlDisabled(
+                                interaction.id,
+                            ),
+                        )
+                    }
+                    val expectedType = when (interaction) {
+                        is JsxGraphControlInteraction.ClickButton -> "button"
+                        is JsxGraphControlInteraction.ChangeCheckbox ->
+                            "checkbox"
+                        is JsxGraphControlInteraction.ChangeInput -> "input"
+                        is JsxGraphControlInteraction.ChangeSlider ->
+                            "htmlslider"
+                    }
+                    val actualType = when (control) {
+                        is HtmlControlDefinition.Button -> "button"
+                        is HtmlControlDefinition.Checkbox -> "checkbox"
+                        is HtmlControlDefinition.Input -> "input"
+                        is HtmlControlDefinition.Slider -> "htmlslider"
+                    }
+                    if (expectedType != actualType) {
+                        return@interactControl GMResult.Err(
+                            JsxGraphInteractionError.UnexpectedControlType(
+                                id = interaction.id,
+                                expected = expectedType,
+                                actual = actualType,
+                            ),
+                        )
+                    }
+                    when (interaction) {
+                        is JsxGraphControlInteraction.ClickButton -> {
+                            val button =
+                                control as HtmlControlDefinition.Button
+                            if (button.handler != null) {
+                                return@interactControl GMResult.Err(
+                                    JsxGraphInteractionError
+                                        .ControlHandlerFailure(
+                                            id = interaction.id,
+                                            reason =
+                                                "Construction-document " +
+                                                    "sessions do not execute " +
+                                                    "control handler source.",
+                                        ),
+                                )
+                            }
+                        }
+                        is JsxGraphControlInteraction.ChangeCheckbox ->
+                            (
+                                control as HtmlControlDefinition.Checkbox
+                                ).checked = interaction.checked
+                        is JsxGraphControlInteraction.ChangeInput -> {
+                            val input =
+                                control as HtmlControlDefinition.Input
+                            if (interaction.value.length > input.maxLength) {
+                                return@interactControl GMResult.Err(
+                                    JsxGraphInteractionError
+                                        .InvalidControlValue(
+                                            id = interaction.id,
+                                            reason =
+                                                "input length " +
+                                                    "${interaction.value.length} " +
+                                                    "exceeds maxlength " +
+                                                    input.maxLength,
+                                        ),
+                                )
+                            }
+                            input.value = interaction.value
+                        }
+                        is JsxGraphControlInteraction.ChangeSlider -> {
+                            val slider =
+                                control as HtmlControlDefinition.Slider
+                            if (
+                                !interaction.value.isFinite() ||
+                                interaction.value !in
+                                slider.minimum..slider.maximum
+                            ) {
+                                return@interactControl GMResult.Err(
+                                    JsxGraphInteractionError
+                                        .InvalidControlValue(
+                                            id = interaction.id,
+                                            reason =
+                                                "slider value must be finite " +
+                                                    "and within " +
+                                                    "[${slider.minimum}, " +
+                                                    "${slider.maximum}]",
+                                        ),
+                                )
+                            }
+                            slider.value = interaction.value
+                        }
+                    }
+                    board.update()
+                    when (
+                        val result = snapshotScene(
+                            document = document,
+                            created = created,
+                            maxCurvePoints = limits.maxCurvePoints,
+                            maxImageSourceLength =
+                                limits.maxImageSourceLength,
+                        )
+                    ) {
+                        is GMResult.Ok -> result
+                        is GMResult.Err -> GMResult.Err(
+                            JsxGraphInteractionError.SceneUpdate(result.error),
+                        )
+                    }
+                },
             ),
         )
     }
@@ -3904,7 +4509,36 @@ object JsxGraphEngine {
         val sceneElements = mutableListOf<JsxGraphSceneElement>()
         val effectiveVisibilityByElement =
             mutableMapOf<GeometryElement, Boolean>()
-        for (sourceElement in depthOrderedSourceElements(created)) {
+        val expanded = mutableListOf<CreatedSourceElement>()
+        for (sourceElement in created) {
+            when (val element = sourceElement.element) {
+                is Turtle -> when (
+                    val result = turtleCreatedSourceElements(
+                        source = sourceElement.source,
+                        turtle = element,
+                    )
+                ) {
+                    is GMResult.Ok -> expanded += result.value
+                    is GMResult.Err -> return result
+                }
+                is Sector ->
+                    if (element.isAngle) {
+                        when (
+                            val result = angleCreatedSourceElements(
+                                source = sourceElement.source,
+                                angle = element,
+                            )
+                        ) {
+                            is GMResult.Ok -> expanded += result.value
+                            is GMResult.Err -> return result
+                        }
+                    } else {
+                        expanded += sourceElement
+                    }
+                else -> expanded += sourceElement
+            }
+        }
+        for (sourceElement in depthOrderedSourceElements(expanded)) {
             val curve = sourceElement.element as? Curve
             val image = sourceElement.element as? Image
             if (
@@ -3957,6 +4591,7 @@ object JsxGraphEngine {
             when (
                 val result = sceneElement(
                     sourceElement = sourceElement,
+                    themeName = document.theme,
                     inheritedVisibility = inheritedVisibility,
                 )
             ) {
@@ -3999,6 +4634,7 @@ object JsxGraphEngine {
                                             ),
                                         element = label,
                                     ),
+                                    themeName = document.theme,
                                     ticks3DLabel =
                                         ticksScene?.tickBases3D
                                             ?.getOrNull(index)
@@ -4033,6 +4669,7 @@ object JsxGraphEngine {
                                     sourceElement = sourceElement,
                                     mesh = mesh,
                                 ),
+                                themeName = document.theme,
                             )
                         ) {
                             is GMResult.Ok ->
@@ -4051,12 +4688,30 @@ object JsxGraphEngine {
                 grid = document.grid,
                 keepAspectRatio = document.keepAspectRatio,
                 elements = sceneElements,
+                unsupportedRenderFeatures =
+                    sceneElements
+                        .filterIsInstance<
+                            JsxGraphSceneElement.ForeignObject
+                            >()
+                        .map { foreignObject ->
+                            JsxGraphUnsupportedRenderFeature(
+                                elementId = foreignObject.id,
+                                elementType = "foreignobject",
+                                capability =
+                                    JsxGraphUnsupportedRenderCapability
+                                        .ARBITRARY_HTML,
+                                reason =
+                                    "Pure Compose Canvas cannot execute " +
+                                        "SVG foreignObject HTML content.",
+                            )
+                        },
             ),
         )
     }
 
     private fun sceneElement(
         sourceElement: CreatedSourceElement,
+        themeName: String,
         ticks3DLabel: JsxGraphTicks3DLabel? = null,
         inheritedVisibility: Boolean? = null,
     ): GMResult<JsxGraphSceneElement, JsxGraphDocumentError> {
@@ -4070,7 +4725,14 @@ object JsxGraphEngine {
                 sourceElement.source
             }
         val element = sourceElement.element
-        val attributes = AttributeReader(source)
+        val attributes = AttributeReader(
+            source = source,
+            defaults = JsxGraphThemes.elementDefaults(
+                themeName = themeName,
+                primitiveType = themePrimitiveType(element),
+                sourceType = source.type,
+            ),
+        )
         when (val result = attributes.validateSupported(element)) {
             is GMResult.Ok -> Unit
             is GMResult.Err -> return result
@@ -4094,7 +4756,12 @@ object JsxGraphEngine {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             } &&
-            element.name.isNotEmpty()
+            element.name.isNotEmpty() &&
+            !(
+                element is Text &&
+                    element.htmlControlDefinition is
+                    HtmlControlDefinition.Slider
+                )
         ) {
             return GMResult.Err(
                 attributes.unsupportedValue(
@@ -4655,64 +5322,12 @@ object JsxGraphEngine {
             }
 
             is Sector -> {
-                if (element.isAngle) {
-                    val displayType = when (
-                        val result = attributes.string(
-                            name = "type",
-                            default = "sector",
-                        )
-                    ) {
-                        is GMResult.Ok -> result.value.lowercase()
-                        is GMResult.Err -> return result
-                    }
-                    if (displayType != "sector") {
-                        return GMResult.Err(
-                            attributes.unsupportedValue(
-                                attribute = "type",
-                                value = displayType,
-                            ),
-                        )
-                    }
-                    val orthoType = when (
-                        val result = attributes.string(
-                            name = "orthotype",
-                            default = "square",
-                        )
-                    ) {
-                        is GMResult.Ok -> result.value.lowercase()
-                        is GMResult.Err -> return result
-                    }
-                    val orthoSensitivity = when (
-                        val result = attributes.number(
-                            name = "orthosensitivity",
-                            default = 1.0,
-                            minimum = 0.0,
-                        )
-                    ) {
-                        is GMResult.Ok -> result.value
-                        is GMResult.Err -> return result
-                    }
-                    val degrees = Geometry.trueAngle(
-                        element.point2.Coords(),
-                        element.point1.Coords(),
-                        element.point3.Coords(),
-                    )
-                    if (
-                        kotlin.math.abs(degrees - 90.0) <
-                        orthoSensitivity +
-                        com.swithun.jsxgraph.core.math.Mat.eps &&
-                        orthoType != "sector"
-                    ) {
-                        return GMResult.Err(
-                            attributes.unsupportedValue(
-                                attribute = "orthoType",
-                                value = orthoType,
-                            ),
-                        )
-                    }
-                }
                 val autoRadiusAngle =
-                    if (element.usesAutoRadius) {
+                    if (
+                        element.usesAutoRadius &&
+                        element.activeAngleDisplayType in
+                        setOf("sector", "sectordot")
+                    ) {
                         val first = point(element.point2)
                             ?: return GMResult.Err(
                                 attributes.nonFiniteGeometry(),
@@ -4742,7 +5357,8 @@ object JsxGraphEngine {
                         style = style,
                         attributes = attributes,
                         allowFill = true,
-                        allowPathBreaks = false,
+                        allowPathBreaks =
+                            element.activeAngleDisplayType == "none",
                         autoRadiusAngle = autoRadiusAngle,
                     )
                 ) {
@@ -5309,12 +5925,63 @@ object JsxGraphEngine {
                 val smartLabelScreenOffset =
                     smartLabelDefinition?.screenOffset()
                         ?: doubleArrayOf(0.0, 0.0)
+                val htmlControl = when (
+                    val control = text.htmlControlDefinition
+                ) {
+                    is HtmlControlDefinition.Button ->
+                        JsxGraphHtmlControl.Button(
+                            disabled = control.disabled,
+                        )
+                    is HtmlControlDefinition.Checkbox ->
+                        JsxGraphHtmlControl.Checkbox(
+                            checked = control.checked,
+                            disabled = control.disabled,
+                        )
+                    is HtmlControlDefinition.Input ->
+                        JsxGraphHtmlControl.Input(
+                            value = control.value,
+                            maxLength = control.maxLength,
+                            disabled = control.disabled,
+                        )
+                    is HtmlControlDefinition.Slider -> {
+                        if (
+                            !control.minimum.isFinite() ||
+                            !control.maximum.isFinite() ||
+                            !control.value.isFinite() ||
+                            !control.step.isFinite() ||
+                            !control.widthRange.isFinite() ||
+                            !control.widthOut.isFinite()
+                        ) {
+                            return GMResult.Err(
+                                attributes.nonFiniteGeometry(),
+                            )
+                        }
+                        JsxGraphHtmlControl.Slider(
+                            minimum = control.minimum,
+                            maximum = control.maximum,
+                            value = control.value,
+                            step = control.step,
+                            widthRange = control.widthRange,
+                            widthOut = control.widthOut,
+                            withLabel = control.withLabel,
+                        )
+                    }
+                    null -> null
+                }
                 JsxGraphSceneElement.Text(
                     id = element.id,
                     name = element.name,
                     style = style,
                     coordinates = JsxGraphPoint2D(x, y),
-                    content = text.plaintext,
+                    content =
+                        if (
+                            htmlControl is JsxGraphHtmlControl.Slider &&
+                            htmlControl.withLabel
+                        ) {
+                            "${text.name}="
+                        } else {
+                            text.plaintext
+                        },
                     fontSize = fontSize,
                     anchorX = anchorX,
                     anchorY = anchorY,
@@ -5326,6 +5993,55 @@ object JsxGraphEngine {
                     ),
                     ticks3DLabel = ticks3DLabel,
                     smartLabel = smartLabel,
+                    htmlControl = htmlControl,
+                )
+            }
+
+            is ForeignObject -> {
+                element.coordinateEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                element.transformationEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                element.sizeEvaluationError?.let { error ->
+                    return GMResult.Err(
+                        attributes.elementCreation(error.toString()),
+                    )
+                }
+                val width = element.W()
+                val height = element.H()
+                if (
+                    !element.X().isFinite() ||
+                    !element.Y().isFinite() ||
+                    width != null && !width.isFinite() ||
+                    height != null && !height.isFinite()
+                ) {
+                    return GMResult.Err(attributes.nonFiniteGeometry())
+                }
+                JsxGraphSceneElement.ForeignObject(
+                    id = element.id,
+                    name = element.name,
+                    style = style,
+                    content = element.content,
+                    anchor = JsxGraphPoint2D(
+                        x = element.X(),
+                        y = element.Y(),
+                    ),
+                    size =
+                        if (width == null || height == null) {
+                            JsxGraphForeignObjectSize.ContentIntrinsic
+                        } else {
+                            JsxGraphForeignObjectSize.UserSpace(
+                                width = width,
+                                height = height,
+                            )
+                        },
+                    evaluateOnlyOnce = element.evaluateOnlyOnce,
                 )
             }
 
@@ -5804,6 +6520,7 @@ object JsxGraphEngine {
             "axis",
             "grid",
             "keepAspectRatio",
+            "theme",
             "objects",
         )
         rootObject.keys.firstOrNull { it !in allowedFields }?.let { field ->
@@ -5849,6 +6566,16 @@ object JsxGraphEngine {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        val theme = when (val value = rootObject["theme"]) {
+            null -> "default"
+            is JsonPrimitive ->
+                if (value.isString) {
+                    value.content
+                } else {
+                    return invalidField("theme", "a string")
+                }
+            else -> return invalidField("theme", "a string")
+        }
         val objectArray = rootObject["objects"] as? JsonArray
             ?: return invalidField("objects", "an array")
         if (objectArray.size > limits.maxObjects) {
@@ -5880,7 +6607,10 @@ object JsxGraphEngine {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
             }
-            if (sourceObject.type != "curve3d") {
+            if (
+                sourceObject.type != "curve3d" &&
+                sourceObject.type != "face3d"
+            ) {
                 when (
                     val result = validateCurvePointLimit(
                         sourceObject,
@@ -5891,7 +6621,10 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
-            if (sourceObject.type != "polygon3d") {
+            if (
+                sourceObject.type != "polygon3d" &&
+                sourceObject.type != "face3d"
+            ) {
                 when (
                     val result = validatePolygonVertexLimit(
                         sourceObject,
@@ -5924,7 +6657,10 @@ object JsxGraphEngine {
         }
         val objectsById = objects.associateBy(ParsedObject::id)
         for (sourceObject in objects) {
-            if (sourceObject.type == "curve3d") {
+            if (
+                sourceObject.type == "curve3d" ||
+                sourceObject.type == "face3d"
+            ) {
                 when (
                     val result = validateCurvePointLimit(
                         sourceObject = sourceObject,
@@ -5936,7 +6672,10 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
-            if (sourceObject.type == "polygon3d") {
+            if (
+                sourceObject.type == "polygon3d" ||
+                sourceObject.type == "face3d"
+            ) {
                 when (
                     val result = validatePolygonVertexLimit(
                         sourceObject = sourceObject,
@@ -5968,6 +6707,7 @@ object JsxGraphEngine {
                 axis = axis,
                 grid = grid,
                 keepAspectRatio = keepAspectRatio,
+                theme = theme,
                 objects = objects,
             ),
         )
@@ -6093,6 +6833,7 @@ object JsxGraphEngine {
             sourceObject.type !in
             setOf(
                 "curve",
+                "implicitcurve",
                 "functiongraph",
                 "plot",
                 "stepfunction",
@@ -6106,12 +6847,14 @@ object JsxGraphEngine {
                 "vectorfield",
                 "slopefield",
                 "vectorfield3d",
+                "conic",
                 "ellipse",
                 "hyperbola",
                 "parabola",
                 "ticks3d",
                 "mesh3d",
                 "plane3d",
+                "face3d",
                 "polyhedron3d",
                 "curve3d",
                 "circle3d",
@@ -6152,6 +6895,13 @@ object JsxGraphEngine {
                 objectsById = objectsById,
                 visited = emptySet(),
             )
+        } else if (sourceObject.type == "face3d") {
+            jsonFace3DVertexCount(
+                source = sourceObject,
+                objectsById = objectsById,
+            ).let(::polyhedron3DCurvePointCount)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
         } else if (sourceObject.type == "polyhedron3d") {
             jsonPolyhedron3DMaximumCurvePointCount(sourceObject)
         } else if (sourceObject.type == "mesh3d") {
@@ -6339,6 +7089,34 @@ object JsxGraphEngine {
         }
     }
 
+    private fun runtimeFace3DVertexCount(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+    ): Int? {
+        val polyhedron = when (
+            val value = parents.getOrNull(1)
+        ) {
+            is JessieCodeRuntimeValue.ElementReference ->
+                value.element as? Polyhedron3D
+            is JessieCodeRuntimeValue.StringValue ->
+                board?.select(value.value) as? Polyhedron3D
+            else -> null
+        } ?: return null
+        val number = (
+            parents.getOrNull(2) as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return null
+        val faceNumber = number.toInt()
+        if (
+            !number.isFinite() ||
+            faceNumber.toDouble() != number
+        ) {
+            return null
+        }
+        return polyhedron.definition.faceKeys
+            .getOrNull(faceNumber)
+            ?.size
+    }
+
     private fun runtimePolyhedron3DMaximumCurvePointCount(
         board: Board?,
         parents: List<JessieCodeRuntimeValue>,
@@ -6387,6 +7165,58 @@ object JsxGraphEngine {
         source: ParsedObject,
     ): Int =
         jsonPolyhedron3DFaceVertexCounts(source).maxOrNull() ?: 0
+
+    private fun jsonFace3DVertexCount(
+        source: ParsedObject,
+        objectsById: Map<String, ParsedObject>,
+    ): Int {
+        val polyhedronId = (
+            source.parents.getOrNull(1) as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content ?: return 0
+        val faceNumberValue = (
+            source.parents.getOrNull(2) as? JsonPrimitive
+            )?.doubleOrNull ?: return 0
+        val faceNumber = faceNumberValue.toInt()
+        if (
+            !faceNumberValue.isFinite() ||
+            faceNumber.toDouble() != faceNumberValue
+        ) {
+            return 0
+        }
+        val polyhedron = objectsById[polyhedronId]
+            ?.takeIf { it.type == "polyhedron3d" } ?: return 0
+        return jsonPolyhedron3DFaceVertexCountsByReference(
+            source = polyhedron,
+            objectsById = objectsById,
+            visited = emptySet(),
+        ).getOrNull(faceNumber) ?: 0
+    }
+
+    private fun jsonPolyhedron3DFaceVertexCountsByReference(
+        source: ParsedObject,
+        objectsById: Map<String, ParsedObject>,
+        visited: Set<String>,
+    ): List<Int> {
+        if (source.id in visited) {
+            return emptyList()
+        }
+        val direct = jsonPolyhedron3DFaceVertexCounts(source)
+        if (direct.isNotEmpty()) {
+            return direct
+        }
+        val baseId = (
+            source.parents.getOrNull(1) as? JsonPrimitive
+            )?.takeIf(JsonPrimitive::isString)?.content
+            ?: return emptyList()
+        val base = objectsById[baseId]
+            ?.takeIf { it.type == "polyhedron3d" }
+            ?: return emptyList()
+        return jsonPolyhedron3DFaceVertexCountsByReference(
+            source = base,
+            objectsById = objectsById,
+            visited = visited + source.id,
+        )
+    }
 
     private fun runtimePolygon3DVertexCount(
         board: Board?,
@@ -6894,6 +7724,7 @@ object JsxGraphEngine {
             sourceObject.type != "parallelogram" &&
             sourceObject.type != "regularpolygon" &&
             sourceObject.type != "polygon3d" &&
+            sourceObject.type != "face3d" &&
             sourceObject.type != "polyhedron3d" &&
             sourceObject.type != "plane3d" &&
             sourceObject.type != "parametricsurface3d" &&
@@ -6903,6 +7734,7 @@ object JsxGraphEngine {
         }
         if (
             sourceObject.type == "polygon3d" ||
+            sourceObject.type == "face3d" ||
             sourceObject.type == "polyhedron3d" ||
             sourceObject.type == "plane3d" ||
             sourceObject.type == "parametricsurface3d" ||
@@ -6914,6 +7746,10 @@ object JsxGraphEngine {
                         source = sourceObject,
                         objectsById = objectsById,
                         visited = emptySet(),
+                    )
+                    "face3d" -> jsonFace3DVertexCount(
+                        source = sourceObject,
+                        objectsById = objectsById,
                     )
                     "polyhedron3d" ->
                         jsonPolyhedron3DMaximumFaceVertexCount(sourceObject)
@@ -7096,20 +7932,33 @@ object JsxGraphEngine {
         limit: Int,
     ): GMResult<Unit, JsxGraphDocumentError> {
         if (
-            sourceObject.type != "text" &&
-            sourceObject.type != "text3d"
+            sourceObject.type !in
+            setOf(
+                "text",
+                "text3d",
+                "button",
+                "checkbox",
+                "input",
+            )
         ) {
             return GMResult.Ok(Unit)
         }
-        val content = sourceObject.parents.lastOrNull()
-        val actual = (content as? JsonPrimitive)?.let { primitive ->
-            if (primitive.isString) {
-                primitive.content.length
-            } else {
-                primitive.doubleOrNull
-                    ?.let(JsNumberFormat::compact)
-                    ?.length ?: 0
-            }
+        val textParents = when (sourceObject.type) {
+            "button", "checkbox" ->
+                sourceObject.parents.drop(2).take(1)
+            "input" -> sourceObject.parents.drop(2).take(2)
+            else -> listOfNotNull(sourceObject.parents.lastOrNull())
+        }
+        val actual = textParents.maxOfOrNull { content ->
+            (content as? JsonPrimitive)?.let { primitive ->
+                if (primitive.isString) {
+                    primitive.content.length
+                } else {
+                    primitive.doubleOrNull
+                        ?.let(JsNumberFormat::compact)
+                        ?.length ?: 0
+                }
+            } ?: 0
         } ?: 0
         return if (actual > limit) {
             GMResult.Err(
@@ -7463,6 +8312,7 @@ object JsxGraphEngine {
         val axis: Boolean,
         val grid: Boolean,
         val keepAspectRatio: Boolean,
+        val theme: String,
         val objects: List<ParsedObject>,
     )
 
@@ -7478,6 +8328,193 @@ object JsxGraphEngine {
         val source: ParsedObject,
         val element: GeometryElement,
     )
+
+    private fun createdSceneElements(
+        value: JessieCodeRuntimeValue,
+    ): List<JessieCodeCreatedSceneElement>? =
+        when (value) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                value.createdSceneElements.takeIf {
+                    value.isSceneComposite
+                }
+            is JessieCodeRuntimeValue.ElementReference ->
+                value.createdSceneElements.takeIf {
+                    value.isSceneComposite
+                }
+            else -> null
+        }
+
+    private fun rollbackCreatedBoardObjects(
+        board: Board?,
+        initialObjects: Set<GeometryElement>?,
+    ) {
+        if (board == null || initialObjects == null) {
+            return
+        }
+        board.removeObjects(
+            board.objectsList
+                .filter { it !in initialObjects }
+                .asReversed(),
+        )
+    }
+
+    private fun isActiveSourceElement(
+        board: Board,
+        sourceElement: CreatedSourceElement,
+    ): Boolean {
+        val element = sourceElement.element
+        return if (element is Turtle) {
+            element.objects.any { child ->
+                board.elementById(child.id) === child
+            }
+        } else {
+            board.elementById(element.id) === element
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> init / _attributes /
+    // showTurtle / hideTurtle. Turtle is not a Board object, so each
+    // snapshot expands its current generated elements.
+    private fun turtleCreatedSourceElements(
+        source: ParsedObject,
+        turtle: Turtle,
+    ): GMResult<List<CreatedSourceElement>, JsxGraphDocumentError> {
+        val arrowAttributes = when (val value = source.attributes["arrow"]) {
+            null, JsonNull -> emptyMap()
+            is JsonObject -> value
+            else -> return GMResult.Err(
+                JsxGraphDocumentError.InvalidAttribute(
+                    objectIndex = source.index,
+                    id = source.id,
+                    attribute = "arrow",
+                    expected = "an object",
+                ),
+            )
+        }
+        val expanded = turtle.objects.map { element ->
+            val attributes = when (element) {
+                is Curve -> {
+                    val pen = element.turtlePenAttributes
+                    JsonObject(
+                        source.attributes.toMutableMap().apply {
+                            remove("arrow")
+                            remove("highlightstrokecolor")
+                            this["id"] = JsonPrimitive(element.id)
+                            this["name"] = JsonPrimitive(element.name)
+                            this["withlabel"] = JsonPrimitive(false)
+                            if (pen != null) {
+                                this["strokewidth"] =
+                                    JsonPrimitive(pen.strokeWidth)
+                                this["strokecolor"] =
+                                    JsonPrimitive(pen.strokeColor)
+                            }
+                        },
+                    )
+                }
+                is Point -> JsonObject(
+                    mapOf(
+                        "id" to JsonPrimitive(element.id),
+                        "name" to JsonPrimitive(element.name),
+                        "visible" to JsonPrimitive(false),
+                        "fixed" to JsonPrimitive(true),
+                        "withlabel" to JsonPrimitive(false),
+                    ),
+                )
+                is Line -> JsonObject(
+                    linkedMapOf<String, JsonElement>(
+                        "id" to JsonPrimitive(element.id),
+                        "name" to JsonPrimitive(element.name),
+                        "visible" to JsonPrimitive(turtle.arrowVisible),
+                        "strokewidth" to JsonPrimitive(2.0),
+                        "strokecolor" to JsonPrimitive("#d55e00"),
+                        "withlabel" to JsonPrimitive(false),
+                        "lastarrow" to JsonPrimitive(true),
+                    ).apply {
+                        putAll(arrowAttributes)
+                        this["id"] = JsonPrimitive(element.id)
+                        this["name"] = JsonPrimitive(element.name)
+                        this["visible"] =
+                            JsonPrimitive(turtle.arrowVisible)
+                        this["withlabel"] = JsonPrimitive(false)
+                    },
+                )
+                else -> JsonObject(emptyMap())
+            }
+            CreatedSourceElement(
+                source = source.copy(
+                    id = element.id,
+                    type = element.elType,
+                    parents = JsonArray(emptyList()),
+                    attributes = attributes,
+                ),
+                element = element,
+            )
+        }
+        return GMResult.Ok(expanded)
+    }
+
+    // JSXGraph 1.13.3: src/element/sector.js -> createAngle.dot.
+    private fun angleCreatedSourceElements(
+        source: ParsedObject,
+        angle: Sector,
+    ): GMResult<List<CreatedSourceElement>, JsxGraphDocumentError> {
+        val dot = angle.dot ?: return GMResult.Err(
+            JsxGraphDocumentError.ElementCreation(
+                objectIndex = source.index,
+                id = source.id,
+                type = source.type,
+                reason = "Angle did not create its dot helper",
+            ),
+        )
+        val nested = when (val value = source.attributes["dot"]) {
+            null, JsonNull -> emptyMap()
+            is JsonObject -> value
+            else -> return GMResult.Err(
+                JsxGraphDocumentError.InvalidAttribute(
+                    objectIndex = source.index,
+                    id = source.id,
+                    attribute = "dot",
+                    expected = "an object",
+                ),
+            )
+        }
+        val parentVisible =
+            (source.attributes["visible"] as? JsonPrimitive)
+                ?.booleanOrNull ?: true
+        val dotAttributes = JsonObject(
+            linkedMapOf<String, JsonElement>(
+                "visible" to JsonPrimitive(false),
+                "strokecolor" to JsonPrimitive("none"),
+                "fillcolor" to JsonPrimitive("#000000"),
+                "size" to JsonPrimitive(2.0),
+                "face" to JsonPrimitive("o"),
+                "withlabel" to JsonPrimitive(false),
+                "fixed" to JsonPrimitive(true),
+            ).apply {
+                putAll(nested)
+                this["id"] = JsonPrimitive(dot.id)
+                this["name"] = JsonPrimitive(dot.name)
+                this["visible"] =
+                    JsonPrimitive(angle.dotVisible && parentVisible)
+                this["withlabel"] = JsonPrimitive(false)
+                this["fixed"] = JsonPrimitive(true)
+            },
+        )
+        return GMResult.Ok(
+            listOf(
+                CreatedSourceElement(source = source, element = angle),
+                CreatedSourceElement(
+                    source = source.copy(
+                        id = dot.id,
+                        type = "point",
+                        parents = JsonArray(emptyList()),
+                        attributes = dotAttributes,
+                    ),
+                    element = dot,
+                ),
+            ),
+        )
+    }
 
     private data class CurvePointUsage(
         val id: String,
@@ -7514,6 +8551,7 @@ object JsxGraphEngine {
     private fun sourceCurves(element: GeometryElement): List<Curve> =
         when (element) {
             is Curve -> listOf(element)
+            is Turtle -> element.objects.filterIsInstance<Curve>()
             is Curve3D -> listOf(element.curve2D)
             is Circle3D -> listOf(element.curve.curve2D)
             is Sphere3D ->
@@ -7604,9 +8642,26 @@ object JsxGraphEngine {
         val y: Double,
     )
 
+    // JSXGraph 1.13.3: src/utils/type.js -> copyAttributes.
+    private fun themePrimitiveType(element: GeometryElement): String? =
+        when (element) {
+            is Point -> "point"
+            is Line -> "line"
+            is Circle -> "circle"
+            is Curve -> "curve"
+            is Polygon -> "polygon"
+            is Text -> "text"
+            is Image -> "image"
+            is ForeignObject -> "foreignobject"
+            is Ticks -> "ticks"
+            is Arc -> "arc"
+            else -> null
+        }
+
     private class AttributeReader(
         private val source: ParsedObject,
         private val attributes: JsonObject = source.attributes,
+        private val defaults: JsonObject = JsonObject(emptyMap()),
         private val attributePrefix: String = "",
     ) {
         fun validateSupported(
@@ -7653,6 +8708,11 @@ object JsxGraphEngine {
                             }
                         is Curve ->
                             CURVE_ATTRIBUTES +
+                                if (element.isImplicitCurve) {
+                                    IMPLICIT_CURVE_ATTRIBUTES
+                                } else {
+                                    emptySet()
+                                } +
                                 if (element.isGrid) {
                                     GRID_ATTRIBUTES
                                 } else {
@@ -7674,6 +8734,8 @@ object JsxGraphEngine {
                                     element.isParabola
                                 ) {
                                     CONIC_ATTRIBUTES
+                                } else if (element.isGenericConic) {
+                                    GENERIC_CONIC_ATTRIBUTES
                                 } else {
                                     emptySet()
                                 } +
@@ -7709,6 +8771,17 @@ object JsxGraphEngine {
                         is Text3D -> TEXT_ATTRIBUTES
                         is Text ->
                             TEXT_ATTRIBUTES +
+                                when (element.htmlControlDefinition) {
+                                    is HtmlControlDefinition.Button ->
+                                        BUTTON_ATTRIBUTES
+                                    is HtmlControlDefinition.Checkbox ->
+                                        CHECKBOX_ATTRIBUTES
+                                    is HtmlControlDefinition.Input ->
+                                        INPUT_ATTRIBUTES
+                                    is HtmlControlDefinition.Slider ->
+                                        HTML_SLIDER_ATTRIBUTES
+                                    null -> emptySet()
+                                } +
                                 if (
                                     element.measurementDefinition != null
                                 ) {
@@ -7723,6 +8796,7 @@ object JsxGraphEngine {
                                 } else {
                                     emptySet()
                                 }
+                        is ForeignObject -> FOREIGN_OBJECT_ATTRIBUTES
                         is Image -> IMAGE_ATTRIBUTES
                         else -> emptySet()
                     } +
@@ -7754,6 +8828,8 @@ object JsxGraphEngine {
                             listOf("foci", "center")
                         element.isParabola ->
                             listOf("foci", "center", "line")
+                        element.isGenericConic ->
+                            listOf("point", "center")
                         else -> emptyList()
                     }
                 else -> emptyList()
@@ -7778,7 +8854,8 @@ object JsxGraphEngine {
                                     element.isComb ||
                                         element.isEllipse ||
                                         element.isHyperbola ||
-                                        element.isParabola
+                                        element.isParabola ||
+                                        element.isGenericConic
                                     ),
                         supportsFixed =
                             element is Line3D ||
@@ -7787,6 +8864,7 @@ object JsxGraphEngine {
                                 (
                                     element.isComb ||
                                         element.isEllipse ||
+                                        element.isGenericConic ||
                                         (
                                             element.isParabola &&
                                                 name != "line"
@@ -7979,35 +9057,37 @@ object JsxGraphEngine {
         fun nested(
             name: String,
         ): GMResult<AttributeReader, JsxGraphDocumentError> {
-            val value = attributes[name]
-                ?: return GMResult.Ok(
-                    AttributeReader(
-                        source = source,
-                        attributes = JsonObject(emptyMap()),
-                        attributePrefix = attributePath(name),
-                    ),
-                )
-            if (value === JsonNull) {
+            val sourceValue = attributes[name]
+            val defaultValue = defaults[name] as? JsonObject
+            if (sourceValue === JsonNull) {
                 return GMResult.Ok(
                     AttributeReader(
                         source = source,
                         attributes = JsonObject(emptyMap()),
+                        defaults = JsonObject(emptyMap()),
                         attributePrefix = attributePath(name),
                     ),
                 )
             }
-            val nested = value as? JsonObject
-                ?: return invalid(name, "an object")
+            val nested =
+                if (sourceValue == null) {
+                    JsonObject(emptyMap())
+                } else {
+                    sourceValue as? JsonObject
+                        ?: return invalid(name, "an object")
+                }
             return GMResult.Ok(
                 AttributeReader(
                     source = source,
                     attributes = nested,
+                    defaults = defaultValue ?: JsonObject(emptyMap()),
                     attributePrefix = attributePath(name),
                 ),
             )
         }
 
-        fun has(name: String): Boolean = name in attributes
+        fun has(name: String): Boolean =
+            name in attributes || name in defaults
 
         fun style(
             element: GeometryElement,
@@ -8041,6 +9121,7 @@ object JsxGraphEngine {
                         element.isMesh3D -> DEFAULT_MESH_3D_COLOR
                         element.isInequality -> JsxGraphColor.Transparent
                         element.isComb -> DEFAULT_COMB_STROKE_COLOR
+                        element.isSketchCurve -> DEFAULT_POINT_COLOR
                         else -> DEFAULT_STROKE_COLOR
                     }
                 is Sector ->
@@ -8237,7 +9318,7 @@ object JsxGraphEngine {
             }
             if (element !is Line) {
                 for (arrow in listOf("firstarrow", "lastarrow")) {
-                    when (val value = attributes[arrow]) {
+                    when (val value = value(arrow)) {
                         null -> Unit
                         is JsonPrimitive -> {
                             val enabled = value.booleanOrNull
@@ -8273,7 +9354,7 @@ object JsxGraphEngine {
             name: String,
             default: Boolean,
         ): GMResult<Boolean, JsxGraphDocumentError> {
-            val value = attributes[name] ?: return GMResult.Ok(default)
+            val value = value(name) ?: return GMResult.Ok(default)
             val boolean = (value as? JsonPrimitive)?.booleanOrNull
                 ?: return invalid(name, "a boolean")
             return GMResult.Ok(boolean)
@@ -8284,7 +9365,7 @@ object JsxGraphEngine {
             default: Boolean,
             inherited: Boolean?,
         ): GMResult<Boolean, JsxGraphDocumentError> {
-            val value = attributes[name]
+            val value = value(name)
                 ?: return GMResult.Ok(inherited ?: default)
             val primitive = value as? JsonPrimitive
                 ?: return invalid(name, "a boolean")
@@ -8309,7 +9390,7 @@ object JsxGraphEngine {
             name: String,
             defaultValue: String,
         ): GMResult<Unit, JsxGraphDocumentError> {
-            val value = attributes[name]
+            val value = value(name)
                 ?: return GMResult.Err(
                     unsupportedValue(name, defaultValue),
                 )
@@ -8341,7 +9422,7 @@ object JsxGraphEngine {
             name: String,
             default: JsxGraphArrowHead?,
         ): GMResult<JsxGraphArrowHead?, JsxGraphDocumentError> {
-            val value = attributes[name] ?: return GMResult.Ok(default)
+            val value = value(name) ?: return GMResult.Ok(default)
             if (value is JsonPrimitive) {
                 val enabled = value.booleanOrNull
                     ?: return invalid(name, "a boolean or arrow-head object")
@@ -8463,7 +9544,7 @@ object JsxGraphEngine {
             name: String,
             default: String,
         ): GMResult<String, JsxGraphDocumentError> {
-            val value = attributes[name] ?: return GMResult.Ok(default)
+            val value = value(name) ?: return GMResult.Ok(default)
             val primitive = value as? JsonPrimitive
                 ?: return invalid(name, "a string")
             if (!primitive.isString) {
@@ -8478,7 +9559,7 @@ object JsxGraphEngine {
             minimum: Double? = null,
             maximum: Double? = null,
         ): GMResult<Double, JsxGraphDocumentError> {
-            val value = attributes[name] ?: return GMResult.Ok(default)
+            val value = value(name) ?: return GMResult.Ok(default)
             val number = (value as? JsonPrimitive)?.doubleOrNull
             if (
                 number == null ||
@@ -8503,7 +9584,7 @@ object JsxGraphEngine {
             name: String,
             default: Int,
         ): GMResult<Int, JsxGraphDocumentError> {
-            val value = attributes[name] ?: return GMResult.Ok(default)
+            val value = value(name) ?: return GMResult.Ok(default)
             val number = (value as? JsonPrimitive)?.doubleOrNull
             val rounded = number?.let(::round)
             if (
@@ -8537,7 +9618,7 @@ object JsxGraphEngine {
                 is Point3D -> DEFAULT_POINT_3D_LAYER
                 is Point -> DEFAULT_POINT_LAYER
                 is Text3D, is Text -> DEFAULT_TEXT_LAYER
-                is Image -> DEFAULT_ELEMENT_LAYER
+                is ForeignObject, is Image -> DEFAULT_ELEMENT_LAYER
                 is Arc -> DEFAULT_ARC_LAYER
                 is Ticks -> DEFAULT_TICKS_LAYER
                 is Line ->
@@ -8835,36 +9916,21 @@ object JsxGraphEngine {
             } else {
                 "$attributePrefix.$name"
             }
+
+        private fun value(name: String): JsonElement? =
+            attributes[name] ?: defaults[name]
     }
 
     private fun parseColor(value: String): JsxGraphColor? {
-        val normalized = value.lowercase()
-        NAMED_COLORS[normalized]?.let { return it }
-        if (!normalized.startsWith("#")) {
-            return null
+        return when (val parsed = Color.parseCssColor(value)) {
+            is GMResult.Ok -> JsxGraphColor(
+                red = parsed.value.red,
+                green = parsed.value.green,
+                blue = parsed.value.blue,
+                alpha = parsed.value.alpha,
+            )
+            is GMResult.Err -> null
         }
-        val digits = normalized.drop(1)
-        val expanded = when (digits.length) {
-            3, 4 -> buildString {
-                for (digit in digits) {
-                    append(digit)
-                    append(digit)
-                }
-            }
-            6, 8 -> digits
-            else -> return null
-        }
-        val channels = expanded.chunked(2).map { channel ->
-            val first = channel[0].digitToIntOrNull(16) ?: return null
-            val second = channel[1].digitToIntOrNull(16) ?: return null
-            first * 16 + second
-        }
-        return JsxGraphColor(
-            red = channels[0],
-            green = channels[1],
-            blue = channels[2],
-            alpha = channels.getOrElse(3) { 255 },
-        )
     }
 
     private const val MAX_JSON_DEPTH = 256
@@ -8949,18 +10015,6 @@ object JsxGraphEngine {
         listOf(20.0, 5.0, 10.0, 5.0),
         listOf(0.0, 5.0),
     )
-    private val NAMED_COLORS = mapOf(
-        "none" to JsxGraphColor.Transparent,
-        "transparent" to JsxGraphColor.Transparent,
-        "black" to JsxGraphColor(0, 0, 0),
-        "white" to JsxGraphColor(255, 255, 255),
-        "red" to JsxGraphColor(255, 0, 0),
-        "green" to JsxGraphColor(0, 128, 0),
-        "blue" to JsxGraphColor(0, 0, 255),
-        "yellow" to JsxGraphColor(255, 255, 0),
-        "gray" to JsxGraphColor(128, 128, 128),
-        "grey" to JsxGraphColor(128, 128, 128),
-    )
     private val COMMON_ATTRIBUTES = setOf(
         "id",
         "name",
@@ -9040,12 +10094,34 @@ object JsxGraphEngine {
         "numberpointshigh",
         "plotversion",
         "recursiondepthhigh",
+        "rdpsmoothing",
+        "rdpthreshold",
         "firstarrow",
         "lastarrow",
         "linecap",
         "createpoints",
         "isarrayofcoordinates",
         "points",
+    )
+    private val IMPLICIT_CURVE_ATTRIBUTES = setOf(
+        "margin",
+        "resolutionouter",
+        "resolutioninner",
+        "maxsteps",
+        "alpha0",
+        "tolu0",
+        "tolnewton",
+        "tolcusp",
+        "tolprogress",
+        "qdtbox",
+        "kappa0",
+        "delta0",
+        "hinitial",
+        "hcritical",
+        "hmax",
+        "loopdist",
+        "loopdir",
+        "loopdetection",
     )
     private val GRID_ATTRIBUTES = setOf(
         "majorstep",
@@ -9148,6 +10224,7 @@ object JsxGraphEngine {
                 "offset",
             )
     private val CONIC_ATTRIBUTES = setOf("foci", "center", "line")
+    private val GENERIC_CONIC_ATTRIBUTES = setOf("point", "center")
     private val BOX_PLOT_ATTRIBUTES = setOf(
         "dir",
         "smallwidth",
@@ -9176,9 +10253,16 @@ object JsxGraphEngine {
     )
     private val TRANSFORMATION_CREATORS =
         setOf("transform", "transform3d")
-    private val NON_SCENE_CREATORS = TRANSFORMATION_CREATORS
+    private val NON_SCENE_CREATORS =
+        TRANSFORMATION_CREATORS + setOf("group")
 
     private fun sceneElementOutputCount(element: GeometryElement): Int {
+        if (element is Turtle) {
+            return element.objects.size
+        }
+        if (element is Sector && element.isAngle) {
+            return if (element.dot == null) 1 else 2
+        }
         val labelCount = (element as? Curve)
             ?.ticks3DDefinition
             ?.labelElements
@@ -9197,6 +10281,8 @@ object JsxGraphEngine {
             "bisectorlines" -> 2
             "tangentto" -> 3
             "axis", "grid" -> 2
+            "turtle" -> 4
+            "angle", "nonreflexangle", "reflexangle" -> 2
             "slider" -> 7
             "tapemeasure" -> 5
             "slopetriangle" -> 9
@@ -9211,6 +10297,11 @@ object JsxGraphEngine {
         parents: List<JessieCodeRuntimeValue>,
         attributes: JessieCodeRuntimeValue.ObjectValue,
     ): Int {
+        NativeChartCreator.sceneElementCount(
+            creatorName = creatorName,
+            parents = parents,
+            attributes = attributes,
+        )?.let { return it }
         if (creatorName == "ticks3d") {
             return ticks3DSceneElementCount(
                 length = (
@@ -9325,6 +10416,27 @@ object JsxGraphEngine {
         source: ParsedObject,
         objectsById: Map<String, ParsedObject>,
     ): Int {
+        if (source.type == "chart" || source.type == "legend") {
+            val parents = when (
+                val result = runtimeArray(source.parents)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> null
+            }
+            val attributes = when (
+                val result = runtimeObject(source.attributes)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> null
+            }
+            if (parents != null && attributes != null) {
+                NativeChartCreator.sceneElementCount(
+                    creatorName = source.type,
+                    parents = parents,
+                    attributes = attributes,
+                )?.let { return it }
+            }
+        }
         if (source.type == "ticks3d") {
             return ticks3DSceneElementCount(
                 length = (
@@ -10026,6 +11138,7 @@ object JsxGraphEngine {
         "type",
         "orthotype",
         "orthosensitivity",
+        "dot",
     )
     private val POLYGON_ATTRIBUTES = setOf(
         "withlines",
@@ -10087,6 +11200,17 @@ object JsxGraphEngine {
         )
     private val IMAGE_ATTRIBUTES = setOf(
         "rotate",
+    )
+    private val FOREIGN_OBJECT_ATTRIBUTES = setOf(
+        "evaluateonlyonce",
+    )
+    private val BUTTON_ATTRIBUTES = setOf("disabled")
+    private val CHECKBOX_ATTRIBUTES = setOf("checked", "disabled")
+    private val INPUT_ATTRIBUTES = setOf("disabled", "maxlength")
+    private val HTML_SLIDER_ATTRIBUTES = setOf(
+        "step",
+        "widthrange",
+        "widthout",
     )
     private val TEXT_ANCHOR_X_VALUES =
         setOf("left", "middle", "right")

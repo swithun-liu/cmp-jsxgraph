@@ -245,6 +245,117 @@ class JsxGraphPolyhedron3DTest {
     }
 
     @Test
+    fun jessieCodeSupportsStandaloneFaceFromPolyhedronDefinition() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initial = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.execute(
+                """
+                view = view3d(
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                ) <<
+                    id: "view",
+                    name: "",
+                    projection: "parallel",
+                    $HIDDEN_DEFAULT_AXES_ATTRIBUTES
+                >>;
+                x = 2;
+                solid = polyhedron3d(
+                    view,
+                    [
+                        [function() { return x; }, -1, 0],
+                        [2, 3, 0],
+                        [-2, 3, 0]
+                    ],
+                    [[0, 1, 2]]
+                ) <<
+                    id: "solid",
+                    name: "",
+                    fillColor: "red"
+                >>;
+                selected = face3d(view, solid, 0) <<
+                    id: "selected",
+                    name: "",
+                    fillColor: "green",
+                    strokeWidth: 3
+                >>;
+                """.trimIndent(),
+            ),
+        ).value
+        val initialFace = initial.elements
+            .filterIsInstance<JsxGraphSceneElement.Curve>()
+            .single { it.id == "selected" }
+        assertEquals(JsxGraphColor(0, 128, 0), initialFace.style.fillColor)
+        assertEquals(3.0, initialFace.style.strokeWidth)
+        assertEquals(4, initialFace.points.size)
+
+        val updated = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.execute("x = 4;"),
+        ).value
+        val updatedFace = updated.elements
+            .filterIsInstance<JsxGraphSceneElement.Curve>()
+            .single { it.id == "selected" }
+        assertNotEquals(initialFace.points, updatedFace.points)
+    }
+
+    @Test
+    fun jsonSupportsStandaloneFaceAndRejectsInvalidIndex() {
+        val objects =
+            """
+            {
+              "id": "solid",
+              "type": "polyhedron3d",
+              "parents": [
+                "view",
+                [[-2, -1, 0], [2, -1, 0], [2, 3, 0]],
+                [[0, 1, 2]]
+              ],
+              "attributes": {
+                "name": "",
+                "fillColor": "red"
+              }
+            },
+            {
+              "id": "selected",
+              "type": "face3d",
+              "parents": ["view", "solid", 0],
+              "attributes": {
+                "name": "",
+                "fillColor": "green",
+                "fillOpacity": 0.7
+              }
+            }
+            """.trimIndent()
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(document(objects)),
+        ).value
+        val selected = scene.elements
+            .filterIsInstance<JsxGraphSceneElement.Curve>()
+            .single { it.id == "selected" }
+        assertEquals(JsxGraphColor(0, 128, 0), selected.style.fillColor)
+        assertEquals(0.7, selected.style.fillOpacity)
+        assertEquals(4, selected.points.size)
+
+        val invalid = assertIs<
+            GMResult.Err<JsxGraphDocumentError.ElementCreation>
+            >(
+            JsxGraphEngine.parse(
+                document(
+                    objects.replace(
+                        "\"solid\", 0",
+                        "\"solid\", 4",
+                    ),
+                ),
+            ),
+        ).error
+        assertEquals("selected", invalid.id)
+        assertTrue(invalid.reason.contains("InvalidFaceNumber"))
+    }
+
+    @Test
     fun jessieCodeCountsClosedFaceCurvePoints() {
         val error = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
             JsxGraphJessieCode.parse(

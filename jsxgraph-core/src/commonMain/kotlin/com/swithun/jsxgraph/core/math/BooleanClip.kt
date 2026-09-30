@@ -14,7 +14,6 @@
 package com.swithun.jsxgraph.core.math
 
 import com.swithun.jsxgraph.core.GMResult
-import com.swithun.jsxgraph.core.base.GeometryElement
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -97,17 +96,17 @@ internal object BooleanClip {
 
     // JSXGraph: src/math/clip.js -> greinerHormann.
     internal fun greinerHormann(
-        subjectElement: GeometryElement,
-        clipElement: GeometryElement,
+        subjectInput: ClipPathInput,
+        clipInput: ClipPathInput,
         operation: ClipBooleanOperation,
     ): GMResult<ClipBooleanResult, ClipError> {
-        val subject = when (val result = mutablePath(subjectElement)) {
+        val subject = when (val result = mutablePath(subjectInput)) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
         removeClosingDuplicate(subject, Mat.eps)
 
-        val clip = when (val result = mutablePath(clipElement)) {
+        val clip = when (val result = mutablePath(clipInput)) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
@@ -143,9 +142,9 @@ internal object BooleanClip {
     }
 
     private fun mutablePath(
-        element: GeometryElement,
+        input: ClipPathInput,
     ): GMResult<MutableList<BooleanClipVertex>, ClipError> =
-        when (val result = Clip.getPath(element)) {
+        when (val result = Clip.getPath(input)) {
             is GMResult.Ok -> GMResult.Ok(
                 result.value.mapTo(mutableListOf()) { node ->
                     BooleanClipVertex(

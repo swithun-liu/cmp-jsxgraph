@@ -539,6 +539,51 @@ class PointTest {
     }
 
     @Test
+    fun segmentIncidenceRequiresProjectionInsideFiniteEndpoints() {
+        val board = board()
+        val start = point(
+            Point.create(board, doubleArrayOf(0.0, 0.0)),
+        )
+        val end = point(
+            Point.create(board, doubleArrayOf(2.0, 0.0)),
+        )
+        val segment = line(
+            Line.createSegment(
+                board = board,
+                point1 = start,
+                point2 = end,
+            ),
+        )
+        val inside = point(
+            Point.create(board, doubleArrayOf(1.0, 0.1)),
+        )
+        val atTolerance = point(
+            Point.create(board, doubleArrayOf(1.0, 0.25)),
+        )
+        val beforeStart = point(
+            Point.create(board, doubleArrayOf(-1.0, 0.0)),
+        )
+        val afterEnd = point(
+            Point.create(board, doubleArrayOf(3.0, 0.0)),
+        )
+        val alwaysIntersect = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(-1.0, 0.0),
+                alwaysIntersect = true,
+            ),
+        )
+
+        assertTrue(start.isOn(segment, tolerance = 0.25))
+        assertTrue(end.isOn(segment, tolerance = 0.25))
+        assertTrue(inside.isOn(segment, tolerance = 0.25))
+        assertFalse(atTolerance.isOn(segment, tolerance = 0.25))
+        assertFalse(beforeStart.isOn(segment, tolerance = 0.25))
+        assertFalse(afterEnd.isOn(segment, tolerance = 0.25))
+        assertTrue(alwaysIntersect.isOn(segment, tolerance = 0.25))
+    }
+
+    @Test
     fun circleIncidenceMatchesOfficialBoundaryBehavior() {
         val board = board()
         val center = point(Point.create(board, doubleArrayOf(0.0, 0.0)))
@@ -555,6 +600,200 @@ class PointTest {
         assertTrue(outerHalfEpsilon.isOn(circle))
         assertFalse(outerAtEpsilon.isOn(circle))
         assertFalse(center.isOn(circle))
+
+        circle.hasInnerPoints = true
+
+        assertTrue(center.isOn(circle))
+        assertTrue(outerHalfEpsilon.isOn(circle))
+        assertFalse(outerAtEpsilon.isOn(circle))
+    }
+
+    @Test
+    fun polygonIncidenceUsesTheClosestFiniteBorder() {
+        val board = board()
+        val polygon = assertIs<GMResult.Ok<Polygon>>(
+            Polygon.create(
+                board = board,
+                vertices = listOf(
+                    point(Point.create(board, doubleArrayOf(0.0, 0.0))),
+                    point(Point.create(board, doubleArrayOf(2.0, 0.0))),
+                    point(Point.create(board, doubleArrayOf(2.0, 2.0))),
+                    point(Point.create(board, doubleArrayOf(0.0, 2.0))),
+                ),
+                name = "",
+            ),
+        ).value
+        val boundary = point(
+            Point.create(board, doubleArrayOf(1.0, 0.0)),
+        )
+        val nearBoundary = point(
+            Point.create(board, doubleArrayOf(1.0, 0.1)),
+        )
+        val interior = point(
+            Point.create(board, doubleArrayOf(1.0, 1.0)),
+        )
+        val outside = point(
+            Point.create(board, doubleArrayOf(3.0, 1.0)),
+        )
+
+        assertTrue(boundary.isOn(polygon, tolerance = 0.25))
+        assertTrue(nearBoundary.isOn(polygon, tolerance = 0.25))
+        assertFalse(interior.isOn(polygon, tolerance = 0.25))
+        assertFalse(outside.isOn(polygon, tolerance = 0.25))
+
+        polygon.hasInnerPoints = true
+
+        assertTrue(interior.isOn(polygon, tolerance = 0.25))
+        assertFalse(outside.isOn(polygon, tolerance = 0.25))
+    }
+
+    @Test
+    fun curveIncidenceMatchesOfficialPlotAndFunctionGraphProjection() {
+        val board = board()
+        val dataPlot = curve(
+            Curve.createData(
+                board = board,
+                dataX = doubleArrayOf(-2.0, 0.0, 2.0),
+                dataY = doubleArrayOf(0.0, 0.0, 0.0),
+                name = "",
+            ),
+        )
+        val functionGraph = curve(
+            Curve.createFunctionGraph(
+                board = board,
+                ySource = "0",
+                minimumSource = "-2",
+                maximumSource = "2",
+                sampleCount = 16,
+                name = "",
+            ),
+        )
+        val exact = point(
+            Point.create(board, doubleArrayOf(1.0, 0.0)),
+        )
+        val near = point(
+            Point.create(board, doubleArrayOf(1.0, 0.249)),
+        )
+        val atTolerance = point(
+            Point.create(board, doubleArrayOf(1.0, 0.25)),
+        )
+        val outsideDomain = point(
+            Point.create(board, doubleArrayOf(3.0, 0.0)),
+        )
+
+        for (curve in listOf(dataPlot, functionGraph)) {
+            assertTrue(exact.isOn(curve, tolerance = 0.25))
+            assertTrue(near.isOn(curve, tolerance = 0.25))
+            assertFalse(atTolerance.isOn(curve, tolerance = 0.25))
+            assertFalse(outsideDomain.isOn(curve, tolerance = 0.25))
+        }
+    }
+
+    @Test
+    fun curveIncidenceReturnsFalseForUnavailableProjection() {
+        val board = board()
+        val driver = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(-2.0, 2.0),
+                id = "driver",
+                name = "",
+            ),
+        )
+        val curve = curve(
+            Curve.createFunctionGraph(
+                board = board,
+                ySource = "x * x",
+                minimumSource = "driver.X()",
+                maximumSource = "driver.Y()",
+                sampleCount = 16,
+                name = "",
+            ),
+        )
+        val candidate = point(
+            Point.create(board, doubleArrayOf(1.0, 1.0)),
+        )
+
+        driver.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(3.0, -3.0),
+        )
+        board.update()
+
+        assertIs<CurveError.InvalidDomain>(curve.evaluationError)
+        assertFalse(candidate.isOn(curve, tolerance = 0.25))
+    }
+
+    @Test
+    fun transformedCurveIncidencePreservesProjectionThenTransformOrder() {
+        val board = board()
+        val source = curve(
+            Curve.createData(
+                board = board,
+                dataX = doubleArrayOf(-2.0, 0.0, 2.0),
+                dataY = doubleArrayOf(0.0, 0.0, 0.0),
+                name = "",
+            ),
+        )
+        val scale = transformation(
+            Transformation.create(
+                type = "scale",
+                parameters = doubleArrayOf(2.0, 1.0),
+            ),
+        )
+        val translate = transformation(
+            Transformation.create(
+                type = "translate",
+                parameters = doubleArrayOf(1.0, 2.0),
+            ),
+        )
+        val transformed = curve(
+            Curve.createTransformed(
+                board = board,
+                source = source,
+                transformations = listOf(scale, translate),
+                name = "",
+            ),
+        )
+        val exact = point(
+            Point.create(board, doubleArrayOf(-1.0, 2.0)),
+        )
+        val near = point(
+            Point.create(board, doubleArrayOf(-1.0, 2.249)),
+        )
+        val atTolerance = point(
+            Point.create(board, doubleArrayOf(-1.0, 2.25)),
+        )
+        val geometricOnly = point(
+            Point.create(board, doubleArrayOf(1.0, 2.0)),
+        )
+
+        assertTrue(exact.isOn(transformed, tolerance = 0.25))
+        assertTrue(near.isOn(transformed, tolerance = 0.25))
+        assertFalse(atTolerance.isOn(transformed, tolerance = 0.25))
+        assertFalse(geometricOnly.isOn(transformed, tolerance = 0.25))
+    }
+
+    @Test
+    fun turtleIncidenceAvoidsOfficialProjectPointToTurtleResultBug() {
+        val board = board()
+        val turtle = assertIs<GMResult.Ok<Turtle>>(
+            Turtle.create(
+                board = board,
+                x = 0.0,
+                y = 0.0,
+                direction = 0.0,
+                name = "",
+            ),
+        ).value
+        assertIs<GMResult.Ok<Turtle>>(turtle.forward(2.0))
+        turtle.left(90.0)
+        assertIs<GMResult.Ok<Turtle>>(turtle.forward(2.0))
+        val pointOnPath = point(
+            Point.create(board, doubleArrayOf(1.0, 0.0)),
+        )
+
+        assertFalse(pointOnPath.isOn(turtle, tolerance = 0.2))
     }
 
     private fun board(): Board = Board(
@@ -576,6 +815,10 @@ class PointTest {
     private fun circle(
         result: GMResult<Circle, CircleError>,
     ): Circle = assertIs<GMResult.Ok<Circle>>(result).value
+
+    private fun curve(
+        result: GMResult<Curve, CurveError>,
+    ): Curve = assertIs<GMResult.Ok<Curve>>(result).value
 
     private fun transformation(
         result: GMResult<Transformation, TransformationError>,

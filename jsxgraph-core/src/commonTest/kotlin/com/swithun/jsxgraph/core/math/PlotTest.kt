@@ -14,6 +14,88 @@ import kotlin.test.assertTrue
 
 class PlotTest {
     @Test
+    fun legacyAdaptiveSamplingMatchesOfficialQualityBranches() {
+        val calls = mutableListOf<Pair<PlotCoordinate, Boolean>>()
+        val highQuality = assertIs<GMResult.Ok<PlotResult>>(
+            Plot.updateParametricCurveV1(
+                board = legacyBoard(),
+                minimum = -2.0,
+                maximum = 2.0,
+                maximumPointCount = 10_000,
+                x = PlotFunction<Nothing> { parameter, suspendedUpdate ->
+                    calls += PlotCoordinate.X to suspendedUpdate
+                    GMResult.Ok(parameter)
+                },
+                y = PlotFunction<Nothing> { parameter, suspendedUpdate ->
+                    calls += PlotCoordinate.Y to suspendedUpdate
+                    GMResult.Ok(parameter * parameter)
+                },
+            ),
+        ).value
+
+        assertEquals(43, highQuality.points.size)
+        assertPoint(
+            highQuality.points.first(),
+            parameter = null,
+            x = -2.0,
+            y = 4.0,
+        )
+        assertPoint(
+            highQuality.points[1],
+            parameter = -1.70703125,
+            x = -1.703125,
+            y = 2.900634765625,
+        )
+        assertPoint(
+            highQuality.points.last(),
+            parameter = 1.998046875,
+            x = 2.0,
+            y = 4.0,
+        )
+        assertEquals(
+            listOf(
+                PlotCoordinate.X to false,
+                PlotCoordinate.Y to false,
+                PlotCoordinate.X to true,
+                PlotCoordinate.Y to true,
+            ),
+            calls.take(4),
+        )
+        assertTrue(calls.drop(2).all { it.second })
+
+        val lowQualityBoard = legacyBoard().also {
+            it.updateQuality = Board.BOARD_QUALITY_LOW
+        }
+        val lowQuality = assertIs<GMResult.Ok<PlotResult>>(
+            Plot.updateParametricCurveV1(
+                board = lowQualityBoard,
+                minimum = -2.0,
+                maximum = 2.0,
+                maximumPointCount = 10_000,
+                x = PlotFunction<Nothing> { parameter, _ ->
+                    GMResult.Ok(parameter)
+                },
+                y = PlotFunction<Nothing> { parameter, _ ->
+                    GMResult.Ok(parameter * parameter)
+                },
+            ),
+        ).value
+        assertEquals(65, lowQuality.points.size)
+        assertPoint(
+            lowQuality.points[1],
+            parameter = -1.96875,
+            x = -1.9375,
+            y = 3.75390625,
+        )
+        assertPoint(
+            lowQuality.points.last(),
+            parameter = 1.96875,
+            x = 2.0,
+            y = 4.0,
+        )
+    }
+
+    @Test
     fun smoothAdaptiveSamplingMatchesOfficialUnsmoothedPointSequence() {
         val calls = mutableListOf<Pair<PlotCoordinate, Boolean>>()
         val result = plot(
@@ -720,5 +802,15 @@ class PlotTest {
             unitY = 1.0,
             boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
             id = "plot-board",
+        )
+
+    private fun legacyBoard(): Board =
+        Board(
+            originX = 250.0,
+            originY = 250.0,
+            unitX = 50.0,
+            unitY = 50.0,
+            boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+            id = "legacy-plot-board",
         )
 }

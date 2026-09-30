@@ -13,24 +13,33 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.lightColorScheme
@@ -62,6 +71,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
@@ -75,15 +86,19 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.JsxGraphColor
+import com.swithun.jsxgraph.core.JsxGraphControlInteraction
 import com.swithun.jsxgraph.core.JsxGraphElementStyle
 import com.swithun.jsxgraph.core.JsxGraphFillGradient
 import com.swithun.jsxgraph.core.JsxGraphInteractionError
 import com.swithun.jsxgraph.core.JsxGraphInteractionState
+import com.swithun.jsxgraph.core.JsxGraphHtmlControl
 import com.swithun.jsxgraph.core.JsxGraphJessieCodeSession
 import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
@@ -280,12 +295,15 @@ fun JsxGraphScenePreview(
     scene: JsxGraphScene,
     modifier: Modifier = Modifier,
     onPointDrag: ((String, JsxGraphPoint2D) -> Unit)? = null,
+    onControlInteraction: ((JsxGraphControlInteraction) -> Unit)? = null,
     imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
     onImageError: (JsxGraphImageLoadError) -> Unit = {},
 ) {
     val textMeasurer = rememberTextMeasurer()
     val currentScene by rememberUpdatedState(scene)
     val currentOnPointDrag by rememberUpdatedState(onPointDrag)
+    val currentOnControlInteraction by
+        rememberUpdatedState(onControlInteraction)
     val currentOnImageError by rememberUpdatedState(onImageError)
     val imageSources = scene.elements
         .filterIsInstance<JsxGraphSceneElement.Image>()
@@ -323,10 +341,14 @@ fun JsxGraphScenePreview(
             style = FontStyle.Normal,
         ),
     )
-    Canvas(
+    Box(
         modifier = modifier
             .background(BoardBackground)
-            .border(1.dp, Color(0xFFD4DADF))
+            .border(1.dp, Color(0xFFD4DADF)),
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
             .pointerInput(onPointDrag != null) {
                 if (currentOnPointDrag == null) {
                     return@pointerInput
@@ -420,12 +442,14 @@ fun JsxGraphScenePreview(
                             drawSceneCurve(element, metrics)
                         is JsxGraphSceneElement.Polygon -> Unit
                         is JsxGraphSceneElement.Text ->
-                            drawSceneText(
-                                text = element,
-                                metrics = metrics,
-                                textMeasurer = textMeasurer,
-                                fontFamily = axisFontFamily,
-                            )
+                            if (element.htmlControl == null) {
+                                drawSceneText(
+                                    text = element,
+                                    metrics = metrics,
+                                    textMeasurer = textMeasurer,
+                                    fontFamily = axisFontFamily,
+                                )
+                            }
                         is JsxGraphSceneElement.Image -> {
                             val result = resolvedImages[element.id]
                             if (result is GMResult.Ok) {
@@ -436,6 +460,9 @@ fun JsxGraphScenePreview(
                                 )
                             }
                         }
+                        // SVG foreignObject requires a browser DOM. Core
+                        // exposes this explicitly in unsupportedRenderFeatures.
+                        is JsxGraphSceneElement.ForeignObject -> Unit
                     }
                 }
                 is JsxGraphSceneRenderItem.PolygonFill ->
@@ -458,7 +485,211 @@ fun JsxGraphScenePreview(
                     }
             }
         }
+        }
+        SceneHtmlControls(
+            scene = scene,
+            onInteraction = currentOnControlInteraction,
+        )
     }
+}
+
+@Composable
+private fun SceneHtmlControls(
+    scene: JsxGraphScene,
+    onInteraction: ((JsxGraphControlInteraction) -> Unit)?,
+) {
+    val controls = scene.elements
+        .filterIsInstance<JsxGraphSceneElement.Text>()
+        .filter { text ->
+            text.style.visible && text.htmlControl != null
+        }
+    if (controls.isEmpty()) {
+        return
+    }
+    val localDensity = LocalDensity.current
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val metrics = scene.boardMetrics(
+            width = constraints.maxWidth.toFloat(),
+            height = constraints.maxHeight.toFloat(),
+        )
+        for (text in controls) {
+            var measuredSize by remember(text.id) {
+                mutableStateOf(IntSize.Zero)
+            }
+            val anchor = metrics.toScreen(text.coordinates.toOffset()) +
+                Offset(
+                    x = with(localDensity) {
+                        text.screenOffset.x.toFloat().dp.toPx()
+                    },
+                    y = with(localDensity) {
+                        text.screenOffset.y.toFloat().dp.toPx()
+                    },
+                )
+            val horizontalOffset = when (text.anchorX) {
+                "middle" -> measuredSize.width / 2
+                "right" -> measuredSize.width
+                else -> 0
+            }
+            val verticalOffset = when (text.anchorY) {
+                "top" -> 0
+                "bottom" -> measuredSize.height
+                else -> measuredSize.height / 2
+            }
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            x = anchor.x.roundToInt() - horizontalOffset,
+                            y = anchor.y.roundToInt() - verticalOffset,
+                        )
+                    }
+                    .onSizeChanged { measuredSize = it },
+            ) {
+                SceneHtmlControl(
+                    text = text,
+                    onInteraction = onInteraction,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SceneHtmlControl(
+    text: JsxGraphSceneElement.Text,
+    onInteraction: ((JsxGraphControlInteraction) -> Unit)?,
+) {
+    val control = text.htmlControl ?: return
+    val textColor = text.style.strokeColor.toComposeColor(
+        opacity = text.style.strokeOpacity,
+    )
+    when (control) {
+        is JsxGraphHtmlControl.Button ->
+            Button(
+                onClick = {
+                    onInteraction?.invoke(
+                        JsxGraphControlInteraction.ClickButton(text.id),
+                    )
+                },
+                enabled = !control.disabled && onInteraction != null,
+                contentPadding = PaddingValues(
+                    horizontal = 8.dp,
+                    vertical = 2.dp,
+                ),
+                modifier = Modifier.heightIn(min = 28.dp),
+            ) {
+                Text(
+                    text = text.content,
+                    color = textColor,
+                    fontSize = text.fontSize.toFloat().sp,
+                    letterSpacing = 0.sp,
+                )
+            }
+        is JsxGraphHtmlControl.Checkbox ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = control.checked,
+                    onCheckedChange = { checked ->
+                        onInteraction?.invoke(
+                            JsxGraphControlInteraction.ChangeCheckbox(
+                                id = text.id,
+                                checked = checked,
+                            ),
+                        )
+                    },
+                    enabled = !control.disabled && onInteraction != null,
+                )
+                Text(
+                    text = text.content,
+                    color = textColor,
+                    fontSize = text.fontSize.toFloat().sp,
+                    letterSpacing = 0.sp,
+                )
+            }
+        is JsxGraphHtmlControl.Input ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = text.content,
+                    color = textColor,
+                    fontSize = text.fontSize.toFloat().sp,
+                    letterSpacing = 0.sp,
+                )
+                OutlinedTextField(
+                    value = control.value,
+                    onValueChange = { value ->
+                        if (value.length <= control.maxLength) {
+                            onInteraction?.invoke(
+                                JsxGraphControlInteraction.ChangeInput(
+                                    id = text.id,
+                                    value = value,
+                                ),
+                            )
+                        }
+                    },
+                    enabled = !control.disabled && onInteraction != null,
+                    singleLine = true,
+                    modifier = Modifier
+                        .width(140.dp)
+                        .heightIn(min = 40.dp),
+                )
+            }
+        is JsxGraphHtmlControl.Slider ->
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (control.withLabel) {
+                    Text(
+                        text = text.content,
+                        color = textColor,
+                        fontSize = text.fontSize.toFloat().sp,
+                        letterSpacing = 0.sp,
+                    )
+                }
+                Slider(
+                    value = control.value.toFloat(),
+                    onValueChange = { value ->
+                        onInteraction?.invoke(
+                            JsxGraphControlInteraction.ChangeSlider(
+                                id = text.id,
+                                value = value.toDouble(),
+                            ),
+                        )
+                    },
+                    enabled =
+                        onInteraction != null &&
+                            control.minimum < control.maximum,
+                    valueRange =
+                        control.minimum.toFloat()..
+                            control.maximum.toFloat(),
+                    steps = sliderStepCount(control),
+                    modifier = Modifier.width(control.widthRange.dp),
+                )
+                OutlinedTextField(
+                    value = control.value.toString(),
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    modifier = Modifier
+                        .width(control.widthOut.dp)
+                        .heightIn(min = 40.dp),
+                )
+            }
+    }
+}
+
+private fun sliderStepCount(
+    control: JsxGraphHtmlControl.Slider,
+): Int {
+    val intervals =
+        (control.maximum - control.minimum) / control.step
+    if (!intervals.isFinite() || intervals <= 1.0 || intervals > 1_002.0) {
+        return 0
+    }
+    return intervals.roundToInt().minus(1).coerceAtLeast(0)
 }
 
 @Composable
@@ -490,6 +721,14 @@ fun JsxGraphBoard(
                     currentOnError(result.error)
             }
         },
+        onControlInteraction = { interaction ->
+            when (val result = session.interactControl(interaction)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok ->
+                    scene = result.value
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
     )
 }
 
@@ -512,6 +751,14 @@ fun JsxGraphBoard(
         onImageError = onImageError,
         onPointDrag = { id, coordinates ->
             when (val result = session.movePoint(id, coordinates)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok ->
+                    scene = result.value
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+        onControlInteraction = { interaction ->
+            when (val result = session.interactControl(interaction)) {
                 is com.swithun.jsxgraph.core.GMResult.Ok ->
                     scene = result.value
                 is com.swithun.jsxgraph.core.GMResult.Err ->

@@ -66,6 +66,148 @@ class GliderSliderTest {
     }
 
     @Test
+    fun circleAndPointGlidersMatchOfficialProjectionAndTracking() {
+        val circleBoard = board()
+        val center = point(circleBoard, 1.0, -1.0, "center")
+        val radius = point(circleBoard, 3.0, -1.0, "radius")
+        val circle = assertIs<GMResult.Ok<Circle>>(
+            Circle.create(
+                board = circleBoard,
+                center = center,
+                point2 = radius,
+                id = "circle",
+                name = "",
+            ),
+        ).value
+        val circleGlider = glider(
+            Glider.create(
+                board = circleBoard,
+                coordinates = doubleArrayOf(2.0, 3.0),
+                slideObject = circle,
+                id = "circleGlider",
+                name = "",
+            ),
+        )
+
+        assertPoint(
+            1.4850712500726657,
+            0.9402850002906642,
+            circleGlider,
+        )
+        assertEquals(
+            0.21101043481131537,
+            assertIs<Double>(circleGlider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertSame(circle, circleGlider.slideObject)
+        assertSame(
+            circleGlider,
+            circle.childElements["circleGlider"],
+        )
+
+        radius.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(1.0, 2.0),
+        )
+        circleBoard.update()
+        circleBoard.update()
+        assertPoint(
+            1.7276068751089988,
+            1.9104275004359956,
+            circleGlider,
+        )
+
+        val pointBoard = board()
+        val host = point(pointBoard, 2.0, -3.0, "host")
+        val pointGlider = glider(
+            Glider.create(
+                board = pointBoard,
+                coordinates = doubleArrayOf(5.0, 4.0),
+                slideObject = host,
+                id = "pointGlider",
+                name = "",
+            ),
+        )
+        assertPoint(2.0, -3.0, pointGlider)
+        assertNull(pointGlider.position)
+        assertSame(host, pointGlider.slideObject)
+
+        host.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-1.0, 2.0),
+        )
+        pointBoard.update()
+        pointBoard.update()
+        assertPoint(-1.0, 2.0, pointGlider)
+        assertNull(pointGlider.position)
+    }
+
+    @Test
+    fun polygonGliderSelectsAndTraversesBordersLikeOfficial() {
+        val board = board()
+        val first = point(board, 0.0, 0.0, "A")
+        val second = point(board, 4.0, 0.0, "B")
+        val third = point(board, 4.0, 3.0, "C")
+        val polygon = assertIs<GMResult.Ok<Polygon>>(
+            Polygon.create(
+                board = board,
+                vertices = listOf(first, second, third),
+                id = "polygon",
+                name = "",
+            ),
+        ).value
+        val glider = glider(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(2.0, -1.0),
+                slideObject = polygon,
+                id = "polygonGlider",
+                name = "",
+            ),
+        )
+        val initialBorder = polygon.borders[0]
+
+        assertPoint(2.0, 0.0, glider)
+        assertEquals(0.5, glider.position)
+        assertTrue(glider.onPolygon)
+        assertSame(initialBorder, glider.slideElement)
+        assertSame(initialBorder, glider.slideObject)
+        assertSame(initialBorder, glider.slideObjects.single())
+        assertEquals(listOf(initialBorder.id), glider.parents)
+        assertSame(glider, initialBorder.childElements["polygonGlider"])
+
+        glider.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(5.0, 0.0),
+        )
+        board.update(draggedElement = glider)
+        assertPoint(4.0, 0.0, glider)
+        assertEquals(0.0, glider.position)
+        assertSame(polygon.borders[1], glider.slideElement)
+        assertSame(polygon.borders[1], glider.slideObject)
+        assertSame(initialBorder, glider.slideObjects.single())
+        assertEquals(listOf(initialBorder.id), glider.parents)
+        assertSame(glider, initialBorder.childElements["polygonGlider"])
+        assertTrue(
+            "polygonGlider" !in polygon.borders[1].childElements,
+        )
+
+        glider.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(4.0, 4.0),
+        )
+        board.update(draggedElement = glider)
+        assertPoint(4.0, 3.0, glider)
+        assertEquals(
+            0.0,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = TOLERANCE,
+        )
+        assertSame(polygon.borders[2], glider.slideElement)
+        assertSame(polygon.borders[2], glider.slideObject)
+    }
+
+    @Test
     fun sliderOwnsHelpersAndMatchesValueLifecycle() {
         val board = board()
         val slider = slider(
@@ -185,7 +327,9 @@ class GliderSliderTest {
     @Test
     fun unsupportedHostAndDuplicateIdsRollbackAtomically() {
         val board = board()
-        val unsupported = point(board, 0.0, 0.0, "host")
+        val unsupported = GeometryElement(board).apply {
+            elType = "unsupported"
+        }
         val beforeUnsupported = board.objects.keys.toList()
 
         val hostError = assertIs<GMResult.Err<GliderError.UnsupportedSlideObject>>(
@@ -196,7 +340,7 @@ class GliderSliderTest {
                 id = "candidate",
             ),
         ).error
-        assertEquals("point", hostError.elementType)
+        assertEquals("unsupported", hostError.elementType)
         assertEquals(beforeUnsupported, board.objects.keys.toList())
 
         point(board, 3.0, 3.0, "collision")

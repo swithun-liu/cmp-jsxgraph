@@ -199,6 +199,16 @@ internal fun interface JessieCodeCreator {
 }
 
 /**
+ * Scene metadata for creators such as Chart that return nested arrays instead
+ * of the ordinary GeometryElement reference.
+ */
+internal data class JessieCodeCreatedSceneElement(
+    val element: GeometryElement,
+    val creatorName: String,
+    val attributes: JessieCodeRuntimeValue.ObjectValue,
+)
+
+/**
  * Values visible to the translated JessieCode interpreter.
  *
  * Arrays, objects, functions, boards, transformations, and elements
@@ -224,6 +234,9 @@ internal sealed interface JessieCodeRuntimeValue {
 
     class ArrayValue(
         values: List<JessieCodeRuntimeValue>,
+        internal val createdSceneElements:
+            List<JessieCodeCreatedSceneElement> = emptyList(),
+        internal val isSceneComposite: Boolean = false,
     ) : JessieCodeRuntimeValue {
         val values: MutableList<JessieCodeRuntimeValue> =
             values.toMutableList()
@@ -262,6 +275,9 @@ internal sealed interface JessieCodeRuntimeValue {
 
     class ElementReference(
         val element: GeometryElement,
+        internal val createdSceneElements:
+            List<JessieCodeCreatedSceneElement> = emptyList(),
+        internal val isSceneComposite: Boolean = false,
     ) : JessieCodeRuntimeValue
 }
 

@@ -29,6 +29,12 @@ The translated probability and geometry functions retain their upstream
 source-file attribution. `src/math/probfuncs.js` and `src/math/geometry.js`
 also list Andreas Walter among their copyright holders.
 
+The translated MetaPost/Hobby curve implementation retains the lineage
+recorded by JSXGraph's `src/math/metapost.js`: the PyX port by Michael
+Schindler, the JavaScript port by Vlad-X, and the JSXGraph adaptations by
+Alfred Wassermann. This project uses that JSXGraph source under the MIT
+License option. The underlying MetaPost implementation is public domain.
+
 The debug-only visual comparison dependency includes the unmodified upstream
 distribution files:
 

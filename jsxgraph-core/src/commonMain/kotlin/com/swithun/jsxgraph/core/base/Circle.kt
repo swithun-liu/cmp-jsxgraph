@@ -63,8 +63,9 @@ internal data class CircleRadiusFunction(
  * This slice covers circles defined by two or three registered points, a fixed
  * numeric radius, a registered line, or a registered circle. It includes
  * dependency links, standard and quadratic forms, cubic Bezier approximation,
- * numeric queries, and JessieCode string or function radii. Transformations,
- * rendering, and hit testing remain untranslated.
+ * numeric queries, JessieCode string or function radii, and static
+ * `hasInnerPoints` incidence semantics. Transformations, rendering, and
+ * screen hit testing remain untranslated.
  */
 internal open class Circle internal constructor(
     board: Board,
@@ -92,6 +93,8 @@ internal open class Circle internal constructor(
     // JSXGraph: src/base/circle.js -> midpoint / radius / points
     internal val midpoint: Point = center
     internal var radius: Double = 0.0
+    // JSXGraph 1.13.3: src/options.js -> Circle.hasInnerPoints.
+    internal var hasInnerPoints: Boolean = false
     internal var radiusEvaluationError: CircleError? = null
         private set
     internal val points = mutableListOf<Coords>()

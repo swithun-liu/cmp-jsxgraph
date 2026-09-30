@@ -2684,6 +2684,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
             "thresholdVertex",
             "thresholdThird",
             "thresholdAngle",
+            "jxgBoardP4",
         ),
         expectedTexts = emptyList(),
         features = setOf(
@@ -2789,6 +2790,7 @@ internal val productionCorpusCases: List<ProductionCorpusCase> = listOf(
             "autoVertex",
             "autoThird",
             "autoAngle",
+            "jxgBoardP4",
         ),
         expectedTexts = emptyList(),
         features = setOf(

@@ -392,7 +392,7 @@ class EllipseTest {
     }
 
     @Test
-    fun unverifiedConicInteropRemainsStructuredAndAtomic() {
+    fun conicMatrixAndDerivativeInteropAreTranslatedWhileIntersectionsRemainStructured() {
         val board = board("conic-boundaries")
         val focus1 = point(board, -3.0, 0.0, "focus1")
         val focus2 = point(board, 3.0, 0.0, "focus2")
@@ -414,56 +414,97 @@ class EllipseTest {
             second = point(board, 8.0, 4.0, "lineEnd"),
             id = "line",
         )
-        val objectIds = board.objects.keys.toSet()
+        val tangent = assertIs<GMResult.Ok<Line>>(
+            Tangent.create(
+                board = board,
+                firstParent = ellipse,
+                secondParent = externalPoint,
+                id = "tangent",
+                point1Id = "tangentPoint1",
+                point2Id = "tangentPoint2",
+            ),
+        ).value
+        val polar = assertIs<GMResult.Ok<Line>>(
+            Tangent.createPolarLine(
+                board = board,
+                firstParent = externalPoint,
+                secondParent = ellipse,
+                id = "polar",
+                point1Id = "polarPoint1",
+                point2Id = "polarPoint2",
+            ),
+        ).value
+        val normal = assertIs<GMResult.Ok<Line>>(
+            Normal.create(
+                board = board,
+                firstParent = externalPoint,
+                secondParent = ellipse,
+                id = "normal",
+                point1Id = "normalPoint1",
+                point2Id = "normalPoint2",
+            ),
+        ).value
+        val pole = assertIs<GMResult.Ok<Point>>(
+            PolePoint.create(
+                board = board,
+                firstParent = ellipse,
+                secondParent = line,
+                id = "pole",
+            ),
+        ).value
+        board.update()
 
-        assertEquals(
-            TangentError.UnsupportedConic(0),
-            assertIs<GMResult.Err<TangentError>>(
-                Tangent.create(board, ellipse, externalPoint),
-            ).error,
-        )
-        assertEquals(
-            TangentError.UnsupportedConic(1),
-            assertIs<GMResult.Err<TangentError>>(
-                Tangent.createPolarLine(board, externalPoint, ellipse),
-            ).error,
-        )
-        assertEquals(
-            NormalError.UnsupportedConic(1),
-            assertIs<GMResult.Err<NormalError>>(
-                Normal.create(board, externalPoint, ellipse),
-            ).error,
-        )
-        assertEquals(
-            IntersectionError.UnsupportedConic(1),
-            assertIs<GMResult.Err<IntersectionError>>(
-                IntersectionPoint.create(board, line, ellipse),
-            ).error,
-        )
-        assertEquals(
-            IntersectionError.UnsupportedConic(0),
-            assertIs<GMResult.Err<IntersectionError>>(
-                OtherIntersectionPoint.create(
-                    board = board,
-                    first = ellipse,
-                    second = line,
-                    excludedPoints = listOf(externalPoint),
+        assertEquals("tangent", tangent.elType)
+        assertEquals("polarline", polar.elType)
+        assertEquals("normal", normal.elType)
+        assertEquals("polepoint", pole.elType)
+        for (index in 0..2) {
+            assertEquals(
+                tangent.stdform[index],
+                polar.stdform[index],
+                absoluteTolerance = TOLERANCE,
+            )
+        }
+        assertEquals(0.0, pole.X(), absoluteTolerance = TOLERANCE)
+        assertEquals(6.25, pole.Y(), absoluteTolerance = TOLERANCE)
+
+        val firstIntersection = assertIs<GMResult.Ok<IntersectionPoint>>(
+            IntersectionPoint.create(
+                board = board,
+                first = line,
+                second = ellipse,
+                id = "firstIntersection",
+            ),
+        ).value
+        val otherIntersection = assertIs<GMResult.Ok<OtherIntersectionPoint>>(
+            OtherIntersectionPoint.create(
+                board = board,
+                first = ellipse,
+                second = line,
+                excludedPoints = listOf(firstIntersection),
+                id = "otherIntersection",
+            ),
+        ).value
+        val tangentTo = assertIs<GMResult.Ok<Line>>(
+            TangentTo.create(
+                board = board,
+                conic = ellipse,
+                pointFrom = externalPoint,
+                tangentAttributes = TangentToLineAttributes(
+                    identity = TangentToIdentity(id = "tangentTo"),
                 ),
-            ).error,
+            ),
+        ).value
+        board.update()
+
+        assertEquals(4.0, firstIntersection.Y(), absoluteTolerance = 1.0e-5)
+        assertEquals(4.0, otherIntersection.Y(), absoluteTolerance = 1.0e-5)
+        assertTrue(
+            firstIntersection.X() * otherIntersection.X() < 0.0,
         )
-        assertEquals(
-            PolePointError.UnsupportedParents(listOf("curve", "line")),
-            assertIs<GMResult.Err<PolePointError>>(
-                PolePoint.create(board, ellipse, line),
-            ).error,
-        )
-        assertEquals(
-            TangentToError.UnsupportedConic("curve"),
-            assertIs<GMResult.Err<TangentToError>>(
-                TangentTo.create(board, ellipse, externalPoint),
-            ).error,
-        )
-        assertEquals(objectIds, board.objects.keys.toSet())
+        assertEquals("tangentto", tangentTo.elType)
+        assertTrue(tangentTo.tangentToPoint!!.X().isFinite())
+        assertTrue(tangentTo.tangentToPoint!!.Y().isFinite())
     }
 
     private fun numericEllipse(majorAxis: Double): Curve {

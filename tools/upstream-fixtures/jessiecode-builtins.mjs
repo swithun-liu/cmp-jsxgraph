@@ -122,6 +122,7 @@ const sources = [
     "randint(2, 10, 2);",
     "randint(2, 10, null);",
     "randint(2, 10, missing);",
+    "$log(1, \"first\");",
     "remove(A);",
     "remove(7);"
 ];
@@ -150,12 +151,14 @@ try {
                 value: summarize(
                     jessieCode.parse(source, false, true)
                 ),
+                log: jessieCode.$log.map((entry) => Array.from(entry)),
                 removed: board.removed
             };
         } catch (error) {
             return {
                 source,
                 error: error.message,
+                log: jessieCode.$log.map((entry) => Array.from(entry)),
                 removed: board.removed
             };
         } finally {

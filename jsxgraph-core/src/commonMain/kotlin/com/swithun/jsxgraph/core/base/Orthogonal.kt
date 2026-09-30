@@ -351,6 +351,9 @@ internal class PerpendicularSegmentLine private constructor(
             line: Line,
             sourcePoint: Point,
             ownsSourcePoint: Boolean = false,
+            pointId: String = "",
+            pointName: String? = null,
+            pointFixed: Boolean = false,
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -376,12 +379,15 @@ internal class PerpendicularSegmentLine private constructor(
                     line = line,
                     kind = OrthogonalPointKind.PERPENDICULAR_POINT,
                     ownsPoint = ownsSourcePoint,
-                    name = "",
+                    id = pointId,
+                    name = pointName ?: "",
+                    fixed = pointFixed,
                 )
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
+            helper.dump = false
             val change = perpendicular(line, sourcePoint).change
             val output = PerpendicularSegmentLine(
                 board = board,

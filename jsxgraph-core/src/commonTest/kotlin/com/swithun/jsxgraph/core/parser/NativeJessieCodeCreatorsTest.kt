@@ -12,6 +12,7 @@ import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.BoardError
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.CircleError
+import com.swithun.jsxgraph.core.base.ConicError
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.Coords
 import com.swithun.jsxgraph.core.base.CircumcenterError
@@ -22,6 +23,7 @@ import com.swithun.jsxgraph.core.base.CurveError
 import com.swithun.jsxgraph.core.base.EllipseError
 import com.swithun.jsxgraph.core.base.HyperbolaError
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.IncenterPoint
 import com.swithun.jsxgraph.core.base.IncircleCircle
 import com.swithun.jsxgraph.core.base.IntegralError
@@ -51,6 +53,7 @@ import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.RadicalAxisError
 import com.swithun.jsxgraph.core.base.RegularPolygonError
 import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.SectorError
 import com.swithun.jsxgraph.core.base.TangentError
 import com.swithun.jsxgraph.core.base.TangentToError
 import com.swithun.jsxgraph.core.base.TapemeasureError
@@ -61,6 +64,7 @@ import com.swithun.jsxgraph.core.base.TicksError
 import com.swithun.jsxgraph.core.base.TicksSource
 import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
 import com.swithun.jsxgraph.core.math.ClipError
+import com.swithun.jsxgraph.core.math.NumericsError
 import kotlin.math.sqrt
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -72,6 +76,49 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class NativeJessieCodeCreatorsTest {
+    @Test
+    fun incidenceVisualAttributesReachNativeElements() {
+        val board = board("incidence-attributes")
+
+        evaluate(
+            source =
+                """
+                A = point(0, 0) << name: "" >>;
+                B = point(2, 0) << name: "" >>;
+                segment(A, B) << id: "segment", name: "" >>;
+                probe = point(-1, 0) <<
+                    id: "probe",
+                    name: "",
+                    alwaysIntersect: true
+                >>;
+                circle(A, 2) <<
+                    id: "circle",
+                    name: "",
+                    hasInnerPoints: true
+                >>;
+                polygon([0, 0], [2, 0], [2, 2], [0, 2]) <<
+                    id: "polygon",
+                    name: "",
+                    hasInnerPoints: true
+                >>;
+                inside = point(1, 1) << id: "inside", name: "" >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        val probe = assertIs<Point>(board.select("probe"))
+        val segment = assertIs<Line>(board.select("segment"))
+        val circle = assertIs<Circle>(board.select("circle"))
+        val polygon = assertIs<Polygon>(board.select("polygon"))
+        val inside = assertIs<Point>(board.select("inside"))
+        assertTrue(probe.alwaysIntersect)
+        assertTrue(circle.hasInnerPoints)
+        assertTrue(polygon.hasInnerPoints)
+        assertTrue(probe.isOn(segment, tolerance = 0.25))
+        assertTrue(inside.isOn(circle, tolerance = 0.25))
+        assertTrue(inside.isOn(polygon, tolerance = 0.25))
+    }
+
     @Test
     fun pointCreatorUsesAssignmentNameAndExplicitIdentityAttributes() {
         val implicitBoard = board("implicit")
@@ -1340,6 +1387,67 @@ class NativeJessieCodeCreatorsTest {
             -0.8682431421244593,
             lineNormal.point2.Y(),
             absoluteTolerance = 1.0e-12,
+        )
+    }
+
+    @Test
+    fun tangentAndNormalCreatorsAcceptArcAndSectorCurveClasses() {
+        val board = board("cubic-line-creators")
+        evaluate(
+            source =
+                "C = point(0, 0) << id: \"C\", name: \"\" >>; " +
+                    "A = point(2, 0) << id: \"A\", name: \"\" >>; " +
+                    "B = point(-2, 0) << id: \"B\", name: \"\" >>; " +
+                    "arc = arc(C, A, B) << id: \"arc\", name: \"\" >>; " +
+                    "arcPoint = point(1, 1.8) << " +
+                    "id: \"arcPoint\", name: \"\" >>; " +
+                    "arcTangent = tangent(arc, arcPoint) << " +
+                    "id: \"arcTangent\", name: \"\" >>; " +
+                    "arcNormal = normal(arcPoint, arc) << " +
+                    "id: \"arcNormal\", name: \"\" >>; " +
+                    "S0 = point(0, -2) << id: \"S0\", name: \"\" >>; " +
+                    "S1 = point(2, -2) << id: \"S1\", name: \"\" >>; " +
+                    "S2 = point(0, 0) << id: \"S2\", name: \"\" >>; " +
+                    "sector = sector(S0, S1, S2) << " +
+                    "id: \"sector\", name: \"\" >>; " +
+                    "sectorPoint = point(1, -1) << " +
+                    "id: \"sectorPoint\", name: \"\" >>; " +
+                    "sectorTangent = tangent(sectorPoint, sector) << " +
+                    "id: \"sectorTangent\", name: \"\" >>; " +
+                    "sectorNormal = normal(sector, sectorPoint) << " +
+                    "id: \"sectorNormal\", name: \"\" >>;",
+            board = board,
+        )
+
+        val arcTangent = assertIs<Line>(board.select("arcTangent"))
+        val arcNormal = assertIs<Line>(board.select("arcNormal"))
+        val sectorTangent = assertIs<Line>(board.select("sectorTangent"))
+        val sectorNormal = assertIs<Line>(board.select("sectorNormal"))
+        assertLineCoefficients(
+            expected = doubleArrayOf(-1.0, 1.0, 0.0),
+            actual = arcTangent.stdform,
+        )
+        assertLineCoefficients(
+            expected = doubleArrayOf(-1.8, 0.0, 1.0),
+            actual = arcNormal.stdform,
+        )
+        assertLineCoefficients(
+            expected = doubleArrayOf(-1.0, 0.0, -1.0),
+            actual = sectorTangent.stdform,
+        )
+        assertLineCoefficients(
+            expected = doubleArrayOf(-1.0, 1.0, 0.0),
+            actual = sectorNormal.stdform,
+        )
+        assertEquals(listOf("arc", "arcPoint"), arcTangent.parents)
+        assertEquals(listOf("arcPoint", "arc"), arcNormal.parents)
+        assertEquals(
+            listOf("sectorPoint", "sector"),
+            sectorTangent.parents,
+        )
+        assertEquals(
+            listOf("sector", "sectorPoint"),
+            sectorNormal.parents,
         )
     }
 
@@ -3382,87 +3490,253 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
-    fun ellipseConicInteropRemainsStructuredAndAtomic() {
-        fun failure(
-            suffix: String,
-            expression: String,
-        ): Pair<JessieCodeRuntimeError.CreatorFailure, Board> {
-            val board = board("ellipse-conic-$suffix")
-            val error = creatorError(
+    fun conicCreatorSupportsPointsCoordinatesAndDynamicCoefficients() {
+        val pointBoard = board("conic-points")
+        val pointConic = curve(
+            evaluate(
                 source =
-                    "F1 = point(-3, 0); F2 = point(3, 0); " +
-                        "C = point(0, 5); " +
-                        "E = ellipse(F1, F2, C) << " +
-                        "doAdvancedPlot: false, numberPointsHigh: 8 >>; " +
-                        "P = point(7, 4); L = line([-8, 4], [8, 4]); " +
-                        expression,
-                board = board,
-            )
-            assertEquals(9, board.objects.size)
-            return error to board
-        }
+                    "A = point(1, 5) << id: \"A\", name: \"\" >>; " +
+                        "B = point(1, 2) << id: \"B\", name: \"\" >>; " +
+                        "C = point(2, 0) << id: \"C\", name: \"\" >>; " +
+                        "D = point(0, 0) << id: \"D\", name: \"\" >>; " +
+                        "E = point(-1, 5) << id: \"E\", name: \"\" >>; " +
+                        "Q = conic(A, B, C, D, E) << " +
+                        "id: \"conic\", name: \"\", " +
+                        "doAdvancedPlot: false, numberPointsHigh: 9, " +
+                        "center: << id: \"center\", name: \"\", " +
+                        "fixed: true >> >>; Q;",
+                board = pointBoard,
+            ),
+        )
+        val center = assertIs<Point>(pointConic.center)
 
-        val tangent = failure("tangent", "tangent(E, P);").first
+        assertTrue("conic" in NativeJessieCodeCreators.names)
+        assertTrue(pointConic.isGenericConic)
+        assertEquals(Const.OBJECT_TYPE_CONIC, pointConic.type)
+        assertEquals(9, pointConic.numberPoints)
+        assertEquals(listOf("A", "B", "C", "D", "E"), pointConic.parents)
+        assertEquals(0.0, center.X())
+        assertEquals(0.0, center.Y())
+        assertTrue(center.isFixed)
+        assertSame(center, pointConic.childElements[center.id])
         assertEquals(
-            TangentError.UnsupportedConic(0),
-            assertIs<JessieCodeCreatorError.TangentFactory>(
-                tangent.error,
-            ).error,
+            0.16217371071583087,
+            pointConic.X(0.0),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            2.4140697495159498,
+            pointConic.Y(0.0),
+            absoluteTolerance = 1.0e-12,
         )
 
-        val polar = failure("polar", "polar(P, E);").first
-        assertEquals(
-            TangentError.UnsupportedConic(1),
-            assertIs<JessieCodeCreatorError.TangentFactory>(
-                polar.error,
-            ).error,
+        pointBoard.fullUpdate()
+
+        assertEquals(0.5, center.X(), absoluteTolerance = 1.0e-12)
+        assertEquals(2.5, center.Y(), absoluteTolerance = 1.0e-12)
+
+        val coordinateBoard = board("conic-coordinates")
+        val coordinateConic = curve(
+            evaluate(
+                source =
+                    "conic([1, 5], [1, 2], [2, 0], [0, 0], [-1, 5]) " +
+                        "<< id: \"conic\", name: \"\", " +
+                        "doAdvancedPlot: false, numberPointsHigh: 9, " +
+                        "point: << fixed: true >> >>;",
+                board = coordinateBoard,
+            ),
+        )
+        assertEquals(emptyList(), coordinateConic.parents)
+        assertEquals(7, coordinateBoard.objects.size)
+        assertTrue(
+            coordinateConic.inherits
+                .filterIsInstance<Point>()
+                .drop(1)
+                .all(Point::isFixed),
         )
 
-        val polarLine = failure("polarline", "polarline(E, P);").first
+        val functionPointBoard = board("conic-function-point")
+        val functionPointConic = curve(
+            evaluate(
+                source =
+                    "A = point(1, 5) << id: \"A\", name: \"\" >>; " +
+                        "B = point(1, 2) << id: \"B\", name: \"\" >>; " +
+                        "C = point(2, 0) << id: \"C\", name: \"\" >>; " +
+                        "D = point(0, 0) << id: \"D\", name: \"\" >>; " +
+                        "E = point(-1, 5) << id: \"E\", name: \"\" >>; " +
+                        "conic(function () { return A; }, B, C, D, E) " +
+                        "<< name: \"\", doAdvancedPlot: false, " +
+                        "numberPointsHigh: 9 >>;",
+                board = functionPointBoard,
+            ),
+        )
+        assertEquals(
+            listOf("B", "C", "D", "E"),
+            functionPointConic.parents,
+        )
+
+        val coefficientBoard = board("conic-coefficients")
+        val coefficientConic = curve(
+            evaluate(
+                source =
+                    "e = 0; " +
+                        "Q = conic(" +
+                        "2, 1, -9, 0, " +
+                        "function () { return e; }, 0) << " +
+                        "id: \"dynamic\", name: \"\", " +
+                        "doAdvancedPlot: false, numberPointsHigh: 9, " +
+                        "center: << id: \"dynamic-center\", " +
+                        "name: \"\" >> >>; " +
+                        "e = 2; Q;",
+                board = coefficientBoard,
+            ),
+        )
+        assertEquals(-9.0, coefficientConic.quadraticform[0][0])
+        assertEquals(2.0, coefficientConic.quadraticform[1][1])
+        assertEquals(1.0, coefficientConic.quadraticform[2][2])
+
+        coefficientBoard.fullUpdate()
+
+        assertEquals(-9.0, coefficientConic.quadraticform[0][0])
+        assertEquals(2.0, coefficientConic.quadraticform[0][1])
+        assertEquals(2.0, coefficientConic.quadraticform[1][1])
+        assertEquals(1.0, coefficientConic.quadraticform[2][2])
+        assertEquals(
+            -3.3452078799117126,
+            coefficientConic.X(0.0),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            -1.0,
+            assertIs<Point>(coefficientConic.center).X(),
+            absoluteTolerance = 1.0e-12,
+        )
+    }
+
+    @Test
+    fun conicCreatorFailuresAreStructuredAndAtomic() {
+        val wrongCount = creatorError(
+            source = "conic(1, 2, 3, 4);",
+            board = board("conic-wrong-count"),
+        )
+        assertEquals("conic", wrongCount.creatorName)
         assertIs<JessieCodeCreatorError.UnsupportedParents>(
-            polarLine.error,
+            wrongCount.error,
         )
 
-        val normal = failure("normal", "normal(P, E);").first
+        val wrongPoint = creatorError(
+            source =
+                "A = point(0, 0); L = line([0, 0], [1, 1]); " +
+                    "conic(A, L, [1, 0], [0, 1], [-1, 0]);",
+            board = board("conic-wrong-point"),
+        )
+        assertIs<JessieCodeCreatorError.UnsupportedParents>(
+            wrongPoint.error,
+        )
+
+        val wrongCoefficient = creatorError(
+            source = "conic(1, 2, -4, 0, \"bad\", 0);",
+            board = board("conic-wrong-coefficient"),
+        )
+        assertIs<JessieCodeCreatorError.UnsupportedParents>(
+            wrongCoefficient.error,
+        )
+
+        val duplicateBoard = board("conic-duplicate")
+        val duplicate = creatorError(
+            source =
+                "point(7, 5) << id: \"taken\", name: \"\" >>; " +
+                    "conic([1, 5], [1, 2], [2, 0], [0, 0], [-1, 5]) " +
+                    "<< id: \"taken\", doAdvancedPlot: false, " +
+                    "numberPointsHigh: 9 >>;",
+            board = duplicateBoard,
+        )
         assertEquals(
-            NormalError.UnsupportedConic(1),
-            assertIs<JessieCodeCreatorError.NormalFactory>(
-                normal.error,
+            ConicError.DuplicateElementId("taken"),
+            assertIs<JessieCodeCreatorError.ConicFactory>(
+                duplicate.error,
             ).error,
         )
+        assertEquals(1, duplicateBoard.objects.size)
 
-        for (creator in listOf("intersection", "otherintersection")) {
-            val expression =
-                if (creator == "intersection") {
-                    "intersection(L, E, 0);"
-                } else {
-                    "otherintersection(E, L, P);"
-                }
-            val error = failure(creator, expression).first
-            assertEquals(
-                if (creator == "intersection") {
-                    IntersectionError.UnsupportedConic(1)
-                } else {
-                    IntersectionError.UnsupportedConic(0)
-                },
-                assertIs<JessieCodeCreatorError.IntersectionFactory>(
-                    error.error,
+        val nonNumericBoard = board("conic-non-numeric")
+        val nonNumeric = creatorError(
+            source =
+                "conic(function () { return \"bad\"; }, " +
+                    "2, -4, 0, 0, 0) << " +
+                    "id: \"failed\", center: << id: \"center\" >> >>;",
+            board = nonNumericBoard,
+        )
+        assertEquals(
+            CurveError.NonNumericExpression(
+                term = "conic.coefficient[0]",
+                actualType = "string",
+            ),
+            assertIs<ConicError.CurveCreation>(
+                assertIs<JessieCodeCreatorError.ConicFactory>(
+                    nonNumeric.error,
                 ).error,
-            )
-        }
-
-        val polePoint = failure("polepoint", "polepoint(E, L);").first
-        assertIs<JessieCodeCreatorError.UnsupportedParents>(
-            polePoint.error,
-        )
-
-        val tangentTo = failure("tangentto", "tangentto(E, P, 0);").first
-        assertEquals(
-            TangentToError.UnsupportedConic("curve"),
-            assertIs<JessieCodeCreatorError.TangentToFactory>(
-                tangentTo.error,
             ).error,
         )
+        assertEquals(emptyMap(), nonNumericBoard.objects)
+    }
+
+    @Test
+    fun ellipseConicMatrixAndDerivativeInteropAreAvailable() {
+        val supportedBoard = board("ellipse-conic-supported")
+        evaluate(
+            source =
+                "F1 = point(-3, 0); F2 = point(3, 0); " +
+                    "C = point(0, 5); " +
+                    "E = ellipse(F1, F2, C); " +
+                    "P = point(7, 4); L = line([-8, 4], [8, 4]); " +
+                    "tangent(E, P) << id: \"tangent\" >>; " +
+                    "polar(P, E) << id: \"polar\" >>; " +
+                    "polarline(E, P) << id: \"polarline\" >>; " +
+                    "normal(P, E) << id: \"normal\" >>; " +
+                    "polepoint(E, L) << id: \"pole\" >>; " +
+                    "I = intersection(L, E, 0) << " +
+                    "id: \"intersection\" >>; " +
+                    "intersection(L, E, 1) << " +
+                    "id: \"secondIntersection\" >>; " +
+                    "otherintersection(E, L, I) << " +
+                    "id: \"otherintersection\" >>; " +
+                    "tangentto(E, P, 0) << id: \"tangentto\" >>;",
+            board = supportedBoard,
+        )
+
+        val tangent = assertIs<Line>(supportedBoard.elementById("tangent"))
+        val polar = assertIs<Line>(supportedBoard.elementById("polar"))
+        val polarLine = assertIs<Line>(
+            supportedBoard.elementById("polarline"),
+        )
+        val normal = assertIs<Line>(supportedBoard.elementById("normal"))
+        val pole = assertIs<Point>(supportedBoard.elementById("pole"))
+        val tangentTo = assertIs<Line>(
+            supportedBoard.elementById("tangentto"),
+        )
+        val intersection = assertIs<Point>(
+            supportedBoard.elementById("intersection"),
+        )
+        val otherIntersection = assertIs<Point>(
+            supportedBoard.elementById("otherintersection"),
+        )
+        val secondIntersection = assertIs<Point>(
+            supportedBoard.elementById("secondIntersection"),
+        )
+        assertEquals("tangent", tangent.elType)
+        assertEquals("tangent", polar.elType)
+        assertEquals("polarline", polarLine.elType)
+        assertEquals("normal", normal.elType)
+        assertEquals("polepoint", pole.elType)
+        assertEquals("tangentto", tangentTo.elType)
+        assertEquals(0.0, pole.X(), absoluteTolerance = 1.0e-12)
+        assertEquals(6.25, pole.Y(), absoluteTolerance = 1.0e-12)
+        assertEquals(4.0, intersection.Y(), absoluteTolerance = 1.0e-5)
+        assertTrue(secondIntersection.X().isNaN())
+        assertTrue(secondIntersection.Y().isNaN())
+        assertTrue(otherIntersection.X().isNaN())
+        assertTrue(otherIntersection.Y().isNaN())
     }
 
     @Test
@@ -3702,6 +3976,156 @@ class NativeJessieCodeCreatorsTest {
         assertContentEquals(
             doubleArrayOf(0.0, 1.0),
             plot.points.map { it.usrCoords[2] }.toDoubleArray(),
+        )
+    }
+
+    @Test
+    fun curveCreatorSupportsTransformedCurveParents() {
+        val board = board("transformed-curve")
+        evaluate(
+            source =
+                """
+                source = curve([-1, 0, 2], [0, 2, -1]) <<
+                    id: "source", name: ""
+                >>;
+                scale = transform(2, -1) << type: "scale" >>;
+                translate = transform(3, 4) << type: "translate" >>;
+                transformed = curve(source, [scale, translate]) <<
+                    id: "transformed", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        val source = assertIs<Curve>(board.select("source"))
+        val transformed = assertIs<Curve>(board.select("transformed"))
+        assertContentEquals(
+            doubleArrayOf(-1.0, 0.0, 2.0),
+            transformed.dataX,
+        )
+        assertContentEquals(
+            doubleArrayOf(0.0, 2.0, -1.0),
+            transformed.dataY,
+        )
+        assertCurveCoordinates(
+            curve = transformed,
+            expected = listOf(
+                1.0 to 4.0,
+                3.0 to 2.0,
+                7.0 to 5.0,
+            ),
+        )
+        assertEquals(listOf("source"), transformed.parents)
+        assertSame(source, transformed.transformationSource)
+        assertSame(transformed, source.childElements["transformed"])
+        assertEquals(2, board.objects.size)
+        assertSame(null, board.select("scale"))
+        assertSame(null, board.select("translate"))
+    }
+
+    @Test
+    fun curveCreatorsApplyOfficialRdpDefaultsAndOverrides() {
+        fun functionGraph(
+            id: String,
+            attributes: String = "",
+        ): Curve = curve(
+            evaluate(
+                source =
+                    "functiongraph(\"x * x\", -2, 2) << " +
+                        "doAdvancedPlot: true, plotVersion: 2" +
+                        attributes +
+                        " >>;",
+                board = rdpBoard(id),
+            ),
+        )
+
+        assertEquals(43, functionGraph("rdp-default").numberPoints)
+        assertEquals(
+            523,
+            functionGraph(
+                id = "rdp-disabled",
+                attributes = ", RDPsmoothing: false",
+            ).numberPoints,
+        )
+        assertEquals(
+            20,
+            functionGraph(
+                id = "rdp-threshold-one",
+                attributes = ", RDPthreshold: 1",
+            ).numberPoints,
+        )
+        assertEquals(
+            523,
+            functionGraph(
+                id = "rdp-threshold-zero",
+                attributes = ", RDPthreshold: 0",
+            ).numberPoints,
+        )
+
+        val plot = curve(
+            evaluate(
+                source =
+                    "plot(\"x\", -2, 2) << " +
+                        "doAdvancedPlot: true, plotVersion: 2 >>;",
+                board = rdpBoard("rdp-plot"),
+            ),
+        )
+        assertEquals(2, plot.numberPoints)
+
+        fun parametric(
+            id: String,
+            attributes: String = "",
+        ): Curve = curve(
+            evaluate(
+                source =
+                    "curve(\"cos(x)\", \"sin(x)\", 0, " +
+                        "6.283185307179586) << " +
+                        "doAdvancedPlot: true, plotVersion: 2" +
+                        attributes +
+                        " >>;",
+                board = rdpBoard(id),
+            ),
+        )
+        assertEquals(374, parametric("rdp-curve-default").numberPoints)
+        assertEquals(
+            65,
+            parametric(
+                id = "rdp-curve-enabled",
+                attributes = ", RDPsmoothing: true",
+            ).numberPoints,
+        )
+    }
+
+    @Test
+    fun curveCreatorRdpFailuresRemainStructuredAndAtomic() {
+        val invalidBoard = rdpBoard("rdp-invalid")
+        val failure = creatorError(
+            source =
+                "functiongraph(\"x\", -2, 2) << " +
+                    "doAdvancedPlot: false, numberPointsHigh: 4, " +
+                    "RDPsmoothing: true, RDPthreshold: -1 >>;",
+            board = invalidBoard,
+        )
+        val error = assertIs<CurveError.Numerics>(
+            assertIs<JessieCodeCreatorError.CurveFactory>(
+                failure.error,
+            ).error,
+        )
+        assertEquals("RamerDouglasPeucker", error.operation)
+        assertEquals(
+            NumericsError.InvalidSimplificationTolerance(-0.0125),
+            error.error,
+        )
+        assertTrue(invalidBoard.objects.isEmpty())
+
+        val invalidType = creatorError(
+            source =
+                "functiongraph(\"x\", -2, 2) << " +
+                    "RDPsmoothing: \"yes\" >>;",
+            board = rdpBoard("rdp-invalid-type"),
+        )
+        assertIs<JessieCodeCreatorError.InvalidAttributeType>(
+            invalidType.error,
         )
     }
 
@@ -4187,6 +4611,139 @@ class NativeJessieCodeCreatorsTest {
             val failure = creatorError(source, board)
 
             assertEquals("cardinalspline", failure.creatorName)
+            assertTrue(
+                failure.error is JessieCodeCreatorError.UnsupportedParents ||
+                    failure.error is JessieCodeCreatorError.CurveFactory,
+            )
+            assertTrue(board.objects.isEmpty())
+        }
+    }
+
+    @Test
+    fun metaPostSplineCreatorTracksPointsAndDynamicTension() {
+        val board = board("metapost-spline")
+        val spline = curve(
+            evaluate(
+                source =
+                    "P0 = point(-3, -3) << id: \"P0\", name: \"\" >>; " +
+                        "P1 = point(0, -3) << id: \"P1\", name: \"\" >>; " +
+                        "P2 = point(4, -5) << id: \"P2\", name: \"\" >>; " +
+                        "P3 = point(6, -2) << id: \"P3\", name: \"\" >>; " +
+                        "T = point(1, 0) << id: \"T\", name: \"\" >>; " +
+                        "metapostspline(" +
+                        "[P0, P1, P2, P3], " +
+                        "<< tension: function () { return T.X(); }, " +
+                        "isClosed: false >>" +
+                        ") << id: \"spline\", name: \"\" >>;",
+                board = board,
+            ),
+        )
+
+        assertTrue("metapostspline" in NativeJessieCodeCreators.names)
+        assertTrue(spline.isMetaPostSpline)
+        assertEquals("metapostspline", spline.elType)
+        assertEquals("plot", spline.curveType)
+        assertEquals(3, spline.bezierDegree)
+        assertEquals(listOf("P0", "P1", "P2", "P3"), spline.parents)
+        assertEquals(
+            -1.4804537447414616,
+            spline.X(0.5),
+            absoluteTolerance = 1.0e-14,
+        )
+        assertEquals(
+            -2.786219867879478,
+            spline.Y(0.5),
+            absoluteTolerance = 1.0e-14,
+        )
+
+        assertIs<Point>(board.select("T")).setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(2.0, 0.0),
+        )
+        assertIs<Point>(board.select("P2")).setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(3.0, -1.0),
+        )
+        board.update()
+
+        assertEquals(
+            -1.4919255320436613,
+            spline.X(0.5),
+            absoluteTolerance = 1.0e-14,
+        )
+        assertEquals(
+            -3.0708533708482246,
+            spline.Y(0.5),
+            absoluteTolerance = 1.0e-14,
+        )
+    }
+
+    @Test
+    fun metaPostSplineCreatesCoordinatePointsAndFailsAtomically() {
+        val createdBoard = board("metapost-created")
+        val created = curve(
+            evaluate(
+                source =
+                    "metapostspline(" +
+                        "[[-4, 0], [-2, 3], [1, -2], [4, 2]], " +
+                        "<< tension: 1 >>" +
+                        ") << id: \"created\", name: \"\" >>;",
+                board = createdBoard,
+            ),
+        )
+
+        assertEquals(5, createdBoard.numObjects)
+        assertEquals(4, created.parents.size)
+        assertTrue(created.childElements.isEmpty())
+        assertEquals(
+            -3.461769837399737,
+            created.X(0.5),
+            absoluteTolerance = 1.0e-14,
+        )
+        assertEquals(
+            2.1127942603548853,
+            created.Y(0.5),
+            absoluteTolerance = 1.0e-14,
+        )
+        assertTrue(
+            created.parents.all { parentId ->
+                assertIs<Point>(createdBoard.select(parentId))
+                    .childElements[created.id] === created
+            },
+        )
+
+        val separatedBoard = board("metapost-separated")
+        val separated = curve(
+            evaluate(
+                source =
+                    "metapostspline(" +
+                        "[[-4, -2, 1, 4], [0, 3, -2, 2]], " +
+                        "<< tension: 1 >>" +
+                        ") << id: \"separated\", name: \"\", " +
+                        "isArrayOfCoordinates: false >>;",
+                board = separatedBoard,
+            ),
+        )
+        assertEquals(
+            created.dataX?.toList(),
+            separated.dataX?.toList(),
+        )
+        assertEquals(
+            created.dataY?.toList(),
+            separated.dataY?.toList(),
+        )
+
+        for (source in listOf(
+            "metapostspline();",
+            "metapostspline([[0, 0], [1, 1]], 1);",
+            "metapostspline([[0, 0]], << tension: 1 >>);",
+            "metapostspline([[0, 0], [1, 1]], << tension: 1 >>) << " +
+                "createPoints: false >>;",
+        )) {
+            val board = board("invalid-metapost")
+            val failure = creatorError(source, board)
+
+            assertEquals("metapostspline", failure.creatorName)
             assertTrue(
                 failure.error is JessieCodeCreatorError.UnsupportedParents ||
                     failure.error is JessieCodeCreatorError.CurveFactory,
@@ -5335,6 +5892,119 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
+    fun twoLineSectorAndAngleSupportDynamicRadiusAndRuntimeAliases() {
+        val board = board("two-line-sector-angle")
+        evaluate(
+            source =
+                """
+                A = point(0, 0) << id: "A", name: "" >>;
+                B = point(4, 0) << id: "B", name: "" >>;
+                C = point(0, 4) << id: "C", name: "" >>;
+                R = point(2, 0) << id: "R", name: "" >>;
+                l1 = line(A, B) << id: "l1", name: "" >>;
+                l2 = line(A, C) << id: "l2", name: "" >>;
+                s = sector(l1, l2, [3, 1], [1, 3], "R.X()") <<
+                    id: "s", name: ""
+                >>;
+                a = angle(l1, l2, -1, 1) <<
+                    id: "a", name: "", radius: function () {
+                        return R.X() >= 0 ? R.X() : "bad";
+                    }, type: "sector", orthoType: "sector",
+                    dot: << id: "dot", name: "" >>
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+        val sector = assertIs<Sector>(board.select("s"))
+        val angle = assertIs<Sector>(board.select("a"))
+        val radius = assertIs<Point>(board.select("R"))
+
+        assertTrue(sector.isTwoLine)
+        assertTrue(angle.isTwoLine)
+        assertEquals(listOf("l1", "l2"), sector.parents)
+        assertEquals(listOf("l1", "l2"), angle.parents)
+        assertEquals(2.0, sector.Radius(), absoluteTolerance = 1.0e-12)
+        assertEquals(2.0, angle.Radius(), absoluteTolerance = 1.0e-12)
+        assertSame(sector, radius.childElements["s"])
+        assertSame(angle, radius.childElements["a"])
+        assertPoint(2.0, 0.0, sector.point2.coords)
+        assertPoint(0.0, 2.0, sector.point3.coords)
+        assertPoint(-2.0, 0.0, angle.point2.coords)
+        assertPoint(0.0, 2.0, angle.point3.coords)
+        assertSame(
+            board.select("l1"),
+            assertIs<JessieCodeRuntimeValue.ElementReference>(
+                evaluate("a.line1;", board),
+            ).element,
+        )
+        assertEquals(
+            JessieCodeRuntimeValue.UndefinedValue,
+            evaluate("a.setAngle(0.5);", board),
+        )
+        assertIs<JessieCodeRuntimeError.ElementPropertyUnavailable>(
+            evaluationError("a.point;", board),
+        )
+
+        radius.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(3.0, 0.0),
+        )
+        board.update()
+
+        assertEquals(3.0, sector.Radius(), absoluteTolerance = 1.0e-12)
+        assertEquals(3.0, angle.Radius(), absoluteTolerance = 1.0e-12)
+        assertPoint(3.0, 0.0, sector.point2.coords)
+        assertPoint(0.0, 3.0, sector.point3.coords)
+        assertPoint(-3.0, 0.0, angle.point2.coords)
+        assertPoint(0.0, 3.0, angle.point3.coords)
+
+        radius.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-1.0, 0.0),
+        )
+        board.update()
+
+        assertIs<SectorError.NonNumericRadius>(
+            angle.radiusEvaluationError,
+        )
+        assertEquals(1, angle.numberPoints)
+        assertTrue(angle.points.single().usrCoords[1].isNaN())
+    }
+
+    @Test
+    fun twoLineSectorRejectsInvalidInitialRadiusAtomically() {
+        val board = board("invalid-two-line-sector")
+        evaluate(
+            source =
+                """
+                A = point(0, 0) << id: "A", name: "" >>;
+                B = point(4, 0) << id: "B", name: "" >>;
+                C = point(0, 4) << id: "C", name: "" >>;
+                l1 = line(A, B) << id: "l1", name: "" >>;
+                l2 = line(A, C) << id: "l2", name: "" >>;
+                """.trimIndent(),
+            board = board,
+        )
+        val originalIds = board.objects.keys.toSet()
+        val error = creatorError(
+            source =
+                """
+                sector(l1, l2, 1, 1, function () {
+                    return "bad";
+                }) << id: "invalid", name: "" >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        assertIs<SectorError.NonNumericRadius>(
+            assertIs<JessieCodeCreatorError.SectorFactory>(
+                error.error,
+            ).error,
+        )
+        assertEquals(originalIds, board.objects.keys.toSet())
+    }
+
+    @Test
     fun directionPointArcAndSectorCreatorsRequireMatchingParentCounts() {
         val board = board("direction-arc")
         val arc = arc(
@@ -5907,23 +6577,18 @@ class NativeJessieCodeCreatorsTest {
         assertEquals(-1.0, curve.points.first().curveParameter)
         assertEquals(1.0, curve.points.last().curveParameter)
 
-        for (version in listOf(1)) {
-            val error = creatorError(
+        val versionOne = curve(
+            evaluate(
                 source =
-                    "functiongraph(\"x\", -1, 1) " +
-                        "<< plotVersion: $version >>;",
-                board = board(),
-            )
-
-            assertEquals("functiongraph", error.creatorName)
-            assertEquals(
-                JessieCodeCreatorError.UnsupportedAttributeValue(
-                    attribute = "plotVersion",
-                    actual = version.toString(),
-                ),
-                error.error,
-            )
-        }
+                    "functiongraph(\"x * x\", -2, 2) " +
+                        "<< plotVersion: 1, RDPsmoothing: false >>;",
+                board = rdpBoard("functiongraph-v1"),
+            ),
+        )
+        assertEquals(43, versionOne.numberPoints)
+        assertEquals(null, versionOne.points.first().curveParameter)
+        assertEquals(-1.70703125, versionOne.points[1].curveParameter)
+        assertEquals(1.998046875, versionOne.points.last().curveParameter)
 
         val invalidDepth = creatorError(
             source =
@@ -5944,7 +6609,7 @@ class NativeJessieCodeCreatorsTest {
             evaluate(
                 source =
                     "functiongraph(\"x * x\", -2, 2) " +
-                        "<< plotVersion: 3 >>;",
+                        "<< plotVersion: 3, RDPsmoothing: false >>;",
                 board = plotBoard("functiongraph-v3"),
             ),
         )
@@ -6121,6 +6786,177 @@ class NativeJessieCodeCreatorsTest {
                 creatorName,
             )
         }
+    }
+
+    @Test
+    fun traceCurveCreatorMatchesOfficialSamplingAndRestoration() {
+        assertTrue("tracecurve" in NativeJessieCodeCreators.names)
+        val board = board("tracecurve")
+        val trace = curve(
+            evaluate(
+                source =
+                    """
+                    C = point(0, 0) << id: "center", name: "" >>;
+                    R = point(2, 0) << id: "radius", name: "" >>;
+                    host = circle(C, R) << id: "host", name: "" >>;
+                    F = point(-3, 1) << id: "fixed", name: "" >>;
+                    G = glider(2, 1, host) <<
+                        id: "glider", name: ""
+                    >>;
+                    M = midpoint(G, F) << id: "midpoint", name: "" >>;
+                    tracecurve(G, M) <<
+                        id: "trace", name: "", numberPoints: 4
+                    >>;
+                    """.trimIndent(),
+                board = board,
+            ),
+        )
+        val glider = assertIs<Glider>(board.select("glider"))
+        val midpoint = assertIs<Point>(board.select("midpoint"))
+
+        assertTrue(trace.isTraceCurve)
+        assertEquals("curve", trace.elType)
+        assertEquals("plot", trace.curveType)
+        assertEquals(5L, trace.requestedPointCount())
+        assertTrue(trace.parents.isEmpty())
+        assertFalse(trace.id in glider.childElements)
+        assertFalse(trace.id in midpoint.childElements)
+        assertCurveCoordinates(
+            trace,
+            listOf(
+                -0.5 to 0.5,
+                -1.5 to 1.5,
+                -2.5 to 0.5,
+                -1.5 to -0.5,
+                -0.5 to 0.5,
+            ),
+        )
+        assertEquals(
+            0.07379180882521663,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertPoint(
+            1.788854381999832,
+            0.8944271909999157,
+            glider.coords,
+        )
+        assertPoint(
+            -0.605572809000084,
+            0.9472135954999579,
+            midpoint.coords,
+        )
+
+        assertIs<Point>(board.select("radius")).setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(4.0, 0.0),
+        )
+        board.update()
+        assertCurveCoordinates(
+            trace,
+            listOf(
+                0.5 to 0.5,
+                -1.5 to 2.5,
+                -3.5 to 0.5,
+                -1.5 to -1.5,
+                0.5 to 0.5,
+            ),
+        )
+        assertEquals(
+            0.07379180882521663,
+            assertIs<Double>(glider.position),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertPoint(
+            3.577708763999664,
+            1.7888543819998315,
+            glider.coords,
+        )
+    }
+
+    @Test
+    fun traceCurveCreatorFailuresAreStructuredAndAtomic() {
+        val board = board("tracecurve-errors")
+        evaluate(
+            source =
+                """
+                A = point(-2, 0) << id: "A", name: "" >>;
+                B = point(2, 0) << id: "B", name: "" >>;
+                host = segment(A, B) << id: "host", name: "" >>;
+                G = glider(0, 0, host) << id: "G", name: "" >>;
+                collision = point(4, 4) <<
+                    id: "collision", name: ""
+                >>;
+                pointHost = point(3, 3) <<
+                    id: "pointHost", name: ""
+                >>;
+                pointGlider = glider(pointHost) <<
+                    id: "pointGlider", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+        val originalIds = board.objects.keys.toList()
+
+        val parentCount = creatorError(
+            source = "tracecurve(G);",
+            board = board,
+        )
+        assertEquals("tracecurve", parentCount.creatorName)
+        assertIs<JessieCodeCreatorError.UnsupportedParents>(
+            parentCount.error,
+        )
+
+        val parentType = creatorError(
+            source = "tracecurve(A, B);",
+            board = board,
+        )
+        assertEquals("tracecurve", parentType.creatorName)
+        assertIs<JessieCodeCreatorError.UnsupportedParents>(
+            parentType.error,
+        )
+
+        val invalidCount = creatorError(
+            source = "tracecurve(G, G) << numberPoints: 0 >>;",
+            board = board,
+        )
+        assertEquals("tracecurve", invalidCount.creatorName)
+        assertEquals(
+            JessieCodeCreatorError.UnsupportedAttributeValue(
+                attribute = "numberpoints",
+                actual = "0.0",
+            ),
+            invalidCount.error,
+        )
+
+        val unsupportedHost = creatorError(
+            source = "tracecurve(pointGlider, pointGlider);",
+            board = board,
+        )
+        assertEquals("tracecurve", unsupportedHost.creatorName)
+        assertEquals(
+            CurveError.UnsupportedTraceSlideObject("point"),
+            assertIs<JessieCodeCreatorError.CurveFactory>(
+                unsupportedHost.error,
+            ).error,
+        )
+
+        val duplicate = creatorError(
+            source =
+                "tracecurve(G, G) << id: \"collision\", " +
+                    "numberPoints: 4 >>;",
+            board = board,
+        )
+        assertEquals("tracecurve", duplicate.creatorName)
+        assertEquals(
+            CurveError.Registration(
+                BoardError.DuplicateElementId("collision"),
+            ),
+            assertIs<JessieCodeCreatorError.CurveFactory>(
+                duplicate.error,
+            ).error,
+        )
+        assertEquals(originalIds, board.objects.keys.toList())
     }
 
     @Test
@@ -7113,15 +7949,232 @@ class NativeJessieCodeCreatorsTest {
     }
 
     @Test
+    fun gliderCreatorSupportsArcAndSectorParents() {
+        val board = board("arc-sector-glider")
+        evaluate(
+            source =
+                """
+                C = point(0, 0) << id: "C", name: "" >>;
+                R = point(2, 0) << id: "R", name: "" >>;
+                A = point(-2, 0) << id: "A", name: "" >>;
+                arc = arc(C, R, A) << id: "arc", name: "" >>;
+                arcGlider = glider(1, 1.8, arc) <<
+                    id: "arcGlider", name: ""
+                >>;
+                arcTangent = tangent(arcGlider, arc) <<
+                    id: "arcTangent", name: ""
+                >>;
+                arcNormal = normal(arcGlider, arc) <<
+                    id: "arcNormal", name: ""
+                >>;
+                arcTangentFromGlider = tangent(arcGlider) <<
+                    id: "arcTangentFromGlider", name: ""
+                >>;
+                arcPolarFromGlider = polar(arcGlider) <<
+                    id: "arcPolarFromGlider", name: ""
+                >>;
+                arcNormalFromGlider = normal(arcGlider) <<
+                    id: "arcNormalFromGlider", name: ""
+                >>;
+                SC = point(0, -2) << id: "SC", name: "" >>;
+                SR = point(2, -2) << id: "SR", name: "" >>;
+                SA = point(0, 0) << id: "SA", name: "" >>;
+                sector = sector(SC, SR, SA) <<
+                    id: "sector", name: ""
+                >>;
+                sectorGlider = glider(1, -1, sector) <<
+                    id: "sectorGlider", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        val arc = assertIs<Arc>(board.select("arc"))
+        val arcGlider = assertIs<Glider>(board.select("arcGlider"))
+        assertPoint(
+            0.9712858623572641,
+            1.7483145522430756,
+            arcGlider.coords,
+        )
+        assertEquals(
+            0.33858553278290476,
+            assertIs<Double>(arcGlider.position),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertSame(arc, arcGlider.slideObject)
+        assertSame(
+            arcGlider,
+            assertIs<Line>(board.select("arcTangent")).glider,
+        )
+        assertEquals(
+            listOf("arcGlider", "arc"),
+            assertIs<Line>(board.select("arcNormal")).parents,
+        )
+        val arcTangent = assertIs<Line>(board.select("arcTangent"))
+        val arcNormal = assertIs<Line>(board.select("arcNormal"))
+        for (
+            oneParent in listOf(
+                assertIs<Line>(
+                    board.select("arcTangentFromGlider"),
+                ),
+                assertIs<Line>(
+                    board.select("arcPolarFromGlider"),
+                ),
+            )
+        ) {
+            assertEquals(listOf("arcGlider"), oneParent.parents)
+            assertSame(arcGlider, oneParent.glider)
+            assertContentEquals(
+                arcTangent.stdform,
+                oneParent.stdform,
+            )
+        }
+        val oneParentNormal = assertIs<Line>(
+            board.select("arcNormalFromGlider"),
+        )
+        assertEquals(listOf("arcGlider"), oneParentNormal.parents)
+        assertContentEquals(
+            arcNormal.stdform,
+            oneParentNormal.stdform,
+        )
+
+        val sector = assertIs<Sector>(board.select("sector"))
+        val sectorGlider = assertIs<Glider>(
+            board.select("sectorGlider"),
+        )
+        assertPoint(
+            1.4142135623730951,
+            -0.5857864376269051,
+            sectorGlider.coords,
+        )
+        assertEquals(
+            0.5,
+            assertIs<Double>(sectorGlider.position),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertSame(sector, sectorGlider.slideObject)
+    }
+
+    @Test
+    fun gliderCreatorSupportsCircleAndPointParents() {
+        val board = board("circle-point-glider")
+        evaluate(
+            source =
+                """
+                C = point(1, -1) << id: "C", name: "" >>;
+                R = point(3, -1) << id: "R", name: "" >>;
+                circle = circle(C, R) << id: "circle", name: "" >>;
+                circleGlider = glider(2, 3, circle) <<
+                    id: "circleGlider", name: ""
+                >>;
+                P = point(2, -3) << id: "P", name: "" >>;
+                pointGlider = glider(5, 4, P) <<
+                    id: "pointGlider", name: ""
+                >>;
+                F1 = point(-2, 0) << id: "F1", name: "" >>;
+                F2 = point(2, 0) << id: "F2", name: "" >>;
+                ellipse = ellipse(F1, F2, 6) <<
+                    id: "ellipse", name: ""
+                >>;
+                conicGlider = glider(0, 4, ellipse) <<
+                    id: "conicGlider", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        val circle = assertIs<Circle>(board.select("circle"))
+        val circleGlider = assertIs<Glider>(
+            board.select("circleGlider"),
+        )
+        assertPoint(
+            1.4850712500726657,
+            0.9402850002906642,
+            circleGlider.coords,
+        )
+        assertEquals(
+            0.21101043481131537,
+            assertIs<Double>(circleGlider.position),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertSame(circle, circleGlider.slideObject)
+
+        val point = assertIs<Point>(board.select("P"))
+        val pointGlider = assertIs<Glider>(
+            board.select("pointGlider"),
+        )
+        assertPoint(2.0, -3.0, pointGlider.coords)
+        assertEquals(null, pointGlider.position)
+        assertSame(point, pointGlider.slideObject)
+
+        val ellipse = assertIs<Curve>(board.select("ellipse"))
+        val conicGlider = assertIs<Glider>(
+            board.select("conicGlider"),
+        )
+        assertEquals(
+            0.0,
+            conicGlider.X(),
+            absoluteTolerance = 3.0e-6,
+        )
+        assertEquals(
+            2.236067977499285,
+            conicGlider.Y(),
+            absoluteTolerance = 3.0e-6,
+        )
+        assertEquals(
+            0.8410691715470333,
+            assertIs<Double>(conicGlider.position),
+            absoluteTolerance = 3.0e-6,
+        )
+        assertSame(ellipse, conicGlider.slideObject)
+    }
+
+    @Test
+    fun gliderCreatorSupportsPolygonParent() {
+        val board = board("polygon-glider")
+        evaluate(
+            source =
+                """
+                A = point(0, 0) << id: "A", name: "" >>;
+                B = point(4, 0) << id: "B", name: "" >>;
+                C = point(4, 3) << id: "C", name: "" >>;
+                polygon = polygon(A, B, C) <<
+                    id: "polygon", name: ""
+                >>;
+                glider(2, -1, polygon) <<
+                    id: "polygonGlider", name: ""
+                >>;
+                """.trimIndent(),
+            board = board,
+        )
+
+        val polygon = assertIs<Polygon>(board.select("polygon"))
+        val glider = assertIs<Glider>(board.select("polygonGlider"))
+        val initialBorder = polygon.borders[0]
+        assertPoint(2.0, 0.0, glider.coords)
+        assertEquals(0.5, glider.position)
+        assertTrue(glider.onPolygon)
+        assertSame(initialBorder, glider.slideObject)
+        assertSame(initialBorder, glider.slideObjects.single())
+        assertEquals(listOf(initialBorder.id), glider.parents)
+    }
+
+    @Test
     fun gliderAndSliderCreatorFailuresAreStructuredAndAtomic() {
         val board = board("glider-failure")
         evaluate(
-            source = "P = point(0, 0) << id: \"P\", name: \"\" >>;",
+            source =
+                """
+                A = point(-2, 0) << id: "A", name: "" >>;
+                B = point(2, 0) << id: "B", name: "" >>;
+                base = segment(A, B) << id: "base", name: "" >>;
+                marks = ticks(base, 1) << id: "marks", name: "" >>;
+                """.trimIndent(),
             board = board,
         )
         val beforeGlider = board.objects.keys.toList()
         val unsupported = creatorError(
-            source = "glider(1, 1, P) << id: \"G\" >>;",
+            source = "glider(1, 1, marks) << id: \"G\" >>;",
             board = board,
         )
         assertEquals("glider", unsupported.creatorName)
@@ -7568,6 +8621,21 @@ class NativeJessieCodeCreatorsTest {
         return assertIs(error)
     }
 
+    private fun evaluationError(
+        source: String,
+        board: Board?,
+    ): JessieCodeRuntimeError {
+        val ast = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            JessieCodeExpressionParser().parse(source),
+        ).value
+        return assertIs<GMResult.Err<JessieCodeRuntimeError>>(
+            JessieCodeEvaluator().evaluate(
+                ast,
+                JessieCodeRuntimeEnvironment(board = board),
+            ),
+        ).error
+    }
+
     private fun point(value: JessieCodeRuntimeValue): Point =
         assertIs<JessieCodeRuntimeValue.ElementReference>(value)
             .element.let(::assertIs)
@@ -7605,6 +8673,20 @@ class NativeJessieCodeCreatorsTest {
         assertEquals(y, actual.usrCoords[2], absoluteTolerance = 1.0e-10)
     }
 
+    private fun assertLineCoefficients(
+        expected: DoubleArray,
+        actual: DoubleArray,
+    ) {
+        assertEquals(3, expected.size)
+        for (index in expected.indices) {
+            assertEquals(
+                expected[index],
+                actual[index],
+                absoluteTolerance = 1.0e-9,
+            )
+        }
+    }
+
     private fun assertCurveCoordinates(
         curve: Curve,
         expected: List<Pair<Double, Double>>,
@@ -7638,6 +8720,15 @@ class NativeJessieCodeCreatorsTest {
         originY = 0.0,
         unitX = 1.0,
         unitY = 1.0,
+        boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+        id = id,
+    )
+
+    private fun rdpBoard(id: String): Board = Board(
+        originX = 250.0,
+        originY = 250.0,
+        unitX = 50.0,
+        unitY = 50.0,
         boundingBox = doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
         id = id,
     )

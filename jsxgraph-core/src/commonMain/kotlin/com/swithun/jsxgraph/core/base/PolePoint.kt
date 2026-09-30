@@ -46,18 +46,18 @@ internal object PolePoint {
         fixed: Boolean = false,
     ): GMResult<Point, PolePointError> {
         val canonicalParents = when {
-            firstParent is Circle && secondParent is Line ->
+            isConic(firstParent) && secondParent is Line ->
                 CanonicalParents(
-                    circle = firstParent,
+                    conic = firstParent,
                     line = secondParent,
-                    circleIndex = 0,
+                    conicIndex = 0,
                     lineIndex = 1,
                 )
-            firstParent is Line && secondParent is Circle ->
+            firstParent is Line && isConic(secondParent) ->
                 CanonicalParents(
-                    circle = secondParent,
+                    conic = secondParent,
                     line = firstParent,
-                    circleIndex = 1,
+                    conicIndex = 1,
                     lineIndex = 0,
                 )
             else -> return GMResult.Err(
@@ -71,8 +71,8 @@ internal object PolePoint {
         }
         validateParent(
             board = board,
-            element = canonicalParents.circle,
-            parentIndex = canonicalParents.circleIndex,
+            element = canonicalParents.conic,
+            parentIndex = canonicalParents.conicIndex,
         )?.let {
             return GMResult.Err(it)
         }
@@ -89,7 +89,7 @@ internal object PolePoint {
                 board = board,
                 coordinateFunctions = listOf(
                     PoleCoordinateFunction(
-                        circle = canonicalParents.circle,
+                        conic = canonicalParents.conic,
                         line = canonicalParents.line,
                     ),
                 ),
@@ -108,14 +108,18 @@ internal object PolePoint {
         point.elType = POLE_POINT_ELEMENT_TYPE
         point.setParents(
             listOf(
-                canonicalParents.circle,
+                canonicalParents.conic,
                 canonicalParents.line,
             ),
         )
-        canonicalParents.circle.addChild(point)
+        canonicalParents.conic.addChild(point)
         canonicalParents.line.addChild(point)
         return GMResult.Ok(point)
     }
+
+    private fun isConic(element: GeometryElement): Boolean =
+        element is Circle ||
+            element is Curve && element.type == Const.OBJECT_TYPE_CONIC
 
     private fun validateParent(
         board: Board,
@@ -134,16 +138,16 @@ internal object PolePoint {
         }
 
     private data class CanonicalParents(
-        val circle: Circle,
+        val conic: GeometryElement,
         val line: Line,
-        val circleIndex: Int,
+        val conicIndex: Int,
         val lineIndex: Int,
     )
 }
 
 // JSXGraph: src/base/point.js -> createPolePoint coordinate closure.
 private class PoleCoordinateFunction(
-    private val circle: Circle,
+    private val conic: GeometryElement,
     private val line: Line,
 ) : JessieCodeCoordinateFunction {
     override val origin: String? = null
@@ -153,7 +157,7 @@ private class PoleCoordinateFunction(
     override fun evaluate(
         arguments: List<JessieCodeRuntimeValue>,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
-        val quadraticForm = circle.quadraticform
+        val quadraticForm = conic.quadraticform
         val standardForm = line.stdform.copyOfRange(0, 3)
         val coordinates = doubleArrayOf(
             Numerics.det(

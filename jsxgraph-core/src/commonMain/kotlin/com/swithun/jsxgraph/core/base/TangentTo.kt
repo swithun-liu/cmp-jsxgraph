@@ -85,13 +85,10 @@ internal object TangentTo {
         validateParent(board, pointFrom, parentIndex = 1)?.let {
             return GMResult.Err(it)
         }
-        if (conic.type == Const.OBJECT_TYPE_CONIC) {
-            return GMResult.Err(
-                TangentToError.UnsupportedConic(conic.elType),
-            )
-        }
-        val circle = conic as? Circle
-            ?: return GMResult.Err(
+        val supportedConic = conic.takeIf {
+            it is Circle ||
+                it is Curve && it.type == Const.OBJECT_TYPE_CONIC
+        } ?: return GMResult.Err(
                 TangentToError.UnsupportedParents(
                     parentTypes = listOf(conic.elType, pointFrom.elType),
                 ),
@@ -114,7 +111,7 @@ internal object TangentTo {
         val polar = when (
             val result = Tangent.create(
                 board = board,
-                firstParent = circle,
+                firstParent = supportedConic,
                 secondParent = pointFrom,
                 id = polarAttributes.identity.id,
                 name = polarAttributes.identity.name,
@@ -141,7 +138,7 @@ internal object TangentTo {
             val result = IntersectionPoint.create(
                 board = board,
                 first = polar,
-                second = circle,
+                second = supportedConic,
                 firstIndex = IntersectionIndexSource.Number(number),
                 id = pointAttributes.identity.id,
                 name = pointAttributes.identity.name,
@@ -161,7 +158,7 @@ internal object TangentTo {
         val tangent = when (
             val result = Tangent.create(
                 board = board,
-                firstParent = circle,
+                firstParent = supportedConic,
                 secondParent = intersection,
                 id = tangentAttributes.identity.id,
                 name = tangentAttributes.identity.name,

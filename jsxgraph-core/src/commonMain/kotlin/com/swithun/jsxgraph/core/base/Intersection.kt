@@ -97,7 +97,7 @@ internal class IntersectionPoint private constructor(
     internal val secondElement: GeometryElement,
     internal val firstIndex: IntersectionIndexSource,
     internal val secondIndex: IntersectionIndexSource,
-    internal val alwaysIntersect: Boolean,
+    internal override val alwaysIntersect: Boolean,
     initialCoordinates: DoubleArray,
     id: String,
     name: String?,
@@ -111,6 +111,7 @@ internal class IntersectionPoint private constructor(
     name = name,
     needsRegularUpdate = needsRegularUpdate,
     fixed = fixed,
+        alwaysIntersect = alwaysIntersect,
 ) {
     internal var intersectionEvaluationError: IntersectionError? = null
         private set
@@ -273,11 +274,6 @@ internal class IntersectionPoint private constructor(
             validateIntersectionParent(board, second, 1)?.let {
                 return GMResult.Err(it)
             }
-            conicParentIndex(first, second)?.let { parentIndex ->
-                return GMResult.Err(
-                    IntersectionError.UnsupportedConic(parentIndex),
-                )
-            }
             if (!isSupportedPair(first, second)) {
                 return GMResult.Err(
                     IntersectionError.UnsupportedParentTypes(
@@ -382,7 +378,7 @@ internal class OtherIntersectionPoint private constructor(
     internal val firstElement: GeometryElement,
     internal val secondElement: GeometryElement,
     internal val excludedPoints: List<Point>,
-    internal val alwaysIntersect: Boolean,
+    internal override val alwaysIntersect: Boolean,
     internal val precision: Double,
     initialCoordinates: DoubleArray,
     id: String,
@@ -396,6 +392,7 @@ internal class OtherIntersectionPoint private constructor(
     name = name,
     needsRegularUpdate = needsRegularUpdate,
     fixed = fixed,
+        alwaysIntersect = alwaysIntersect,
 ) {
     internal var intersectionEvaluationError: IntersectionError? = null
         private set
@@ -461,11 +458,6 @@ internal class OtherIntersectionPoint private constructor(
             }
             validateIntersectionParent(board, second, 1)?.let {
                 return GMResult.Err(it)
-            }
-            conicParentIndex(first, second)?.let { parentIndex ->
-                return GMResult.Err(
-                    IntersectionError.UnsupportedConic(parentIndex),
-                )
             }
             if (!isSupportedOtherPair(first, second)) {
                 return GMResult.Err(
@@ -569,16 +561,6 @@ private fun validateIntersectionParent(
     }
     return null
 }
-
-private fun conicParentIndex(
-    first: GeometryElement,
-    second: GeometryElement,
-): Int? =
-    when {
-        first.type == Const.OBJECT_TYPE_CONIC -> 0
-        second.type == Const.OBJECT_TYPE_CONIC -> 1
-        else -> null
-    }
 
 private fun isSupportedPair(
     first: GeometryElement,

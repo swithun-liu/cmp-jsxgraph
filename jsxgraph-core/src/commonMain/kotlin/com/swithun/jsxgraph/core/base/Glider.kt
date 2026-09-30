@@ -20,7 +20,10 @@ import com.swithun.jsxgraph.core.math.ParametricCurve2D
 import com.swithun.jsxgraph.core.math.ProjectionResult
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.utils.JsMath
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 internal sealed interface GliderError {
     data class UnsupportedSlideObject(
@@ -37,6 +40,11 @@ internal sealed interface GliderError {
         val error: GeometryError,
     ) : GliderError
 
+    data class NonInvertibleCurveTransformation(
+        val curveId: String,
+        val chainIndex: Int,
+    ) : GliderError
+
     data class InvalidCoordinateCount(
         val count: Int,
     ) : GliderError
@@ -47,10 +55,11 @@ internal sealed interface GliderError {
 }
 
 /**
- * The Line/Segment and ordinary Curve-backed subset of JXG.Glider.
+ * The Point, Line/Segment/Polygon-border, Circle, Curve-class, Arc, and
+ * Sector-backed subset of JXG.Glider.
  *
- * Circle, Conic, Grid, Polygon, Turtle, Point, transformed-slide, attractor,
- * and animation branches remain explicit unsupported creator inputs.
+ * Turtle, attractor, and animation branches remain explicit unsupported
+ * creator inputs.
  */
 internal open class Glider internal constructor(
     board: Board,
@@ -59,7 +68,8 @@ internal open class Glider internal constructor(
     name: String?,
     needsRegularUpdate: Boolean,
     fixed: Boolean,
-    internal val slideElement: GeometryElement,
+    internal var slideElement: GeometryElement,
+    private val polygonHost: Polygon? = null,
     coordinateConstraint: JessieCodeCoordinateFunction? = null,
     internal var snapWidth: Double = -1.0,
     internal var snapValues: DoubleArray = doubleArrayOf(),
@@ -81,6 +91,7 @@ internal open class Glider internal constructor(
     init {
         type = Const.OBJECT_TYPE_GLIDER
         elType = GLIDER_ELEMENT_TYPE
+        onPolygon = polygonHost != null
     }
 
     // JSXGraph: src/base/point.js -> update;
@@ -105,27 +116,85 @@ internal open class Glider internal constructor(
     }
 
     // JSXGraph: src/base/coordselement.js -> updateGlider,
-    // Line and untransformed non-Arc/Sector Curve branches.
+    // Point, Circle, Line, and Curve/Arc/Sector branches.
     internal fun updateGlider(): GMResult<Glider, GliderError> {
         updateConstraint()
         needsUpdateFromParent = false
         return when (val slide = slideElement) {
+            is Circle -> updateCircleGlider(slide)
             is Line -> updateLineGlider(slide)
+            is Arc -> updateArcSectorGlider(slide.arcSectorSlideGeometry())
+            is Sector ->
+                if (slide.type == Const.OBJECT_TYPE_SECTOR) {
+                    updateArcSectorGlider(slide.arcSectorSlideGeometry())
+                } else {
+                    unsupportedSlideObject(slide)
+                }
             is Curve -> updateCurveGlider(slide)
-            else -> GMResult.Err(
-                GliderError.UnsupportedSlideObject(
-                    slide.elType.ifEmpty { "element" },
-                ),
-            )
+            is Point -> updatePointGlider(slide)
+            else -> unsupportedSlideObject(slide)
         }
     }
 
+    // JSXGraph: src/base/coordselement.js -> updateGlider,
+    // OBJECT_CLASS_CIRCLE branch.
+    private fun updateCircleGlider(
+        circle: Circle,
+    ): GMResult<Glider, GliderError> {
+        coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = Geometry.projectPointToCircle(
+                point = coords.usrCoords,
+                center = circle.center.coords.usrCoords,
+                radius = circle.Radius(),
+            ),
+            doRound = false,
+        )
+        position = Geometry.rad(
+            doubleArrayOf(
+                circle.center.X() + 1.0,
+                circle.center.Y(),
+            ),
+            circle.center.Coords(),
+            Coords(),
+        ) / (2.0 * PI)
+        return GMResult.Ok(this)
+    }
+
     private fun updateLineGlider(line: Line): GMResult<Glider, GliderError> {
-        val first = line.point1.coords.usrCoords
-        val second = line.point2.coords.usrCoords
-        val distance = line.point1.coords.distance(
+        var activeLine = line
+        polygonHost?.let { polygon ->
+            val borderIndex = polygon.borders.indexOf(activeLine)
+            if (borderIndex >= 0 && polygon.borders.isNotEmpty()) {
+                val projection = Geometry.projectCoordsToSegment(
+                    point = coords.usrCoords,
+                    first = activeLine.point1.coords.usrCoords,
+                    second = activeLine.point2.coords.usrCoords,
+                )
+                activeLine = when {
+                    projection.parameter < 0.0 ->
+                        polygon.borders[
+                            (borderIndex - 1 + polygon.borders.size) %
+                                polygon.borders.size
+                        ]
+                    projection.parameter > 1.0 ->
+                        polygon.borders[
+                            (borderIndex + 1) % polygon.borders.size
+                        ]
+                    else -> activeLine
+                }
+                if (activeLine !== slideElement) {
+                    slideElement = activeLine
+                    slideObject = activeLine
+                }
+            }
+        }
+
+        val first = activeLine.point1.coords.usrCoords
+        val second = activeLine.point2.coords.usrCoords
+        val distance = activeLine.point1.coords.distance(
             Const.COORDS_BY_USER,
-            line.point2.coords,
+            activeLine.point2.coords,
         )
         var newCoordinates: DoubleArray
         var newPosition: Double
@@ -168,7 +237,7 @@ internal open class Glider internal constructor(
             }
 
             if (
-                !line.straightFirst &&
+                !activeLine.straightFirst &&
                 abs(first[0]) > Mat.eps &&
                 newPosition < 0.0
             ) {
@@ -176,7 +245,7 @@ internal open class Glider internal constructor(
                 newPosition = 0.0
             }
             if (
-                !line.straightLast &&
+                !activeLine.straightLast &&
                 abs(second[0]) > Mat.eps &&
                 newPosition > 1.0
             ) {
@@ -199,19 +268,36 @@ internal open class Glider internal constructor(
     private fun updateCurveGlider(
         curve: Curve,
     ): GMResult<Glider, GliderError> {
+        val projection =
+            if (curve.transformations.isNotEmpty()) {
+                projectToTransformedCurve(
+                    curve = curve,
+                    point = coords.usrCoords,
+                    initialParameter =
+                        position ?: if (
+                            curve.curveType == FUNCTION_GRAPH_CURVE_TYPE
+                        ) {
+                            X()
+                        } else {
+                            0.0
+                        },
+                )
+            } else {
+                projectToCurve(
+                    curve = curve,
+                    point = coords.usrCoords,
+                    initialParameter =
+                        position ?: if (
+                            curve.curveType == FUNCTION_GRAPH_CURVE_TYPE
+                        ) {
+                            X()
+                        } else {
+                            0.0
+                        },
+                )
+            }
         return when (
-            val result = projectToCurve(
-                curve = curve,
-                point = coords.usrCoords,
-                initialParameter =
-                    position ?: if (
-                        curve.curveType == FUNCTION_GRAPH_CURVE_TYPE
-                    ) {
-                        X()
-                    } else {
-                        0.0
-                    },
-            )
+            val result = projection
         ) {
             is GMResult.Ok -> {
                 coords.setCoordinates(
@@ -224,6 +310,69 @@ internal open class Glider internal constructor(
             }
             is GMResult.Err -> result
         }
+    }
+
+    // JSXGraph: src/base/coordselement.js -> updateGlider,
+    // OBJECT_TYPE_ARC / OBJECT_TYPE_SECTOR branch.
+    private fun updateArcSectorGlider(
+        slide: ArcSectorSlideGeometry,
+    ): GMResult<Glider, GliderError> {
+        val newCoordinates = Geometry.projectPointToCircle(
+            point = coords.usrCoords,
+            center = slide.center.coords.usrCoords,
+            radius = slide.radius,
+        )
+        val angle = Geometry.rad(
+            slide.radiusPoint.Coords(),
+            slide.center.Coords(),
+            Coords(),
+        )
+        val interval = slide.selectedAngleInterval()
+        var newPosition = angle
+        if (angle < interval.alpha || angle > interval.beta) {
+            newPosition = interval.beta
+            if (
+                (
+                    angle < interval.alpha &&
+                        angle > interval.alpha * 0.5
+                    ) ||
+                (
+                    angle > interval.beta &&
+                        angle > interval.beta * 0.5 + PI
+                    )
+            ) {
+                newPosition = interval.alpha
+            }
+
+            // Upstream calls updateGliderFromParent here before replacing
+            // coords/position below. Its lasting effect is that the next
+            // parent-driven update is not skipped.
+            needsUpdateFromParent = true
+        }
+        if (abs(interval.delta) > Mat.eps) {
+            newPosition /= interval.delta
+        }
+
+        coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = newCoordinates,
+            doRound = false,
+        )
+        position = newPosition
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph: src/base/coordselement.js -> updateGlider,
+    // Type.isPoint branch.
+    private fun updatePointGlider(
+        point: Point,
+    ): GMResult<Glider, GliderError> {
+        coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = point.coords.usrCoords,
+            doRound = false,
+        )
+        return GMResult.Ok(this)
     }
 
     // JSXGraph: src/base/coordselement.js -> findClosestSnapValue.
@@ -253,21 +402,49 @@ internal open class Glider internal constructor(
     }
 
     // JSXGraph: src/base/coordselement.js -> updateGliderFromParent,
-    // finite Line and untransformed non-Arc/Sector Curve branches.
+    // Point, Circle, finite Line, and Curve/Arc/Sector branches.
     internal fun updateGliderFromParent(): GMResult<Glider, GliderError> {
         if (!needsUpdateFromParent) {
             needsUpdateFromParent = true
             return GMResult.Ok(this)
         }
         return when (val slide = slideElement) {
+            is Circle -> updateCircleGliderFromParent(slide)
             is Line -> updateLineGliderFromParent(slide)
+            is Arc ->
+                updateArcSectorGliderFromParent(
+                    slide.arcSectorSlideGeometry(),
+                )
+            is Sector ->
+                if (slide.type == Const.OBJECT_TYPE_SECTOR) {
+                    updateArcSectorGliderFromParent(
+                        slide.arcSectorSlideGeometry(),
+                    )
+                } else {
+                    unsupportedSlideObject(slide)
+                }
             is Curve -> updateCurveGliderFromParent(slide)
-            else -> GMResult.Err(
-                GliderError.UnsupportedSlideObject(
-                    slide.elType.ifEmpty { "element" },
-                ),
-            )
+            is Point -> updatePointGlider(slide)
+            else -> unsupportedSlideObject(slide)
         }
+    }
+
+    // JSXGraph: src/base/coordselement.js -> updateGliderFromParent,
+    // OBJECT_CLASS_CIRCLE branch.
+    private fun updateCircleGliderFromParent(
+        circle: Circle,
+    ): GMResult<Glider, GliderError> {
+        val angle = (position ?: 0.0) * 2.0 * PI
+        val radius = circle.Radius()
+        coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(
+                circle.center.X() + radius * cos(angle),
+                circle.center.Y() + radius * sin(angle),
+            ),
+            doRound = false,
+        )
+        return GMResult.Ok(this)
     }
 
     private fun updateLineGliderFromParent(
@@ -299,6 +476,40 @@ internal open class Glider internal constructor(
     ): GMResult<Glider, GliderError> {
         updateConstraint()
         val relativePosition = position ?: 0.0
+        if (curve.transformations.isNotEmpty()) {
+            val chain = curveTransformationChain(curve)
+            when (val result = updateTransformationChain(chain)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            val source = chain.last()
+            val sourceCoordinates = doubleArrayOf(
+                1.0,
+                source.X(relativePosition),
+                source.Y(relativePosition),
+            )
+            return when (
+                val result = projectToCurve(
+                    curve = source,
+                    point = sourceCoordinates,
+                    initialParameter = relativePosition,
+                    rawCoordinates = true,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    coords.setCoordinates(
+                        coordType = Const.COORDS_BY_USER,
+                        coordinates = applyTransformationChain(
+                            chain = chain,
+                            coordinates = result.value.point,
+                        ),
+                        doRound = false,
+                    )
+                    GMResult.Ok(this)
+                }
+                is GMResult.Err -> result
+            }
+        }
         val sourceCoordinates = doubleArrayOf(
             1.0,
             curve.X(relativePosition),
@@ -323,19 +534,185 @@ internal open class Glider internal constructor(
         }
     }
 
+    // JSXGraph: src/base/coordselement.js -> updateGliderFromParent,
+    // OBJECT_TYPE_ARC / OBJECT_TYPE_SECTOR branch.
+    private fun updateArcSectorGliderFromParent(
+        slide: ArcSectorSlideGeometry,
+    ): GMResult<Glider, GliderError> {
+        val baseAngle = Geometry.rad(
+            doubleArrayOf(
+                slide.center.X() + 1.0,
+                slide.center.Y(),
+            ),
+            slide.center.Coords(),
+            slide.radiusPoint.Coords(),
+        )
+        val interval = slide.selectedAngleInterval()
+        var relativePosition = position ?: 0.0
+        var angle = relativePosition * interval.delta
+        if (angle < interval.alpha || angle > interval.beta) {
+            angle = interval.beta
+            if (
+                (
+                    angle < interval.alpha &&
+                        angle > interval.alpha * 0.5
+                    ) ||
+                (
+                    angle > interval.beta &&
+                        angle > interval.beta * 0.5 + PI
+                    )
+            ) {
+                angle = interval.alpha
+            }
+            relativePosition =
+                if (abs(interval.delta) > Mat.eps) {
+                    angle / interval.delta
+                } else {
+                    angle
+                }
+            position = relativePosition
+        }
+
+        val absoluteAngle =
+            relativePosition * interval.delta + baseAngle
+        coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(
+                slide.center.X() + slide.radius * cos(absoluteAngle),
+                slide.center.Y() + slide.radius * sin(absoluteAngle),
+            ),
+            doRound = false,
+        )
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/coordselement.js -> updateGlider
+    // transformed Curve branch.
+    private fun projectToTransformedCurve(
+        curve: Curve,
+        point: DoubleArray,
+        initialParameter: Double,
+    ): GMResult<ProjectionResult, GliderError> {
+        val chain = curveTransformationChain(curve)
+        when (val result = updateTransformationChain(chain)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+
+        var sourceCoordinates = point.copyOf()
+        for ((index, slide) in chain.withIndex()) {
+            val inverse = Mat.inverse(slide.transformMat)
+            if (inverse.isEmpty()) {
+                return GMResult.Err(
+                    GliderError.NonInvertibleCurveTransformation(
+                        curveId = slide.id,
+                        chainIndex = index,
+                    ),
+                )
+            }
+            sourceCoordinates = Mat.matVecMult(
+                inverse,
+                sourceCoordinates,
+            )
+        }
+        sourceCoordinates = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = sourceCoordinates,
+            board = board,
+        ).usrCoords.copyOf()
+
+        val source = chain.last()
+        return when (
+            val result = projectToCurve(
+                curve = source,
+                point = sourceCoordinates,
+                initialParameter = initialParameter,
+                rawCoordinates = true,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                ProjectionResult(
+                    point = applyTransformationChain(
+                        chain = chain,
+                        coordinates = result.value.point,
+                    ),
+                    parameter = result.value.parameter,
+                ),
+            )
+            is GMResult.Err -> result
+        }
+    }
+
+    private fun curveTransformationChain(curve: Curve): List<Curve> {
+        val chain = mutableListOf(curve)
+        var source = curve.transformationSource
+        while (source != null) {
+            chain += source
+            source = source.transformationSource
+        }
+        return chain
+    }
+
+    private fun updateTransformationChain(
+        chain: List<Curve>,
+    ): GMResult<Unit, GliderError> {
+        for (slide in chain) {
+            when (val result = slide.updateTransformMatrix()) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return GMResult.Err(
+                    GliderError.CurveEvaluation(result.error),
+                )
+            }
+        }
+        return GMResult.Ok(Unit)
+    }
+
+    private fun applyTransformationChain(
+        chain: List<Curve>,
+        coordinates: DoubleArray,
+    ): DoubleArray {
+        var transformed = coordinates.copyOf()
+        for (slide in chain.asReversed()) {
+            transformed = Coords(
+                method = Const.COORDS_BY_USER,
+                coordinates = Mat.matVecMult(
+                    slide.transformMat,
+                    transformed,
+                ),
+                board = board,
+            ).usrCoords.copyOf()
+        }
+        return transformed
+    }
+
     private fun projectToCurve(
         curve: Curve,
         point: DoubleArray,
         initialParameter: Double,
+        rawCoordinates: Boolean = false,
     ): GMResult<ProjectionResult, GliderError> {
         curve.evaluationError?.let { error ->
             return GMResult.Err(GliderError.CurveEvaluation(error))
         }
         val result = if (curve.curveType == DATA_CURVE_TYPE) {
+            val curvePoints =
+                if (rawCoordinates) {
+                    curve.dataX?.mapIndexed { index, x ->
+                        doubleArrayOf(
+                            1.0,
+                            x,
+                            curve.dataY?.getOrNull(index) ?: Double.NaN,
+                        )
+                    } ?: curve.points.map {
+                        it.usrCoords.copyOf()
+                    }
+                } else {
+                    curve.points.map { it.usrCoords.copyOf() }
+                }
             Geometry.projectCoordsToCurve(
                 point = point,
                 curve = DiscreteCurve2D(
-                    points = curve.points.map { it.usrCoords.copyOf() },
+                    points = curvePoints,
                     bezierDegree = curve.bezierDegree,
                 ),
             )
@@ -378,6 +755,15 @@ internal open class Glider internal constructor(
         return this
     }
 
+    private fun unsupportedSlideObject(
+        slide: GeometryElement,
+    ): GMResult.Err<GliderError.UnsupportedSlideObject> =
+        GMResult.Err(
+            GliderError.UnsupportedSlideObject(
+                slide.elType.ifEmpty { "element" },
+            ),
+        )
+
     internal companion object {
         private const val GLIDER_ID_PREFIX = "P"
         private const val GLIDER_ELEMENT_TYPE = "glider"
@@ -402,24 +788,52 @@ internal open class Glider internal constructor(
                     GliderError.InvalidCoordinateCount(coordinates.size),
                 )
             }
-            val supportedSlideObject = when (slideObject) {
-                is Line -> slideObject
-                is Curve -> {
+            var polygonHost: Polygon? = null
+            val effectiveSlideObject =
+                if (slideObject is Polygon) {
+                    polygonHost = slideObject
+                    val pointCoordinates = Coords(
+                        method = Const.COORDS_BY_USER,
+                        coordinates = coordinates,
+                        board = board,
+                    ).usrCoords
+                    slideObject.borders.minByOrNull { border ->
+                        Geometry.distPointLine(
+                            pointCoordinates,
+                            border.stdform,
+                        )
+                    } ?: return GMResult.Err(
+                        GliderError.UnsupportedSlideObject(
+                            slideObject.elType.ifEmpty { "polygon" },
+                        ),
+                    )
+                } else {
+                    slideObject
+                }
+            val supportedSlideObject = when (effectiveSlideObject) {
+                is Circle -> effectiveSlideObject
+                is Line -> effectiveSlideObject
+                is Arc -> effectiveSlideObject
+                is Sector -> {
                     if (
-                        slideObject.type != Const.OBJECT_TYPE_CURVE ||
-                        slideObject.transformations.isNotEmpty()
+                        effectiveSlideObject.type !=
+                        Const.OBJECT_TYPE_SECTOR
                     ) {
                         return GMResult.Err(
                             GliderError.UnsupportedSlideObject(
-                                slideObject.elType.ifEmpty { "curve" },
+                                effectiveSlideObject.elType.ifEmpty {
+                                    "sector"
+                                },
                             ),
                         )
                     }
-                    slideObject
+                    effectiveSlideObject
                 }
+                is Point -> effectiveSlideObject
+                is Curve -> effectiveSlideObject
                 else -> return GMResult.Err(
                     GliderError.UnsupportedSlideObject(
-                        slideObject.elType.ifEmpty { "element" },
+                        effectiveSlideObject.elType.ifEmpty { "element" },
                     ),
                 )
             }
@@ -440,6 +854,7 @@ internal open class Glider internal constructor(
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
                 slideElement = supportedSlideObject,
+                polygonHost = polygonHost,
                 coordinateConstraint = coordinateConstraint,
             )
             return register(glider)
@@ -483,3 +898,63 @@ internal open class Glider internal constructor(
         }
     }
 }
+
+private data class ArcSectorSlideGeometry(
+    val center: Point,
+    val radiusPoint: Point,
+    val anglePoint: Point,
+    val radius: Double,
+    val selection: String,
+) {
+    fun selectedAngleInterval(): SelectedAngleInterval {
+        var alpha = 0.0
+        var beta = Geometry.rad(
+            radiusPoint.Coords(),
+            center.Coords(),
+            anglePoint.Coords(),
+        )
+        if (
+            (
+                selection == Arc.SELECTION_MINOR &&
+                    beta > PI
+                ) ||
+            (
+                selection == Arc.SELECTION_MAJOR &&
+                    beta < PI
+                )
+        ) {
+            alpha = beta
+            beta = 2.0 * PI
+        }
+        return SelectedAngleInterval(
+            alpha = alpha,
+            beta = beta,
+        )
+    }
+}
+
+private data class SelectedAngleInterval(
+    val alpha: Double,
+    val beta: Double,
+) {
+    val delta: Double
+        get() = beta - alpha
+}
+
+private fun Arc.arcSectorSlideGeometry(): ArcSectorSlideGeometry =
+    ArcSectorSlideGeometry(
+        center = center,
+        radiusPoint = radiuspoint,
+        anglePoint = anglepoint,
+        radius = Radius(),
+        selection = selection,
+    )
+
+private fun Sector.arcSectorSlideGeometry(): ArcSectorSlideGeometry =
+    ArcSectorSlideGeometry(
+        center = center,
+        radiusPoint = radiuspoint,
+        anglePoint = anglepoint,
+        radius = Radius(),
+        selection = selection,
+    )

@@ -17,14 +17,17 @@
  * createIncircle / createReflection / createMirrorElement /
  * createMirrorPoint,
  * src/base/curve.js -> createCurve / createFunctiongraph /
- * createStepfunction / createDerivative / createSpline /
- * createCardinalSpline / createRiemannsum / createBoxPlot /
+ * createTracecurve / createSketchCurve / createStepfunction /
+ * createDerivative / createSpline /
+ * createCardinalSpline / createMetapostSpline /
+ * createRiemannsum / createBoxPlot /
  * createCurveIntersection / createCurveUnion / createCurveDifference,
  * src/element/comb.js -> createComb,
  * src/element/composition.js -> createInequality,
  * src/element/vectorfield.js -> createVectorField / createSlopeField,
  * src/base/polygon.js -> createPolygon / createPolygonalChain /
  * createParallelogram / createRegularPolygon,
+ * src/base/group.js -> createGroup,
  * src/base/text.js -> createText,
  * src/base/image.js -> createImage,
  * src/element/slider.js -> createSlider,
@@ -36,6 +39,7 @@
  * src/3d/ticks3d.js -> createTicks3D,
  * src/3d/text3d.js -> createText3D,
  * src/3d/polygon3d.js -> createPolygon3D,
+ * src/3d/face3d.js -> createFace3D,
  * src/3d/polyhedron3d.js -> createPolyhedron3D,
  * src/3d/curve3d.js -> createCurve3D / createVectorfield3D,
  * src/3d/circle3d.js -> createCircle3D / createIntersectionCircle3D,
@@ -46,7 +50,7 @@
  * createCircumcircleSector / createMinorSector / createMajorSector /
  * createNonreflexAngle / createReflexAngle,
  * src/element/conic.js ->
- * createEllipse / createHyperbola / createParabola
+ * createEllipse / createHyperbola / createParabola / createConic
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Andreas Walter, Alfred Wassermann, and Peter Wilfahrt.
  * Used under the MIT License option.
@@ -63,7 +67,10 @@ import com.swithun.jsxgraph.core.JsxGraphGridMinorElements
 import com.swithun.jsxgraph.core.JsxGraphGridPair
 import com.swithun.jsxgraph.core.JsxGraphGridResolveError
 import com.swithun.jsxgraph.core.JsxGraphGridRole
+import com.swithun.jsxgraph.core.base.AngleDisplayAttributes
 import com.swithun.jsxgraph.core.base.AngleRadius
+import com.swithun.jsxgraph.core.base.AngleRadiusFunction
+import com.swithun.jsxgraph.core.base.AngleValueMode
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.ArcError
 import com.swithun.jsxgraph.core.base.Axis
@@ -84,6 +91,8 @@ import com.swithun.jsxgraph.core.base.Circle3DError
 import com.swithun.jsxgraph.core.base.Circle3DNormalSource
 import com.swithun.jsxgraph.core.base.CircleError
 import com.swithun.jsxgraph.core.base.CoordsElement
+import com.swithun.jsxgraph.core.base.Conic
+import com.swithun.jsxgraph.core.base.ConicError
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CircumcenterError
 import com.swithun.jsxgraph.core.base.CircumcenterPoint
@@ -101,6 +110,9 @@ import com.swithun.jsxgraph.core.base.CurveCoordinateSplinePoint
 import com.swithun.jsxgraph.core.base.CurveElementSplinePoint
 import com.swithun.jsxgraph.core.base.CurveError
 import com.swithun.jsxgraph.core.base.CurveFunctionSplinePoint
+import com.swithun.jsxgraph.core.base.CurveImplicitDefinition
+import com.swithun.jsxgraph.core.base.CurveMetaPostControlsDefinition
+import com.swithun.jsxgraph.core.base.CurveMetaPostPointControlDefinition
 import com.swithun.jsxgraph.core.base.CurvePlotOptions
 import com.swithun.jsxgraph.core.base.CurveSplinePoint
 import com.swithun.jsxgraph.core.base.CurveStaticPoint
@@ -111,16 +123,24 @@ import com.swithun.jsxgraph.core.base.CurveVectorFieldComponentFunction
 import com.swithun.jsxgraph.core.base.CurveVectorFieldFunction
 import com.swithun.jsxgraph.core.base.Ellipse
 import com.swithun.jsxgraph.core.base.EllipseError
+import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
+import com.swithun.jsxgraph.core.base.Face3DError
 import com.swithun.jsxgraph.core.base.Face3DLightAttributes
 import com.swithun.jsxgraph.core.base.Face3DShaderAttributes
+import com.swithun.jsxgraph.core.base.ForeignObject
+import com.swithun.jsxgraph.core.base.ForeignObjectError
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.GliderError
 import com.swithun.jsxgraph.core.base.Grid
 import com.swithun.jsxgraph.core.base.GridError
 import com.swithun.jsxgraph.core.base.GeometryElement3D
+import com.swithun.jsxgraph.core.base.Group
+import com.swithun.jsxgraph.core.base.GroupError
 import com.swithun.jsxgraph.core.base.Hatch
+import com.swithun.jsxgraph.core.base.HtmlButtonHandler
+import com.swithun.jsxgraph.core.base.HtmlControlDefinition
 import com.swithun.jsxgraph.core.base.Hyperbola
 import com.swithun.jsxgraph.core.base.HyperbolaError
 import com.swithun.jsxgraph.core.base.Image
@@ -209,6 +229,7 @@ import com.swithun.jsxgraph.core.base.RegularPolygonError
 import com.swithun.jsxgraph.core.base.RadicalAxis
 import com.swithun.jsxgraph.core.base.RadicalAxisError
 import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.SectorDirection
 import com.swithun.jsxgraph.core.base.SectorError
 import com.swithun.jsxgraph.core.base.Sphere3D
 import com.swithun.jsxgraph.core.base.Sphere3DError
@@ -252,6 +273,9 @@ import com.swithun.jsxgraph.core.base.TangentToError
 import com.swithun.jsxgraph.core.base.TangentToIdentity
 import com.swithun.jsxgraph.core.base.TangentToLineAttributes
 import com.swithun.jsxgraph.core.base.TangentToPointAttributes
+import com.swithun.jsxgraph.core.base.Turtle
+import com.swithun.jsxgraph.core.base.TurtleError
+import com.swithun.jsxgraph.core.base.TurtlePenAttributes
 import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.base.Transformation3DParameter
 import com.swithun.jsxgraph.core.base.TransformationDynamicParameter
@@ -263,6 +287,7 @@ import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
 import com.swithun.jsxgraph.core.base.View3D
 import com.swithun.jsxgraph.core.base.View3DError
 import com.swithun.jsxgraph.core.math.ClipBooleanOperation
+import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.NumericsPoint2D
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 
@@ -282,6 +307,19 @@ internal sealed interface JessieCodeCreatorError {
     data class UnsupportedAttributeValue(
         val attribute: String,
         val actual: String,
+    ) : JessieCodeCreatorError
+
+    data class InvalidControlValue(
+        val field: String,
+        val reason: String,
+    ) : JessieCodeCreatorError
+
+    data class ChartFactory(
+        val reason: String,
+    ) : JessieCodeCreatorError
+
+    data class LegendFactory(
+        val reason: String,
     ) : JessieCodeCreatorError
 
     data class PointFactory(
@@ -352,6 +390,10 @@ internal sealed interface JessieCodeCreatorError {
         val error: Polyhedron3DError,
     ) : JessieCodeCreatorError
 
+    data class Face3DFactory(
+        val error: Face3DError,
+    ) : JessieCodeCreatorError
+
     data class Polygon3DFactory(
         val error: Polygon3DError,
     ) : JessieCodeCreatorError
@@ -416,6 +458,10 @@ internal sealed interface JessieCodeCreatorError {
         val error: GridError,
     ) : JessieCodeCreatorError
 
+    data class GroupFactory(
+        val error: GroupError,
+    ) : JessieCodeCreatorError
+
     data class RadicalAxisFactory(
         val error: RadicalAxisError,
     ) : JessieCodeCreatorError
@@ -476,6 +522,10 @@ internal sealed interface JessieCodeCreatorError {
         val error: ParabolaError,
     ) : JessieCodeCreatorError
 
+    data class ConicFactory(
+        val error: ConicError,
+    ) : JessieCodeCreatorError
+
     data class PolygonFactory(
         val error: PolygonError,
     ) : JessieCodeCreatorError
@@ -496,12 +546,20 @@ internal sealed interface JessieCodeCreatorError {
         val error: ImageError,
     ) : JessieCodeCreatorError
 
+    data class ForeignObjectFactory(
+        val error: ForeignObjectError,
+    ) : JessieCodeCreatorError
+
     data class ArcFactory(
         val error: ArcError,
     ) : JessieCodeCreatorError
 
     data class SectorFactory(
         val error: SectorError,
+    ) : JessieCodeCreatorError
+
+    data class TurtleFactory(
+        val error: TurtleError,
     ) : JessieCodeCreatorError
 }
 
@@ -702,6 +760,14 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createPolyhedron3D(board, parents, attributes, location)
+        },
+        "face3d" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createFace3D(board, parents, attributes, location)
         },
         "polygon3d" to JessieCodeCreator {
                 board,
@@ -1022,6 +1088,9 @@ internal object NativeJessieCodeCreators {
         "grid" to JessieCodeCreator { board, parents, attributes, location ->
             createGrid(board, parents, attributes, location)
         },
+        "group" to JessieCodeCreator { board, parents, attributes, location ->
+            createGroup(board, parents, attributes, location)
+        },
         "ticks" to JessieCodeCreator {
                 board,
                 parents,
@@ -1203,6 +1272,14 @@ internal object NativeJessieCodeCreators {
             ->
             createParabola(board, parents, attributes, location)
         },
+        "conic" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createConic(board, parents, attributes, location)
+        },
         "arc" to JessieCodeCreator { board, parents, attributes, location ->
             createArc(board, parents, attributes, location)
         },
@@ -1338,8 +1415,40 @@ internal object NativeJessieCodeCreators {
                 kind = SectorCreatorKind.REFLEX_ANGLE,
             )
         },
+        "turtle" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createTurtle(board, parents, attributes, location)
+        },
         "curve" to JessieCodeCreator { board, parents, attributes, location ->
             createCurve(board, parents, attributes, location)
+        },
+        "sketchcurve" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createSketchCurve(board, parents, attributes, location)
+        },
+        "implicitcurve" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createImplicitCurve(board, parents, attributes, location)
+        },
+        "tracecurve" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createTraceCurve(board, parents, attributes, location)
         },
         "curveintersection" to JessieCodeCreator {
                 board,
@@ -1455,6 +1564,19 @@ internal object NativeJessieCodeCreators {
                 location,
             ->
             createCardinalSpline(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+            )
+        },
+        "metapostspline" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createMetaPostSpline(
                 board = board,
                 parents = parents,
                 attributes = attributes,
@@ -1604,8 +1726,89 @@ internal object NativeJessieCodeCreators {
         "text" to JessieCodeCreator { board, parents, attributes, location ->
             createText(board, parents, attributes, location)
         },
+        "button" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createButton(board, parents, attributes, location)
+        },
+        "checkbox" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createCheckbox(board, parents, attributes, location)
+        },
+        "input" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createInput(board, parents, attributes, location)
+        },
+        "htmlslider" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createHtmlSlider(board, parents, attributes, location)
+        },
+        "chart" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            NativeChartCreator.createChart(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+            )
+        },
+        "legend" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            NativeChartCreator.createLegend(
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+            )
+        },
         "image" to JessieCodeCreator { board, parents, attributes, location ->
             createImage(board, parents, attributes, location)
+        },
+        "foreignobject" to JessieCodeCreator {
+                board,
+                parents,
+                attributes,
+                location,
+            ->
+            createForeignObject(
+                creatorName = "foreignobject",
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+            )
+        },
+        "fo" to JessieCodeCreator { board, parents, attributes, location ->
+            createForeignObject(
+                creatorName = "fo",
+                board = board,
+                parents = parents,
+                attributes = attributes,
+                location = location,
+            )
         },
     )
 
@@ -1748,6 +1951,18 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        val alwaysIntersect = when (
+            val result = booleanAttribute(
+                creatorName = "point",
+                attributes = attributes,
+                name = "alwaysintersect",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         if (parents.size == 2) {
             val basePoint =
                 resolveElement(resolvedBoard, parents[0]) as? CoordsElement
@@ -1764,6 +1979,7 @@ internal object NativeJessieCodeCreators {
                         needsRegularUpdate =
                             identity.needsRegularUpdate,
                         fixed = fixed,
+                        alwaysIntersect = alwaysIntersect,
                     )
                 ) {
                     is GMResult.Ok -> element(result.value)
@@ -1791,12 +2007,61 @@ internal object NativeJessieCodeCreators {
             coordinates = parents,
             attributes = identity.copy(fixed = fixed),
             coordinateLocation = location,
+            alwaysIntersect = alwaysIntersect,
         )
         return when (result) {
             is GMResult.Ok -> element(result.value)
             is GMResult.Err -> failure(
                 creatorName = "point",
                 error = JessieCodeCreatorError.PointFactory(result.error),
+                location = location,
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/group.js -> createGroup.
+    private fun createGroup(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "group"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val elements = parents.map { parent ->
+            resolveElement(resolvedBoard, parent)
+                ?: return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Group.create(
+                board = resolvedBoard,
+                parents = elements,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                JessieCodeRuntimeValue.CompositionReference(result.value),
+            )
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.GroupFactory(result.error),
                 location = location,
             )
         }
@@ -6439,6 +6704,81 @@ internal object NativeJessieCodeCreators {
             )
         }
 
+    // JSXGraph: src/3d/face3d.js -> createFace3D.
+    // Public JessieCode passes the owning Polyhedron3D in place of its
+    // internal `def` object, which is not exposed by the upstream method map.
+    private fun createFace3D(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "face3d"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val view = resolveElement(resolvedBoard, parents[0]) as? View3D
+            ?: return unsupported(creatorName, parents, location)
+        val polyhedron =
+            resolveElement(resolvedBoard, parents[1]) as? Polyhedron3D
+                ?: return unsupported(creatorName, parents, location)
+        val faceNumberValue = (
+            parents[2] as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return unsupported(creatorName, parents, location)
+        val faceNumber = faceNumberValue.toInt()
+        if (
+            view !== polyhedron.view ||
+            !faceNumberValue.isFinite() ||
+            faceNumber.toDouble() != faceNumberValue
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val faceAttributes = when (
+            val result = polyhedron3DFaceAttributes(
+                overall = JessieCodeRuntimeValue.ObjectValue(emptyMap()),
+                faceSpecific = attributes,
+                cyclicFillColor = null,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                when (val error = result.error) {
+                    is JessieCodeRuntimeError.CreatorFailure ->
+                        error.copy(creatorName = creatorName)
+                    else -> error
+                },
+            )
+        }
+        return face3DResult(
+            result = Face3D.create(
+                definition = polyhedron.definition,
+                faceNumber = faceNumber,
+                attributes = faceAttributes,
+            ),
+            location = location,
+        )
+    }
+
+    private fun face3DResult(
+        result: GMResult<Face3D, Face3DError>,
+        location: JessieCodeAstLocation,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = "face3d",
+                error = JessieCodeCreatorError.Face3DFactory(result.error),
+                location = location,
+            )
+        }
+
     // JSXGraph: src/3d/polyhedron3d.js -> createPolyhedron3D.
     private fun createPolyhedron3D(
         board: Board?,
@@ -8342,8 +8682,8 @@ internal object NativeJessieCodeCreators {
             ?: return unsupported(creatorName, parents, location)
         if (
             !(
-                (first is Circle && second is Line) ||
-                    (first is Line && second is Circle)
+                (isConicElement(first) && second is Line) ||
+                    (first is Line && isConicElement(second))
             )
         ) {
             return unsupported(creatorName, parents, location)
@@ -11119,37 +11459,54 @@ internal object NativeJessieCodeCreators {
             !isSegment && parents.size == 2 -> parents
             else -> null
         }
-
-        val materialized = when {
-            twoPointParents != null -> {
-                when (
-                    val result = materializePointParents(
-                        board = resolvedBoard,
-                        parents = twoPointParents,
-                        creatorName = creatorName,
-                        expectedCount = 2,
-                        location = location,
-                    )
-                ) {
-                    is GMResult.Ok -> result.value
-                    is GMResult.Err -> return result
-                }
-            }
+        if (
+            twoPointParents == null &&
             supportsCoefficients &&
-                parents.size == 3 &&
-                parents.all { it is JessieCodeRuntimeValue.NumberValue } -> {
-                when (
-                    val result = coefficientPoints(resolvedBoard, parents)
-                ) {
-                    is GMResult.Ok -> result.value
-                    is GMResult.Err -> return failure(
-                        creatorName,
-                        JessieCodeCreatorError.PointFactory(result.error),
-                        location,
+            parents.size == 3 &&
+            parents.all { it is JessieCodeRuntimeValue.NumberValue }
+        ) {
+            val coefficients = parents.map {
+                (it as JessieCodeRuntimeValue.NumberValue).value
+            }.toDoubleArray()
+            return when (
+                val result = Line.create(
+                    board = resolvedBoard,
+                    coefficients = coefficients,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    result.value.configureVisibleRange(
+                        straightFirst = straightFirst,
+                        straightLast = straightLast,
+                    )
+                    element(
+                        configureArrowWrapper(result.value, elementType),
                     )
                 }
+                is GMResult.Err -> failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.LineFactory(result.error),
+                    location = location,
+                )
             }
-            else -> return unsupported(creatorName, parents, location)
+        }
+
+        val resolvedParents = twoPointParents
+            ?: return unsupported(creatorName, parents, location)
+        val materialized = when (
+            val result = materializePointParents(
+                board = resolvedBoard,
+                parents = resolvedParents,
+                creatorName = creatorName,
+                expectedCount = 2,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
         }
 
         val points = materialized.points
@@ -11206,12 +11563,7 @@ internal object NativeJessieCodeCreators {
         elementType: String,
     ): Line {
         if (elementType == "arrow" || elementType == "arrowparallel") {
-            line.type = Const.OBJECT_TYPE_VECTOR
-            line.elType = elementType
-            line.configureVisibleRange(
-                straightFirst = false,
-                straightLast = false,
-            )
+            line.configureArrow(elementType)
         }
         return line
     }
@@ -11912,22 +12264,54 @@ internal object NativeJessieCodeCreators {
                 JessieCodeCreatorError.BoardUnavailable,
                 location,
             )
-        if (parents.size != 2) {
+        if (
+            parents.size !in 1..2 ||
+            (polarLine && parents.size != 2)
+        ) {
             return unsupported(creatorName, parents, location)
         }
-        val first = resolveElement(resolvedBoard, parents[0])
-            ?: return unsupported(creatorName, parents, location)
-        val second = resolveElement(resolvedBoard, parents[1])
-            ?: return unsupported(creatorName, parents, location)
+        val glider =
+            if (parents.size == 1) {
+                resolveElement(resolvedBoard, parents[0]) as? Glider
+                    ?: return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+            } else {
+                null
+            }
+        val first =
+            if (parents.size == 2) {
+                resolveElement(resolvedBoard, parents[0])
+                    ?: return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+            } else {
+                null
+            }
+        val second =
+            if (parents.size == 2) {
+                resolveElement(resolvedBoard, parents[1])
+                    ?: return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+            } else {
+                null
+            }
         val supportsParents =
-            if (polarLine) {
-                (first is Circle && second is Point) ||
-                    (first is Point && second is Circle)
+            glider != null || if (polarLine) {
+                (isConicElement(first) && second is Point) ||
+                    (first is Point && isConicElement(second))
             } else {
                 (
                     (
                         first is Circle ||
-                            first is Curve ||
+                            isTangentNormalCurveElement(first) ||
                             first is Line
                     ) &&
                         second is Point
@@ -11936,7 +12320,7 @@ internal object NativeJessieCodeCreators {
                         first is Point &&
                             (
                                 second is Circle ||
-                                    second is Curve ||
+                                    isTangentNormalCurveElement(second) ||
                                     second is Line
                             )
                     )
@@ -12022,11 +12406,39 @@ internal object NativeJessieCodeCreators {
         }
 
         val result =
-            if (polarLine) {
+            if (glider != null) {
+                Tangent.create(
+                    board = resolvedBoard,
+                    glider = glider,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                    point1Id = point1Identity.id,
+                    point1Name = point1Identity.name,
+                    point1NeedsRegularUpdate =
+                        point1Identity.needsRegularUpdate,
+                    point2Id = point2Identity.id,
+                    point2Name = point2Identity.name,
+                    point2NeedsRegularUpdate =
+                        point2Identity.needsRegularUpdate,
+                )
+            } else if (polarLine) {
                 Tangent.createPolarLine(
                     board = resolvedBoard,
-                    firstParent = first,
-                    secondParent = second,
+                    firstParent = first
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        ),
+                    secondParent = second
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        ),
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -12044,8 +12456,18 @@ internal object NativeJessieCodeCreators {
             } else {
                 Tangent.create(
                     board = resolvedBoard,
-                    firstParent = first,
-                    secondParent = second,
+                    firstParent = first
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        ),
+                    secondParent = second
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        ),
                     id = identity.id,
                     name = identity.name,
                     needsRegularUpdate = identity.needsRegularUpdate,
@@ -12072,6 +12494,15 @@ internal object NativeJessieCodeCreators {
             )
         }
     }
+
+    private fun isConicElement(element: GeometryElement?): Boolean =
+        element is Circle ||
+            element is Curve && element.type == Const.OBJECT_TYPE_CONIC
+
+    private fun isTangentNormalCurveElement(
+        element: GeometryElement?,
+    ): Boolean =
+        element is Curve || element is Arc || element is Sector
 
     // JSXGraph 1.13.3: src/base/line.js -> createTangentTo.
     private fun createTangentTo(
@@ -12204,18 +12635,47 @@ internal object NativeJessieCodeCreators {
                 JessieCodeCreatorError.BoardUnavailable,
                 location,
             )
-        if (parents.size != 2) {
+        if (parents.size !in 1..2) {
             return unsupported(creatorName, parents, location)
         }
-        val first = resolveElement(resolvedBoard, parents[0])
-            ?: return unsupported(creatorName, parents, location)
-        val second = resolveElement(resolvedBoard, parents[1])
-            ?: return unsupported(creatorName, parents, location)
+        val glider =
+            if (parents.size == 1) {
+                resolveElement(resolvedBoard, parents[0]) as? Glider
+                    ?: return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+            } else {
+                null
+            }
+        val first =
+            if (parents.size == 2) {
+                resolveElement(resolvedBoard, parents[0])
+                    ?: return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+            } else {
+                null
+            }
+        val second =
+            if (parents.size == 2) {
+                resolveElement(resolvedBoard, parents[1])
+                    ?: return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+            } else {
+                null
+            }
         val supportsParents =
-            (
+            glider != null || (
                 (
                     first is Circle ||
-                        first is Curve ||
+                        isTangentNormalCurveElement(first) ||
                         first is Line
                 ) &&
                     second is Point
@@ -12224,7 +12684,7 @@ internal object NativeJessieCodeCreators {
                     first is Point &&
                         (
                             second is Circle ||
-                                second is Curve ||
+                                isTangentNormalCurveElement(second) ||
                                 second is Line
                             )
                     )
@@ -12298,30 +12758,64 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        return when (
-            val result = Normal.create(
-                board = resolvedBoard,
-                firstParent = first,
-                secondParent = second,
-                id = identity.id,
-                name = identity.name,
-                needsRegularUpdate = identity.needsRegularUpdate,
-                straightFirst = straightFirst,
-                straightLast = straightLast,
-                pointId = pointIdentity.id,
-                pointName = pointIdentity.name,
-                pointNeedsRegularUpdate =
-                    pointIdentity.needsRegularUpdate,
-                point1Id = point1Identity.id,
-                point1Name = point1Identity.name,
-                point1NeedsRegularUpdate =
-                    point1Identity.needsRegularUpdate,
-                point2Id = point2Identity.id,
-                point2Name = point2Identity.name,
-                point2NeedsRegularUpdate =
-                    point2Identity.needsRegularUpdate,
-            )
-        ) {
+        val result =
+            if (glider != null) {
+                Normal.create(
+                    board = resolvedBoard,
+                    glider = glider,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                    pointId = pointIdentity.id,
+                    pointName = pointIdentity.name,
+                    pointNeedsRegularUpdate =
+                        pointIdentity.needsRegularUpdate,
+                    point1Id = point1Identity.id,
+                    point1Name = point1Identity.name,
+                    point1NeedsRegularUpdate =
+                        point1Identity.needsRegularUpdate,
+                    point2Id = point2Identity.id,
+                    point2Name = point2Identity.name,
+                    point2NeedsRegularUpdate =
+                        point2Identity.needsRegularUpdate,
+                )
+            } else {
+                Normal.create(
+                    board = resolvedBoard,
+                    firstParent = first
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        ),
+                    secondParent = second
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        ),
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                    pointId = pointIdentity.id,
+                    pointName = pointIdentity.name,
+                    pointNeedsRegularUpdate =
+                        pointIdentity.needsRegularUpdate,
+                    point1Id = point1Identity.id,
+                    point1Name = point1Identity.name,
+                    point1NeedsRegularUpdate =
+                        point1Identity.needsRegularUpdate,
+                    point2Id = point2Identity.id,
+                    point2Name = point2Identity.name,
+                    point2NeedsRegularUpdate =
+                        point2Identity.needsRegularUpdate,
+                )
+            }
+        return when (result) {
             is GMResult.Ok -> element(result.value)
             is GMResult.Err -> failure(
                 creatorName = creatorName,
@@ -12341,6 +12835,18 @@ internal object NativeJessieCodeCreators {
             ?: return failure("circle", JessieCodeCreatorError.BoardUnavailable, location)
         val identity = when (
             val result = creatorAttributes("circle", attributes, location)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val hasInnerPoints = when (
+            val result = booleanAttribute(
+                creatorName = "circle",
+                attributes = attributes,
+                name = "hasinnerpoints",
+                default = false,
+                location = location,
+            )
         ) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
@@ -12370,7 +12876,10 @@ internal object NativeJessieCodeCreators {
                     needsRegularUpdate = identity.needsRegularUpdate,
                 )
             ) {
-                is GMResult.Ok -> element(result.value)
+                is GMResult.Ok -> {
+                    result.value.hasInnerPoints = hasInnerPoints
+                    element(result.value)
+                }
                 is GMResult.Err -> {
                     resolvedBoard.removeObjects(materialized.ownedPoints)
                     failure(
@@ -12531,6 +13040,7 @@ internal object NativeJessieCodeCreators {
                     firstPoint,
                     secondElement,
                     identity,
+                    hasInnerPoints,
                     location,
                 )
             }
@@ -12540,6 +13050,7 @@ internal object NativeJessieCodeCreators {
                     firstPoint,
                     secondElement,
                     identity,
+                    hasInnerPoints,
                     location,
                 )
             }
@@ -12549,6 +13060,7 @@ internal object NativeJessieCodeCreators {
                     secondPoint,
                     firstElement,
                     identity,
+                    hasInnerPoints,
                     location,
                 )
             }
@@ -12558,6 +13070,7 @@ internal object NativeJessieCodeCreators {
                     secondPoint,
                     firstElement,
                     identity,
+                    hasInnerPoints,
                     location,
                 )
             }
@@ -12565,7 +13078,10 @@ internal object NativeJessieCodeCreators {
         }
 
         return when (result) {
-            is GMResult.Ok -> element(result.value)
+            is GMResult.Ok -> {
+                result.value.hasInnerPoints = hasInnerPoints
+                element(result.value)
+            }
             is GMResult.Err -> {
                 cleanupOwnedPoints()
                 failure(
@@ -12600,6 +13116,18 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        val hasInnerPoints = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "hasinnerpoints",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         val materialized = when (
             val result = materializeThreePointParents(
                 board = resolvedBoard,
@@ -12624,7 +13152,10 @@ internal object NativeJessieCodeCreators {
                 needsRegularUpdate = identity.needsRegularUpdate,
             )
         ) {
-            is GMResult.Ok -> element(result.value)
+            is GMResult.Ok -> {
+                result.value.hasInnerPoints = hasInnerPoints
+                element(result.value)
+            }
             is GMResult.Err -> {
                 resolvedBoard.removeObjects(materialized.ownedPoints)
                 failure(
@@ -12637,6 +13168,217 @@ internal object NativeJessieCodeCreators {
             }
         }
     }
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createEllipse.
+    private fun createConic(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "conic"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 5 && parents.size != 6) {
+            return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val centerAttributes = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "center",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampling = when (
+            val result = continuousCurveSamplingOptions(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        if (parents.size == 6) {
+            val coefficientTerms =
+                mutableListOf<JessieCodeCoordinateFunction>()
+            for (parent in parents) {
+                when (parent) {
+                    is JessieCodeRuntimeValue.NumberValue ->
+                        coefficientTerms +=
+                            JessieCodeNumericCoordinateFunction(
+                                parent.value,
+                            )
+                    is JessieCodeRuntimeValue.FunctionValue ->
+                        coefficientTerms +=
+                            JessieCodeRuntimeCoordinateFunction(
+                                function = parent,
+                                location = location,
+                                returnsCoordinateArray = false,
+                            )
+                    else -> return unsupported(
+                        creatorName,
+                        parents,
+                        location,
+                    )
+                }
+            }
+            return conicResult(
+                creatorName = creatorName,
+                location = location,
+                board = resolvedBoard,
+                ownedPoints = emptySet(),
+                result = Conic.create(
+                    board = resolvedBoard,
+                    coefficientTerms = coefficientTerms,
+                    sampleCount = sampling.sampleCount,
+                    plotOptions = sampling.plotOptions,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    centerId = centerAttributes.id,
+                    centerName = centerAttributes.name,
+                    centerNeedsRegularUpdate =
+                        centerAttributes.needsRegularUpdate,
+                    centerFixed = centerAttributes.fixed,
+                ),
+            )
+        }
+
+        val pointAttributes = when (
+            val result = nestedPointCreatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "point",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val pointParents = mutableListOf<FocalConicPointParent>()
+        for (parent in parents) {
+            when (
+                val result = focalConicPointParent(
+                    board = resolvedBoard,
+                    value = parent,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    val pointParent = result.value
+                        ?: return unsupported(
+                            creatorName,
+                            parents,
+                            location,
+                        )
+                    pointParents += pointParent
+                }
+                is GMResult.Err -> return result
+            }
+        }
+
+        val points = mutableListOf<Point>()
+        val ownedPoints = linkedSetOf<Point>()
+        val parentlessPoints = linkedSetOf<Point>()
+        for (resolvedParent in pointParents) {
+            val point = when (val parent = resolvedParent.parent) {
+                is PointParent.Existing -> parent.point
+                is PointParent.Coordinates -> when (
+                    val result = createPointFromCoordinates(
+                        board = resolvedBoard,
+                        coordinates = parent.values,
+                        attributes = pointAttributes,
+                        coordinateLocation = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        resolvedBoard.removeObjects(ownedPoints)
+                        return failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError.PointFactory(
+                                result.error,
+                            ),
+                            location = location,
+                        )
+                    }
+                }
+            }
+            points += point
+            if (resolvedParent.parent is PointParent.Coordinates) {
+                ownedPoints += point
+            }
+            if (resolvedParent.parentless) {
+                parentlessPoints += point
+            }
+        }
+        return conicResult(
+            creatorName = creatorName,
+            location = location,
+            board = resolvedBoard,
+            ownedPoints = ownedPoints,
+            result = Conic.create(
+                board = resolvedBoard,
+                point1 = points[0],
+                point2 = points[1],
+                point3 = points[2],
+                point4 = points[3],
+                point5 = points[4],
+                parentlessPoints = parentlessPoints,
+                sampleCount = sampling.sampleCount,
+                plotOptions = sampling.plotOptions,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                centerId = centerAttributes.id,
+                centerName = centerAttributes.name,
+                centerNeedsRegularUpdate =
+                    centerAttributes.needsRegularUpdate,
+                centerFixed = centerAttributes.fixed,
+            ),
+        )
+    }
+
+    private fun conicResult(
+        creatorName: String,
+        location: JessieCodeAstLocation,
+        board: Board,
+        ownedPoints: Set<Point>,
+        result: GMResult<Curve, ConicError>,
+    ): CreatorResult =
+        when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                board.removeObjects(ownedPoints)
+                failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.ConicFactory(
+                        result.error,
+                    ),
+                    location = location,
+                )
+            }
+        }
 
     // JSXGraph 1.13.3: src/element/conic.js -> createEllipse.
     private fun createEllipse(
@@ -13400,6 +14142,25 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        if (parents.size == 2) {
+            val source = resolveElement(resolvedBoard, parents[0]) as? Curve
+            val transformations = transformationReferences(parents[1])
+            if (source != null && transformations != null) {
+                return curveResult(
+                    creatorName = "curve",
+                    location = location,
+                    result = Curve.createTransformed(
+                        board = resolvedBoard,
+                        source = source,
+                        transformations = transformations,
+                        id = identity.id,
+                        name = identity.name,
+                        needsRegularUpdate =
+                            identity.needsRegularUpdate,
+                    ),
+                )
+            }
+        }
         if (
             parents.size == 2 &&
             parents[0] is JessieCodeRuntimeValue.ArrayValue &&
@@ -13456,6 +14217,250 @@ internal object NativeJessieCodeCreators {
                 maximumSource = sources[3] ?: "",
                 sampleCount = sampling.sampleCount,
                 plotOptions = sampling.plotOptions,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> createSketchCurve.
+    private fun createSketchCurve(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "sketchcurve"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        // The upstream factory intentionally ignores all supplied parents.
+        return curveResult(
+            creatorName = creatorName,
+            location = location,
+            result = Curve.createSketchCurve(
+                board = resolvedBoard,
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> createImplicitCurve.
+    private fun createImplicitCurve(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "implicitcurve"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size !in setOf(1, 3, 5)) {
+            return unsupported(creatorName, parents, location)
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val implicitAttributes = when (
+            val result = implicitCurveAttributes(attributes, location)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val function = when (
+            val result = implicitCurveFunction(
+                board = resolvedBoard,
+                value = parents[0],
+                term = "implicitcurve.f",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        var derivativeX: JessieCodeCoordinateFunction? = null
+        var derivativeY: JessieCodeCoordinateFunction? = null
+        var domainX: JessieCodeCoordinateFunction? = null
+        var domainY: JessieCodeCoordinateFunction? = null
+        val hasThreeParentDerivatives =
+            parents.size == 3 &&
+                (
+                    parents[1] is JessieCodeRuntimeValue.StringValue ||
+                        parents[1] is JessieCodeRuntimeValue.FunctionValue
+                    )
+        if (parents.size == 5 || hasThreeParentDerivatives) {
+            derivativeX = when (
+                val result = implicitCurveFunction(
+                    board = resolvedBoard,
+                    value = parents[1],
+                    term = "implicitcurve.dfx",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            derivativeY = when (
+                val result = implicitCurveFunction(
+                    board = resolvedBoard,
+                    value = parents[2],
+                    term = "implicitcurve.dfy",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        }
+        if (parents.size == 5 || (parents.size == 3 && !hasThreeParentDerivatives)) {
+            val rangeOffset = if (parents.size == 5) 3 else 1
+            domainX = when (
+                val result = implicitCurveRange(
+                    value = parents[rangeOffset],
+                    axis = "x",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            domainY = when (
+                val result = implicitCurveRange(
+                    value = parents[rangeOffset + 1],
+                    axis = "y",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        }
+
+        return curveResult(
+            creatorName = creatorName,
+            location = location,
+            result = Curve.createImplicitCurve(
+                board = resolvedBoard,
+                definition = CurveImplicitDefinition(
+                    f = function,
+                    dfx = derivativeX,
+                    dfy = derivativeY,
+                    domainX = domainX,
+                    domainY = domainY,
+                    margin = implicitAttributes.margin,
+                    resolutionOuter = implicitAttributes.resolutionOuter,
+                    resolutionInner = implicitAttributes.resolutionInner,
+                    maxSteps = implicitAttributes.maxSteps,
+                    alpha0 = implicitAttributes.alpha0,
+                    tolU0 = implicitAttributes.tolU0,
+                    tolNewton = implicitAttributes.tolNewton,
+                    tolCusp = implicitAttributes.tolCusp,
+                    tolProgress = implicitAttributes.tolProgress,
+                    qdtBox = implicitAttributes.qdtBox,
+                    kappa0 = implicitAttributes.kappa0,
+                    delta0 = implicitAttributes.delta0,
+                    hInitial = implicitAttributes.hInitial,
+                    hCritical = implicitAttributes.hCritical,
+                    hMax = implicitAttributes.hMax,
+                    loopDist = implicitAttributes.loopDist,
+                    loopDir = implicitAttributes.loopDir,
+                    loopDetection = implicitAttributes.loopDetection,
+                ),
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> createTracecurve.
+    private fun createTraceCurve(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "tracecurve"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val glider = resolveElement(resolvedBoard, parents[0]) as? Glider
+            ?: return unsupported(creatorName, parents, location)
+        val tracePoint = resolveElement(
+            resolvedBoard,
+            parents[1],
+        ) as? Point ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sampleCount = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "numberpoints",
+                default = Curve.TRACE_DEFAULT_SAMPLE_COUNT,
+                minimum = 1,
+                maximum = Curve.MAX_SAMPLE_COUNT,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return curveResult(
+            creatorName = creatorName,
+            location = location,
+            result = Curve.createTraceCurve(
+                board = resolvedBoard,
+                glider = glider,
+                tracePoint = tracePoint,
+                sampleCount = sampleCount,
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
@@ -13722,6 +14727,7 @@ internal object NativeJessieCodeCreators {
         val radius = if (kind.isAngle) {
             when (
                 val result = angleRadius(
+                    board = resolvedBoard,
                     attributes = attributes,
                     location = location,
                 )
@@ -13731,6 +14737,108 @@ internal object NativeJessieCodeCreators {
             }
         } else {
             null
+        }
+        val angleDisplay = if (kind.isAngle) {
+            when (
+                val result = angleDisplayAttributes(
+                    attributes = attributes,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        } else {
+            null
+        }
+        val firstLine = parents.getOrNull(0)?.let {
+            resolveElement(resolvedBoard, it) as? Line
+        }
+        val secondLine = parents.getOrNull(1)?.let {
+            resolveElement(resolvedBoard, it) as? Line
+        }
+        val lineParentCount = if (kind.isAngle) 4 else 5
+        if (
+            kind != SectorCreatorKind.CIRCUMCIRCLE_SECTOR &&
+            parents.size == lineParentCount &&
+            firstLine != null &&
+            secondLine != null
+        ) {
+            val direction1 = sectorDirection(parents[2])
+                ?: return unsupported(creatorName, parents, location)
+            val direction2 = sectorDirection(parents[3])
+                ?: return unsupported(creatorName, parents, location)
+            val lineRadius =
+                if (kind.isAngle) {
+                    radius ?: AngleRadius.Auto
+                } else {
+                    when (
+                        val result = sectorRadius(
+                            board = resolvedBoard,
+                            value = parents[4],
+                            creatorName = creatorName,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+            val result = when (kind) {
+                SectorCreatorKind.SECTOR,
+                SectorCreatorKind.MINOR_SECTOR,
+                SectorCreatorKind.MAJOR_SECTOR,
+                -> Sector.createFromLines(
+                    board = resolvedBoard,
+                    line1 = firstLine,
+                    line2 = secondLine,
+                    direction1 = direction1,
+                    direction2 = direction2,
+                    radius = lineRadius,
+                    selection = curveAttributes.selection,
+                    orientation = curveAttributes.orientation,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                )
+                SectorCreatorKind.ANGLE,
+                SectorCreatorKind.NONREFLEX_ANGLE,
+                SectorCreatorKind.REFLEX_ANGLE,
+                -> Sector.createAngleFromLines(
+                    board = resolvedBoard,
+                    line1 = firstLine,
+                    line2 = secondLine,
+                    direction1 = direction1,
+                    direction2 = direction2,
+                    radius = lineRadius,
+                    selection = curveAttributes.selection,
+                    orientation = curveAttributes.orientation,
+                    valueMode = when (kind) {
+                        SectorCreatorKind.NONREFLEX_ANGLE ->
+                            AngleValueMode.NONREFLEX
+                        SectorCreatorKind.REFLEX_ANGLE ->
+                            AngleValueMode.REFLEX
+                        else -> AngleValueMode.DEFAULT
+                    },
+                    displayAttributes =
+                        angleDisplay ?: AngleDisplayAttributes(),
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                )
+                SectorCreatorKind.CIRCUMCIRCLE_SECTOR ->
+                    return unsupported(creatorName, parents, location)
+            }
+            return when (result) {
+                is GMResult.Ok -> element(result.value)
+                is GMResult.Err -> failure(
+                    creatorName = creatorName,
+                    error = JessieCodeCreatorError.SectorFactory(
+                        result.error,
+                    ),
+                    location = location,
+                )
+            }
         }
         val materialized = when (
             val result = materializePointParents(
@@ -13820,6 +14928,8 @@ internal object NativeJessieCodeCreators {
                 radius = radius ?: AngleRadius.Auto,
                 selection = curveAttributes.selection,
                 orientation = curveAttributes.orientation,
+                displayAttributes =
+                    angleDisplay ?: AngleDisplayAttributes(),
                 ownedPoints = materialized.ownedPoints,
                 id = identity.id,
                 name = identity.name,
@@ -13834,6 +14944,8 @@ internal object NativeJessieCodeCreators {
                     third = points[2],
                     radius = radius ?: AngleRadius.Auto,
                     orientation = curveAttributes.orientation,
+                    displayAttributes =
+                        angleDisplay ?: AngleDisplayAttributes(),
                     ownedPoints = materialized.ownedPoints,
                     id = identity.id,
                     name = identity.name,
@@ -13847,6 +14959,8 @@ internal object NativeJessieCodeCreators {
                 third = points[2],
                 radius = radius ?: AngleRadius.Auto,
                 orientation = curveAttributes.orientation,
+                displayAttributes =
+                    angleDisplay ?: AngleDisplayAttributes(),
                 ownedPoints = materialized.ownedPoints,
                 id = identity.id,
                 name = identity.name,
@@ -13863,6 +14977,154 @@ internal object NativeJessieCodeCreators {
                     location = location,
                 )
             }
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> createTurtle / Turtle.
+    private fun createTurtle(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "turtle"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val start = when (parents.size) {
+            0 -> doubleArrayOf(0.0, 0.0, 90.0)
+            1 -> {
+                val position = numericArray(parents[0])
+                    ?.takeIf { it.size >= 2 }
+                    ?: return unsupported(creatorName, parents, location)
+                doubleArrayOf(position[0], position[1], 90.0)
+            }
+            2 -> {
+                val position = numericArray(parents[0])
+                val second = (
+                    parents[1] as? JessieCodeRuntimeValue.NumberValue
+                    )?.value
+                if (position != null && position.size >= 2 && second != null) {
+                    doubleArrayOf(position[0], position[1], second)
+                } else {
+                    val x = (
+                        parents[0] as? JessieCodeRuntimeValue.NumberValue
+                        )?.value
+                    val y = (
+                        parents[1] as? JessieCodeRuntimeValue.NumberValue
+                        )?.value
+                    if (x == null || y == null) {
+                        return unsupported(creatorName, parents, location)
+                    }
+                    doubleArrayOf(x, y, 90.0)
+                }
+            }
+            3 -> {
+                val values = parents.mapNotNull {
+                    (it as? JessieCodeRuntimeValue.NumberValue)?.value
+                }
+                if (values.size != 3) {
+                    return unsupported(creatorName, parents, location)
+                }
+                values.toDoubleArray()
+            }
+            else -> return unsupported(creatorName, parents, location)
+        }
+        val strokeWidth = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "strokewidth",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val strokeColor = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "strokecolor",
+                default = "#000000",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val highlightStrokeColor = when (
+            val result = stringAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "highlightstrokecolor",
+                default = "#c3d9ff",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val arrowAttributes = when (
+            val result = nestedObjectAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "arrow",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val arrowVisible = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = arrowAttributes,
+                name = "visible",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Turtle.create(
+                board = resolvedBoard,
+                x = start[0],
+                y = start[1],
+                direction = start[2],
+                penAttributes = TurtlePenAttributes(
+                    strokeWidth = strokeWidth,
+                    strokeColor = strokeColor,
+                    highlightStrokeColor = highlightStrokeColor,
+                ),
+                id = identity.id,
+                name = identity.name,
+                needsRegularUpdate = identity.needsRegularUpdate,
+                arrowVisible = arrowVisible,
+            )
+        ) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.TurtleFactory(result.error),
+                location = location,
+            )
         }
     }
 
@@ -13892,19 +15154,55 @@ internal object NativeJessieCodeCreators {
         if (parents.size != 3) {
             return unsupported(creatorName, parents, location)
         }
-        val sources = parents.map(::curveTermSource)
-        if (sources.any { it == null }) {
-            return unsupported(creatorName, parents, location)
-        }
         val sampling = when (
             val result = continuousCurveSamplingOptions(
                 creatorName,
                 attributes,
                 location,
+                rdpSmoothingDefault = true,
             )
         ) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
+        }
+        val runtimeFunction =
+            parents[0] as? JessieCodeRuntimeValue.FunctionValue
+        val runtimeMinimum =
+            parents[1] as? JessieCodeRuntimeValue.NumberValue
+        val runtimeMaximum =
+            parents[2] as? JessieCodeRuntimeValue.NumberValue
+        if (
+            runtimeFunction != null &&
+            runtimeMinimum != null &&
+            runtimeMaximum != null
+        ) {
+            return curveResult(
+                creatorName = creatorName,
+                location = location,
+                result = Curve.createFunctionGraph(
+                    board = resolvedBoard,
+                    yTerm = JessieCodeRuntimeCoordinateFunction(
+                        function = runtimeFunction,
+                        location = location,
+                        returnsCoordinateArray = false,
+                    ),
+                    minimumTerm = JessieCodeNumericCoordinateFunction(
+                        runtimeMinimum.value,
+                    ),
+                    maximumTerm = JessieCodeNumericCoordinateFunction(
+                        runtimeMaximum.value,
+                    ),
+                    sampleCount = sampling.sampleCount,
+                    plotOptions = sampling.plotOptions,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                ),
+            )
+        }
+        val sources = parents.map(::curveTermSource)
+        if (sources.any { it == null }) {
+            return unsupported(creatorName, parents, location)
         }
         return curveResult(
             creatorName = creatorName,
@@ -15477,6 +16775,215 @@ internal object NativeJessieCodeCreators {
         }
     }
 
+    // JSXGraph 1.13.3: src/base/curve.js -> createMetapostSpline.
+    private fun createMetaPostSpline(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "metapostspline"
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (parents.size < 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val inputPoints = (
+            parents[0] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val controlsValue =
+            parents[1] as? JessieCodeRuntimeValue.ObjectValue
+                ?: return unsupported(creatorName, parents, location)
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val createPoints = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "createpoints",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val isArrayOfCoordinates = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "isarrayofcoordinates",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val normalized = mutableListOf<JessieCodeRuntimeValue>()
+        val xValues = (
+            inputPoints.getOrNull(0) as?
+                JessieCodeRuntimeValue.ArrayValue
+            )?.values
+        val yValues = (
+            inputPoints.getOrNull(1) as?
+                JessieCodeRuntimeValue.ArrayValue
+            )?.values
+        if (
+            !isArrayOfCoordinates &&
+            inputPoints.size == 2 &&
+            xValues != null &&
+            yValues != null &&
+            xValues.size == yValues.size
+        ) {
+            for (index in xValues.indices) {
+                when (
+                    val result = evaluateMetaPostCoordinatePair(
+                        values = listOf(xValues[index], yValues[index]),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> normalized += result.value
+                    is GMResult.Err -> return curveFailure(
+                        creatorName,
+                        result.error,
+                        location,
+                    )
+                }
+            }
+        } else {
+            for (value in inputPoints) {
+                val selected = resolveElement(resolvedBoard, value)
+                if (selected is Point) {
+                    normalized += JessieCodeRuntimeValue.ElementReference(
+                        selected,
+                    )
+                    continue
+                }
+                val pair = (
+                    value as? JessieCodeRuntimeValue.ArrayValue
+                    )?.values
+                if (pair?.size == 2) {
+                    when (
+                        val result = evaluateMetaPostCoordinatePair(
+                            values = pair,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> normalized += result.value
+                        is GMResult.Err -> return curveFailure(
+                            creatorName,
+                            result.error,
+                            location,
+                        )
+                    }
+                    continue
+                }
+                if (value is JessieCodeRuntimeValue.FunctionValue) {
+                    when (
+                        val result = evaluateMetaPostPointFunction(
+                            value,
+                            location,
+                        )
+                    ) {
+                        is GMResult.Ok -> normalized += result.value
+                        is GMResult.Err -> return curveFailure(
+                            creatorName,
+                            result.error,
+                            location,
+                        )
+                    }
+                }
+            }
+        }
+        val controls = when (
+            val result = metaPostControls(
+                controls = controlsValue,
+                pointCount = normalized.size,
+                creatorName = creatorName,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        val points = mutableListOf<NumericsPoint2D>()
+        val createdPoints = linkedSetOf<Point>()
+        for (value in normalized) {
+            val selected = resolveElement(resolvedBoard, value)
+            if (selected is Point) {
+                points += selected
+                continue
+            }
+            if (!createPoints) {
+                resolvedBoard.removeObjects(createdPoints)
+                return unsupported(creatorName, parents, location)
+            }
+            val pointParent = pointParent(resolvedBoard, value)
+                ?: run {
+                    resolvedBoard.removeObjects(createdPoints)
+                    return unsupported(creatorName, parents, location)
+                }
+            when (
+                val result = materializePoint(
+                    board = resolvedBoard,
+                    parent = pointParent,
+                    coordinateLocation = location,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    points += result.value
+                    if (pointParent is PointParent.Coordinates) {
+                        createdPoints += result.value
+                    }
+                }
+                is GMResult.Err -> {
+                    resolvedBoard.removeObjects(createdPoints)
+                    return failure(
+                        creatorName = creatorName,
+                        error = JessieCodeCreatorError.PointFactory(
+                            result.error,
+                        ),
+                        location = location,
+                    )
+                }
+            }
+        }
+
+        val result = Curve.createMetaPostSpline(
+            board = resolvedBoard,
+            points = points,
+            controls = controls,
+            id = identity.id,
+            name = identity.name,
+            needsRegularUpdate = identity.needsRegularUpdate,
+        )
+        return when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> {
+                resolvedBoard.removeObjects(createdPoints)
+                curveFailure(creatorName, result.error, location)
+            }
+        }
+    }
+
     private fun createPolygon(
         board: Board?,
         parents: List<JessieCodeRuntimeValue>,
@@ -15496,6 +17003,18 @@ internal object NativeJessieCodeCreators {
                 creatorName,
                 attributes,
                 location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val hasInnerPoints = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "hasinnerpoints",
+                default = false,
+                location = location,
             )
         ) {
             is GMResult.Ok -> result.value
@@ -15573,7 +17092,10 @@ internal object NativeJessieCodeCreators {
                     )
                 }
         ) {
-            is GMResult.Ok -> element(result.value)
+            is GMResult.Ok -> {
+                result.value.hasInnerPoints = hasInnerPoints
+                element(result.value)
+            }
             is GMResult.Err -> {
                 resolvedBoard.removeObjects(ownedVertices)
                 failure(
@@ -15868,7 +17390,8 @@ internal object NativeJessieCodeCreators {
         if (
             coordinates.any {
                 it !is JessieCodeRuntimeValue.NumberValue &&
-                    it !is JessieCodeRuntimeValue.StringValue
+                    it !is JessieCodeRuntimeValue.StringValue &&
+                    it !is JessieCodeRuntimeValue.FunctionValue
             }
         ) {
             return unsupported("text", parents, location)
@@ -15924,16 +17447,8 @@ internal object NativeJessieCodeCreators {
         val numericCoordinates = coordinates.mapNotNull {
             (it as? JessieCodeRuntimeValue.NumberValue)?.value
         }
-        val coordinateExpressions = coordinates.map { coordinate ->
-            when (coordinate) {
-                is JessieCodeRuntimeValue.NumberValue ->
-                    JsNumberFormat.compact(coordinate.value)
-                is JessieCodeRuntimeValue.StringValue -> coordinate.value
-                else -> return unsupported("text", parents, location)
-            }
-        }
-        val result =
-            if (numericCoordinates.size == coordinates.size) {
+        val result = when {
+            numericCoordinates.size == coordinates.size ->
                 Text.create(
                     board = resolvedBoard,
                     coordinates = numericCoordinates.toDoubleArray(),
@@ -15944,7 +17459,22 @@ internal object NativeJessieCodeCreators {
                     parse = parse,
                     digits = digits,
                 )
-            } else {
+            coordinates.none {
+                it is JessieCodeRuntimeValue.FunctionValue
+            } -> {
+                val coordinateExpressions = coordinates.map { coordinate ->
+                    when (coordinate) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            JsNumberFormat.compact(coordinate.value)
+                        is JessieCodeRuntimeValue.StringValue ->
+                            coordinate.value
+                        else -> return unsupported(
+                            "text",
+                            parents,
+                            location,
+                        )
+                    }
+                }
                 Text.create(
                     board = resolvedBoard,
                     coordinateExpressions = coordinateExpressions,
@@ -15956,6 +17486,72 @@ internal object NativeJessieCodeCreators {
                     digits = digits,
                 )
             }
+            else -> {
+                val functions =
+                    mutableListOf<JessieCodeCoordinateFunction>()
+                for ((index, value) in coordinates.withIndex()) {
+                    when (value) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            functions += JessieCodeNumericCoordinateFunction(
+                                value.value,
+                            )
+                        is JessieCodeRuntimeValue.StringValue -> {
+                            when (
+                                val compiled =
+                                    JessieCodeExpressionFunction.compile(
+                                        source = value.value,
+                                        board = resolvedBoard,
+                                    )
+                            ) {
+                                is GMResult.Ok -> functions += compiled.value
+                                is GMResult.Err -> return failure(
+                                    creatorName = "text",
+                                    error =
+                                        JessieCodeCreatorError.TextFactory(
+                                            TextError
+                                                .CoordinateExpressionCompile(
+                                                    coordinateIndex = index,
+                                                    error = compiled.error,
+                                                ),
+                                        ),
+                                    location = location,
+                                )
+                            }
+                        }
+                        is JessieCodeRuntimeValue.FunctionValue ->
+                            functions +=
+                                JessieCodeRuntimeCoordinateFunction(
+                                    function = value,
+                                    location = location,
+                                    returnsCoordinateArray = false,
+                                )
+                        else -> return unsupported(
+                            "text",
+                            parents,
+                            location,
+                        )
+                    }
+                }
+                Text.createConstrained(
+                    board = resolvedBoard,
+                    coordinateFunctions = functions,
+                    content = content,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    parse = parse,
+                    digits = digits,
+                    xjc = (
+                        coordinates[0] as?
+                            JessieCodeRuntimeValue.StringValue
+                        )?.value,
+                    yjc = (
+                        coordinates[1] as?
+                            JessieCodeRuntimeValue.StringValue
+                        )?.value,
+                )
+            }
+        }
         return when (result) {
             is GMResult.Ok -> element(result.value)
             is GMResult.Err -> failure(
@@ -15964,6 +17560,564 @@ internal object NativeJessieCodeCreators {
                 location = location,
             )
         }
+    }
+
+    // JSXGraph 1.13.3: src/element/button.js -> createButton.
+    private fun createButton(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "button"
+        if (parents.size < 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val text = when (
+            val result = createHtmlControlText(
+                creatorName = creatorName,
+                board = board,
+                coordinateValues = parents.take(2),
+                contentValue = parents.getOrNull(2)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val disabled = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "disabled",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        val handler = when (val value = parents.getOrNull(3)) {
+            null,
+            JessieCodeRuntimeValue.NullValue,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> null
+            is JessieCodeRuntimeValue.BooleanValue ->
+                if (value.value) {
+                    text.board.removeObject(text)
+                    return unsupported(creatorName, parents, location)
+                } else {
+                    null
+                }
+            is JessieCodeRuntimeValue.StringValue ->
+                HtmlButtonHandler.JessieCode(value.value)
+            is JessieCodeRuntimeValue.FunctionValue ->
+                HtmlButtonHandler.Function(value, location)
+            else -> {
+                text.board.removeObject(text)
+                return unsupported(creatorName, parents, location)
+            }
+        }
+        text.type = Const.OBJECT_TYPE_BUTTON
+        text.htmlControlDefinition = HtmlControlDefinition.Button(
+            disabled = disabled,
+            handler = handler,
+        )
+        return element(text)
+    }
+
+    // JSXGraph 1.13.3: src/element/checkbox.js -> createCheckbox.
+    private fun createCheckbox(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "checkbox"
+        if (parents.size < 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val text = when (
+            val result = createHtmlControlText(
+                creatorName = creatorName,
+                board = board,
+                coordinateValues = parents.take(2),
+                contentValue = parents.getOrNull(2)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val disabled = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "disabled",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        val checked = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "checked",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        text.type = Const.OBJECT_TYPE_CHECKBOX
+        text.htmlControlDefinition = HtmlControlDefinition.Checkbox(
+            disabled = disabled,
+            checked = checked,
+        )
+        return element(text)
+    }
+
+    // JSXGraph 1.13.3: src/element/input.js -> createInput.
+    private fun createInput(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "input"
+        if (parents.size < 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val value = when (val source = parents[2]) {
+            is JessieCodeRuntimeValue.StringValue -> source.value
+            is JessieCodeRuntimeValue.NumberValue ->
+                JsNumberFormat.compact(source.value)
+            else -> return unsupported(creatorName, parents, location)
+        }
+        val text = when (
+            val result = createHtmlControlText(
+                creatorName = creatorName,
+                board = board,
+                coordinateValues = parents.take(2),
+                contentValue = parents.getOrNull(3)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val disabled = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "disabled",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        val maxLength = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "maxlength",
+                default = 524_288,
+                minimum = 0,
+                maximum = Int.MAX_VALUE,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        text.type = Const.OBJECT_TYPE_INPUT
+        text.htmlControlDefinition = HtmlControlDefinition.Input(
+            disabled = disabled,
+            maxLength = maxLength,
+            value = value,
+        )
+        return element(text)
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> createHTMLSlider.
+    private fun createHtmlSlider(
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val creatorName = "htmlslider"
+        if (parents.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+        val position = (
+            parents[0] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        val range = (
+            parents[1] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(
+            creatorName,
+            parents,
+            location,
+        )
+        if (position.size != 2 || range.size != 3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val numericRange = range.mapNotNull {
+            (it as? JessieCodeRuntimeValue.NumberValue)?.value
+        }
+        if (
+            numericRange.size != 3 ||
+            numericRange.any { value -> !value.isFinite() }
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val minimum = numericRange[0]
+        val value = numericRange[1]
+        val maximum = numericRange[2]
+        if (minimum > maximum || value !in minimum..maximum) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.InvalidControlValue(
+                    field = "range",
+                    reason =
+                        "expected finite [minimum, value, maximum] with " +
+                            "minimum <= value <= maximum",
+                ),
+                location = location,
+            )
+        }
+        val text = when (
+            val result = createHtmlControlText(
+                creatorName = creatorName,
+                board = board,
+                coordinateValues = position,
+                contentValue = JessieCodeRuntimeValue.StringValue(""),
+                attributes = attributes,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val step = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "step",
+                default = 0.01,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        val widthRange = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "widthrange",
+                default = 100.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        val widthOut = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "widthout",
+                default = 34.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        val withLabel = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "withlabel",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                text.board.removeObject(text)
+                return result
+            }
+        }
+        if (step <= 0.0 || widthRange < 0.0 || widthOut < 0.0) {
+            text.board.removeObject(text)
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.InvalidControlValue(
+                    field = "attributes",
+                    reason =
+                        "step must be positive and control widths must not " +
+                            "be negative",
+                ),
+                location = location,
+            )
+        }
+        text.type = Const.OBJECT_TYPE_HTMLSLIDER
+        text.htmlControlDefinition = HtmlControlDefinition.Slider(
+            minimum = minimum,
+            maximum = maximum,
+            step = step,
+            widthRange = widthRange,
+            widthOut = widthOut,
+            withLabel = withLabel,
+            value = value,
+        )
+        return element(text)
+    }
+
+    private fun createHtmlControlText(
+        creatorName: String,
+        board: Board?,
+        coordinateValues: List<JessieCodeRuntimeValue>,
+        contentValue: JessieCodeRuntimeValue,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Text, JessieCodeRuntimeError> {
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        if (
+            coordinateValues.size != 2 ||
+            coordinateValues.any { value ->
+                value !is JessieCodeRuntimeValue.NumberValue &&
+                    value !is JessieCodeRuntimeValue.StringValue &&
+                    value !is JessieCodeRuntimeValue.FunctionValue
+            }
+        ) {
+            return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedParents(
+                    coordinateValues.map(::typeName),
+                ),
+                location = location,
+            )
+        }
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName,
+                attributes,
+                location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val parse = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "parse",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val digits = when (
+            val result = integerAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "digits",
+                default = 2,
+                minimum = 0,
+                maximum = 100,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val staticContent = when (contentValue) {
+            is JessieCodeRuntimeValue.StringValue -> contentValue.value
+            is JessieCodeRuntimeValue.NumberValue ->
+                JsNumberFormat.compact(contentValue.value)
+            is JessieCodeRuntimeValue.FunctionValue -> ""
+            JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+            else -> return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.UnsupportedParents(
+                    listOf(typeName(contentValue)),
+                ),
+                location = location,
+            )
+        }
+        val numericCoordinates = coordinateValues.mapNotNull {
+            (it as? JessieCodeRuntimeValue.NumberValue)?.value
+        }
+        val result =
+            if (numericCoordinates.size == coordinateValues.size) {
+                Text.create(
+                    board = resolvedBoard,
+                    coordinates = numericCoordinates.toDoubleArray(),
+                    content = staticContent,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    parse = parse,
+                    digits = digits,
+                )
+            } else {
+                val functions =
+                    mutableListOf<JessieCodeCoordinateFunction>()
+                for ((index, value) in coordinateValues.withIndex()) {
+                    when (value) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            functions += JessieCodeNumericCoordinateFunction(
+                                value.value,
+                            )
+                        is JessieCodeRuntimeValue.StringValue -> {
+                            when (
+                                val compiled =
+                                    JessieCodeExpressionFunction.compile(
+                                        source = value.value,
+                                        board = resolvedBoard,
+                                    )
+                            ) {
+                                is GMResult.Ok -> functions += compiled.value
+                                is GMResult.Err -> return failure(
+                                    creatorName = creatorName,
+                                    error =
+                                        JessieCodeCreatorError.TextFactory(
+                                            TextError
+                                                .CoordinateExpressionCompile(
+                                                    coordinateIndex = index,
+                                                    error = compiled.error,
+                                                ),
+                                        ),
+                                    location = location,
+                                )
+                            }
+                        }
+                        is JessieCodeRuntimeValue.FunctionValue ->
+                            functions +=
+                                JessieCodeRuntimeCoordinateFunction(
+                                    function = value,
+                                    location = location,
+                                    returnsCoordinateArray = false,
+                                )
+                        else -> return failure(
+                            creatorName = creatorName,
+                            error =
+                                JessieCodeCreatorError.UnsupportedParents(
+                                    coordinateValues.map(::typeName),
+                                ),
+                            location = location,
+                        )
+                    }
+                }
+                Text.createConstrained(
+                    board = resolvedBoard,
+                    coordinateFunctions = functions,
+                    content = staticContent,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    parse = parse,
+                    digits = digits,
+                    xjc = (
+                        coordinateValues[0] as?
+                            JessieCodeRuntimeValue.StringValue
+                        )?.value,
+                    yjc = (
+                        coordinateValues[1] as?
+                            JessieCodeRuntimeValue.StringValue
+                        )?.value,
+                )
+            }
+        val text = when (result) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.TextFactory(result.error),
+                location = location,
+            )
+        }
+        if (contentValue is JessieCodeRuntimeValue.FunctionValue) {
+            text.setDynamicText(parse = parse) {
+                when (
+                    val evaluated = contentValue.externalCallable.call(
+                        arguments = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Err -> GMResult.Err(
+                        TextError.ContentExpressionEvaluation(
+                            expressionIndex = 0,
+                            error = evaluated.error,
+                        ),
+                    )
+                    is GMResult.Ok -> when (val value = evaluated.value) {
+                        is JessieCodeRuntimeValue.StringValue ->
+                            GMResult.Ok(value.value)
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            GMResult.Ok(JsNumberFormat.compact(value.value))
+                        else -> GMResult.Err(
+                            TextError.ContentExpressionResult(
+                                expressionIndex = 0,
+                                actualType = typeName(value),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+        return GMResult.Ok(text)
     }
 
     // JSXGraph: src/base/image.js -> createImage;
@@ -16153,12 +18307,209 @@ internal object NativeJessieCodeCreators {
         }
     }
 
+    // JSXGraph 1.13.3: src/base/foreignobject.js ->
+    // createForeignObject; src/base/coordselement.js -> CoordsElement.create.
+    private fun createForeignObject(
+        creatorName: String,
+        board: Board?,
+        parents: List<JessieCodeRuntimeValue>,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): CreatorResult {
+        val resolvedBoard = board
+            ?: return failure(
+                creatorName,
+                JessieCodeCreatorError.BoardUnavailable,
+                location,
+            )
+        val identity = when (
+            val result = creatorAttributes(
+                creatorName = creatorName,
+                attributes = attributes,
+                location = location,
+                defaultNeedsRegularUpdate = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (parents.size !in 2..3) {
+            return unsupported(creatorName, parents, location)
+        }
+        val content = (
+            parents[0] as? JessieCodeRuntimeValue.StringValue
+            )?.value ?: return unsupported(creatorName, parents, location)
+        val coordinateValues = (
+            parents[1] as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return unsupported(creatorName, parents, location)
+        if (
+            coordinateValues.size !in 1..3 ||
+            (
+                coordinateValues.size == 1 &&
+                    coordinateValues[0] !is
+                    JessieCodeRuntimeValue.FunctionValue
+                )
+        ) {
+            return unsupported(creatorName, parents, location)
+        }
+        val sizeValues =
+            if (parents.size == 2) {
+                emptyList()
+            } else {
+                (
+                    parents[2] as? JessieCodeRuntimeValue.ArrayValue
+                    )?.values ?: return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                )
+            }
+        if (sizeValues.size != 0 && sizeValues.size != 2) {
+            return unsupported(creatorName, parents, location)
+        }
+
+        val coordinateTerms =
+            mutableListOf<JessieCodeCoordinateFunction>()
+        for ((index, value) in coordinateValues.withIndex()) {
+            when (value) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    coordinateTerms +=
+                        JessieCodeNumericCoordinateFunction(value.value)
+                is JessieCodeRuntimeValue.StringValue -> {
+                    when (
+                        val result = JessieCodeExpressionFunction.compile(
+                            source = value.value,
+                            board = resolvedBoard,
+                        )
+                    ) {
+                        is GMResult.Ok -> coordinateTerms += result.value
+                        is GMResult.Err -> return failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError
+                                .ForeignObjectFactory(
+                                    ForeignObjectError
+                                        .CoordinateExpressionCompile(
+                                            coordinateIndex = index,
+                                            error = result.error,
+                                        ),
+                                ),
+                            location = location,
+                        )
+                    }
+                }
+                is JessieCodeRuntimeValue.FunctionValue ->
+                    coordinateTerms += JessieCodeRuntimeCoordinateFunction(
+                        function = value,
+                        location = location,
+                        returnsCoordinateArray =
+                            coordinateValues.size == 1,
+                    )
+                else -> return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                )
+            }
+        }
+
+        val sizeTerms = mutableListOf<JessieCodeCoordinateFunction>()
+        for ((index, value) in sizeValues.withIndex()) {
+            when (value) {
+                is JessieCodeRuntimeValue.NumberValue ->
+                    sizeTerms +=
+                        JessieCodeNumericCoordinateFunction(value.value)
+                is JessieCodeRuntimeValue.StringValue -> {
+                    when (
+                        val result = JessieCodeExpressionFunction.compile(
+                            source = value.value,
+                            board = resolvedBoard,
+                        )
+                    ) {
+                        is GMResult.Ok -> sizeTerms += result.value
+                        is GMResult.Err -> return failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError
+                                .ForeignObjectFactory(
+                                    ForeignObjectError.SizeExpressionCompile(
+                                        sizeIndex = index,
+                                        error = result.error,
+                                    ),
+                                ),
+                            location = location,
+                        )
+                    }
+                }
+                is JessieCodeRuntimeValue.FunctionValue ->
+                    sizeTerms += JessieCodeRuntimeCoordinateFunction(
+                        function = value,
+                        location = location,
+                        returnsCoordinateArray = false,
+                    )
+                else -> return unsupported(
+                    creatorName,
+                    parents,
+                    location,
+                )
+            }
+        }
+        val evaluateOnlyOnce = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "evaluateonlyonce",
+                default = false,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val numericCoordinates = coordinateValues.mapNotNull {
+            (it as? JessieCodeRuntimeValue.NumberValue)?.value
+        }
+        val result =
+            if (numericCoordinates.size == coordinateValues.size) {
+                ForeignObject.create(
+                    board = resolvedBoard,
+                    content = content,
+                    coordinates = numericCoordinates.toDoubleArray(),
+                    sizeTerms = sizeTerms,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    evaluateOnlyOnce = evaluateOnlyOnce,
+                )
+            } else {
+                ForeignObject.createConstrained(
+                    board = resolvedBoard,
+                    content = content,
+                    coordinateFunctions = coordinateTerms,
+                    sizeTerms = sizeTerms,
+                    id = identity.id,
+                    name = identity.name,
+                    needsRegularUpdate = identity.needsRegularUpdate,
+                    evaluateOnlyOnce = evaluateOnlyOnce,
+                )
+            }
+        return when (result) {
+            is GMResult.Ok -> element(result.value)
+            is GMResult.Err -> failure(
+                creatorName = creatorName,
+                error = JessieCodeCreatorError.ForeignObjectFactory(
+                    result.error,
+                ),
+                location = location,
+            )
+        }
+    }
+
     // JSXGraph 1.13.3: src/options.js -> curve plotting defaults and
     // src/base/curve.js -> updateCurve continuous-data branch.
     private fun continuousCurveSamplingOptions(
         creatorName: String,
         attributes: JessieCodeRuntimeValue.ObjectValue,
         location: JessieCodeAstLocation,
+        rdpSmoothingDefault: Boolean = false,
     ): GMResult<ContinuousCurveSamplingOptions, JessieCodeRuntimeError> {
         val sampleCount = when (
             val result = integerAttribute(
@@ -16186,11 +18537,38 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        val rdpSmoothing = when (
+            val result = booleanAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "rdpsmoothing",
+                default = rdpSmoothingDefault,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rdpThreshold = when (
+            val result = numberAttribute(
+                creatorName = creatorName,
+                attributes = attributes,
+                name = "rdpthreshold",
+                default = 0.2,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         if (!advanced) {
             return GMResult.Ok(
                 ContinuousCurveSamplingOptions(
                     sampleCount = sampleCount,
-                    plotOptions = CurvePlotOptions(),
+                    plotOptions = CurvePlotOptions(
+                        rdpSmoothing = rdpSmoothing,
+                        rdpThreshold = rdpThreshold,
+                    ),
                 ),
             )
         }
@@ -16208,7 +18586,7 @@ internal object NativeJessieCodeCreators {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        if (plotVersion !in 2..4) {
+        if (plotVersion !in 1..4) {
             return failure(
                 creatorName = creatorName,
                 error = JessieCodeCreatorError.UnsupportedAttributeValue(
@@ -16239,6 +18617,8 @@ internal object NativeJessieCodeCreators {
                     doAdvancedPlot = true,
                     plotVersion = plotVersion,
                     recursionDepthHigh = recursionDepth,
+                    rdpSmoothing = rdpSmoothing,
+                    rdpThreshold = rdpThreshold,
                 ),
             ),
         )
@@ -16297,52 +18677,159 @@ internal object NativeJessieCodeCreators {
     }
 
     private fun angleRadius(
+        board: Board,
         attributes: JessieCodeRuntimeValue.ObjectValue,
         location: JessieCodeAstLocation,
     ): GMResult<AngleRadius, JessieCodeRuntimeError> =
-        when (val value = attributes.properties["radius"]) {
-            null,
+        when (
+            val value = attributes.properties["radius"]
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
             JessieCodeRuntimeValue.UndefinedValue,
             -> GMResult.Ok(AngleRadius.Auto)
 
-            is JessieCodeRuntimeValue.NumberValue ->
-                if (value.value.isFinite()) {
-                    GMResult.Ok(AngleRadius.Fixed(value.value))
-                } else {
-                    failure(
-                        creatorName = "angle",
-                        error =
-                            JessieCodeCreatorError.UnsupportedAttributeValue(
-                                attribute = "radius",
-                                actual = value.value.toString(),
-                            ),
-                        location = location,
-                    )
-                }
+            else -> sectorRadius(
+                board = board,
+                value = value,
+                creatorName = "angle",
+                location = location,
+            )
+        }
 
+    private fun sectorRadius(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        creatorName: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<AngleRadius, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(AngleRadius.Fixed(value.value))
             is JessieCodeRuntimeValue.StringValue ->
                 if (value.value.lowercase() == "auto") {
                     GMResult.Ok(AngleRadius.Auto)
                 } else {
-                    failure(
-                        creatorName = "angle",
-                        error =
-                            JessieCodeCreatorError.UnsupportedAttributeValue(
-                                attribute = "radius",
-                                actual = value.value,
+                    when (
+                        val result = JessieCodeExpressionFunction.compile(
+                            source = value.value,
+                            board = board,
+                        )
+                    ) {
+                        is GMResult.Ok -> GMResult.Ok(
+                            AngleRadius.Expression(result.value),
+                        )
+                        is GMResult.Err -> failure(
+                            creatorName = creatorName,
+                            error = JessieCodeCreatorError.SectorFactory(
+                                SectorError.RadiusExpressionCompile(
+                                    result.error,
+                                ),
                             ),
-                        location = location,
-                    )
+                            location = location,
+                        )
+                    }
                 }
-
+            is JessieCodeRuntimeValue.FunctionValue -> GMResult.Ok(
+                AngleRadius.Function(
+                    AngleRadiusFunction(
+                        function = value,
+                        location = location,
+                    ),
+                ),
+            )
             else -> invalidAttribute(
-                creatorName = "angle",
+                creatorName = creatorName,
                 attribute = "radius",
-                expected = "number or \"auto\"",
+                expected = "number, string, or function",
                 actual = value,
                 location = location,
             )
         }
+
+    private fun sectorDirection(
+        value: JessieCodeRuntimeValue,
+    ): SectorDirection? =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                SectorDirection.Sign(value.value)
+            is JessieCodeRuntimeValue.ArrayValue ->
+                numericArray(value)?.let(SectorDirection::Coordinates)
+            else -> null
+        }
+
+    private fun angleDisplayAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<AngleDisplayAttributes, JessieCodeRuntimeError> {
+        val type = when (
+            val result = stringAttribute(
+                creatorName = "angle",
+                attributes = attributes,
+                name = "type",
+                default = "sector",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val orthoType = when (
+            val result = stringAttribute(
+                creatorName = "angle",
+                attributes = attributes,
+                name = "orthotype",
+                default = "square",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val orthoSensitivity = when (
+            val result = numberAttribute(
+                creatorName = "angle",
+                attributes = attributes,
+                name = "orthosensitivity",
+                default = 1.0,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val dot = when (
+            val result = nestedObjectAttribute(
+                creatorName = "angle",
+                attributes = attributes,
+                name = "dot",
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val dotIdentity = when (
+            val result = creatorAttributes(
+                creatorName = "angle",
+                attributes = dot,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            AngleDisplayAttributes(
+                type = type,
+                orthoType = orthoType,
+                orthoSensitivity = orthoSensitivity,
+                dotId = dotIdentity.id,
+                dotName = dotIdentity.name ?: "",
+                dotNeedsRegularUpdate =
+                    dotIdentity.needsRegularUpdate,
+            ),
+        )
+    }
 
     private fun curveResult(
         creatorName: String,
@@ -16368,6 +18855,168 @@ internal object NativeJessieCodeCreators {
             error = JessieCodeCreatorError.CurveFactory(error),
             location = location,
         )
+
+    private fun implicitCurveFunction(
+        board: Board,
+        value: JessieCodeRuntimeValue,
+        term: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeCoordinateFunction, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue -> GMResult.Ok(
+                JessieCodeNumericCoordinateFunction(value.value),
+            )
+            is JessieCodeRuntimeValue.StringValue -> when (
+                val result = JessieCodeExpressionFunction.compile(
+                    source = value.value,
+                    board = board,
+                    variableNames = listOf("x", "y"),
+                )
+            ) {
+                is GMResult.Ok -> result
+                is GMResult.Err -> failure(
+                    creatorName = "implicitcurve",
+                    error = JessieCodeCreatorError.CurveFactory(
+                        CurveError.ExpressionCompile(
+                            term = term,
+                            error = result.error,
+                        ),
+                    ),
+                    location = location,
+                )
+            }
+            is JessieCodeRuntimeValue.FunctionValue -> GMResult.Ok(
+                JessieCodeRuntimeCoordinateFunction(
+                    function = value,
+                    location = location,
+                    returnsCoordinateArray = false,
+                ),
+            )
+            else -> invalidAttribute(
+                creatorName = "implicitcurve",
+                attribute = term,
+                expected = "number, string, or function",
+                actual = value,
+                location = location,
+            )
+        }
+
+    private fun implicitCurveRange(
+        value: JessieCodeRuntimeValue,
+        axis: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeCoordinateFunction, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val numbers = numericArray(value)
+                if (
+                    numbers == null ||
+                    numbers.size != 2 ||
+                    numbers.any { !it.isFinite() }
+                ) {
+                    invalidAttribute(
+                        creatorName = "implicitcurve",
+                        attribute = "domain$axis",
+                        expected = "array of two finite numbers or function",
+                        actual = value,
+                        location = location,
+                    )
+                } else {
+                    GMResult.Ok(
+                        JessieCodeConstantCoordinateFunction(value),
+                    )
+                }
+            }
+            is JessieCodeRuntimeValue.FunctionValue -> GMResult.Ok(
+                JessieCodeRuntimeCoordinateFunction(
+                    function = value,
+                    location = location,
+                    returnsCoordinateArray = true,
+                ),
+            )
+            else -> invalidAttribute(
+                creatorName = "implicitcurve",
+                attribute = "domain$axis",
+                expected = "array of two finite numbers or function",
+                actual = value,
+                location = location,
+            )
+        }
+
+    private fun implicitCurveAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<ParsedImplicitCurveAttributes, JessieCodeRuntimeError> {
+        val defaults = listOf(
+            "margin" to 1.0,
+            "resolutionouter" to 5.0,
+            "resolutioninner" to 5.0,
+            "maxsteps" to 1024.0,
+            "alpha0" to 0.05,
+            "tolu0" to Mat.eps,
+            "tolnewton" to 1.0e-7,
+            "tolcusp" to 0.05,
+            "tolprogress" to 0.0001,
+            "qdtbox" to 0.2,
+            "kappa0" to 0.2,
+            "delta0" to 0.05,
+            "hinitial" to 0.1,
+            "hcritical" to 0.001,
+            "hmax" to 0.5,
+            "loopdist" to 0.09,
+            "loopdir" to 0.99,
+        )
+        val terms =
+            linkedMapOf<String, JessieCodeCoordinateFunction>()
+        for ((name, default) in defaults) {
+            when (
+                val result = numericAttributeTerm(
+                    creatorName = "implicitcurve",
+                    attributes = attributes,
+                    name = name,
+                    default = default,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> terms[name] = result.value
+                is GMResult.Err -> return result
+            }
+        }
+        val loopDetection = when (
+            val result = booleanAttributeTerm(
+                creatorName = "implicitcurve",
+                attributes = attributes,
+                name = "loopdetection",
+                default = true,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            ParsedImplicitCurveAttributes(
+                margin = terms.getValue("margin"),
+                resolutionOuter = terms.getValue("resolutionouter"),
+                resolutionInner = terms.getValue("resolutioninner"),
+                maxSteps = terms.getValue("maxsteps"),
+                alpha0 = terms.getValue("alpha0"),
+                tolU0 = terms.getValue("tolu0"),
+                tolNewton = terms.getValue("tolnewton"),
+                tolCusp = terms.getValue("tolcusp"),
+                tolProgress = terms.getValue("tolprogress"),
+                qdtBox = terms.getValue("qdtbox"),
+                kappa0 = terms.getValue("kappa0"),
+                delta0 = terms.getValue("delta0"),
+                hInitial = terms.getValue("hinitial"),
+                hCritical = terms.getValue("hcritical"),
+                hMax = terms.getValue("hmax"),
+                loopDist = terms.getValue("loopdist"),
+                loopDir = terms.getValue("loopdir"),
+                loopDetection = loopDetection,
+            ),
+        )
+    }
 
     private fun combNumericAttributeTerm(
         creatorName: String,
@@ -16978,6 +19627,314 @@ internal object NativeJessieCodeCreators {
             }
         }
 
+    private fun evaluateMetaPostCoordinatePair(
+        values: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue.ArrayValue, CurveError> {
+        val evaluated = mutableListOf<JessieCodeRuntimeValue>()
+        for ((index, value) in values.withIndex()) {
+            if (value is JessieCodeRuntimeValue.FunctionValue) {
+                when (
+                    val result = value.externalCallable.call(
+                        arguments = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> evaluated += result.value
+                    is GMResult.Err -> return GMResult.Err(
+                        CurveError.ExpressionEvaluation(
+                            term = "metapostspline.point[$index]",
+                            error = result.error,
+                        ),
+                    )
+                }
+            } else {
+                evaluated += value
+            }
+        }
+        return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(evaluated))
+    }
+
+    private fun evaluateMetaPostPointFunction(
+        function: JessieCodeRuntimeValue.FunctionValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue.ArrayValue, CurveError> =
+        when (
+            val result = function.externalCallable.call(
+                arguments = emptyList(),
+                location = location,
+            )
+        ) {
+            is GMResult.Err -> GMResult.Err(
+                CurveError.ExpressionEvaluation(
+                    term = "metapostspline.point",
+                    error = result.error,
+                ),
+            )
+            is GMResult.Ok -> {
+                val values = (
+                    result.value as? JessieCodeRuntimeValue.ArrayValue
+                    )?.values
+                if (values?.size != 2) {
+                    GMResult.Err(
+                        CurveError.NonNumericExpression(
+                            term = "metapostspline.point",
+                            actualType = typeName(result.value),
+                        ),
+                    )
+                } else {
+                    evaluateMetaPostCoordinatePair(values, location)
+                }
+            }
+        }
+
+    private fun metaPostControls(
+        controls: JessieCodeRuntimeValue.ObjectValue,
+        pointCount: Int,
+        creatorName: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<CurveMetaPostControlsDefinition, JessieCodeRuntimeError> {
+        val tension = when (
+            val result = metaPostControlTerm(
+                creatorName = creatorName,
+                control = "controls.tension",
+                value = metaPostProperty(controls, "tension")
+                    ?: JessieCodeRuntimeValue.NumberValue(1.0),
+                expected = "number or function",
+                allow = { value ->
+                    value is JessieCodeRuntimeValue.NumberValue ||
+                        value is JessieCodeRuntimeValue.FunctionValue
+                },
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val isClosed = when (
+            val result = metaPostControlTerm(
+                creatorName = creatorName,
+                control = "controls.isClosed",
+                value = metaPostProperty(controls, "isclosed")
+                    ?: JessieCodeRuntimeValue.BooleanValue(false),
+                expected = "boolean or function",
+                allow = { value ->
+                    value is JessieCodeRuntimeValue.BooleanValue ||
+                        value is JessieCodeRuntimeValue.FunctionValue
+                },
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val pointControls = when (
+            val result = metaPostPointControls(
+                controls = controls,
+                pointCount = pointCount,
+                creatorName = creatorName,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            CurveMetaPostControlsDefinition(
+                tensionTerm = tension,
+                isClosedTerm = isClosed,
+                pointControls = pointControls,
+            ),
+        )
+    }
+
+    private fun metaPostPointControls(
+        controls: JessieCodeRuntimeValue.ObjectValue,
+        pointCount: Int,
+        creatorName: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<
+        List<CurveMetaPostPointControlDefinition>,
+        JessieCodeRuntimeError,
+        > {
+        val result = mutableListOf<CurveMetaPostPointControlDefinition>()
+        val entries = controls.properties.entries.toList()
+        val indexedEntries = entries.mapNotNull { entry ->
+            canonicalJsArrayIndex(entry.key)?.let { index ->
+                Triple(index, entry.key, entry.value)
+            }
+        }.sortedBy { it.first }
+        val indexedKeys = indexedEntries.mapTo(mutableSetOf()) { it.second }
+        val orderedEntries =
+            indexedEntries.map { it.second to it.third } +
+                entries
+                    .filterNot { it.key in indexedKeys }
+                    .map { it.key to it.value }
+        for ((name, originalValue) in orderedEntries) {
+            val index = jsParseInteger(name) ?: continue
+            if (index !in 0 until pointCount) {
+                continue
+            }
+            val value = controls.properties[index.toString()]
+                ?: originalValue
+            val pointControl =
+                value as? JessieCodeRuntimeValue.ObjectValue
+            if (pointControl == null) {
+                result += CurveMetaPostPointControlDefinition(
+                    index = index,
+                    type = null,
+                    curlTerm = null,
+                    directionTerm = null,
+                    tensionTerm = null,
+                )
+                continue
+            }
+            val type = (
+                metaPostProperty(pointControl, "type") as?
+                    JessieCodeRuntimeValue.StringValue
+                )?.value
+            val curl = when (
+                val result = optionalMetaPostControlTerm(
+                    creatorName = creatorName,
+                    control = "controls.$index.curl",
+                    value = metaPostProperty(pointControl, "curl"),
+                    expected = "number or function",
+                    allow = { item ->
+                        item is JessieCodeRuntimeValue.NumberValue ||
+                            item is JessieCodeRuntimeValue.FunctionValue
+                    },
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val direction = when (
+                val result = optionalMetaPostControlTerm(
+                    creatorName = creatorName,
+                    control = "controls.$index.direction",
+                    value = metaPostProperty(pointControl, "direction"),
+                    expected = "number, array, or function",
+                    allow = { item ->
+                        item is JessieCodeRuntimeValue.NumberValue ||
+                            item is JessieCodeRuntimeValue.ArrayValue ||
+                            item is JessieCodeRuntimeValue.FunctionValue
+                    },
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val pointTension = when (
+                val result = optionalMetaPostControlTerm(
+                    creatorName = creatorName,
+                    control = "controls.$index.tension",
+                    value = metaPostProperty(pointControl, "tension"),
+                    expected = "number, array, or function",
+                    allow = { item ->
+                        item is JessieCodeRuntimeValue.NumberValue ||
+                            item is JessieCodeRuntimeValue.ArrayValue ||
+                            item is JessieCodeRuntimeValue.FunctionValue
+                    },
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            result +=
+                CurveMetaPostPointControlDefinition(
+                    index = index,
+                    type = type,
+                    curlTerm = curl,
+                    directionTerm = direction,
+                    tensionTerm = pointTension,
+                )
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun optionalMetaPostControlTerm(
+        creatorName: String,
+        control: String,
+        value: JessieCodeRuntimeValue?,
+        expected: String,
+        allow: (JessieCodeRuntimeValue) -> Boolean,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeCoordinateFunction?, JessieCodeRuntimeError> {
+        if (
+            value == null ||
+            value === JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            return GMResult.Ok(null)
+        }
+        return when (
+            val result = metaPostControlTerm(
+                creatorName = creatorName,
+                control = control,
+                value = value,
+                expected = expected,
+                allow = allow,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(result.value)
+            is GMResult.Err -> result
+        }
+    }
+
+    private fun metaPostControlTerm(
+        creatorName: String,
+        control: String,
+        value: JessieCodeRuntimeValue,
+        expected: String,
+        allow: (JessieCodeRuntimeValue) -> Boolean,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeCoordinateFunction, JessieCodeRuntimeError> {
+        if (!allow(value)) {
+            return invalidAttribute(
+                creatorName = creatorName,
+                attribute = control,
+                expected = expected,
+                actual = value,
+                location = location,
+            )
+        }
+        return GMResult.Ok(
+            if (value is JessieCodeRuntimeValue.FunctionValue) {
+                JessieCodeRuntimeCoordinateFunction(
+                    function = value,
+                    location = location,
+                    returnsCoordinateArray = false,
+                )
+            } else {
+                JessieCodeConstantCoordinateFunction(value)
+            },
+        )
+    }
+
+    private fun metaPostProperty(
+        value: JessieCodeRuntimeValue.ObjectValue,
+        name: String,
+    ): JessieCodeRuntimeValue? =
+        value.properties.entries.firstOrNull {
+            it.key.equals(name, ignoreCase = true)
+        }?.value
+
+    private fun canonicalJsArrayIndex(value: String): Int? {
+        val index = value.toIntOrNull() ?: return null
+        return if (index >= 0 && index.toString() == value) index else null
+    }
+
+    private fun jsParseInteger(value: String): Int? {
+        val match = Regex("""^[+-]?\d+""").find(value.trimStart())
+            ?: return null
+        return match.value.toLongOrNull()
+            ?.takeIf { it in Int.MIN_VALUE..Int.MAX_VALUE }
+            ?.toInt()
+    }
+
     private fun staticCurveCoordinates(
         board: Board,
         parent: PointParent,
@@ -17124,6 +20081,7 @@ internal object NativeJessieCodeCreators {
         centerParent: PointParent,
         radiusElement: GeometryElement,
         attributes: CreatorAttributes,
+        hasInnerPoints: Boolean,
         location: JessieCodeAstLocation,
     ): CreatorResult {
         val center = when (
@@ -17175,7 +20133,10 @@ internal object NativeJessieCodeCreators {
             }
         }
         return when (result) {
-            is GMResult.Ok -> element(result.value)
+            is GMResult.Ok -> {
+                result.value.hasInnerPoints = hasInnerPoints
+                element(result.value)
+            }
             is GMResult.Err -> {
                 cleanupCenter()
                 failure(
@@ -17278,59 +20239,6 @@ internal object NativeJessieCodeCreators {
                 needsRegularUpdate = attributes.needsRegularUpdate,
             )
         }
-
-    private fun coefficientPoints(
-        board: Board,
-        parents: List<JessieCodeRuntimeValue>,
-    ): GMResult<MaterializedPointParents, PointError> {
-        val coefficients = parents.mapNotNull {
-            (it as? JessieCodeRuntimeValue.NumberValue)?.value
-        }
-        if (coefficients.size != parents.size) {
-            return GMResult.Err(PointError.InvalidCoordinateCount(parents.size))
-        }
-        val a = coefficients[0]
-        val b = coefficients[1]
-        val c = coefficients[2]
-        val homogeneous = c * c + b * b
-        val point1 = when (
-            val result = Point.create(
-                board = board,
-                coordinates = doubleArrayOf(
-                    homogeneous,
-                    c - b * a + c,
-                    -b - c * a - b,
-                ),
-                name = "",
-            )
-        ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return result
-        }
-        val point2 = when (
-            val result = Point.create(
-                board = board,
-                coordinates = doubleArrayOf(
-                    homogeneous,
-                    -b * a + c,
-                    -c * a - b,
-                ),
-                name = "",
-            )
-        ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> {
-                board.removeObject(point1)
-                return result
-            }
-        }
-        return GMResult.Ok(
-            MaterializedPointParents(
-                points = listOf(point1, point2),
-                ownedPoints = setOf(point1, point2),
-            ),
-        )
-    }
 
     private fun pointParent(
         board: Board,
@@ -17524,6 +20432,7 @@ internal object NativeJessieCodeCreators {
         coordinates: List<JessieCodeRuntimeValue>,
         attributes: CreatorAttributes,
         coordinateLocation: JessieCodeAstLocation,
+        alwaysIntersect: Boolean = false,
     ): GMResult<Point, PointError> {
         val numericCoordinates = coordinates.mapNotNull {
             (it as? JessieCodeRuntimeValue.NumberValue)?.value
@@ -17536,6 +20445,7 @@ internal object NativeJessieCodeCreators {
                 name = attributes.name,
                 needsRegularUpdate = attributes.needsRegularUpdate,
                 fixed = attributes.fixed,
+                alwaysIntersect = alwaysIntersect,
             )
         } else if (
             coordinates.any {
@@ -17594,6 +20504,7 @@ internal object NativeJessieCodeCreators {
                 name = attributes.name,
                 needsRegularUpdate = attributes.needsRegularUpdate,
                 fixed = attributes.fixed,
+                alwaysIntersect = alwaysIntersect,
                 xjc = (
                     coordinates.getOrNull(0) as?
                         JessieCodeRuntimeValue.StringValue
@@ -17623,6 +20534,7 @@ internal object NativeJessieCodeCreators {
                 name = attributes.name,
                 needsRegularUpdate = attributes.needsRegularUpdate,
                 fixed = attributes.fixed,
+                alwaysIntersect = alwaysIntersect,
             )
         } else {
             GMResult.Err(
@@ -18149,6 +21061,27 @@ internal object NativeJessieCodeCreators {
         val name: String?,
         val needsRegularUpdate: Boolean,
         val fixed: Boolean = false,
+    )
+
+    private data class ParsedImplicitCurveAttributes(
+        val margin: JessieCodeCoordinateFunction,
+        val resolutionOuter: JessieCodeCoordinateFunction,
+        val resolutionInner: JessieCodeCoordinateFunction,
+        val maxSteps: JessieCodeCoordinateFunction,
+        val alpha0: JessieCodeCoordinateFunction,
+        val tolU0: JessieCodeCoordinateFunction,
+        val tolNewton: JessieCodeCoordinateFunction,
+        val tolCusp: JessieCodeCoordinateFunction,
+        val tolProgress: JessieCodeCoordinateFunction,
+        val qdtBox: JessieCodeCoordinateFunction,
+        val kappa0: JessieCodeCoordinateFunction,
+        val delta0: JessieCodeCoordinateFunction,
+        val hInitial: JessieCodeCoordinateFunction,
+        val hCritical: JessieCodeCoordinateFunction,
+        val hMax: JessieCodeCoordinateFunction,
+        val loopDist: JessieCodeCoordinateFunction,
+        val loopDir: JessieCodeCoordinateFunction,
+        val loopDetection: JessieCodeCoordinateFunction,
     )
 
     private data class ContinuousCurveSamplingOptions(

@@ -159,6 +159,90 @@ class NumericsSimplificationTest {
     }
 
     @Test
+    fun ramerDouglasPeuckerMatchesOfficialDynamicParabolaSelection() {
+        val viewport = Board.fromBoundingBox(
+            boundingBox = doubleArrayOf(-8.0, 6.0, 8.0, -6.0),
+            keepAspectRatio = true,
+            defaultCurveMinimum = -9.6,
+            defaultCurveMaximum = 9.6,
+        )
+        val points = List(128) { index ->
+            val x = index * 8.0 / 128.0
+            point(
+                x = x,
+                y =
+                    if (x == 4.0) {
+                        Double.NaN
+                    } else {
+                        0.25 * 2.0 * (x - 4.0) * (x - 4.0) - 2.0
+                    },
+                targetBoard = viewport,
+            )
+        }
+
+        val simplified = simplifiedValueOf(
+            Numerics.RamerDouglasPeucker(
+                points = points,
+                tolerance = 0.004,
+                useUserCoordinates = true,
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                0.0,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.25,
+                1.5,
+                1.6875,
+                1.9375,
+                2.1875,
+                2.4375,
+                2.5625,
+                2.6875,
+                2.8125,
+                2.9375,
+                3.0625,
+                3.1875,
+                3.3125,
+                3.4375,
+                3.5625,
+                3.6875,
+                3.8125,
+                3.9375,
+                4.0,
+                4.0625,
+                4.25,
+                4.375,
+                4.5,
+                4.625,
+                4.75,
+                4.875,
+                5.0,
+                5.125,
+                5.25,
+                5.375,
+                5.5,
+                5.625,
+                5.75,
+                6.0,
+                6.25,
+                6.5,
+                6.75,
+                7.0,
+                7.25,
+                7.4375,
+                7.6875,
+                7.9375,
+            ),
+            simplified.map { coordinate -> coordinate.usrCoords[1] },
+        )
+    }
+
+    @Test
     fun visvalingamMatchesOfficialReference() {
         val points = points(
             0.0 to 0.0,

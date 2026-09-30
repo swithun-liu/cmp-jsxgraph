@@ -442,7 +442,9 @@ class TangentToTest {
             assertIs<GMResult.Ok<String>>(board.setId(it, "G"))
         }
         assertEquals(
-            TangentToError.UnsupportedConic("ellipse"),
+            TangentToError.UnsupportedParents(
+                listOf("ellipse", "point"),
+            ),
             assertIs<GMResult.Err<TangentToError>>(
                 TangentTo.create(board, conic, sourcePoint),
             ).error,

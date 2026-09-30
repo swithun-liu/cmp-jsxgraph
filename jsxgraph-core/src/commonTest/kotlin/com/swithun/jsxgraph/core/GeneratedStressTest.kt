@@ -539,8 +539,16 @@ class GeneratedStressTest {
                     element.vertices.forEach { point ->
                         assertFinitePoint(caseIndex, element.id, point)
                     }
-                is JsxGraphSceneElement.Text ->
+                is JsxGraphSceneElement.Text -> {
                     assertFinitePoint(caseIndex, element.id, element.coordinates)
+                    val control = element.htmlControl
+                    if (control is JsxGraphHtmlControl.Slider) {
+                        assertTrue(control.minimum.isFinite())
+                        assertTrue(control.maximum.isFinite())
+                        assertTrue(control.value.isFinite())
+                        assertTrue(control.step.isFinite())
+                    }
+                }
                 is JsxGraphSceneElement.Image -> {
                     assertFinitePoint(caseIndex, element.id, element.anchor)
                     assertFinitePoint(caseIndex, element.id, element.widthVector)
@@ -549,6 +557,16 @@ class GeneratedStressTest {
                         element.userWidth.isFinite() &&
                             element.userHeight.isFinite(),
                     )
+                }
+                is JsxGraphSceneElement.ForeignObject -> {
+                    assertFinitePoint(caseIndex, element.id, element.anchor)
+                    val size = element.size
+                    if (size is JsxGraphForeignObjectSize.UserSpace) {
+                        assertTrue(
+                            size.width.isFinite() &&
+                                size.height.isFinite(),
+                        )
+                    }
                 }
             }
         }

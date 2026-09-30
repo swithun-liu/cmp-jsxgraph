@@ -108,6 +108,48 @@ class TextTest {
     }
 
     @Test
+    fun lineAnchoredTextTracksTheOfficialMidpointAnchor() {
+        val board = board()
+        val point1 = point(board, 0.0, 0.0, name = "A")
+        val point2 = point(board, 4.0, 2.0, name = "B")
+        val line = assertIs<GMResult.Ok<Line>>(
+            Line.createSegment(
+                board = board,
+                point1 = point1,
+                point2 = point2,
+                name = "",
+            ),
+        ).value
+        val text = text(
+            Text.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, -1.0),
+                content = "7",
+                name = "",
+                anchor = line,
+            ),
+        )
+
+        assertSame(line, text.anchor)
+        assertContentEquals(
+            doubleArrayOf(1.0, -1.0),
+            text.relativeCoordinates,
+        )
+        assertEquals(3.0, text.X())
+        assertEquals(0.0, text.Y())
+        assertSame(text, line.childElements[text.id])
+
+        point2.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(6.0, 4.0),
+        )
+        board.update()
+
+        assertEquals(4.0, text.X())
+        assertEquals(1.0, text.Y())
+    }
+
+    @Test
     fun valueTagsTrackDependenciesAndSetTextReplacesThemAtomically() {
         val board = board()
         val driver = point(board, 2.0, 3.0, name = "A")

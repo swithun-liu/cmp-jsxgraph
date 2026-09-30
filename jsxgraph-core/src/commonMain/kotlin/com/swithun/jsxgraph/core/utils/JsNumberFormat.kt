@@ -8,6 +8,7 @@
 package com.swithun.jsxgraph.core.utils
 
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
@@ -142,6 +143,48 @@ internal object JsNumberFormat {
 
         val shifted = shiftExponent(value, decimalPlaces)
         return shiftExponent(JsMath.round(shifted), -decimalPlaces)
+    }
+
+    /**
+     * JSXGraph: src/utils/type.js -> _floor10.
+     */
+    fun floorDecimal(
+        value: Double,
+        decimalPlaces: Int,
+    ): Double {
+        if (decimalPlaces == 0) {
+            return floor(value)
+        }
+        if (!value.isFinite()) {
+            return Double.NaN
+        }
+        if (value == 0.0) {
+            return 0.0
+        }
+
+        val shifted = shiftExponent(value, decimalPlaces)
+        return shiftExponent(floor(shifted), -decimalPlaces)
+    }
+
+    /**
+     * JSXGraph: src/utils/type.js -> _ceil10.
+     */
+    fun ceilDecimal(
+        value: Double,
+        decimalPlaces: Int,
+    ): Double {
+        if (decimalPlaces == 0) {
+            return ceil(value)
+        }
+        if (!value.isFinite()) {
+            return Double.NaN
+        }
+        if (value == 0.0) {
+            return 0.0
+        }
+
+        val shifted = shiftExponent(value, decimalPlaces)
+        return shiftExponent(ceil(shifted), -decimalPlaces)
     }
 
     private fun shiftExponent(

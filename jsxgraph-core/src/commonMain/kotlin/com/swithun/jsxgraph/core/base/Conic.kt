@@ -1,7 +1,7 @@
 /*
  * Kotlin translation of JSXGraph.
  * Upstream: src/element/conic.js ->
- * createEllipse / createHyperbola / createParabola
+ * createEllipse / createHyperbola / createParabola / createConic
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Bianca Valentin, Alfred Wassermann, Peter Wilfahrt.
  * Used under the MIT License option.
@@ -124,6 +124,293 @@ internal data class CurveParabolaDefinition(
     val minimum: Double,
     val maximum: Double,
 )
+
+internal sealed interface ConicError {
+    data class InvalidCoefficientCount(
+        val count: Int,
+    ) : ConicError
+
+    data class ParentBoardMismatch(
+        val parentIndex: Int,
+    ) : ConicError
+
+    data class ParentNotRegistered(
+        val parentIndex: Int,
+        val id: String,
+    ) : ConicError
+
+    data class ImplicitPointNotParent(
+        val id: String,
+    ) : ConicError
+
+    data class DuplicateElementId(
+        val id: String,
+    ) : ConicError
+
+    data class CenterCreation(
+        val error: PointError,
+    ) : ConicError
+
+    data class CurveCreation(
+        val error: CurveError,
+    ) : ConicError
+}
+
+internal sealed interface CurveConicSource {
+    data class Points(
+        val points: List<Point>,
+    ) : CurveConicSource
+
+    data class Coefficients(
+        val terms: List<JessieCodeCoordinateFunction>,
+    ) : CurveConicSource
+}
+
+internal data class CurveConicDefinition(
+    val source: CurveConicSource,
+    val minimum: Double,
+    val maximum: Double,
+    var center: Point? = null,
+    var eigenvalues: Array<DoubleArray>? = null,
+    var rotationMatrix: Array<DoubleArray> = arrayOf(
+        doubleArrayOf(1.0, 0.0, 0.0),
+        doubleArrayOf(0.0, 1.0, 0.0),
+        doubleArrayOf(0.0, 0.0, 1.0),
+    ),
+    var c: Double = Double.NaN,
+    var a: Double = Double.NaN,
+    var b: Double = Double.NaN,
+)
+
+internal object Conic {
+    private const val COEFFICIENT_COUNT = 6
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createConic
+    internal fun create(
+        board: Board,
+        point1: Point,
+        point2: Point,
+        point3: Point,
+        point4: Point,
+        point5: Point,
+        parentlessPoints: Set<Point> = emptySet(),
+        sampleCount: Int = Curve.DEFAULT_SAMPLE_COUNT,
+        plotOptions: CurvePlotOptions = CurvePlotOptions(),
+        id: String = "",
+        name: String? = null,
+        needsRegularUpdate: Boolean = true,
+        centerId: String = "",
+        centerName: String? = "",
+        centerNeedsRegularUpdate: Boolean = true,
+        centerFixed: Boolean = false,
+    ): GMResult<Curve, ConicError> {
+        val points = listOf(point1, point2, point3, point4, point5)
+        for ((index, point) in points.withIndex()) {
+            validateParent(board, point, index)?.let {
+                return GMResult.Err(it)
+            }
+        }
+        parentlessPoints.firstOrNull { it !in points }?.let {
+            return GMResult.Err(
+                ConicError.ImplicitPointNotParent(it.id),
+            )
+        }
+        return create(
+            board = board,
+            definition = CurveConicDefinition(
+                source = CurveConicSource.Points(points),
+                minimum = 0.0,
+                maximum = 2.0 * PI,
+            ),
+            parentlessPoints = parentlessPoints,
+            sampleCount = sampleCount,
+            plotOptions = plotOptions,
+            id = id,
+            name = name,
+            needsRegularUpdate = needsRegularUpdate,
+            centerId = centerId,
+            centerName = centerName,
+            centerNeedsRegularUpdate = centerNeedsRegularUpdate,
+            centerFixed = centerFixed,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createConic
+    internal fun create(
+        board: Board,
+        coefficients: DoubleArray,
+        sampleCount: Int = Curve.DEFAULT_SAMPLE_COUNT,
+        plotOptions: CurvePlotOptions = CurvePlotOptions(),
+        id: String = "",
+        name: String? = null,
+        needsRegularUpdate: Boolean = true,
+        centerId: String = "",
+        centerName: String? = "",
+        centerNeedsRegularUpdate: Boolean = true,
+        centerFixed: Boolean = false,
+    ): GMResult<Curve, ConicError> =
+        create(
+            board = board,
+            coefficientTerms = coefficients.map(
+                ::JessieCodeNumericCoordinateFunction,
+            ),
+            sampleCount = sampleCount,
+            plotOptions = plotOptions,
+            id = id,
+            name = name,
+            needsRegularUpdate = needsRegularUpdate,
+            centerId = centerId,
+            centerName = centerName,
+            centerNeedsRegularUpdate = centerNeedsRegularUpdate,
+            centerFixed = centerFixed,
+        )
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createConic
+    internal fun create(
+        board: Board,
+        coefficientTerms: List<JessieCodeCoordinateFunction>,
+        sampleCount: Int = Curve.DEFAULT_SAMPLE_COUNT,
+        plotOptions: CurvePlotOptions = CurvePlotOptions(),
+        id: String = "",
+        name: String? = null,
+        needsRegularUpdate: Boolean = true,
+        centerId: String = "",
+        centerName: String? = "",
+        centerNeedsRegularUpdate: Boolean = true,
+        centerFixed: Boolean = false,
+    ): GMResult<Curve, ConicError> {
+        if (coefficientTerms.size != COEFFICIENT_COUNT) {
+            return GMResult.Err(
+                ConicError.InvalidCoefficientCount(
+                    coefficientTerms.size,
+                ),
+            )
+        }
+        return create(
+            board = board,
+            definition = CurveConicDefinition(
+                source = CurveConicSource.Coefficients(
+                    coefficientTerms.toList(),
+                ),
+                minimum = 0.0,
+                maximum = 2.0 * PI,
+            ),
+            parentlessPoints = emptySet(),
+            sampleCount = sampleCount,
+            plotOptions = plotOptions,
+            id = id,
+            name = name,
+            needsRegularUpdate = needsRegularUpdate,
+            centerId = centerId,
+            centerName = centerName,
+            centerNeedsRegularUpdate = centerNeedsRegularUpdate,
+            centerFixed = centerFixed,
+        )
+    }
+
+    private fun create(
+        board: Board,
+        definition: CurveConicDefinition,
+        parentlessPoints: Set<Point>,
+        sampleCount: Int,
+        plotOptions: CurvePlotOptions,
+        id: String,
+        name: String?,
+        needsRegularUpdate: Boolean,
+        centerId: String,
+        centerName: String?,
+        centerNeedsRegularUpdate: Boolean,
+        centerFixed: Boolean,
+    ): GMResult<Curve, ConicError> {
+        if (id.isNotEmpty() && board.elementById(id) != null) {
+            return GMResult.Err(ConicError.DuplicateElementId(id))
+        }
+        if (centerId.isNotEmpty() && board.elementById(centerId) != null) {
+            return GMResult.Err(
+                ConicError.DuplicateElementId(centerId),
+            )
+        }
+
+        val curve = when (
+            val result = Curve.createConicShell(
+                board = board,
+                definition = definition,
+                sampleCount = sampleCount,
+                plotOptions = plotOptions,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return GMResult.Err(
+                    ConicError.CurveCreation(result.error),
+                )
+            }
+        }
+        val center = when (
+            val result = Point.createConstrained(
+                board = board,
+                coordinateFunctions = listOf(
+                    ConicCenterCoordinateFunction(curve),
+                ),
+                id = centerId,
+                name = centerName,
+                needsRegularUpdate = centerNeedsRegularUpdate,
+                fixed = centerFixed,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                board.removeObject(curve)
+                return GMResult.Err(
+                    ConicError.CenterCreation(result.error),
+                )
+            }
+        }
+
+        definition.center = center
+        curve.subs["center"] = center
+        curve.inherits += center
+        val points = (
+            definition.source as?
+                CurveConicSource.Points
+            )?.points.orEmpty()
+        curve.inherits += points
+        for (point in points) {
+            point.addChild(curve)
+        }
+        curve.setParents(points.filterNot(parentlessPoints::contains))
+
+        return when (val result = curve.initializeConic()) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> {
+                board.removeObject(curve)
+                GMResult.Err(
+                    ConicError.CurveCreation(result.error),
+                )
+            }
+        }
+    }
+
+    private fun validateParent(
+        board: Board,
+        point: Point,
+        parentIndex: Int,
+    ): ConicError? {
+        if (point.board !== board) {
+            return ConicError.ParentBoardMismatch(parentIndex)
+        }
+        if (board.elementById(point.id) !== point) {
+            return ConicError.ParentNotRegistered(
+                parentIndex = parentIndex,
+                id = point.id,
+            )
+        }
+        return null
+    }
+}
 
 internal object Ellipse {
     private const val CENTER_COORDINATE_COUNT = 2
@@ -755,6 +1042,40 @@ private class ParabolaCenterCoordinateFunction(
                 projection.getOrElse(coordinateIndex + 1) {
                     Double.NaN
                 },
+            ),
+        )
+    }
+}
+
+private class ConicCenterCoordinateFunction(
+    private val curve: Curve,
+) : JessieCodeCoordinateFunction {
+    override val origin: String? = null
+    override val dependencies: Map<String, GeometryElement> =
+        mapOf(curve.id to curve)
+    override val returnsCoordinateArray: Boolean = true
+
+    // JSXGraph 1.13.3: src/element/conic.js -> createConic midpoint
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
+        val matrix = curve.quadraticform
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.ArrayValue(
+                listOf(
+                    JessieCodeRuntimeValue.NumberValue(
+                        matrix[1][1] * matrix[2][2] -
+                            matrix[1][2] * matrix[1][2],
+                    ),
+                    JessieCodeRuntimeValue.NumberValue(
+                        matrix[1][2] * matrix[0][2] -
+                            matrix[2][2] * matrix[0][1],
+                    ),
+                    JessieCodeRuntimeValue.NumberValue(
+                        matrix[0][1] * matrix[1][2] -
+                            matrix[1][1] * matrix[0][2],
+                    ),
+                ),
             ),
         )
     }

@@ -211,9 +211,17 @@ class ProductionCorpusTest {
                         "$caseId/${element.id} has invalid font size",
                     )
                     assertTrue(
-                        element.content.isNotEmpty(),
+                        element.content.isNotEmpty() ||
+                            element.htmlControl != null,
                         "$caseId/${element.id} has empty text",
                     )
+                    val control = element.htmlControl
+                    if (control is JsxGraphHtmlControl.Slider) {
+                        assertTrue(control.minimum.isFinite())
+                        assertTrue(control.maximum.isFinite())
+                        assertTrue(control.value.isFinite())
+                        assertTrue(control.step.isFinite())
+                    }
                 }
                 is JsxGraphSceneElement.Image -> {
                     assertFinitePoint(caseId, element.id, element.anchor)
@@ -227,6 +235,22 @@ class ProductionCorpusTest {
                     assertTrue(
                         element.source.isNotEmpty(),
                         "$caseId/${element.id} has empty image source",
+                    )
+                }
+                is JsxGraphSceneElement.ForeignObject -> {
+                    assertFinitePoint(caseId, element.id, element.anchor)
+                    val size = element.size
+                    if (size is JsxGraphForeignObjectSize.UserSpace) {
+                        assertTrue(
+                            size.width.isFinite() &&
+                                size.height.isFinite(),
+                            "$caseId/${element.id} has invalid " +
+                                "foreignObject size",
+                        )
+                    }
+                    assertTrue(
+                        element.content.isNotEmpty(),
+                        "$caseId/${element.id} has empty foreignObject content",
                     )
                 }
             }

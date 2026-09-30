@@ -8,6 +8,7 @@ import com.swithun.jsxgraph.core.GMResult
 import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -146,6 +147,9 @@ class ArcSectorTest {
                 vertex = vertex,
                 third = third,
                 radius = AngleRadius.Fixed(2.0),
+                displayAttributes = AngleDisplayAttributes(
+                    orthoType = "sector",
+                ),
             ),
         ).value
 
@@ -170,6 +174,113 @@ class ArcSectorTest {
             ),
         ).value
         assertEquals(2.0, auto.Radius(), absoluteTolerance = 1.0e-12)
+    }
+
+    @Test
+    fun twoLineSectorUsesVirtualPointsAndTracksMovingLines() {
+        val board = board()
+        val origin = point(board, 0.0, 0.0)
+        val horizontalPoint = point(board, 4.0, 0.0)
+        val verticalPoint = point(board, 0.0, 4.0)
+        val line1 = line(board, origin, horizontalPoint)
+        val line2 = line(board, origin, verticalPoint)
+        val objectCount = board.objects.size
+
+        val sector = assertIs<GMResult.Ok<Sector>>(
+            Sector.createFromLines(
+                board = board,
+                line1 = line1,
+                line2 = line2,
+                direction1 = SectorDirection.Coordinates(
+                    doubleArrayOf(3.0, 1.0),
+                ),
+                direction2 = SectorDirection.Coordinates(
+                    doubleArrayOf(1.0, 3.0),
+                ),
+                radius = AngleRadius.Fixed(2.0),
+                id = "sector",
+                name = "",
+            ),
+        ).value
+
+        assertTrue(sector.isTwoLine)
+        assertSame(line1, sector.line1)
+        assertSame(line2, sector.line2)
+        assertEquals(listOf(line1.id, line2.id), sector.parents)
+        assertEquals(objectCount + 1, board.objects.size)
+        assertFalse(board.objects.values.any { it === sector.point1 })
+        assertFalse(board.objects.values.any { it === sector.point2 })
+        assertFalse(board.objects.values.any { it === sector.point3 })
+        assertSame(sector, line1.childElements[sector.id])
+        assertSame(sector, line2.childElements[sector.id])
+        assertPoint(sector.point1.coords, 0.0, 0.0)
+        assertPoint(sector.point2.coords, 2.0, 0.0)
+        assertPoint(sector.point3.coords, 0.0, 2.0)
+        assertPoint(sector.points[3], 2.0, 0.0)
+        assertPoint(sector.points[15], 0.0, 2.0)
+
+        horizontalPoint.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(5.0, 1.0),
+        )
+        board.update()
+
+        assertPoint(sector.point1.coords, 0.0, 0.0)
+        assertPoint(
+            sector.point2.coords,
+            1.9611613513818404,
+            0.3922322702763681,
+        )
+        assertPoint(sector.point3.coords, 0.0, 2.0)
+    }
+
+    @Test
+    fun twoLineSectorPreservesOfficialCoincidentLineFallback() {
+        val sharedFirstBoard = board()
+        val sharedFirst = point(sharedFirstBoard, 0.0, 0.0)
+        val firstEnd = point(sharedFirstBoard, 1.0, 0.0)
+        val secondEnd = point(sharedFirstBoard, 2.0, 0.0)
+        val supported = twoLineSector(
+            board = sharedFirstBoard,
+            line1 = line(sharedFirstBoard, sharedFirst, firstEnd),
+            line2 = line(sharedFirstBoard, sharedFirst, secondEnd),
+        )
+
+        assertPoint(supported.point1.coords, 0.0, 0.0)
+        assertEquals(7, supported.numberPoints)
+
+        val sharedSecondBoard = board()
+        val sharedSecond = point(sharedSecondBoard, 0.0, 0.0)
+        val firstStart = point(sharedSecondBoard, 1.0, 0.0)
+        val secondStart = point(sharedSecondBoard, 2.0, 0.0)
+        val unsupported = twoLineSector(
+            board = sharedSecondBoard,
+            line1 = line(sharedSecondBoard, firstStart, sharedSecond),
+            line2 = line(sharedSecondBoard, secondStart, sharedSecond),
+        )
+
+        assertEquals(0.0, unsupported.point1.coords.usrCoords[0])
+        assertEquals(1, unsupported.numberPoints)
+        assertTrue(unsupported.points.single().usrCoords[1].isNaN())
+
+        val parallelBoard = board()
+        val parallel = twoLineSector(
+            board = parallelBoard,
+            line1 = line(
+                parallelBoard,
+                point(parallelBoard, 0.0, 0.0),
+                point(parallelBoard, 1.0, 0.0),
+            ),
+            line2 = line(
+                parallelBoard,
+                point(parallelBoard, 0.0, 1.0),
+                point(parallelBoard, 1.0, 1.0),
+            ),
+        )
+
+        assertEquals(0.0, parallel.point1.coords.usrCoords[0])
+        assertEquals(1, parallel.numberPoints)
+        assertTrue(parallel.points.single().usrCoords[1].isNaN())
     }
 
     @Test
@@ -249,6 +360,37 @@ class ArcSectorTest {
             Point.create(
                 board = board,
                 coordinates = doubleArrayOf(x, y),
+                name = "",
+            ),
+        ).value
+
+    private fun line(
+        board: Board,
+        point1: Point,
+        point2: Point,
+    ): Line =
+        assertIs<GMResult.Ok<Line>>(
+            Line.create(
+                board = board,
+                point1 = point1,
+                point2 = point2,
+                name = "",
+            ),
+        ).value
+
+    private fun twoLineSector(
+        board: Board,
+        line1: Line,
+        line2: Line,
+    ): Sector =
+        assertIs<GMResult.Ok<Sector>>(
+            Sector.createFromLines(
+                board = board,
+                line1 = line1,
+                line2 = line2,
+                direction1 = SectorDirection.Sign(1.0),
+                direction2 = SectorDirection.Sign(1.0),
+                radius = AngleRadius.Fixed(2.0),
                 name = "",
             ),
         ).value

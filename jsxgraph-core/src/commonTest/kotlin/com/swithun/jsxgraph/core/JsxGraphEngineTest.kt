@@ -1965,6 +1965,120 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun metaPostSplineDocumentAppliesIndexedControlsInJsOrder() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                """
+                {
+                  "boundingBox": [-8, 6, 8, -6],
+                  "objects": [
+                    {
+                      "id": "P0",
+                      "type": "point",
+                      "parents": [-3, -3],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "P1",
+                      "type": "point",
+                      "parents": [0, -3],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "P2",
+                      "type": "point",
+                      "parents": [4, -5],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "P3",
+                      "type": "point",
+                      "parents": [6, -2],
+                      "attributes": {"name": "", "withLabel": false}
+                    },
+                    {
+                      "id": "firstControl",
+                      "type": "metapostspline",
+                      "parents": [
+                        ["P0", "P1", "P2", "P3"],
+                        {
+                          "tension": 1,
+                          "1": {
+                            "type": "curl",
+                            "curl": 7,
+                            "direction": 45,
+                            "tension": 3
+                          },
+                          "0": {"type": "curl", "curl": 2}
+                        }
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false
+                      }
+                    },
+                    {
+                      "id": "secondControl",
+                      "type": "metapostspline",
+                      "parents": [
+                        ["P0", "P1", "P2", "P3"],
+                        {
+                          "tension": 1,
+                          "1": {
+                            "direction": [-30, 45],
+                            "tension": [2, 3]
+                          }
+                        }
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val firstControl = sceneCurve(session.scene, "firstControl")
+        assertEquals(3, firstControl.bezierDegree)
+        assertEquals(10, firstControl.points.size)
+        assertEquals(
+            JsxGraphPoint2D(
+                x = -2.788060166693433,
+                y = -4.101924343029718,
+            ),
+            firstControl.points[1],
+        )
+        assertEquals(
+            JsxGraphPoint2D(
+                x = -0.38167832886565234,
+                y = -3.3816783288656524,
+            ),
+            firstControl.points[2],
+        )
+
+        val secondControl = sceneCurve(session.scene, "secondControl")
+        assertEquals(3, secondControl.bezierDegree)
+        assertEquals(10, secondControl.points.size)
+        assertEquals(
+            JsxGraphPoint2D(
+                x = -1.974227776419943,
+                y = -2.8921869948838457,
+            ),
+            secondControl.points[1],
+        )
+        assertEquals(
+            JsxGraphPoint2D(
+                x = -0.45072163263964493,
+                y = -2.7397757440659136,
+            ),
+            secondControl.points[2],
+        )
+    }
+
+    @Test
     fun riemannSumDocumentsRenderClosedFilledCurves() {
         val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
             JsxGraphEngine.parse(
@@ -3100,6 +3214,137 @@ class JsxGraphEngineTest {
             ),
         )
         assertEquals("line.fixed", fixedLine.attribute)
+    }
+
+    @Test
+    fun conicDocumentRendersAndTracksMovedDefiningPoint() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"A",
+                      "type":"point",
+                      "parents":[1,5],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"B",
+                      "type":"point",
+                      "parents":[1,2],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"C",
+                      "type":"point",
+                      "parents":[2,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"D",
+                      "type":"point",
+                      "parents":[0,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"E",
+                      "type":"point",
+                      "parents":[-1,5],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"conic",
+                      "type":"conic",
+                      "parents":["A","B","C","D","E"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "doAdvancedPlot":false,
+                        "numberPointsHigh":9,
+                        "strokeColor":"#16877A",
+                        "center":{"visible":false}
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        assertEquals(
+            listOf("A", "B", "C", "D", "E", "conic"),
+            session.scene.elements.map { it.id },
+        )
+        val initial = sceneCurve(session.scene, "conic")
+        assertEquals(9, initial.points.size)
+        assertEquals(JsxGraphColor(22, 135, 122), initial.style.strokeColor)
+        assertPointCoordinates(
+            JsxGraphPoint2D(
+                0.16217371071583087,
+                2.4140697495159498,
+            ),
+            assertIs(initial.points.first()),
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint("E", JsxGraphPoint2D(-2.0, 4.0)),
+        ).value
+        assertPointCoordinates(
+            JsxGraphPoint2D(
+                -0.4152349605725331,
+                1.7809796332908405,
+            ),
+            assertIs(sceneCurve(moved, "conic").points.first()),
+        )
+    }
+
+    @Test
+    fun conicDocumentSupportsCoefficientsAndPreflightsLimits() {
+        val source = documentWithObjects(
+            """
+            {
+              "id":"conic",
+              "type":"conic",
+              "parents":[1,2,-4,0,0,0],
+              "attributes":{
+                "name":"",
+                "withLabel":false,
+                "doAdvancedPlot":false,
+                "numberPointsHigh":32,
+                "center":{"visible":false}
+              }
+            }
+            """.trimIndent(),
+        )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(source),
+        ).value
+        val conic = sceneCurve(scene, "conic")
+        assertEquals(32, conic.points.size)
+        assertPointCoordinates(
+            JsxGraphPoint2D(2.0, 0.0),
+            assertIs(conic.points.first()),
+        )
+
+        val limit = assertIs<
+            JsxGraphDocumentError.CurvePointLimitExceeded,
+            >(
+            assertError(
+                source = source,
+                limits = JsxGraphEngineLimits(maxCurvePoints = 31),
+            ),
+        )
+        assertEquals("conic", limit.id)
+        assertEquals(32, limit.actual)
     }
 
     @Test
@@ -5227,8 +5472,8 @@ class JsxGraphEngineTest {
                 ),
             ),
         )
-        assertIs<JsxGraphDocumentError.ElementCreation>(
-            assertError(
+        val plotV1Scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
                 documentWithObjects(
                     """
                     {
@@ -5238,13 +5483,15 @@ class JsxGraphEngineTest {
                       "attributes":{
                         "name":"",
                         "withLabel":false,
-                        "plotVersion":1
+                        "plotVersion":1,
+                        "RDPsmoothing":false
                       }
                     }
                     """.trimIndent(),
                 ),
             ),
-        )
+        ).value
+        assertEquals(43, sceneCurve(plotV1Scene, "f").points.size)
         assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(
             assertError(
                 documentWithObjects(
@@ -5734,7 +5981,8 @@ class JsxGraphEngineTest {
                         "withLabel":false,
                         "radius":2,
                         "selection":"major",
-                        "orthoType":"sector"
+                        "orthoType":"sector",
+                        "dot":{"id":"nonreflexDot"}
                       }
                     }
                     """.trimIndent(),
@@ -5748,7 +5996,8 @@ class JsxGraphEngineTest {
                         "withLabel":false,
                         "radius":2,
                         "selection":"minor",
-                        "orthoType":"sector"
+                        "orthoType":"sector",
+                        "dot":{"id":"reflexDot"}
                       }
                     }
                     """.trimIndent(),
@@ -5765,7 +6014,9 @@ class JsxGraphEngineTest {
                 "minorSector",
                 "majorSector",
                 "nonreflex",
+                "nonreflexDot",
                 "reflex",
+                "reflexDot",
             ),
             session.scene.elements.map { element -> element.id },
         )
@@ -6692,33 +6943,49 @@ class JsxGraphEngineTest {
     }
 
     @Test
-    fun rejectsUnsupportedRightAngleDisplayInsteadOfChangingItsShape() {
-        val error = assertError(
-            documentWithObjects(
-                """
-                {"id":"A","type":"point","parents":[2,0],"attributes":{"name":"","withLabel":false}}
-                """.trimIndent(),
-                """
-                {"id":"B","type":"point","parents":[0,0],"attributes":{"name":"","withLabel":false}}
-                """.trimIndent(),
-                """
-                {"id":"C","type":"point","parents":[0,2],"attributes":{"name":"","withLabel":false}}
-                """.trimIndent(),
-                """
-                {
-                  "id":"angle",
-                  "type":"angle",
-                  "parents":["A","B","C"],
-                  "attributes":{"name":"","withLabel":false,"radius":1}
-                }
-                """.trimIndent(),
+    fun rightAngleUsesDefaultSquareDisplay() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                documentWithObjects(
+                    """
+                    {"id":"A","type":"point","parents":[2,0],"attributes":{"name":"","withLabel":false}}
+                    """.trimIndent(),
+                    """
+                    {"id":"B","type":"point","parents":[0,0],"attributes":{"name":"","withLabel":false}}
+                    """.trimIndent(),
+                    """
+                    {"id":"C","type":"point","parents":[0,2],"attributes":{"name":"","withLabel":false}}
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"angle",
+                      "type":"angle",
+                      "parents":["A","B","C"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "radius":1,
+                        "dot":{"id":"angleDot"}
+                      }
+                    }
+                    """.trimIndent(),
+                ),
             ),
-        )
+        ).value
 
-        val unsupported =
-            assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(error)
-        assertEquals("orthoType", unsupported.attribute)
-        assertEquals("square", unsupported.value)
+        val angle = sceneCurve(scene, "angle")
+        assertEquals(1, angle.bezierDegree)
+        assertEquals(
+            listOf(
+                JsxGraphPoint2D(0.0, 0.0),
+                JsxGraphPoint2D(1.0, 0.0),
+                JsxGraphPoint2D(1.0, 1.0),
+                JsxGraphPoint2D(0.0, 1.0),
+                JsxGraphPoint2D(0.0, 0.0),
+            ),
+            angle.points,
+        )
+        assertFalse(scenePoint(scene, "angleDot").style.visible)
     }
 
     @Test

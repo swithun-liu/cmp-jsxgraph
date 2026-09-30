@@ -20,6 +20,7 @@ data class JsxGraphJessieCodeBoardOptions(
     val axis: Boolean = false,
     val grid: Boolean = false,
     val keepAspectRatio: Boolean = false,
+    val theme: String = "default",
 )
 
 /**
@@ -35,6 +36,8 @@ data class JsxGraphJessieCodeLimits(
     val maxAstNodes: Int = 100_000,
     val maxAstDepth: Int = 256,
     val maxParserNesting: Int = 64,
+    val maxComputerAlgebraSteps: Int = 1_000_000,
+    val maxDerivativeOrder: Int = 64,
     val maxEvaluationSteps: Int = 100_000,
     val maxEvaluationDepth: Int = 64,
     val maxCollectionSize: Int = 100_000,
@@ -124,6 +127,9 @@ class JsxGraphJessieCodeSession internal constructor(
         id: String,
         coordinates: JsxGraphPoint2D,
     ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val interactControlSource: (
+        interaction: JsxGraphControlInteraction,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
     private val storedSource: () -> String,
 ) {
     var scene: JsxGraphScene = initialScene
@@ -155,6 +161,46 @@ class JsxGraphJessieCodeSession internal constructor(
             }
             is GMResult.Err -> result
         }
+
+    fun interactControl(
+        interaction: JsxGraphControlInteraction,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        when (val result = interactControlSource(interaction)) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+
+    fun clickButton(
+        id: String,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        interactControl(JsxGraphControlInteraction.ClickButton(id))
+
+    fun changeCheckbox(
+        id: String,
+        checked: Boolean,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        interactControl(
+            JsxGraphControlInteraction.ChangeCheckbox(id, checked),
+        )
+
+    fun changeInput(
+        id: String,
+        value: String,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        interactControl(
+            JsxGraphControlInteraction.ChangeInput(id, value),
+        )
+
+    fun changeSlider(
+        id: String,
+        value: Double,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        interactControl(
+            JsxGraphControlInteraction.ChangeSlider(id, value),
+        )
 }
 
 /**

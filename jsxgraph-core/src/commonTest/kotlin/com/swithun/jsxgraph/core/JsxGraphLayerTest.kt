@@ -47,6 +47,7 @@ class JsxGraphLayerTest {
                 "arc" to 8,
                 "sector" to 3,
                 "angle" to 3,
+                "jxgBoardP8" to 9,
                 "curve" to 5,
                 "polygon" to 3,
                 "text" to 9,

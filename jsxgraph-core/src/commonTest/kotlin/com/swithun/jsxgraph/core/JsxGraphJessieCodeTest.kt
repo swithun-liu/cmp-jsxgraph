@@ -13,6 +13,50 @@ import kotlin.test.assertTrue
 
 class JsxGraphJessieCodeTest {
     @Test
+    fun dynamicFunctionGraphResamplesEveryPointFromMovedDependency() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(
+                boardOptions = JsxGraphJessieCodeBoardOptions(
+                    boundingBox =
+                        JsxGraphBoundingBox(-8.0, 6.0, 8.0, -6.0),
+                    axis = true,
+                    grid = true,
+                    keepAspectRatio = true,
+                ),
+            ),
+        ).value
+        scene(
+            session.execute(
+                """
+                use jxgbox;
+                lineA = point(-8, -3) << id: "lineA", name: "", withLabel: false, size: 6, strokeColor: "#49545D", fillColor: "#FCFDFE", strokeWidth: 2, fixed: true, highlight: false >>;
+                lineB = point(-3, 3) << id: "lineB", name: "", withLabel: false, size: 7, strokeColor: "#0072B2", fillColor: "#F4D44D", strokeWidth: 2, fixed: false, highlight: false >>;
+                sourceLine = line(lineA, lineB) << id: "sourceLine", name: "", withLabel: false, strokeColor: "#0072B2", strokeWidth: 4, layer: 7, fixed: true, highlight: false >>;
+                lineRegion = inequality(sourceLine) << id: "lineRegion", name: "", withLabel: false, fillColor: "#56B4E9", fillOpacity: 0.24, layer: 4, fixed: true, highlight: false >>;
+                functionDriver = point(1, -5.8) << id: "functionDriver", name: "", withLabel: false, size: 7, strokeColor: "#7B4EA3", fillColor: "#F4D44D", strokeWidth: 2, fixed: false, highlight: false >>;
+                sourceFunction = functiongraph("x == 4 ? 0 / 0 : 0.25 * functionDriver.X() * (x - 4) * (x - 4) - 2", 0, 8) << id: "sourceFunction", name: "", withLabel: false, doAdvancedPlot: false, numberPointsHigh: 128, strokeColor: "#D55E00", strokeWidth: 4, layer: 7, fixed: true, highlight: false >>;
+                functionRegion = inequality(sourceFunction) << id: "functionRegion", name: "", withLabel: false, inverse: function () { return functionDriver.X() > 1.5; }, fillColor: "#E69F00", fillOpacity: 0.28, layer: 4, fixed: true, highlight: false >>;
+                """.trimIndent(),
+            ),
+        )
+
+        assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint("lineB", JsxGraphPoint2D(-2.0, 1.0)),
+        )
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                "functionDriver",
+                JsxGraphPoint2D(2.0, -5.8),
+            ),
+        ).value
+        val smoothed = assertIs<JsxGraphSceneElement.Curve>(
+            moved.elements.first { element -> element.id == "sourceFunction" },
+        )
+
+        assertEquals(47, smoothed.points.size)
+    }
+
+    @Test
     fun sourceCreatesStyledPortableSceneWithoutJavaScriptRuntime() {
         val scene = scene(
             JsxGraphJessieCode.parse(
@@ -2283,6 +2327,15 @@ class JsxGraphJessieCodeTest {
         assertIs<JsxGraphJessieCodeError.InvalidConfiguration>(
             configurationError,
         )
+        assertIs<JsxGraphJessieCodeError.InvalidConfiguration>(
+            assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+                JsxGraphJessieCode.createSession(
+                    limits = JsxGraphJessieCodeLimits(
+                        maxComputerAlgebraSteps = 0,
+                    ),
+                ),
+            ).error,
+        )
 
         val parseError = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
             JsxGraphJessieCode.parse("var point = 1;"),
@@ -2296,6 +2349,19 @@ class JsxGraphJessieCodeTest {
         ).error
         val runtime = assertIs<JsxGraphJessieCodeError.Runtime>(runtimeError)
         assertTrue("BoardNotFound" in runtime.reason)
+
+        val algebraError =
+            assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+                JsxGraphJessieCode.parse(
+                    "D(unknown(x), x);",
+                ),
+            ).error
+        val algebraParse =
+            assertIs<JsxGraphJessieCodeError.Parse>(algebraError)
+        assertTrue(
+            "UnknownElementaryDerivative" in algebraParse.reason,
+        )
+        assertEquals(1, algebraParse.location?.line)
     }
 
     @Test
@@ -2383,6 +2449,21 @@ class JsxGraphJessieCodeTest {
             derivativeError,
             "curve point count",
             5,
+        )
+
+        val derivativeOrderError =
+            assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+                JsxGraphJessieCode.parse(
+                    source = "D(x^3, x, 2);",
+                    limits = JsxGraphJessieCodeLimits(
+                        maxDerivativeOrder = 1,
+                    ),
+                ),
+            ).error
+        assertResourceLimit(
+            derivativeOrderError,
+            "derivative order",
+            2,
         )
 
         val stepfunctionError =

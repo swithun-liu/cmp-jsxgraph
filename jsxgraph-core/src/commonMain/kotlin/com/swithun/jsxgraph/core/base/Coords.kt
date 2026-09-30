@@ -23,7 +23,7 @@ internal enum class CoordinateArray {
 internal class Coords(
     method: Int,
     coordinates: DoubleArray,
-    private val board: Board,
+    internal val board: Board,
     private val emitter: Boolean = true,
 ) {
     internal val usrCoords = DoubleArray(3) { Double.NaN }

@@ -269,6 +269,42 @@ class JessieCodeBuiltInsTest {
     }
 
     @Test
+    fun logStoresArgumentSnapshotsAndReturnsUndefined() {
+        val session = JessieCodeSession()
+
+        assertSame(
+            JessieCodeRuntimeValue.UndefinedValue,
+            assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+                session.parse(
+                    "\$log(1, \"first\");",
+                    storeSource = false,
+                ),
+            ).value,
+        )
+        assertSame(
+            JessieCodeRuntimeValue.UndefinedValue,
+            assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+                session.parse(
+                    "\$log(true);",
+                    storeSource = false,
+                ),
+            ).value,
+        )
+        assertEquals(
+            listOf(
+                listOf(
+                    JessieCodeRuntimeValue.NumberValue(1.0),
+                    JessieCodeRuntimeValue.StringValue("first"),
+                ),
+                listOf(
+                    JessieCodeRuntimeValue.BooleanValue(true),
+                ),
+            ),
+            session.log,
+        )
+    }
+
+    @Test
     fun contextDependentMathDefectMatchesOfficialInterpreterBranches() {
         assertEquals(
             JessieCodeRuntimeValue.NumberValue(0.0),

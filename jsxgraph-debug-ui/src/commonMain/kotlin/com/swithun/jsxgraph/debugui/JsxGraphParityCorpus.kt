@@ -174,6 +174,23 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "functiongraph_rdp",
+            title = "FunctionGraph RDP",
+            scenario = "Default and explicit RDP simplification preserve continuous FunctionGraph and parametric Curve geometry.",
+            source = FUNCTIONGRAPH_RDP_SOURCE,
+            features = setOf(
+                "axis",
+                "grid",
+                "curve",
+                "functiongraph",
+                "rdp-smoothing",
+                "rdp-threshold",
+                "nan-separator",
+                "parametric-curve",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "ticks_2d",
             title = "2D ticks",
             scenario = "Fixed, faced, one-sided infinite, polar, and curve ticks share one source.",
@@ -1747,6 +1764,21 @@ private const val ADAPTIVE_PLOT_V4_SOURCE: String = """
     "keepAspectRatio": true
   },
   "source": "use jxgbox;\nellipse([-8, 3], [-4, 3], 5) << id: \"ellipse\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#16877A\", strokeWidth: 4, fixed: true, highlight: false >>;\nhyperbola([-1, 3], [1, 3], 1, -1.2, 1.2) << id: \"hyperbola\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#D55E00\", strokeWidth: 4, fixed: true, highlight: false >>;\nparabola([6, 3], [[4, 1], [4, 5]], -1.2, 1.2) << id: \"parabola\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#7B4EA3\", strokeWidth: 4, fixed: true, highlight: false >>;\nspline([-9, -7, -5, -3], [-4, -2, -5, -3]) << id: \"spline\", name: \"\", withLabel: false, plotVersion: 4, strokeColor: \"#0072B2\", strokeWidth: 4, fixed: true, highlight: false >>;\ncardinalspline([[-2, -4], [0, -2], [2, -5], [4, -3]], 0.5, \"uniform\") << id: \"cardinalSpline\", name: \"\", withLabel: false, createPoints: false, plotVersion: 4, strokeColor: \"#009E73\", strokeWidth: 4, fixed: true, highlight: false >>;"
+}
+"""
+
+private const val FUNCTIONGRAPH_RDP_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "inputKind": "jessiecode",
+  "boardOptions": {
+    "containerId": "jxgbox",
+    "boundingBox": [-5, 5, 5, -5],
+    "axis": true,
+    "grid": true,
+    "keepAspectRatio": true
+  },
+  "source": "use jxgbox;\ndefaultGraph = functiongraph(\"x * x - 1\", -2, 2) << id: \"defaultGraph\", name: \"\", withLabel: false, strokeColor: \"#0072B2\", strokeWidth: 8, strokeOpacity: 0.55, fixed: true, highlight: false >>;\nrawGraph = functiongraph(\"x * x - 1\", -2, 2) << id: \"rawGraph\", name: \"\", withLabel: false, RDPsmoothing: false, strokeColor: \"#D55E00\", strokeWidth: 3, dash: 2, fixed: true, highlight: false >>;\njumpGraph = functiongraph(\"1 / x\", -4, 4) << id: \"jumpGraph\", name: \"\", withLabel: false, RDPthreshold: 1, strokeColor: \"#009E73\", strokeWidth: 4, fixed: true, highlight: false >>;\ndefaultCircle = curve(\"cos(x) - 3\", \"sin(x) + 3\", 0, 6.283185307179586) << id: \"defaultCircle\", name: \"\", withLabel: false, strokeColor: \"#49545D\", strokeWidth: 5, fixed: true, highlight: false >>;\nsmoothedCircle = curve(\"cos(x) + 3\", \"sin(x) + 3\", 0, 6.283185307179586) << id: \"smoothedCircle\", name: \"\", withLabel: false, RDPsmoothing: true, strokeColor: \"#7B4EA3\", strokeWidth: 5, fixed: true, highlight: false >>;"
 }
 """
 

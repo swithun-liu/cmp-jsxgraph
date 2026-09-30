@@ -1,6 +1,6 @@
 /*
  * Kotlin translation of JSXGraph.
- * Upstream: src/math/plot.js -> Plot algorithm v2.
+ * Upstream: src/math/plot.js -> Plot algorithms v1 and v2.
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
  * Alfred Wassermann.
  * Used under the MIT License option.
@@ -71,6 +71,22 @@ internal fun interface PlotFunction<E> {
  * Adaptive curve plotting translated from JSXGraph 1.13.3.
  */
 internal object Plot {
+    // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurveOld.
+    internal fun <E> updateParametricCurveV1(
+        board: Board,
+        minimum: Double,
+        maximum: Double,
+        maximumPointCount: Int,
+        x: PlotFunction<E>,
+        y: PlotFunction<E>,
+    ): GMResult<PlotResult, PlotError<E>> =
+        PlotV1State(
+            board = board,
+            maximumPointCount = maximumPointCount,
+            x = x,
+            y = y,
+        ).updateParametricCurveV1(minimum, maximum)
+
     // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurve_v2.
     internal fun <E> updateParametricCurveV2(
         board: Board,
@@ -136,6 +152,363 @@ internal object Plot {
             y = y,
             intervalY = intervalY,
         )
+}
+
+private class PlotV1State<E>(
+    private val board: Board,
+    private val maximumPointCount: Int,
+    private val x: PlotFunction<E>,
+    private val y: PlotFunction<E>,
+) {
+    private val points = mutableListOf<Coords>()
+
+    // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurveOld.
+    fun updateParametricCurveV1(
+        minimum: Double,
+        maximum: Double,
+    ): GMResult<PlotResult, PlotError<E>> {
+        val lowQuality = board.updateQuality == Board.BOARD_QUALITY_LOW
+        val maximumDepth =
+            if (lowQuality) LOW_QUALITY_MAX_DEPTH else HIGH_QUALITY_MAX_DEPTH
+        val maximumXDistance =
+            if (lowQuality) LOW_QUALITY_MAX_DISTANCE
+            else HIGH_QUALITY_MAX_DISTANCE
+        val maximumYDistance =
+            if (lowQuality) LOW_QUALITY_MAX_DISTANCE
+            else HIGH_QUALITY_MAX_DISTANCE
+        val divisors = DoubleArray(maximumDepth)
+        divisors[0] = maximum - minimum
+        for (index in 1 until maximumDepth) {
+            divisors[index] = divisors[index - 1] * 0.5
+        }
+
+        val dyadicStack = IntArray(maximumDepth + 1)
+        val depthStack = IntArray(maximumDepth + 1)
+        val pointStack = Array(maximumDepth + 1) {
+            doubleArrayOf(Double.NaN, Double.NaN)
+        }
+        var dyadicIndex = 1
+        dyadicStack[0] = 1
+        depthStack[0] = 0
+
+        var parameter = minimum
+        val first = when (
+            val result = evaluateScreenPoint(
+                parameter = parameter,
+                suspendedUpdate = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        var previousX = first[0]
+        var previousY = first[1]
+
+        parameter = maximum
+        val last = when (
+            val result = evaluateScreenPoint(
+                parameter = parameter,
+                suspendedUpdate = true,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        var currentX = last[0]
+        var currentY = last[1]
+        pointStack[0] = last
+
+        var top = 1
+        var depth = 0
+        when (
+            val result = appendScreenPoint(
+                x = previousX,
+                y = previousY,
+                parameter = null,
+            )
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+
+        do {
+            var distanceIsAcceptable =
+                isDistanceAcceptable(
+                    dx = currentX - previousX,
+                    dy = currentY - previousY,
+                    maximumXDistance = maximumXDistance,
+                    maximumYDistance = maximumYDistance,
+                ) ||
+                    isSegmentOutside(
+                        x0 = previousX,
+                        y0 = previousY,
+                        x1 = currentX,
+                        y1 = currentY,
+                    )
+            while (
+                depth < maximumDepth &&
+                (!distanceIsAcceptable || depth < MINIMUM_DEPTH) &&
+                (
+                    depth <= MAX_UNDEFINED_DEPTH ||
+                        isSegmentDefined(
+                            x0 = previousX,
+                            y0 = previousY,
+                            x1 = currentX,
+                            y1 = currentY,
+                        )
+                    )
+            ) {
+                dyadicStack[top] = dyadicIndex
+                depthStack[top] = depth
+                pointStack[top] = doubleArrayOf(currentX, currentY)
+                top += 1
+
+                dyadicIndex = 2 * dyadicIndex - 1
+                depth += 1
+                /*
+                 * Upstream intentionally reads divisors[maximumDepth] after
+                 * the final increment. JavaScript yields undefined and
+                 * therefore a NaN parameter, which creates the legacy jump
+                 * marker.
+                 */
+                parameter = if (depth < divisors.size) {
+                    minimum + dyadicIndex * divisors[depth]
+                } else {
+                    Double.NaN
+                }
+                val midpoint = when (
+                    val result = evaluateScreenPoint(
+                        parameter = parameter,
+                        suspendedUpdate = true,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                currentX = midpoint[0]
+                currentY = midpoint[1]
+                distanceIsAcceptable =
+                    isDistanceAcceptable(
+                        dx = currentX - previousX,
+                        dy = currentY - previousY,
+                        maximumXDistance = maximumXDistance,
+                        maximumYDistance = maximumYDistance,
+                    ) ||
+                        isSegmentOutside(
+                            x0 = previousX,
+                            y0 = previousY,
+                            x1 = currentX,
+                            y1 = currentY,
+                        )
+            }
+
+            if (
+                points.size > 1 &&
+                distanceFromLine(
+                    p1 = points[points.lastIndex - 1].scrCoords,
+                    p2 = doubleArrayOf(currentX, currentY),
+                    p0 = points.last().scrCoords,
+                ) < COLLINEAR_DISTANCE
+            ) {
+                points.removeAt(points.lastIndex)
+            }
+
+            when (
+                val result = appendScreenPoint(
+                    x = currentX,
+                    y = currentY,
+                    parameter = parameter,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+
+            previousX = currentX
+            previousY = currentY
+
+            top -= 1
+            currentX = pointStack[top][0]
+            currentY = pointStack[top][1]
+            depth = depthStack[top] + 1
+            dyadicIndex = dyadicStack[top] * 2
+        } while (top > 0 && points.size < UPSTREAM_POINT_LIMIT)
+
+        return GMResult.Ok(
+            PlotResult(
+                points = points.toList(),
+                visibleArea = doubleArrayOf(minimum, maximum),
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/math/plot.js -> isDistOK.
+    private fun isDistanceAcceptable(
+        dx: Double,
+        dy: Double,
+        maximumXDistance: Double,
+        maximumYDistance: Double,
+    ): Boolean =
+        abs(dx) < maximumXDistance &&
+            abs(dy) < maximumYDistance &&
+            !(dx + dy).isNaN()
+
+    // JSXGraph 1.13.3: src/math/plot.js -> isSegmentOutside.
+    private fun isSegmentOutside(
+        x0: Double,
+        y0: Double,
+        x1: Double,
+        y1: Double,
+    ): Boolean =
+        (y0 < 0.0 && y1 < 0.0) ||
+            (y0 > board.canvasHeight && y1 > board.canvasHeight) ||
+            (x0 < 0.0 && x1 < 0.0) ||
+            (x0 > board.canvasWidth && x1 > board.canvasWidth)
+
+    // JSXGraph 1.13.3: src/math/plot.js -> isSegmentDefined.
+    private fun isSegmentDefined(
+        x0: Double,
+        y0: Double,
+        x1: Double,
+        y1: Double,
+    ): Boolean =
+        !(
+            (x0 + y0).isNaN() &&
+                (x1 + y1).isNaN()
+            )
+
+    // JSXGraph 1.13.3: src/math/plot.js -> distFromLine closure.
+    private fun distanceFromLine(
+        p1: DoubleArray,
+        p2: DoubleArray,
+        p0: DoubleArray,
+    ): Double {
+        var x0 = p0[1] - p1[1]
+        var y0 = p0[2] - p1[2]
+        val x1 = p2[0] - p1[1]
+        val y1 = p2[1] - p1[2]
+        val denominator = x1 * x1 + y1 * y1
+
+        if (denominator >= Mat.eps) {
+            val lambda = (x0 * x1 + y0 * y1) / denominator
+            if (lambda > 0.0) {
+                if (lambda <= 1.0) {
+                    x0 -= lambda * x1
+                    y0 -= lambda * y1
+                } else {
+                    x0 -= x1
+                    y0 -= y1
+                }
+            }
+        }
+        return Mat.hypot(x0, y0)
+    }
+
+    private fun evaluateScreenPoint(
+        parameter: Double,
+        suspendedUpdate: Boolean,
+    ): GMResult<DoubleArray, PlotError<E>> {
+        val xValue = when (
+            val result = evaluateCoordinate(
+                coordinate = PlotCoordinate.X,
+                parameter = parameter,
+                suspendedUpdate = suspendedUpdate,
+                function = x,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val yValue = when (
+            val result = evaluateCoordinate(
+                coordinate = PlotCoordinate.Y,
+                parameter = parameter,
+                suspendedUpdate = suspendedUpdate,
+                function = y,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val coordinates = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(xValue, yValue),
+            board = board,
+            emitter = false,
+        )
+        return GMResult.Ok(
+            doubleArrayOf(
+                coordinates.scrCoords[1],
+                coordinates.scrCoords[2],
+            ),
+        )
+    }
+
+    private fun evaluateCoordinate(
+        coordinate: PlotCoordinate,
+        parameter: Double,
+        suspendedUpdate: Boolean,
+        function: PlotFunction<E>,
+    ): GMResult<Double, PlotError<E>> {
+        val result = try {
+            function.evaluate(parameter, suspendedUpdate)
+        } catch (exception: Exception) {
+            return GMResult.Err(
+                PlotError.EvaluationException(
+                    coordinate = coordinate,
+                    parameter = parameter,
+                    message = exception.message
+                        ?: exception::class.simpleName
+                        ?: "Plot coordinate evaluation failed",
+                ),
+            )
+        }
+        return when (result) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                PlotError.Evaluation(
+                    coordinate = coordinate,
+                    parameter = parameter,
+                    error = result.error,
+                ),
+            )
+        }
+    }
+
+    private fun appendScreenPoint(
+        x: Double,
+        y: Double,
+        parameter: Double?,
+    ): GMResult<Unit, PlotError<E>> {
+        if (points.size >= maximumPointCount) {
+            return GMResult.Err(
+                PlotError.PointLimitExceeded(
+                    attemptedCount = points.size + 1,
+                    maximum = maximumPointCount,
+                ),
+            )
+        }
+        val point = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(x, y),
+            board = board,
+            emitter = false,
+        )
+        point.curveParameter = parameter
+        points += point
+        return GMResult.Ok(Unit)
+    }
+
+    private companion object {
+        const val LOW_QUALITY_MAX_DEPTH = 15
+        const val HIGH_QUALITY_MAX_DEPTH = 21
+        const val MINIMUM_DEPTH = 6
+        const val MAX_UNDEFINED_DEPTH = 7
+        const val LOW_QUALITY_MAX_DISTANCE = 10.0
+        const val HIGH_QUALITY_MAX_DISTANCE = 0.7
+        const val COLLINEAR_DISTANCE = 0.015
+        const val UPSTREAM_POINT_LIMIT = 500_000
+    }
 }
 
 private class PlotV2State<E>(
