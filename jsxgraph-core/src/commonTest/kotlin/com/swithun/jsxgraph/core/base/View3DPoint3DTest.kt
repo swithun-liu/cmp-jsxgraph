@@ -398,6 +398,180 @@ class View3DPoint3DTest {
         )
     }
 
+    @Test
+    fun rotationCanBeRecoveredAsTaitBryanAngles() {
+        val view = createView(projection = "parallel")
+        view.setAngles(
+            azimuth = 2.2,
+            elevation = -0.4,
+            bank = 0.6,
+        )
+        val expected = view.matrix3DRot.map(DoubleArray::copyOf)
+
+        view.setAnglesFromRotation()
+
+        assertEquals(2.2, view.angles.az, TOLERANCE)
+        assertEquals(-0.4, view.angles.el, TOLERANCE)
+        assertEquals(0.6, view.angles.bank, TOLERANCE)
+        assertMatrixMatches(expected.toTypedArray(), view.matrix3DRot)
+    }
+
+    @Test
+    fun trackballNavigationChangesRotationWithoutDomEvents() {
+        val view = assertIs<GMResult.Ok<View3D>>(
+            View3D.create(
+                board = createBoard(),
+                lowerLeftCorner = doubleArrayOf(-5.0, -4.0),
+                size = doubleArrayOf(8.0, 7.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-4.0, 6.0),
+                    doubleArrayOf(-3.0, 7.0),
+                ),
+                trackballAttributes =
+                    View3DTrackballAttributes(enabled = true),
+                id = "view",
+                name = "",
+            ),
+        ).value
+        val initial = view.matrix3DRot.map(DoubleArray::copyOf)
+
+        view.pointerDownHandler(
+            View3DNavigationEvent(
+                screenX = 100.0,
+                screenY = 100.0,
+                button = 0,
+            ),
+        )
+        view.trackballHandler(
+            View3DNavigationEvent(
+                screenX = 130.0,
+                screenY = 115.0,
+                boardX = 130.0,
+                boardY = 115.0,
+                button = 0,
+            ),
+        )
+        view.pointerUpHandler()
+
+        assertFalse(
+            initial.indices.all { row ->
+                initial[row].contentEquals(view.matrix3DRot[row])
+            },
+        )
+        assertFalse(view.angles.az.isNaN())
+        assertFalse(view.angles.el.isNaN())
+        assertFalse(view.angles.bank.isNaN())
+    }
+
+    @Test
+    fun storedViewsAndAzimuthAnimationFollowPortableScheduler() {
+        var scheduledDelay = -1L
+        var scheduledAction: (() -> Unit)? = null
+        val view = assertIs<GMResult.Ok<View3D>>(
+            View3D.create(
+                board = createBoard(),
+                lowerLeftCorner = doubleArrayOf(-5.0, -4.0),
+                size = doubleArrayOf(8.0, 7.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-4.0, 6.0),
+                    doubleArrayOf(-3.0, 7.0),
+                ),
+                storedViews = listOf(
+                    doubleArrayOf(0.2, 0.3, 2.0),
+                    doubleArrayOf(1.2, 0.7, 3.0),
+                ),
+                azimuthAnimationScheduler =
+                    View3DAzimuthAnimationScheduler { delay, action ->
+                        scheduledDelay = delay
+                        scheduledAction = action
+                    },
+                id = "view",
+                name = "",
+            ),
+        ).value
+
+        view.setCurrentView(-1)
+
+        assertEquals(1, view.currentView)
+        assertEquals(1.2, view.angles.az, TOLERANCE)
+        assertEquals(0.7, view.angles.el, TOLERANCE)
+        assertEquals(1.0 / 3.0, view.getCameraDistance(), TOLERANCE)
+
+        val beforeAnimation = view.angles.az
+        view.animateAzimuth()
+
+        assertEquals(200L, scheduledDelay)
+        assertEquals(
+            beforeAnimation + 0.1,
+            view.angles.az,
+            TOLERANCE,
+        )
+        view.stopAzimuth()
+        scheduledAction?.invoke()
+        assertEquals(
+            beforeAnimation + 0.1,
+            view.angles.az,
+            TOLERANCE,
+        )
+
+        view.freeR()
+        assertEquals(1.01, view.getCameraDistance(), TOLERANCE)
+    }
+
+    @Test
+    fun pointMovementMatchesOfficialPathAndCallbackSemantics() {
+        var scheduledInterval = Double.NaN
+        var advance: (() -> Boolean)? = null
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            animationDelay = 25.0,
+            animationScheduler = BoardAnimationScheduler { interval, step ->
+                scheduledInterval = interval
+                advance = step
+            },
+        )
+        val view = createView(board = board, projection = "parallel")
+        val point = point3D(
+            Point3D.create(view, doubleArrayOf(0.0, 0.0, 0.0)),
+        )
+        var callbackCount = 0
+
+        assertIs<GMResult.Ok<Point3D>>(
+            point.moveTo(
+                where = doubleArrayOf(3.0, 6.0, 9.0),
+                timeMilliseconds = 100.0,
+                options = Point3DMoveOptions(
+                    callback = { callbackCount += 1 },
+                    effect = "==",
+                ),
+            ),
+        )
+        assertEquals(20.0, scheduledInterval)
+        val step = advance ?: error("animation was not scheduled")
+        var frameCount = 0
+        do {
+            frameCount += 1
+        } while (step())
+
+        assertEquals(5, frameCount)
+        assertEquals(3.0, point.X())
+        assertEquals(6.0, point.Y())
+        assertEquals(9.0, point.Z())
+        assertEquals(1, callbackCount)
+        assertIs<GMResult.Err<Point3DError.InvalidAnimationEffect>>(
+            point.moveTo(
+                where = doubleArrayOf(0.0, 0.0, 0.0),
+                timeMilliseconds = 100.0,
+                options = Point3DMoveOptions(effect = "invalid"),
+            ),
+        )
+    }
+
     private fun createBoard(): Board =
         Board(
             originX = 0.0,

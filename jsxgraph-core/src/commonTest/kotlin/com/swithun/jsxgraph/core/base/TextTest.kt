@@ -261,6 +261,43 @@ class TextTest {
         assertEquals(1, board.numObjects)
     }
 
+    @Test
+    fun sizeHitDecodingAndCoordinateMutationMatchNoRendererBehavior() {
+        val board = board()
+        val text = text(
+            Text.create(
+                board = board,
+                coordinates = doubleArrayOf(10.0, -20.0),
+                content = "A&#x00B2;",
+                parse = false,
+                name = "",
+            ),
+        )
+        text.setAttribute(
+            mapOf(
+                "display" to "internal",
+                "fontsize" to 20.0,
+                "anchorx" to "left",
+                "anchory" to "bottom",
+            ),
+        )
+        text.prepareUpdate().update()
+
+        assertEquals("A\u00B2", text.plaintext)
+        assertContentEquals(
+            doubleArrayOf(18.0, 18.0),
+            text.textSize(),
+        )
+        assertTrue(text.hasPoint(10.0, 20.0, precision = 1.0))
+        assertFalse(text.hasPoint(40.0, 20.0, precision = 1.0))
+        assertEquals("3*x", text.expandShortMath("3x"))
+
+        assertSame(text, text.setCoords(2.0, 3.0))
+        assertEquals(2.0, text.X())
+        assertEquals(3.0, text.Y())
+        assertEquals("\u03C0", text.utf8Decode("&#x03C0;"))
+    }
+
     private fun board(): Board =
         Board(
             originX = 0.0,

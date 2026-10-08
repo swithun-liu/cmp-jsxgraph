@@ -10,8 +10,8 @@ Stable native JSXGraph rendering for the documented Kotlin and Compose
 Multiplatform support scope.
 
 **[Open the live Kotlin/Wasm case workbench](https://swithun-liu.github.io/cmp-jsxgraph/)**
-to browse 108 source-controlled cases: 30 independent production scenarios and
-78 focused regression fixtures. Use the case picker or previous/next controls,
+to browse 109 source-controlled cases: 30 independent production scenarios and
+79 focused regression fixtures. Use the case picker or previous/next controls,
 then switch the same source between Source, official JSXGraph `1.13.3`, and
 native Compose Canvas rendering. Case selection is reflected in the URL for
 direct links and reloads. The separate
@@ -400,15 +400,17 @@ minor/major/auto selection, both orientations, and cubic Bezier rendering. Arc
 additionally supports the four-point `useDirection` form with explicit
 direction-point dependency updates as part of the Stable corpus. Angle
 supports the three-point form with numeric or `auto` radius and sector display.
-Unsupported types, parent forms, rich-text features, plotting modes, nested
-styles, and visual attributes fail explicitly instead of being omitted from
-the native render.
+Unsupported types, parent forms, rich-text features, and remaining plotting
+or renderer features fail explicitly instead of being omitted from the native
+render.
 
 Supported elements accept a finite non-negative integer `layer`. Compose
 orders Grid, Axis, top-level elements, and Polygon fill/borders/implicit
 vertices by the JSXGraph `1.13.3` default or explicit layer, then by creation
-order. Nested Polygon `vertices`/`borders` styling, dynamic layer mutation, and
-remaining Axis/Ticks/Grid options remain pending.
+order. Nested Polygon `vertices`/`borders` styling is applied to owned
+sub-elements. Runtime `setAttribute`/JessieCode property assignment keeps
+supported function-valued visual properties, including `layer`, live across
+Board updates. Remaining Axis/Ticks/Grid options stay outside this scope.
 
 Circle supports Point, numeric, JessieCode string, Line, Circle, and
 three-Point circumcircle radius forms. The native JessieCode creator also
@@ -901,10 +903,12 @@ vector identity, default to a type-1 final head of size `6`, preserve explicit
 `lastArrow: false`, and accept static Boolean or object-valued
 `firstArrow`/`lastArrow` settings for types `1..7`. Compose translates the
 Canvas endpoint shortening and filled/open head paths, including ideal
-endpoints and the type-7 fixed effective size. Dynamic arrow attributes,
-highlight-state sizes, Curve/Arc/Sector arrows, and the remaining renderer
-surface are pending. The static and parent-drag focused parity fixture remains
-outside the 30-case Stable corpus.
+endpoints and the type-7 fixed effective size. Highlight rendering uses each
+head's `highlightSize`. Curve, Arc, and Sector now reuse the same seven head
+types and orient them from their first and last drawable path tangents.
+Dynamic arrow-object functions, touch-point adjustment, and the remaining
+renderer surface are pending. The Line and Curve/Arc/Sector focused parity
+fixtures remain outside the 30-case Stable corpus.
 
 Bisector, Incenter, and Incircle accept three Point/reference/coordinate
 parents. They preserve the JSXGraph `1.13.3` angle-bisector and weighted
@@ -922,10 +926,10 @@ coefficient sum/difference formulas, four hidden constrained helper Points,
 source-parent metadata, dependency updates, nested output-line attributes,
 selection/removal behavior, degenerate `NaN` propagation, and atomic rollback.
 The top-level creator `layer` does not flow into the nested Lines, matching
-JSXGraph `1.13.3`; composition-wide visual mutation remains unavailable until
-the mutable visual-property model is translated. JSON construction documents
-reject this compound return type explicitly. The focused static and parent-drag
-parity fixture remains outside the 30-case Stable corpus.
+JSXGraph `1.13.3`; composition-wide `setAttribute` forwards visual mutations
+to both output Lines. JSON construction documents reject this compound return
+type explicitly. The focused static and parent-drag parity fixture remains
+outside the 30-case Stable corpus.
 
 Semicircle accepts two Point/reference/coordinate parents and owns a hidden
 Midpoint center. CircumcircleArc, MinorArc, and MajorArc accept three such
@@ -975,8 +979,9 @@ format.
 `Board.construct(...)` syntax from `src/parser/jessiescript.js` into the
 native JessieCode/Board pipeline. `createSession(...)` additionally preserves
 interactive Point updates. The compatibility layer covers the upstream
-construction and macro forms without executing JavaScript; unsupported
-runtime property mutation and draft styling return typed errors.
+construction and macro forms without executing JavaScript, including
+`element.property=value` mutation and `draft` styling through the translated
+visual-property model.
 
 Both JSON documents and JessieCode Board options accept
 `theme = "mono_thin"`. The registered JSXGraph `1.13.3` theme is applied to

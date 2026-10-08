@@ -274,7 +274,7 @@ internal class IntersectionPoint private constructor(
             validateIntersectionParent(board, second, 1)?.let {
                 return GMResult.Err(it)
             }
-            if (!isSupportedPair(first, second)) {
+            if (!isSupportedIntersectionPair(first, second)) {
                 return GMResult.Err(
                     IntersectionError.UnsupportedParentTypes(
                         firstType = first.elType,
@@ -562,7 +562,7 @@ private fun validateIntersectionParent(
     return null
 }
 
-private fun isSupportedPair(
+internal fun isSupportedIntersectionPair(
     first: GeometryElement,
     second: GeometryElement,
 ): Boolean {
@@ -627,7 +627,7 @@ private fun isSupportedOtherPair(
             )
 }
 
-private fun intersectionCoordinates(
+internal fun intersectionCoordinates(
     first: GeometryElement,
     second: GeometryElement,
     firstIndex: Double,

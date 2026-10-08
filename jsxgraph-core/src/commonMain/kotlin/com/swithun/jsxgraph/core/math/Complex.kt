@@ -178,6 +178,7 @@ object C {
 
     fun angle(value: Double): Double = Complex(value).angle()
 
+    // JSXGraph 1.13.3: src/math/complex.js -> copy.
     fun copy(value: Complex): Complex = Complex(value)
 
     fun copy(value: Double): Complex = Complex(value)

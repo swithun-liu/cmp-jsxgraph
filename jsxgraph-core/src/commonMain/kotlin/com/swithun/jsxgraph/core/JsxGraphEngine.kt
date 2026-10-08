@@ -100,6 +100,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.round
+import kotlin.math.roundToInt
 
 data class JsxGraphEngineLimits(
     val maxSourceLength: Int = 1_000_000,
@@ -1526,6 +1527,8 @@ object JsxGraphEngine {
                         )
                     }
                     when (interaction) {
+                        // JSXGraph 1.13.3: src/element/button.js ->
+                        // ButtonClickEventHandler.
                         is JsxGraphControlInteraction.ClickButton -> {
                             val button =
                                 control as HtmlControlDefinition.Button
@@ -1577,11 +1580,15 @@ object JsxGraphEngine {
                                 }
                             }
                         }
+                        // JSXGraph 1.13.3: src/element/checkbox.js ->
+                        // CheckboxChangeEventHandler.
                         is JsxGraphControlInteraction.ChangeCheckbox -> {
                             val checkbox =
                                 control as HtmlControlDefinition.Checkbox
                             checkbox.checked = interaction.checked
                         }
+                        // JSXGraph 1.13.3: src/element/input.js ->
+                        // InputInputEventHandler.
                         is JsxGraphControlInteraction.ChangeInput -> {
                             val input =
                                 control as HtmlControlDefinition.Input
@@ -1620,10 +1627,31 @@ object JsxGraphEngine {
                                         ),
                                 )
                             }
-                            slider.value = interaction.value
+                            when (
+                                val result =
+                                    text.HTMLSliderInputEventHandler(
+                                        interaction.value,
+                                    )
+                            ) {
+                                is GMResult.Ok -> Unit
+                                is GMResult.Err ->
+                                    return@interactControl GMResult.Err(
+                                        JsxGraphInteractionError
+                                            .InvalidControlValue(
+                                                id = interaction.id,
+                                                reason =
+                                                    result.error.toString(),
+                                            ),
+                                    )
+                            }
                         }
                     }
-                    board.update()
+                    if (
+                        interaction !is
+                            JsxGraphControlInteraction.ChangeSlider
+                    ) {
+                        board.update()
+                    }
                     val limitError = dynamicResourceLimitError()
                     if (limitError != null) {
                         return@interactControl GMResult.Err(
@@ -4715,7 +4743,7 @@ object JsxGraphEngine {
         ticks3DLabel: JsxGraphTicks3DLabel? = null,
         inheritedVisibility: Boolean? = null,
     ): GMResult<JsxGraphSceneElement, JsxGraphDocumentError> {
-        val source =
+        val baseSource =
             if (sourceElement.element is Face3D) {
                 sourceElement.source.copy(
                     attributes =
@@ -4725,6 +4753,12 @@ object JsxGraphEngine {
                 sourceElement.source
             }
         val element = sourceElement.element
+        val source = baseSource.copy(
+            attributes = mergedVisualAttributes(
+                source = baseSource.attributes,
+                element = element,
+            ),
+        )
         val attributes = AttributeReader(
             source = source,
             defaults = JsxGraphThemes.elementDefaults(
@@ -5446,15 +5480,21 @@ object JsxGraphEngine {
 
             is Polygon -> {
                 val isClosed = element.elType != "polygonalchain"
-                val regularPolygonVertexAttributes =
-                    if (element.elType == "regularpolygon") {
-                        when (val result = attributes.nested("vertices")) {
-                            is GMResult.Ok -> result.value
-                            is GMResult.Err -> return result
-                        }
-                    } else {
-                        null
-                    }
+                val polygonVertexAttributes = when (
+                    val result = attributes.nested("vertices")
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val withVertexLabels = when (
+                    val result = polygonVertexAttributes.boolean(
+                        name = "withlabel",
+                        default = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
                 val vertexCount =
                     (
                         element.vertices.size -
@@ -5467,10 +5507,6 @@ object JsxGraphEngine {
                     return GMResult.Err(attributes.nonFiniteGeometry())
                 }
                 val implicitVertices = element.implicitVertices.map { vertex ->
-                    val coordinates = point(vertex)
-                        ?: return GMResult.Err(
-                            attributes.nonFiniteGeometry(),
-                        )
                     if (vertex === element.parallelPoint) {
                         val parallelPointAttributes = when (
                             val result = attributes.nested("parallelpoint")
@@ -5522,38 +5558,23 @@ object JsxGraphEngine {
                             is GMResult.Ok -> result.value
                             is GMResult.Err -> return result
                         }
-                    } else if (regularPolygonVertexAttributes != null) {
-                        when (
-                            val result =
-                                regularPolygonVertexAttributes
-                                    .validateSupported(
-                                        element = vertex,
-                                        additionalAttributes = setOf("ids"),
-                                    )
-                        ) {
-                            is GMResult.Ok -> Unit
-                            is GMResult.Err -> return result
-                        }
+                    } else {
                         val vertexStyle = when (
                             val result =
-                                regularPolygonVertexAttributes.style(vertex)
-                        ) {
-                            is GMResult.Ok -> result.value
-                            is GMResult.Err -> return result
-                        }
-                        val withLabel = when (
-                            val result =
-                                regularPolygonVertexAttributes.boolean(
-                                    name = "withlabel",
-                                    default = true,
+                                polygonVertexAttributes.style(
+                                    element = vertex,
+                                    inheritedVisibility = style.visible,
                                 )
                         ) {
                             is GMResult.Ok -> result.value
                             is GMResult.Err -> return result
                         }
-                        if (withLabel && vertex.name.isNotEmpty()) {
+                        if (
+                            withVertexLabels &&
+                            vertex.name.isNotEmpty()
+                        ) {
                             return GMResult.Err(
-                                regularPolygonVertexAttributes
+                                polygonVertexAttributes
                                     .unsupportedValue(
                                         attribute = "withLabel",
                                         value = "true with non-empty name",
@@ -5563,8 +5584,7 @@ object JsxGraphEngine {
                         when (
                             val result = pointSceneElement(
                                 element = vertex,
-                                attributes =
-                                    regularPolygonVertexAttributes,
+                                attributes = polygonVertexAttributes,
                                 style = vertexStyle,
                                 respectFixedAttribute =
                                     vertex in element.ownedVertices,
@@ -5573,40 +5593,52 @@ object JsxGraphEngine {
                             is GMResult.Ok -> result.value
                             is GMResult.Err -> return result
                         }
-                    } else {
-                        JsxGraphSceneElement.Point(
-                            id = vertex.id,
-                            name = vertex.name,
-                            style = JsxGraphElementStyle(
-                                visible = true,
-                                strokeColor = DEFAULT_POINT_COLOR,
-                                fillColor = DEFAULT_POINT_COLOR,
-                                strokeWidth = 2.0,
-                                strokeOpacity = 1.0,
-                                fillOpacity = 1.0,
-                                layer = DEFAULT_POINT_LAYER,
-                            ),
-                            coordinates = coordinates,
-                            size = 3.0,
-                            face = "o",
-                        )
                     }
                 }
+                val borderAttributes = when (
+                    val result = attributes.nested("borders")
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val borderElement =
+                    element.borders.firstOrNull() ?: element
+                val resolvedBorderStyle = when (
+                    val result = borderAttributes.style(
+                        element = borderElement,
+                        inheritedVisibility = style.visible,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val borderStyle = resolvedBorderStyle.copy(
+                    strokeWidth =
+                        if (borderAttributes.has("strokewidth")) {
+                            resolvedBorderStyle.strokeWidth
+                        } else {
+                            DEFAULT_POLYGON_BORDER_STROKE_WIDTH
+                        },
+                    highlightStrokeWidth =
+                        if (borderAttributes.has("highlightstrokewidth")) {
+                            resolvedBorderStyle.highlightStrokeWidth
+                        } else {
+                            DEFAULT_POLYGON_BORDER_STROKE_WIDTH
+                        },
+                    layer =
+                        if (borderAttributes.has("layer")) {
+                            resolvedBorderStyle.layer
+                        } else {
+                            DEFAULT_POLYGON_BORDER_LAYER
+                        },
+                )
                 JsxGraphSceneElement.Polygon(
                     id = element.id,
                     name = element.name,
                     style = style,
                     vertices = vertices,
                     implicitVertices = implicitVertices,
-                    borderStyle = JsxGraphElementStyle(
-                        visible = true,
-                        strokeColor = DEFAULT_STROKE_COLOR,
-                        fillColor = JsxGraphColor.Transparent,
-                        strokeWidth = 1.0,
-                        strokeOpacity = 1.0,
-                        fillOpacity = 1.0,
-                        layer = DEFAULT_POLYGON_BORDER_LAYER,
-                    ),
+                    borderStyle = borderStyle,
                     withLines =
                         element.withLines &&
                             element.slopeTriangleDefinition == null,
@@ -6111,6 +6143,96 @@ object JsxGraphEngine {
         return GMResult.Ok(sceneElement)
     }
 
+    // JSXGraph 1.13.3: src/base/element.js -> setAttribute / evalVisProp.
+    // Runtime mutations live on the element and override creation attributes
+    // when an immutable Compose scene snapshot is materialized.
+    private fun mergedVisualAttributes(
+        source: JsonObject,
+        element: GeometryElement,
+    ): JsonObject {
+        if (element.visualProperties.isEmpty()) {
+            return source
+        }
+        val merged = source.toMutableMap()
+        for ((name, rawValue) in element.visualProperties) {
+            val evaluated = when (val result = element.evalResult(rawValue)) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> continue
+            }
+            portableAttributeJson(evaluated)?.let { value ->
+                merged[name.lowercase()] = value
+            }
+        }
+        return JsonObject(merged)
+    }
+
+    private fun portableAttributeJson(
+        value: Any?,
+        depth: Int = 0,
+    ): JsonElement? {
+        if (depth > MAX_JSON_DEPTH) {
+            return null
+        }
+        return when (value) {
+            null -> JsonNull
+            is JsonElement -> value
+            is Boolean -> JsonPrimitive(value)
+            is Byte -> JsonPrimitive(value)
+            is Short -> JsonPrimitive(value)
+            is Int -> JsonPrimitive(value)
+            is Long -> JsonPrimitive(value)
+            is Float ->
+                value.takeIf(Float::isFinite)?.let(::JsonPrimitive)
+            is Double ->
+                value.takeIf(Double::isFinite)?.let(::JsonPrimitive)
+            is String -> JsonPrimitive(value)
+            is Array<*> ->
+                portableAttributeArray(value.asList(), depth)
+            is BooleanArray ->
+                JsonArray(value.map(::JsonPrimitive))
+            is ByteArray ->
+                JsonArray(value.map(::JsonPrimitive))
+            is ShortArray ->
+                JsonArray(value.map(::JsonPrimitive))
+            is IntArray ->
+                JsonArray(value.map(::JsonPrimitive))
+            is LongArray ->
+                JsonArray(value.map(::JsonPrimitive))
+            is FloatArray ->
+                portableAttributeArray(value.asList(), depth)
+            is DoubleArray ->
+                portableAttributeArray(value.asList(), depth)
+            is Iterable<*> ->
+                portableAttributeArray(value.toList(), depth)
+            is Map<*, *> -> {
+                val properties = linkedMapOf<String, JsonElement>()
+                for ((key, child) in value) {
+                    val name = key as? String ?: return null
+                    val converted =
+                        portableAttributeJson(child, depth + 1)
+                            ?: return null
+                    properties[name.lowercase()] = converted
+                }
+                JsonObject(properties)
+            }
+            else -> null
+        }
+    }
+
+    private fun portableAttributeArray(
+        values: List<*>,
+        depth: Int,
+    ): JsonArray? {
+        val children = mutableListOf<JsonElement>()
+        for (value in values) {
+            val converted =
+                portableAttributeJson(value, depth + 1)
+                    ?: return null
+            children += converted
+        }
+        return JsonArray(children)
+    }
+
     private fun point3DSceneElement(
         element: Point3D,
         attributes: AttributeReader,
@@ -6357,14 +6479,26 @@ object JsxGraphEngine {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val borderStyle =
-            if (borderAttributes.has("layer")) {
-                resolvedBorderStyle
-            } else {
-                resolvedBorderStyle.copy(
-                    layer = DEFAULT_POLYGON_BORDER_LAYER,
-                )
-            }
+        val borderStyle = resolvedBorderStyle.copy(
+            strokeWidth =
+                if (borderAttributes.has("strokewidth")) {
+                    resolvedBorderStyle.strokeWidth
+                } else {
+                    DEFAULT_POLYGON_BORDER_STROKE_WIDTH
+                },
+            highlightStrokeWidth =
+                if (borderAttributes.has("highlightstrokewidth")) {
+                    resolvedBorderStyle.highlightStrokeWidth
+                } else {
+                    DEFAULT_POLYGON_BORDER_STROKE_WIDTH
+                },
+            layer =
+                if (borderAttributes.has("layer")) {
+                    resolvedBorderStyle.layer
+                } else {
+                    DEFAULT_POLYGON_BORDER_LAYER
+                },
+        )
         return GMResult.Ok(
             JsxGraphSceneElement.Polygon(
                 id = element.id,
@@ -6408,24 +6542,8 @@ object JsxGraphEngine {
                     else -> "round"
                 }
             } else {
-                when (
-                    val result = attributes.string(
-                        name = "linecap",
-                        default = "round",
-                    )
-                ) {
-                    is GMResult.Ok -> result.value.lowercase()
-                    is GMResult.Err -> return result
-                }
+                style.lineCap
             }
-        if (lineCap !in setOf("round", "square")) {
-            return GMResult.Err(
-                attributes.unsupportedValue(
-                    attribute = "lineCap",
-                    value = lineCap,
-                ),
-            )
-        }
         if (
             !allowFill &&
             style.fillColor.alpha > 0 &&
@@ -6450,6 +6568,26 @@ object JsxGraphEngine {
         if (!allowPathBreaks && scenePoints.any { it == null }) {
             return GMResult.Err(attributes.nonFiniteGeometry())
         }
+        val firstArrow = when (
+            val result = attributes.arrowHead(
+                name = "firstarrow",
+                default = null,
+                defaultType = DEFAULT_CURVE_ARROW_TYPE,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val lastArrow = when (
+            val result = attributes.arrowHead(
+                name = "lastarrow",
+                default = null,
+                defaultType = DEFAULT_CURVE_ARROW_TYPE,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         if (
             grid == null &&
             (
@@ -6471,6 +6609,8 @@ object JsxGraphEngine {
                 points = scenePoints,
                 bezierDegree = bezierDegree,
                 lineCap = lineCap,
+                firstArrow = firstArrow,
+                lastArrow = lastArrow,
                 autoRadiusAngle = autoRadiusAngle,
                 boxPlot = boxPlot,
                 vectorField = vectorField,
@@ -8290,11 +8430,25 @@ object JsxGraphEngine {
         }
     }
 
-    private fun normalizePointFace(face: String): String =
-        when (face.lowercase()) {
-            "circle" -> "o"
-            else -> face.lowercase()
+    // JSXGraph 1.13.3: src/options.js -> normalizePointFace.
+    private fun normalizePointFace(face: String): String {
+        val normalized = face.lowercase()
+        return when (normalized) {
+            "cross", "x" -> "x"
+            "circle", "o" -> "o"
+            "square", "[]" -> "[]"
+            "plus", "+" -> "+"
+            "divide", "|" -> "|"
+            "minus", "-" -> "-"
+            "diamond", "<>" -> "<>"
+            "diamond2", "<<>>" -> "<<>>"
+            "triangleup", "a", "^" -> "^"
+            "triangledown", "v" -> "v"
+            "triangleleft", "<" -> "<"
+            "triangleright", ">" -> ">"
+            else -> normalized
         }
+    }
 
     private fun <T> invalidField(
         path: String,
@@ -8764,8 +8918,6 @@ object JsxGraphEngine {
                                 when (element.elType) {
                                     "parallelogram" ->
                                         setOf("parallelpoint")
-                                    "regularpolygon" ->
-                                        setOf("vertices")
                                     else -> emptySet()
                                 }
                         is Text3D -> TEXT_ATTRIBUTES
@@ -9031,11 +9183,14 @@ object JsxGraphEngine {
                     is GMResult.Err -> return result
                 }
             }
-            if (element is Polygon3D) {
+            if (element is Polygon || element is Polygon3D) {
                 when (
                     val result = validateNestedAttributes(
                         name = "vertices",
-                        supported = COMMON_ATTRIBUTES + POINT_ATTRIBUTES,
+                        supported =
+                            COMMON_ATTRIBUTES +
+                                POINT_ATTRIBUTES +
+                                POLYGON_VERTEX_METADATA_ATTRIBUTES,
                     )
                 ) {
                     is GMResult.Ok -> Unit
@@ -9044,7 +9199,10 @@ object JsxGraphEngine {
                 when (
                     val result = validateNestedAttributes(
                         name = "borders",
-                        supported = COMMON_ATTRIBUTES,
+                        supported =
+                            COMMON_ATTRIBUTES +
+                                LINE_ATTRIBUTES +
+                                POLYGON_BORDER_METADATA_ATTRIBUTES,
                     )
                 ) {
                     is GMResult.Ok -> Unit
@@ -9284,6 +9442,168 @@ object JsxGraphEngine {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
+            val highlightEnabled = when (
+                val result = boolean("highlight", default = true)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val highlightStrokeColor = when (
+                val result = color(
+                    "highlightstrokecolor",
+                    default =
+                        if (element is Text || element is Text3D) {
+                            DEFAULT_TEXT_COLOR
+                        } else {
+                            DEFAULT_HIGHLIGHT_COLOR
+                        },
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val highlightFillColor = when (
+                val result = color(
+                    "highlightfillcolor",
+                    default =
+                        when (element) {
+                            is Point, is Point3D ->
+                                DEFAULT_HIGHLIGHT_COLOR
+                            is Polygon, is Sector -> defaultFill
+                            else -> JsxGraphColor.Transparent
+                        },
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val highlightStrokeWidth = when (
+                val result = number(
+                    "highlightstrokewidth",
+                    default = if (element is Sector) 0.0 else 2.0,
+                    minimum = 0.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val highlightStrokeOpacity = when (
+                val result = number(
+                    "highlightstrokeopacity",
+                    default =
+                        if (element is Text || element is Text3D) {
+                            0.666666
+                        } else {
+                            1.0
+                        },
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val highlightFillOpacity = when (
+                val result = number(
+                    "highlightfillopacity",
+                    default =
+                        when (element) {
+                            is Polygon -> 0.2
+                            is Sector -> 0.3
+                            else -> 1.0
+                        },
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val lineCap = when (
+                val result = string(
+                    "linecap",
+                    default =
+                        if (
+                            element is Curve ||
+                            element is Arc ||
+                            element is Sector
+                        ) {
+                            "round"
+                        } else {
+                            "butt"
+                        },
+                )
+            ) {
+                is GMResult.Ok -> result.value.lowercase()
+                is GMResult.Err -> return result
+            }
+            if (lineCap !in LINE_CAPS) {
+                return GMResult.Err(
+                    unsupportedValue("linecap", lineCap),
+                )
+            }
+            val clipToViewport = when (
+                val result = boolean("clip", default = true)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val shadow = when (val result = shadow()) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val draft = when (val result = draft()) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val cssClass = when (
+                val result = string("cssclass", default = "")
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val highlightCssClass = when (
+                val result = string("highlightcssclass", default = "")
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val aria = when (val result = aria()) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val tabIndex = when (
+                val result = nullableInteger("tabindex", default = -1)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val transitionDuration = when (
+                val result = number(
+                    "transitionduration",
+                    default = 100.0,
+                    minimum = 0.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val transitionProperties = when (
+                val result = stringList(
+                    name = "transitionproperties",
+                    default =
+                        if (element is Point || element is Point3D) {
+                            POINT_TRANSITION_PROPERTIES
+                        } else if (element is Text || element is Text3D) {
+                            TEXT_TRANSITION_PROPERTIES
+                        } else {
+                            DEFAULT_TRANSITION_PROPERTIES
+                        },
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
             val dash = when (
                 val result = nonNegativeInteger("dash", default = 0)
             ) {
@@ -9316,25 +9636,6 @@ object JsxGraphEngine {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
-            if (element !is Line) {
-                for (arrow in listOf("firstarrow", "lastarrow")) {
-                    when (val value = value(arrow)) {
-                        null -> Unit
-                        is JsonPrimitive -> {
-                            val enabled = value.booleanOrNull
-                                ?: return invalid(arrow, "false")
-                            if (enabled) {
-                                return GMResult.Err(
-                                    unsupportedValue(arrow, "true"),
-                                )
-                            }
-                        }
-                        else -> return GMResult.Err(
-                            unsupportedValue(arrow, value.toString()),
-                        )
-                    }
-                }
-            }
             return GMResult.Ok(
                 JsxGraphElementStyle(
                     visible = visible,
@@ -9346,6 +9647,23 @@ object JsxGraphEngine {
                     layer = layer,
                     strokeDashPattern = strokeDashPattern,
                     fillGradient = fillGradient,
+                    highlighted = element.highlighted,
+                    highlightEnabled = highlightEnabled,
+                    highlightStrokeColor = highlightStrokeColor,
+                    highlightFillColor = highlightFillColor,
+                    highlightStrokeWidth = highlightStrokeWidth,
+                    highlightStrokeOpacity = highlightStrokeOpacity,
+                    highlightFillOpacity = highlightFillOpacity,
+                    lineCap = lineCap,
+                    clipToViewport = clipToViewport,
+                    shadow = shadow,
+                    draft = draft,
+                    cssClass = cssClass,
+                    highlightCssClass = highlightCssClass,
+                    aria = aria,
+                    tabIndex = tabIndex,
+                    transitionDurationMillis = transitionDuration,
+                    transitionProperties = transitionProperties,
                 ),
             )
         }
@@ -9421,6 +9739,7 @@ object JsxGraphEngine {
         fun arrowHead(
             name: String,
             default: JsxGraphArrowHead?,
+            defaultType: Int = DEFAULT_ARROW_TYPE,
         ): GMResult<JsxGraphArrowHead?, JsxGraphDocumentError> {
             val value = value(name) ?: return GMResult.Ok(default)
             if (value is JsonPrimitive) {
@@ -9429,7 +9748,7 @@ object JsxGraphEngine {
                 return GMResult.Ok(
                     if (enabled) {
                         JsxGraphArrowHead(
-                            type = DEFAULT_ARROW_TYPE,
+                            type = defaultType,
                             size = DEFAULT_ARROW_SIZE,
                             highlightSize = null,
                         )
@@ -9456,7 +9775,7 @@ object JsxGraphEngine {
                     arrow = arrow,
                     path = "$name.type",
                     name = "type",
-                    default = DEFAULT_ARROW_TYPE,
+                    default = defaultType,
                     minimum = MIN_ARROW_TYPE,
                     maximum = MAX_ARROW_TYPE,
                 )
@@ -9603,6 +9922,287 @@ object JsxGraphEngine {
             return GMResult.Ok(rounded.toInt())
         }
 
+        private fun nullableInteger(
+            name: String,
+            default: Int?,
+        ): GMResult<Int?, JsxGraphDocumentError> {
+            val value = value(name) ?: return GMResult.Ok(default)
+            if (value === JsonNull) {
+                return GMResult.Ok(null)
+            }
+            val number = (value as? JsonPrimitive)?.doubleOrNull
+            val rounded = number?.let(::round)
+            if (
+                number == null ||
+                !number.isFinite() ||
+                rounded == null ||
+                abs(number - rounded) >= Mat.eps ||
+                rounded < Int.MIN_VALUE.toDouble() ||
+                rounded > Int.MAX_VALUE.toDouble()
+            ) {
+                return invalid(name, "an integer or null")
+            }
+            return GMResult.Ok(rounded.toInt())
+        }
+
+        private fun stringList(
+            name: String,
+            default: List<String>,
+        ): GMResult<List<String>, JsxGraphDocumentError> {
+            val value = value(name) ?: return GMResult.Ok(default)
+            val array = value as? JsonArray
+                ?: return invalid(name, "an array of strings")
+            val result = mutableListOf<String>()
+            for ((index, item) in array.withIndex()) {
+                val primitive = item as? JsonPrimitive
+                if (primitive == null || !primitive.isString) {
+                    return invalid(
+                        "$name[$index]",
+                        "a string",
+                    )
+                }
+                result += primitive.content
+            }
+            return GMResult.Ok(result)
+        }
+
+        private fun aria():
+            GMResult<Map<String, String>, JsxGraphDocumentError> {
+            val value = value("aria") ?: return GMResult.Ok(emptyMap())
+            val aria = value as? JsonObject
+                ?: return invalid("aria", "an object")
+            val enabledValue = aria["enabled"]
+            val enabled =
+                if (enabledValue == null) {
+                    false
+                } else {
+                    (enabledValue as? JsonPrimitive)?.booleanOrNull
+                        ?: return invalid("aria.enabled", "a boolean")
+                }
+            if (!enabled) {
+                return GMResult.Ok(emptyMap())
+            }
+            val result = linkedMapOf<String, String>()
+            for ((key, item) in aria) {
+                if (key == "enabled") {
+                    continue
+                }
+                val primitive = item as? JsonPrimitive
+                    ?: return invalid("aria.$key", "a primitive value")
+                result[key] = primitive.content
+            }
+            return GMResult.Ok(result)
+        }
+
+        private fun shadow():
+            GMResult<JsxGraphShadow, JsxGraphDocumentError> {
+            val value = value("shadow")
+                ?: return GMResult.Ok(JsxGraphShadow())
+            if (value is JsonPrimitive) {
+                val enabled = value.booleanOrNull
+                    ?: return invalid("shadow", "a boolean or object")
+                return GMResult.Ok(JsxGraphShadow(enabled = enabled))
+            }
+            val shadow = value as? JsonObject
+                ?: return invalid("shadow", "a boolean or object")
+            shadow.keys.firstOrNull { it !in SHADOW_ATTRIBUTES }?.let {
+                    name ->
+                return GMResult.Err(
+                    JsxGraphDocumentError.UnsupportedAttribute(
+                        objectIndex = source.index,
+                        id = source.id,
+                        attribute = attributePath("shadow.$name"),
+                    ),
+                )
+            }
+            val reader = AttributeReader(
+                source = source,
+                attributes = shadow,
+                attributePrefix = attributePath("shadow"),
+            )
+            val enabled = when (
+                val result = reader.boolean("enabled", default = true)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val color = when (
+                val result = reader.colorValue(
+                    name = "color",
+                    default = JsxGraphColor(0, 0, 0),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val opacity = when (
+                val result = reader.number(
+                    "opacity",
+                    default = 1.0,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val blur = when (
+                val result = reader.number(
+                    "blur",
+                    default = 3.0,
+                    minimum = 0.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val blend = when (
+                val result = reader.number(
+                    "blend",
+                    default = 0.1,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val offset = shadow["offset"]
+            val offsetValues =
+                if (offset == null) {
+                    5.0 to 5.0
+                } else {
+                    val array = offset as? JsonArray
+                        ?: return invalid(
+                            "shadow.offset",
+                            "an array of two finite numbers",
+                        )
+                    if (array.size != 2) {
+                        return invalid(
+                            "shadow.offset",
+                            "an array of two finite numbers",
+                        )
+                    }
+                    val x = (array[0] as? JsonPrimitive)?.doubleOrNull
+                    val y = (array[1] as? JsonPrimitive)?.doubleOrNull
+                    if (
+                        x == null || y == null ||
+                        !x.isFinite() || !y.isFinite()
+                    ) {
+                        return invalid(
+                            "shadow.offset",
+                            "an array of two finite numbers",
+                        )
+                    }
+                    x to y
+                }
+            return GMResult.Ok(
+                JsxGraphShadow(
+                    enabled = enabled,
+                    color = color,
+                    opacity = opacity,
+                    blur = blur,
+                    blend = blend,
+                    offsetX = offsetValues.first,
+                    offsetY = offsetValues.second,
+                ),
+            )
+        }
+
+        private fun draft():
+            GMResult<JsxGraphDraftStyle, JsxGraphDocumentError> {
+            val value = value("draft")
+                ?: return GMResult.Ok(JsxGraphDraftStyle())
+            if (value is JsonPrimitive) {
+                val enabled = value.booleanOrNull
+                    ?: return invalid("draft", "a boolean or object")
+                return GMResult.Ok(JsxGraphDraftStyle(enabled = enabled))
+            }
+            val draft = value as? JsonObject
+                ?: return invalid("draft", "a boolean or object")
+            draft.keys.firstOrNull { it !in DRAFT_ATTRIBUTES }?.let {
+                    name ->
+                return GMResult.Err(
+                    JsxGraphDocumentError.UnsupportedAttribute(
+                        objectIndex = source.index,
+                        id = source.id,
+                        attribute = attributePath("draft.$name"),
+                    ),
+                )
+            }
+            val reader = AttributeReader(
+                source = source,
+                attributes = draft,
+                attributePrefix = attributePath("draft"),
+            )
+            val enabled = when (
+                val result = reader.boolean("draft", default = false)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val strokeColor = when (
+                val result = reader.color(
+                    "strokecolor",
+                    JsxGraphColor(86, 86, 86),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val fillColor = when (
+                val result = reader.color(
+                    "fillcolor",
+                    JsxGraphColor(86, 86, 86),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val strokeOpacity = when (
+                val result = reader.number(
+                    "strokeopacity",
+                    default = 0.8,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val fillOpacity = when (
+                val result = reader.number(
+                    "fillopacity",
+                    default = 0.8,
+                    minimum = 0.0,
+                    maximum = 1.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val strokeWidth = when (
+                val result = reader.number(
+                    "strokewidth",
+                    default = 1.0,
+                    minimum = 0.0,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            return GMResult.Ok(
+                JsxGraphDraftStyle(
+                    enabled = enabled,
+                    strokeColor = strokeColor,
+                    fillColor = fillColor,
+                    strokeOpacity = strokeOpacity,
+                    fillOpacity = fillOpacity,
+                    strokeWidth = strokeWidth,
+                ),
+            )
+        }
+
         // JSXGraph 1.13.3: src/options.js -> Options.layer;
         // src/utils/type.js -> copyAttributes.
         private fun defaultLayer(element: GeometryElement): Int =
@@ -9672,19 +10272,59 @@ object JsxGraphEngine {
             name: String,
             default: JsxGraphColor,
         ): GMResult<JsxGraphColor, JsxGraphDocumentError> {
-            val sourceColor = when (val result = string(name, default = "")) {
-                is GMResult.Ok -> result.value
-                is GMResult.Err -> return result
-            }
-            if (sourceColor.isEmpty()) {
-                return GMResult.Ok(default)
-            }
-            return parseColor(sourceColor)?.let { color ->
-                GMResult.Ok(color)
-            }
-                ?: GMResult.Err(
-                    unsupportedValue(name, sourceColor),
+            return colorValue(name, default)
+        }
+
+        private fun colorValue(
+            name: String,
+            default: JsxGraphColor,
+        ): GMResult<JsxGraphColor, JsxGraphDocumentError> {
+            val value = value(name) ?: return GMResult.Ok(default)
+            if (value is JsonPrimitive && value.isString) {
+                if (value.content.isEmpty()) {
+                    return GMResult.Ok(default)
+                }
+                return parseColor(value.content)?.let { color ->
+                    GMResult.Ok(color)
+                } ?: GMResult.Err(
+                    unsupportedValue(name, value.content),
                 )
+            }
+            val components = value as? JsonArray
+                ?: return invalid(name, "a CSS color or RGB array")
+            if (components.size !in 3..4) {
+                return invalid(name, "an RGB or RGBA array")
+            }
+            val numbers = components.map { component ->
+                (component as? JsonPrimitive)?.doubleOrNull
+            }
+            val red = numbers.getOrNull(0)
+                ?: return invalid(name, "an RGB or RGBA array")
+            val green = numbers.getOrNull(1)
+                ?: return invalid(name, "an RGB or RGBA array")
+            val blue = numbers.getOrNull(2)
+                ?: return invalid(name, "an RGB or RGBA array")
+            val alpha = if (components.size == 4) {
+                numbers.getOrNull(3)
+                    ?: return invalid(name, "an RGB or RGBA array")
+            } else {
+                1.0
+            }
+            if (
+                listOf(red, green, blue, alpha).any { !it.isFinite() } ||
+                listOf(red, green, blue).any { it !in 0.0..255.0 } ||
+                alpha !in 0.0..1.0
+            ) {
+                return invalid(name, "an RGB or RGBA array")
+            }
+            return GMResult.Ok(
+                JsxGraphColor(
+                    red = red.toInt(),
+                    green = green.toInt(),
+                    blue = blue.toInt(),
+                    alpha = (alpha * 255.0).roundToInt(),
+                ),
+            )
         }
 
         // JSXGraph 1.13.3: src/options.js -> gradient*;
@@ -9692,11 +10332,11 @@ object JsxGraphEngine {
         private fun fillGradient(
             element: GeometryElement,
         ): GMResult<JsxGraphFillGradient?, JsxGraphDocumentError> {
-            if (element !is Sphere3D) {
-                return GMResult.Ok(null)
-            }
             val type = when (
-                val result = string("gradient", default = "radial")
+                val result = string(
+                    "gradient",
+                    default = if (element is Sphere3D) "radial" else "none",
+                )
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
@@ -9712,7 +10352,11 @@ object JsxGraphEngine {
             val secondColor = when (
                 val result = color(
                     "gradientsecondcolor",
-                    DEFAULT_SPHERE_3D_STROKE_COLOR,
+                    if (element is Sphere3D) {
+                        DEFAULT_SPHERE_3D_STROKE_COLOR
+                    } else {
+                        JsxGraphColor(255, 255, 255)
+                    },
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -9799,13 +10443,19 @@ object JsxGraphEngine {
                 is GMResult.Err -> return result
             }
             val focalX = when (
-                val result = normalized("gradientfx", default = 0.7)
+                val result = normalized(
+                    "gradientfx",
+                    default = if (element is Sphere3D) 0.7 else 0.5,
+                )
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
             val focalY = when (
-                val result = normalized("gradientfy", default = 0.3)
+                val result = normalized(
+                    "gradientfy",
+                    default = if (element is Sphere3D) 0.3 else 0.5,
+                )
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
@@ -9973,9 +10623,12 @@ object JsxGraphEngine {
         JsxGraphColor(red = 0, green = 0, blue = 255)
     private val DEFAULT_AXIS_COLOR =
         JsxGraphColor(red = 102, green = 102, blue = 102)
+    private val DEFAULT_HIGHLIGHT_COLOR =
+        JsxGraphColor(red = 195, green = 217, blue = 255)
     private const val MIN_ARROW_TYPE = 1
     private const val MAX_ARROW_TYPE = 7
     private const val DEFAULT_ARROW_TYPE = 1
+    private const val DEFAULT_CURVE_ARROW_TYPE = 7
     private const val DEFAULT_ARROW_SIZE = 6.0
     private val DEFAULT_ARROW_HEAD = JsxGraphArrowHead(
         type = DEFAULT_ARROW_TYPE,
@@ -9993,6 +10646,7 @@ object JsxGraphEngine {
     private const val DEFAULT_AREA_LAYER = 3
     private const val DEFAULT_CURVE_LAYER = 5
     private const val DEFAULT_POLYGON_BORDER_LAYER = 5
+    private const val DEFAULT_POLYGON_BORDER_STROKE_WIDTH = 1.0
     private const val DEFAULT_CIRCLE_LAYER = 6
     private const val DEFAULT_LINE_LAYER = 7
     private const val DEFAULT_ARC_LAYER = 8
@@ -10015,6 +10669,34 @@ object JsxGraphEngine {
         listOf(20.0, 5.0, 10.0, 5.0),
         listOf(0.0, 5.0),
     )
+    private val LINE_CAPS = setOf("butt", "round", "square")
+    private val DEFAULT_TRANSITION_PROPERTIES = listOf(
+        "fill",
+        "fill-opacity",
+        "stroke",
+        "stroke-opacity",
+        "stroke-width",
+    )
+    private val POINT_TRANSITION_PROPERTIES =
+        DEFAULT_TRANSITION_PROPERTIES +
+            listOf("width", "height", "rx", "ry")
+    private val TEXT_TRANSITION_PROPERTIES = listOf("color", "opacity")
+    private val SHADOW_ATTRIBUTES = setOf(
+        "enabled",
+        "color",
+        "opacity",
+        "blur",
+        "blend",
+        "offset",
+    )
+    private val DRAFT_ATTRIBUTES = setOf(
+        "draft",
+        "strokecolor",
+        "fillcolor",
+        "strokeopacity",
+        "fillopacity",
+        "strokewidth",
+    )
     private val COMMON_ATTRIBUTES = setOf(
         "id",
         "name",
@@ -10028,9 +10710,36 @@ object JsxGraphEngine {
         "layer",
         "fixed",
         "highlight",
+        "highlightstrokecolor",
+        "highlightfillcolor",
+        "highlightstrokewidth",
+        "highlightstrokeopacity",
+        "highlightfillopacity",
         "withlabel",
         "dash",
         "dashscale",
+        "linecap",
+        "clip",
+        "shadow",
+        "draft",
+        "cssclass",
+        "highlightcssclass",
+        "aria",
+        "tabindex",
+        "transitionduration",
+        "transitionproperties",
+        "gradient",
+        "gradientangle",
+        "gradientcx",
+        "gradientcy",
+        "gradientendoffset",
+        "gradientfr",
+        "gradientsecondcolor",
+        "gradientsecondopacity",
+        "gradientstartoffset",
+        "gradientfx",
+        "gradientfy",
+        "gradientr",
     )
     private val POINT_ATTRIBUTES = setOf(
         "size",
@@ -11141,8 +11850,17 @@ object JsxGraphEngine {
         "dot",
     )
     private val POLYGON_ATTRIBUTES = setOf(
+        "hasinnerpoints",
+        "highlightbystrokewidth",
+        "scalable",
         "withlines",
+        "vertices",
+        "borders",
     )
+    private val POLYGON_VERTEX_METADATA_ATTRIBUTES =
+        setOf("ids", "names")
+    private val POLYGON_BORDER_METADATA_ATTRIBUTES =
+        setOf("ids", "names", "colors")
     private val POLYGON_3D_ATTRIBUTES =
         POLYGON_ATTRIBUTES + setOf("vertices", "borders")
     private val TEXT_ATTRIBUTES = setOf(

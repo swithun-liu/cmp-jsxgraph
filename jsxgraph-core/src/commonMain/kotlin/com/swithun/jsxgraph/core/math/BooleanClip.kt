@@ -77,6 +77,18 @@ private class BooleanClipVertex(
         get() = data != null
 }
 
+internal data class BooleanClipDebugVertex(
+    val index: Int,
+    val coordinates: DoubleArray,
+    val intersectionType: String?,
+    val intersection: Boolean,
+    val end: Boolean,
+    val alpha: Double?,
+    val previousCoordinates: DoubleArray,
+    val nextCoordinates: DoubleArray,
+    val neighbourCoordinates: DoubleArray?,
+)
+
 /**
  * Mutable Greiner-Hormann topology translated from JSXGraph 1.13.3.
  *
@@ -89,10 +101,56 @@ internal object BooleanClip {
     private const val MARK_TRAVERSAL_LIMIT = 10_000
     private const val TRACE_TRAVERSAL_LIMIT = 10_000
     private const val INTERSECTION_LIMIT = 10_000
+    private const val DEBUG_TRAVERSAL_LIMIT = 100
 
     private val duplicateEpsilon = Mat.eps * Mat.eps
     private val boundingBoxEpsilon = sqrt(Mat.eps)
     private val intersectionEpsilon = Mat.eps * 100.0
+
+    // JSXGraph 1.13.3: src/math/clip.js -> _print_array.
+    // The browser implementation writes to console; common code returns the
+    // same topology fields as immutable diagnostic records.
+    @Suppress("FunctionName", "unused")
+    private fun _print_array(
+        vertices: List<BooleanClipVertex>,
+    ): List<BooleanClipDebugVertex> =
+        vertices.mapIndexed { index, vertex ->
+            vertex.debugSnapshot(index)
+        }
+
+    // JSXGraph 1.13.3: src/math/clip.js -> _print_list.
+    @Suppress("FunctionName", "unused")
+    private fun _print_list(
+        start: BooleanClipVertex,
+    ): List<BooleanClipDebugVertex> {
+        val output = mutableListOf<BooleanClipDebugVertex>()
+        var current = start
+        var count = 0
+        while (count < DEBUG_TRAVERSAL_LIMIT) {
+            output += current.debugSnapshot(count)
+            if (current.end) {
+                break
+            }
+            current = current.next
+            count += 1
+        }
+        return output
+    }
+
+    private fun BooleanClipVertex.debugSnapshot(
+        index: Int,
+    ): BooleanClipDebugVertex =
+        BooleanClipDebugVertex(
+            index = index,
+            coordinates = coordinates.copyOf(),
+            intersectionType = data?.type?.name?.lowercase(),
+            intersection = intersection,
+            end = end,
+            alpha = data?.alpha,
+            previousCoordinates = previous.coordinates.copyOf(),
+            nextCoordinates = next.coordinates.copyOf(),
+            neighbourCoordinates = neighbour?.coordinates?.copyOf(),
+        )
 
     // JSXGraph: src/math/clip.js -> greinerHormann.
     internal fun greinerHormann(

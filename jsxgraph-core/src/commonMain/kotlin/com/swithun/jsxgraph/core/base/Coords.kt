@@ -47,7 +47,7 @@ internal class Coords(
     }
 
     // JSXGraph: src/base/coords.js -> usr2screen
-    private fun usr2screen(doRound: Boolean?) {
+    internal fun usr2screen(doRound: Boolean? = null) {
         val origin = board.origin.scrCoords
         if (doRound == true) {
             scrCoords[0] = JsMath.round(usrCoords[0])
@@ -61,7 +61,7 @@ internal class Coords(
     }
 
     // JSXGraph: src/base/coords.js -> screen2usr
-    private fun screen2usr() {
+    internal fun screen2usr() {
         val origin = board.origin.scrCoords
         usrCoords[0] = 1.0
         usrCoords[1] = (scrCoords[1] - origin[1]) / board.unitX
@@ -174,6 +174,19 @@ internal class Coords(
         events?.off(event, handler)
         return this
     }
+
+    // JSXGraph: src/base/coords.js -> Coords.__evt__update.
+    internal fun __evt__update(
+        oldUserCoordinates: DoubleArray,
+        oldScreenCoordinates: DoubleArray,
+    ) {
+        @Suppress("UNUSED_VARIABLE")
+        val upstreamReservedArguments =
+            oldUserCoordinates to oldScreenCoordinates
+    }
+
+    // JSXGraph: src/base/coords.js -> Coords.__evt.
+    internal fun __evt__() = Unit
 
     private fun DoubleArray.valueOrNaN(index: Int): Double =
         if (index in indices) this[index] else Double.NaN

@@ -145,11 +145,13 @@ object Base64 {
             is GMResult.Err -> result
         }
 
+    // JSXGraph 1.13.3: src/utils/base64.js -> _getByte.
     private fun getByte(
         string: String,
         index: Int,
     ): Int = string[index].code and 0xFF
 
+    // JSXGraph 1.13.3: src/utils/base64.js -> _getIndex.
     private fun getIndex(
         string: String,
         index: Int,

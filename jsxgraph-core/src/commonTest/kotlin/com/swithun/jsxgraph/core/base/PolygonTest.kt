@@ -186,6 +186,93 @@ class PolygonTest {
     }
 
     @Test
+    fun hitTestingAnchorsAndMutableVerticesMatchOfficialBehavior() {
+        val board = board()
+        val first = point(board, 0.0, 0.0)
+        val second = point(board, 4.0, 0.0)
+        val third = point(board, 0.0, 4.0)
+        val inserted = point(board, 4.0, 4.0)
+        val polygon = polygon(
+            Polygon.create(
+                board = board,
+                vertices = listOf(first, second, third),
+            ),
+        )
+        polygon.hasInnerPoints = true
+
+        assertTrue(polygon.pnpoly(1.0, 1.0, Const.COORDS_BY_USER))
+        assertTrue(polygon.hasPoint(1.0, -1.0, precision = 0.1))
+        assertContentEquals(
+            doubleArrayOf(1.0, 2.0, 2.0),
+            polygon.getTextAnchor().usrCoords,
+        )
+
+        assertIs<GMResult.Ok<Polygon>>(
+            polygon.insertPoints(1, listOf(inserted)),
+        )
+        assertEquals(
+            listOf(first, second, inserted, third, first),
+            polygon.vertices,
+        )
+        assertEquals(4, polygon.borders.size)
+        assertEquals(
+            listOf(first.id, second.id, inserted.id, third.id),
+            polygon.parentData(),
+        )
+
+        assertIs<GMResult.Ok<Polygon>>(
+            polygon.removePoints(listOf(second)),
+        )
+        assertEquals(
+            listOf(first, inserted, third, first),
+            polygon.vertices,
+        )
+        assertEquals(3, polygon.borders.size)
+    }
+
+    @Test
+    fun convexIntersectionAndDirectMoveMatchOfficialBehavior() {
+        val board = board()
+        val clip = polygon(
+            Polygon.create(
+                board = board,
+                vertices = listOf(
+                    point(board, 0.0, 0.0),
+                    point(board, 3.0, 0.0),
+                    point(board, 3.0, 3.0),
+                    point(board, 0.0, 3.0),
+                ),
+            ),
+        )
+        val subject = polygon(
+            Polygon.create(
+                board = board,
+                vertices = listOf(
+                    point(board, 2.0, 1.0),
+                    point(board, 4.0, 1.0),
+                    point(board, 4.0, 2.0),
+                    point(board, 2.0, 2.0),
+                ),
+            ),
+        )
+
+        val intersection = clip.intersect(subject)
+        assertEquals(4, intersection.size)
+        assertEquals(
+            setOf(2.0 to 1.0, 3.0 to 1.0, 3.0 to 2.0, 2.0 to 2.0),
+            intersection.map { it[1] to it[2] }.toSet(),
+        )
+
+        subject.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(1.0, -2.0),
+            oldCoordinates = doubleArrayOf(0.0, 0.0),
+        )
+        assertEquals(3.0, subject.vertices[0].X())
+        assertEquals(-1.0, subject.vertices[0].Y())
+    }
+
+    @Test
     fun registrationAndParentFailuresDoNotCreateBorders() {
         val board = board()
         val first = point(board, 0.0, 0.0)

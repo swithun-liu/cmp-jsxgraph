@@ -21,6 +21,18 @@ internal data class PlotInterval(
     val hi: Double,
 )
 
+// JSXGraph 1.13.3: src/math/plot.js -> Component.
+internal data class Component(
+    var leftIsNaN: Boolean = false,
+    var rightIsNaN: Boolean = false,
+    var leftParameter: Double? = null,
+    var rightParameter: Double? = null,
+    val parameterValues: MutableList<Double> = mutableListOf(),
+    val xValues: MutableList<Double> = mutableListOf(),
+    val yValues: MutableList<Double> = mutableListOf(),
+    var length: Int = 0,
+)
+
 internal fun interface PlotIntervalFunction<E> {
     fun evaluate(
         minimum: Double,
@@ -177,9 +189,9 @@ private class PlotV4State<E>(
         minimum: Double,
         maximum: Double,
         steps: Int,
-    ): GMResult<List<PlotV4Component>, PlotError<E>> {
+    ): GMResult<List<Component>, PlotError<E>> {
         val step = (maximum - minimum) / steps
-        val components = mutableListOf(PlotV4Component())
+        val components = mutableListOf(Component())
         var component = components[0]
         var componentCount = 0
         var nanCount = 0
@@ -217,7 +229,7 @@ private class PlotV4State<E>(
                     component.length = componentCount
 
                     componentStarted = false
-                    components += PlotV4Component()
+                    components += Component()
                     component = components.last()
                     nanCount = 0
                 }
@@ -390,7 +402,7 @@ private class PlotV4State<E>(
 
     // JSXGraph 1.13.3: src/math/plot.js -> differenceMethod.
     private fun differenceMethod(
-        component: PlotV4Component,
+        component: Component,
     ): PlotV4DifferenceResult {
         val parameterValues = component.parameterValues
         val xTable = mutableListOf(component.xValues.toDoubleArray())
@@ -474,6 +486,129 @@ private class PlotV4State<E>(
             yTable = yTable,
             degreeX = degreeX,
             degreeY = degreeY,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/math/plot.js ->
+    // differenceMethodExperiments. The upstream method is unused but exposes
+    // its Newton and Thiele interpolation tables for numerical experiments.
+    @Suppress("unused")
+    private fun differenceMethodExperiments(
+        component: Component,
+    ): PlotV4ExperimentResult {
+        val parameterValues = component.parameterValues
+        val xValues = component.xValues
+        val yValues = component.yValues
+        val xTable = mutableListOf(xValues.toDoubleArray())
+        val yTable = mutableListOf(yValues.toDoubleArray())
+        val xReciprocalTable = mutableListOf(xValues.toDoubleArray())
+        val yReciprocalTable = mutableListOf(yValues.toDoubleArray())
+        if (parameterValues.size < 2 || yValues.size < 2) {
+            return PlotV4ExperimentResult(
+                criticalPoints = emptyList(),
+                xTable = xTable,
+                yTable = yTable,
+                xReciprocalTable = xReciprocalTable,
+                yReciprocalTable = yReciprocalTable,
+            )
+        }
+
+        val step = parameterValues[1] - parameterValues[0]
+        var numerator = step
+        var length = yValues.size - 1
+        var xDifferences = DoubleArray(length) { index ->
+            xValues[index + 1] - xValues[index]
+        }
+        var yDifferences = DoubleArray(length) { index ->
+            yValues[index + 1] - yValues[index]
+        }
+        xTable += xDifferences.copyOf()
+        yTable += yDifferences.copyOf()
+        xReciprocalTable += DoubleArray(length) { index ->
+            numerator / xDifferences[index]
+        }
+        yReciprocalTable += DoubleArray(length) { index ->
+            numerator / yDifferences[index]
+        }
+        length -= 1
+
+        val upperLevel = min(MAX_EXPERIMENT_DIFFERENCE_LEVEL, yValues.size - 1)
+        var foundCriticalPoint = 0
+        var groups: List<List<PlotV4CriticalPosition>> = emptyList()
+        var level = 1
+        while (level < upperLevel) {
+            xDifferences = DoubleArray(length) { index ->
+                xDifferences[index + 1] - xDifferences[index]
+            }
+            yDifferences = DoubleArray(length) { index ->
+                yDifferences[index + 1] - yDifferences[index]
+            }
+            xTable += xDifferences.copyOf()
+            yTable += yDifferences.copyOf()
+            numerator *= step
+            xReciprocalTable += DoubleArray(length) { index ->
+                numerator /
+                    (
+                        xReciprocalTable[level][index + 1] -
+                            xReciprocalTable[level][index]
+                        ) +
+                    xReciprocalTable[level - 1][index + 1]
+            }
+            yReciprocalTable += DoubleArray(length) { index ->
+                numerator /
+                    (
+                        yReciprocalTable[level][index + 1] -
+                            yReciprocalTable[level][index]
+                        ) +
+                    yReciprocalTable[level - 1][index + 1]
+            }
+
+            val critical = criticalInterval(
+                values = yDifferences,
+                length = length,
+                level = level,
+            )
+            groups = critical.groups
+            if (critical.smooth) {
+                groups = emptyList()
+                break
+            }
+            if (groups.isNotEmpty()) {
+                foundCriticalPoint += 1
+                if (foundCriticalPoint > 1 && level % 2 == 0) {
+                    break
+                }
+            }
+            length -= 1
+            level += 1
+        }
+
+        val criticalPoints = groups.mapNotNull { group ->
+            val maximumPosition = group.indices.maxByOrNull { index ->
+                abs(group[index].value)
+            } ?: return@mapNotNull null
+            val position = floor(
+                group[maximumPosition].index + level * 0.5,
+            ).toInt()
+            if (position !in parameterValues.indices) {
+                null
+            } else {
+                getPointType(
+                    position = position,
+                    approximateParameter = parameterValues[position],
+                    parameterValues = parameterValues,
+                    xTable = xTable,
+                    yTable = yTable,
+                    length = length + 1,
+                )
+            }
+        }
+        return PlotV4ExperimentResult(
+            criticalPoints = criticalPoints,
+            xTable = xTable,
+            yTable = yTable,
+            xReciprocalTable = xReciprocalTable,
+            yReciprocalTable = yReciprocalTable,
         )
     }
 
@@ -572,7 +707,7 @@ private class PlotV4State<E>(
 
     // JSXGraph 1.13.3: src/math/plot.js -> handleBorder.
     private fun handleBorder(
-        component: PlotV4Component,
+        component: Component,
         group: PlotV4CriticalPoint,
         yTable: List<DoubleArray>,
     ): GMResult<Unit, PlotError<E>> {
@@ -703,7 +838,7 @@ private class PlotV4State<E>(
 
     // JSXGraph 1.13.3: src/math/plot.js -> _seconditeration_v4.
     private fun secondIteration(
-        component: PlotV4Component,
+        component: Component,
         group: PlotV4CriticalPoint,
     ): GMResult<Unit, PlotError<E>> {
         val startParameter = component.parameterValues[group.index - 2]
@@ -876,7 +1011,7 @@ private class PlotV4State<E>(
 
     // JSXGraph 1.13.3: src/math/plot.js -> handleSingularity.
     private fun handleSingularity(
-        component: PlotV4Component,
+        component: Component,
         group: PlotV4CriticalPoint,
         xTable: List<DoubleArray>,
         yTable: List<DoubleArray>,
@@ -1344,17 +1479,6 @@ private class PlotV4State<E>(
         }
     }
 
-    private data class PlotV4Component(
-        var leftIsNaN: Boolean = false,
-        var rightIsNaN: Boolean = false,
-        var leftParameter: Double? = null,
-        var rightParameter: Double? = null,
-        val parameterValues: MutableList<Double> = mutableListOf(),
-        val xValues: MutableList<Double> = mutableListOf(),
-        val yValues: MutableList<Double> = mutableListOf(),
-        var length: Int = 0,
-    )
-
     private data class PlotV4CriticalPosition(
         val index: Int,
         val value: Double,
@@ -1403,6 +1527,14 @@ private class PlotV4State<E>(
         val degreeY: Int,
     )
 
+    private data class PlotV4ExperimentResult(
+        val criticalPoints: List<PlotV4CriticalPoint>,
+        val xTable: List<DoubleArray>,
+        val yTable: List<DoubleArray>,
+        val xReciprocalTable: List<DoubleArray>,
+        val yReciprocalTable: List<DoubleArray>,
+    )
+
     private class PlotV4Projection(
         boundingBox: DoubleArray,
     ) {
@@ -1442,6 +1574,7 @@ private class PlotV4State<E>(
         private const val GROUP_GAP = 4
         private const val INTERVAL_GROUP_SIZE = 64
         private const val MAX_DIFFERENCE_LEVEL = 12
+        private const val MAX_EXPERIMENT_DIFFERENCE_LEVEL = 8
         private const val REQUIRED_CRITICAL_LEVELS = 2
         private const val BORDER_POINT_COUNT = 5
         private const val BORDER_STEPS = 32

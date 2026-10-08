@@ -319,6 +319,7 @@ internal object NativeChartCreator {
         )
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawLine.
     private fun drawLine(
         context: ChartContext,
         data: ChartData,
@@ -339,6 +340,7 @@ internal object NativeChartCreator {
         ).mapValue(::elementValue)
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawSpline.
     private fun drawSpline(
         context: ChartContext,
         data: ChartData,
@@ -359,6 +361,7 @@ internal object NativeChartCreator {
         ).mapValue(::elementValue)
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawFit.
     private fun drawFit(
         context: ChartContext,
         data: ChartData,
@@ -438,6 +441,7 @@ internal object NativeChartCreator {
         ).mapValue(::elementValue)
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawPoints.
     private fun drawPoints(
         context: ChartContext,
         data: ChartData,
@@ -472,6 +476,7 @@ internal object NativeChartCreator {
         return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(points))
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawBar.
     private fun drawBar(
         context: ChartContext,
         data: ChartData,
@@ -601,6 +606,7 @@ internal object NativeChartCreator {
         return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(polygons))
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawPie.
     private fun drawPie(
         context: ChartContext,
         y: List<JessieCodeRuntimeValue>,
@@ -834,6 +840,7 @@ internal object NativeChartCreator {
         )
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawRadar.
     private fun drawRadar(
         context: ChartContext,
         parents: List<JessieCodeRuntimeValue>,
@@ -1256,6 +1263,7 @@ internal object NativeChartCreator {
         )
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> createLegend.
     private fun createLegendInternal(
         board: Board,
         parents: List<JessieCodeRuntimeValue>,
@@ -1282,6 +1290,8 @@ internal object NativeChartCreator {
         }
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js ->
+    // Legend.drawVerticalLegend.
     private fun createLegendInContext(
         context: ChartContext,
         parents: List<JessieCodeRuntimeValue>,

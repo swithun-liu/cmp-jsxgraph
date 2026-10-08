@@ -188,6 +188,38 @@ class TurtleTest {
     }
 
     @Test
+    fun pointProjectionTraversesAllTurtleCurvesInOfficialOrder() {
+        val turtle = turtle(
+            Turtle.create(
+                board = board(),
+                x = 0.0,
+                y = 0.0,
+                direction = 0.0,
+                name = "",
+            ),
+        )
+        ok(turtle.forward(4.0))
+        turtle.penUp()
+        ok(turtle.moveTo(doubleArrayOf(10.0, 0.0)))
+        ok(turtle.penDown())
+        ok(turtle.forward(4.0))
+
+        val projection = assertIs<
+            GMResult.Ok<com.swithun.jsxgraph.core.math.ProjectionResult>
+            >(
+            turtle.projectPoint(
+                doubleArrayOf(1.0, 11.0, 2.0),
+            ),
+        ).value
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 11.0, 0.0),
+            projection.point,
+        )
+        assertEquals(2.25, projection.parameter)
+    }
+
+    @Test
     fun invalidInputAndEmptyStackReturnStructuredErrors() {
         val board = board()
         val before = board.objects.keys.toList()

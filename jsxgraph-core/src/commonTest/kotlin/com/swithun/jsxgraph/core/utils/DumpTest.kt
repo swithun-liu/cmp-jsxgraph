@@ -5,6 +5,8 @@
 package com.swithun.jsxgraph.core.utils
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.Point
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -110,6 +112,124 @@ class DumpTest {
         )
         assertIs<GMResult.Err<DumpError.UnsupportedValue>>(
             Dump.toJCAN(Unit),
+        )
+    }
+
+    @Test
+    fun markersAndBoundingBoxMethodsMatchBoardTraversal() {
+        val board = Board(
+            originX = 100.0,
+            originY = 100.0,
+            unitX = 20.0,
+            unitY = 20.0,
+            canvasWidth = 200.0,
+            canvasHeight = 200.0,
+        )
+        val first = assertIs<GMResult.Ok<Point>>(
+            Point.create(board, doubleArrayOf(1.0, 2.0)),
+        ).value
+        val second = assertIs<GMResult.Ok<Point>>(
+            Point.create(board, doubleArrayOf(3.0, 4.0)),
+        ).value
+
+        Dump.addMarkers(
+            board,
+            markers = listOf("dumped", "anonymous"),
+            values = listOf(false, true, "ignored"),
+        )
+        assertEquals(false, first.dumpMarkers["dumped"])
+        assertEquals(true, second.dumpMarkers["anonymous"])
+        Dump.deleteMarkers(board, "dumped")
+        assertEquals(null, first.dumpMarkers["dumped"])
+        assertEquals(true, first.dumpMarkers["anonymous"])
+
+        val methods = mutableListOf<DumpMethodCall>()
+        assertEquals(
+            methods,
+            Dump.setBoundingBox(methods, board, "\$board"),
+        )
+        assertEquals(
+            DumpMethodCall(
+                obj = "\$board",
+                method = "setBoundingBox",
+                params = listOf(
+                    listOf(-5.0, 5.0, 5.0, -5.0),
+                    false,
+                ),
+            ),
+            methods.single(),
+        )
+    }
+
+    @Test
+    fun attributeMinimizationAndPreparationMatchOfficialRules() {
+        val minimized = assertIs<GMResult.Ok<Map<String, Any?>>>(
+            Dump.minimizeObject(
+                instance = linkedMapOf(
+                    "strokecolor" to "blue",
+                    "dash" to listOf(1, 2),
+                    "size" to 4,
+                    "custom" to true,
+                ),
+                elementDefaults = mapOf(
+                    "strokeColor" to "blue",
+                    "dash" to listOf(1, 2),
+                ),
+                defaults = listOf(mapOf("size" to 4)),
+            ),
+        ).value
+        // Upstream's deleteAll flag only follows default properties. If every
+        // default matches, unknown properties are discarded with the object.
+        assertEquals(emptyMap(), minimized)
+
+        val prepared = assertIs<GMResult.Ok<Map<String, Any?>>>(
+            Dump.prepareAttributes(
+                snapshot = DumpElementSnapshot(
+                    id = "p1",
+                    name = "A",
+                    elType = "point",
+                    attributes = linkedMapOf(
+                        "strokecolor" to "blue",
+                        "size" to 4,
+                        "layer" to 9,
+                        "draft" to false,
+                        "label" to mapOf("fontsize" to 12),
+                    ),
+                    subs = mapOf(
+                        "helper" to DumpElementSnapshot(
+                            id = "h1",
+                            name = "H",
+                            elType = "point",
+                            attributes = mapOf(
+                                "strokecolor" to "red",
+                                "size" to 4,
+                            ),
+                        ),
+                    ),
+                ),
+                options = mapOf(
+                    "elements" to mapOf("strokeColor" to "blue"),
+                    "point" to mapOf("size" to 4),
+                    "label" to mapOf("fontSize" to 12),
+                    "layer" to mapOf("point" to 9),
+                ),
+            ),
+        ).value
+
+        assertEquals("p1", prepared["id"])
+        assertEquals("A", prepared["name"])
+        assertEquals(null, prepared["strokecolor"])
+        assertEquals(null, prepared["size"])
+        assertEquals(null, prepared["layer"])
+        assertEquals(null, prepared["draft"])
+        assertEquals(null, prepared["label"])
+        assertEquals(
+            mapOf(
+                "strokecolor" to "red",
+                "id" to "h1",
+                "name" to "H",
+            ),
+            prepared["helper"],
         )
     }
 

@@ -122,16 +122,30 @@ class JsxGraphJessieScriptTest {
     }
 
     @Test
-    fun unsupportedMutationAndLimitsAreStructured() {
-        assertIs<
-            GMResult.Err<
-                JsxGraphJessieScriptError.UnsupportedPropertyMutation,
-                >
-            >(
+    fun propertyMutationDraftAndLimitsAreTranslated() {
+        val compiled = assertIs<GMResult.Ok<String>>(
             JsxGraphJessieScript.compile(
-                "A(0,0) nolabel; A.visible=false;",
+                "A(0,0) draft nolabel; A.strokeColor=#123456; " +
+                    "A.strokeWidth=3;",
             ),
+        ).value
+        assertTrue("draft: true" in compiled)
+        assertTrue("legacy0.strokeColor = \"#123456\";" in compiled)
+        assertTrue("legacy0.strokeWidth = 3;" in compiled)
+
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphJessieScript.parse(
+                "A(0,0) draft nolabel; A.strokeColor=#123456; " +
+                    "A.strokeWidth=3;",
+            ),
+        ).value
+        val point = assertIs<JsxGraphSceneElement.Point>(
+            scene.elements.single(),
         )
+        assertTrue(point.style.draft.enabled)
+        assertEquals(JsxGraphColor(18, 52, 86), point.style.strokeColor)
+        assertEquals(3.0, point.style.strokeWidth)
+
         assertIs<
             GMResult.Err<JsxGraphJessieScriptError.StatementLimitExceeded>
             >(

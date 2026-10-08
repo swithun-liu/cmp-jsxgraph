@@ -9,12 +9,14 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
+import com.swithun.jsxgraph.core.utils.Type
 
 internal sealed interface TextError {
     data class InvalidCoordinateCount(
@@ -57,6 +59,12 @@ internal sealed interface TextError {
         val error: MeasurementError,
     ) : TextError
 
+    data class InvalidHtmlSliderValue(
+        val value: Double,
+        val minimum: Double,
+        val maximum: Double,
+    ) : TextError
+
     data class SmartLabelContent(
         val error: SmartLabelError,
     ) : TextError
@@ -75,11 +83,11 @@ internal sealed interface TextError {
 /**
  * Initial translated slice of JXG.Text.
  *
- * This slice covers static string/number content, JessieCode value tags, free
- * or constrained coordinates, Board registration, content replacement, and
- * the coordinate/content update lifecycle. Function-valued content,
- * HTML/MathJax/KaTeX, rich-text conversion, anchors owned by other elements,
- * rotation, measured bounds, and hit testing remain untranslated.
+ * This slice covers static and function-valued content, JessieCode value tags,
+ * free, constrained, and element-anchored coordinates, Board registration,
+ * content replacement, portable size estimates, hit testing, and the
+ * coordinate/content update lifecycle. DOM HTML, MathJax/KaTeX, exact browser
+ * measurement, and remaining rich-text behavior stay platform-owned.
  */
 internal class Text private constructor(
     board: Board,
@@ -89,8 +97,9 @@ internal class Text private constructor(
     contentSegments: List<ContentSegment>,
     parse: Boolean,
     internal val digits: Int,
-    internal val anchor: Line? = null,
+    internal val anchor: GeometryElement? = null,
     internal val relativeCoordinates: DoubleArray? = null,
+    internal val isLabel: Boolean = false,
     internal val isFixed: Boolean = false,
     internal val isVisible: Boolean = true,
     internal val strokeColor: String? = null,
@@ -112,6 +121,11 @@ internal class Text private constructor(
         private set
     internal var plaintext: String = plaintext
         private set
+    internal var size: DoubleArray = doubleArrayOf(1.0, 1.0)
+        private set
+    internal var needsSizeUpdate: Boolean = false
+        private set
+    private var plaintextOld: String? = null
     private var contentSegments: List<ContentSegment> = contentSegments
     private var dynamicContent:
         (() -> GMResult<String, TextError>)? = null
@@ -133,7 +147,8 @@ internal class Text private constructor(
         elType = TEXT_ELEMENT_TYPE
     }
 
-    // JSXGraph: src/base/text.js -> setText / _setText
+    // JSXGraph: src/base/text.js -> setText / _setText /
+    // _createFctUpdateText.
     internal fun setText(content: String): GMResult<Text, TextError> {
         val compiled = when (
             val result = compileContent(
@@ -156,6 +171,12 @@ internal class Text private constructor(
         prepareUpdate()
         return GMResult.Ok(this)
     }
+
+    // JSXGraph 1.13.3: src/base/text.js -> setTextJessieCode.
+    internal fun setTextJessieCode(
+        content: String,
+    ): GMResult<Text, TextError> =
+        setText(Type.sanitizeHTML(content))
 
     // JSXGraph 1.13.3: src/base/text.js -> setText(function).
     internal fun setDynamicText(
@@ -185,6 +206,7 @@ internal class Text private constructor(
                 coordinates = anchoredCoordinates(
                     anchor = anchor,
                     relativeCoordinates = relativeCoordinates,
+                    isLabel = isLabel,
                 ),
             )
         }
@@ -207,6 +229,16 @@ internal class Text private constructor(
                 contentEvaluationError = result.error
             }
         }
+        if (
+            (getAttribute("display") as? String)
+                ?.lowercase() == "internal"
+        ) {
+            plaintext = utf8Decode(plaintext)
+        }
+        checkForSizeUpdate()
+        if (needsSizeUpdate) {
+            updateSize()
+        }
         return this
     }
 
@@ -216,9 +248,243 @@ internal class Text private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/text.js ->
+    // priv.HTMLSliderInputEventHandler.
+    internal fun HTMLSliderInputEventHandler(
+        value: Double,
+    ): GMResult<Text, TextError> {
+        val slider =
+            htmlControlDefinition as? HtmlControlDefinition.Slider
+                ?: return GMResult.Err(
+                    TextError.UnsupportedParsedContent("htmlslider"),
+                )
+        if (!value.isFinite() || value !in slider.minimum..slider.maximum) {
+            return GMResult.Err(
+                TextError.InvalidHtmlSliderValue(
+                    value = value,
+                    minimum = slider.minimum,
+                    maximum = slider.maximum,
+                ),
+            )
+        }
+        slider.value = value
+        board.update()
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        var x = screenX
+        var y = screenY
+        if (transformations.isNotEmpty()) {
+            var matrix = Mat.identity(3)
+            for (transformation in transformations) {
+                when (transformation.updateResult()) {
+                    is GMResult.Ok ->
+                        matrix = Mat.matMatMult(
+                            transformation.matrix,
+                            matrix,
+                        )
+                    is GMResult.Err -> return false
+                }
+            }
+            val inverse = Mat.inverse(matrix)
+            if (inverse.isEmpty()) {
+                return false
+            }
+            val transformed = Mat.matVecMult(
+                inverse,
+                doubleArrayOf(1.0, x, y),
+            )
+            x = transformed[1]
+            y = transformed[2]
+        }
+
+        val anchorX =
+            (getAttribute("anchorx") as? String)?.lowercase() ?: "left"
+        val anchorY =
+            (getAttribute("anchory") as? String)?.lowercase() ?: "bottom"
+        val left = when (anchorX) {
+            "right" -> coords.scrCoords[1] - size[0]
+            "middle" -> coords.scrCoords[1] - 0.5 * size[0]
+            else -> coords.scrCoords[1]
+        }
+        val right = left + size[0]
+        val bottom = when (anchorY) {
+            "top" -> coords.scrCoords[2] + size[1]
+            "middle" -> coords.scrCoords[2] + 0.5 * size[1]
+            else -> coords.scrCoords[2]
+        }
+        val top = bottom - size[1]
+        return if (
+            (getAttribute("dragarea") as? String)
+                ?.lowercase() != "small"
+        ) {
+            x >= left - precision &&
+                x < right + precision &&
+                y >= top - precision &&
+                y <= bottom + precision
+        } else {
+            y >= top - precision &&
+                y <= bottom + precision &&
+                (
+                    x in (left - precision)..(left + 2.0 * precision) ||
+                        x in (right - 2.0 * precision)..(right + precision)
+                    )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> updateSize.
+    // Compose has no DOM node; this is the upstream Canvas/no-renderer branch.
+    internal fun updateSize(): Text {
+        size = crudeSizeEstimate()
+        needsSizeUpdate = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> crudeSizeEstimate.
+    internal fun crudeSizeEstimate(): DoubleArray {
+        val fontSize =
+            (getAttribute("fontsize") as? Number)?.toDouble()
+                ?: DEFAULT_FONT_SIZE
+        return doubleArrayOf(
+            fontSize * plaintext.length * 0.45,
+            fontSize * 0.9,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> utf8_decode.
+    internal fun utf8Decode(value: String): String =
+        UNICODE_ENTITY.replace(value) { match ->
+            match.groupValues[1]
+                .toIntOrNull(16)
+                ?.takeIf { it in Char.MIN_VALUE.code..Char.MAX_VALUE.code }
+                ?.toChar()
+                ?.toString()
+                ?: match.value
+        }
+
+    // JSXGraph 1.13.3: src/base/text.js -> getSize.
+    // The size property already owns the JVM getSize signature.
+    internal fun textSize(): DoubleArray = size.copyOf()
+
+    // JSXGraph 1.13.3: src/base/text.js -> setCoords.
+    internal fun setCoords(
+        horizontal: Double,
+        vertical: Double,
+    ): Text {
+        if (anchor != null && relativeCoordinates != null) {
+            val anchorCoordinates = anchoredCoordinates(
+                anchor = anchor,
+                relativeCoordinates = doubleArrayOf(0.0, 0.0),
+                isLabel = isLabel,
+            )
+            if (isLabel) {
+                screenOffset = doubleArrayOf(
+                    (horizontal - anchorCoordinates[0]) * board.unitX,
+                    -(vertical - anchorCoordinates[1]) * board.unitY,
+                )
+                relativeCoordinates[0] = screenOffset[0]
+                relativeCoordinates[1] = screenOffset[1]
+            } else {
+                relativeCoordinates[0] =
+                    horizontal - anchorCoordinates[0]
+                relativeCoordinates[1] =
+                    vertical - anchorCoordinates[1]
+            }
+        } else {
+            coords.setCoordinates(
+                coordType = Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(horizontal, vertical),
+            )
+        }
+        fullUpdate()
+        return this
+    }
+
+    internal fun setCoords(coordinates: DoubleArray): Text =
+        setCoords(
+            horizontal = coordinates.getOrElse(0) { Double.NaN },
+            vertical = coordinates.getOrElse(1) { Double.NaN },
+        )
+
+    // JSXGraph 1.13.3: src/base/text.js -> checkForSizeUpdate.
+    internal fun checkForSizeUpdate(): Text {
+        needsSizeUpdate = plaintextOld != plaintext
+        if (needsSizeUpdate) {
+            plaintextOld = plaintext
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> expandShortMath.
+    internal fun expandShortMath(expression: String): String =
+        SHORT_MATH_PATTERN.replace(expression) { match ->
+            match.groupValues[1] + "*" + match.groupValues[2]
+        }
+
+    // JSXGraph 1.13.3: src/base/text.js -> generateTerm.
+    // The Kotlin runtime consumes the equivalent compiled segments directly.
+    internal fun generateTerm(
+        content: String,
+        expand: Boolean = false,
+    ): String {
+        var remaining = content
+            .replace("\r", "")
+            .replace("\n", "")
+            .replace("\"", "'")
+            .replace("'", "\\'")
+            .replace("&amp;arc;", "&ang;")
+            .replace(Regex("<arc\\s*/?>"), "&ang;")
+            .replace(Regex("&lt;arc\\s*/?&gt;"), "&ang;")
+            .replace(Regex("&lt;sqrt\\s*/?&gt;"), "&radic;")
+            .replace("&lt;value&gt;", VALUE_TAG_OPEN)
+            .replace("&lt;/value&gt;", VALUE_TAG_CLOSE)
+        val output = StringBuilder("\"\"")
+        while (true) {
+            val open = remaining.indexOf(VALUE_TAG_OPEN)
+            if (open < 0) {
+                break
+            }
+            val close = remaining.indexOf(
+                VALUE_TAG_CLOSE,
+                open + VALUE_TAG_OPEN.length,
+            )
+            if (close < 0) {
+                break
+            }
+            output.append(" + \"")
+                .append(replaceSub(replaceSup(remaining.substring(0, open))))
+                .append("\"")
+            var term = remaining
+                .substring(open + VALUE_TAG_OPEN.length, close)
+                .filterNot(Char::isWhitespace)
+            if (expand) {
+                term = expandShortMath(term)
+            }
+            output.append("+(")
+                .append(term.replace("\\\"", "'").replace("\\'", "'"))
+                .append(")")
+            remaining = remaining.substring(close + VALUE_TAG_CLOSE.length)
+        }
+        output.append(" + \"")
+            .append(replaceSub(replaceSup(remaining)))
+            .append("\"")
+        return output.toString()
+            .replace("&amp;", "&")
+            .replace("\"", "'")
+    }
+
     internal companion object {
         private const val TEXT_ID_PREFIX = "T"
         private const val TEXT_ELEMENT_TYPE = "text"
+        private const val DEFAULT_HIT_PRECISION = 4.0
+        private const val DEFAULT_FONT_SIZE = 12.0
+        private val UNICODE_ENTITY = Regex("&#x([0-9A-Fa-f]+);")
 
         // JSXGraph: src/base/text.js -> createText;
         // src/base/coordselement.js -> CoordsElement.create
@@ -231,7 +497,8 @@ internal class Text private constructor(
             needsRegularUpdate: Boolean = true,
             parse: Boolean = true,
             digits: Int = 2,
-            anchor: Line? = null,
+            anchor: GeometryElement? = null,
+            isLabel: Boolean = false,
             fixed: Boolean = false,
             visible: Boolean = true,
             strokeColor: String? = null,
@@ -266,6 +533,7 @@ internal class Text private constructor(
                         anchoredCoordinates(
                             anchor = anchor,
                             relativeCoordinates = relativeCoordinates,
+                            isLabel = isLabel,
                         )
                     },
                 content = content,
@@ -276,6 +544,7 @@ internal class Text private constructor(
                 anchor = anchor,
                 relativeCoordinates =
                     if (anchor == null) null else relativeCoordinates,
+                isLabel = isLabel,
                 isFixed = fixed,
                 isVisible = visible,
                 strokeColor = strokeColor,
@@ -473,7 +742,7 @@ internal class Text private constructor(
 
         private fun validateAnchor(
             board: Board,
-            anchor: Line?,
+            anchor: GeometryElement?,
         ): TextError? {
             if (anchor == null) {
                 return null
@@ -490,15 +759,36 @@ internal class Text private constructor(
         // JSXGraph: src/base/coordselement.js -> addAnchor;
         // src/base/line.js -> getTextAnchor.
         private fun anchoredCoordinates(
-            anchor: Line,
+            anchor: GeometryElement,
             relativeCoordinates: DoubleArray,
-        ): DoubleArray =
-            doubleArrayOf(
-                0.5 * (anchor.point1.X() + anchor.point2.X()) +
-                    relativeCoordinates[0],
-                0.5 * (anchor.point1.Y() + anchor.point2.Y()) +
-                    relativeCoordinates[1],
-            )
+            isLabel: Boolean,
+        ): DoubleArray {
+            val anchorCoordinates =
+                if (isLabel) {
+                    anchor.getLabelAnchor()
+                } else {
+                    anchor.getTextAnchor()
+                }
+            if (!isLabel) {
+                return doubleArrayOf(
+                    anchorCoordinates.usrCoords[1] +
+                        relativeCoordinates[0],
+                    anchorCoordinates.usrCoords[2] +
+                        relativeCoordinates[1],
+                )
+            }
+            return Coords(
+                method = Const.COORDS_BY_SCREEN,
+                coordinates = doubleArrayOf(
+                    anchorCoordinates.scrCoords[1] +
+                        relativeCoordinates[0],
+                    anchorCoordinates.scrCoords[2] -
+                        relativeCoordinates[1],
+                ),
+                board = anchor.board,
+                emitter = false,
+            ).usrCoords.copyOfRange(1, 3)
+        }
 
         private fun affineCoordinates(
             coordinates: DoubleArray,

@@ -1571,8 +1571,8 @@ Use `PARITY_CASE_IDS` with comma- or space-separated case IDs to select a
 corpus subset. Unknown IDs fail explicitly instead of falling back to the
 default case.
 
-`JsxGraphParityCorpus` is the debug workbench source of truth for 108 cases:
-30 generated production scenarios followed by 78 focused regression
+`JsxGraphParityCorpus` is the debug workbench source of truth for 109 cases:
+30 generated production scenarios followed by 79 focused regression
 fixtures. A construction document contains `boundingBox` and ordered
 `objects[{id,type,parents,attributes}]`; the debug UI does not convert a
 separate demo schema into handwritten native geometry. The focused
@@ -1589,8 +1589,8 @@ separate demo schema into handwritten native geometry. The focused
 `slope_triangle`, `functiongraph_rdp`,
 `circumcircle_creators`,
 `point_reflections`, `bisector_lines`, `sector_compositions`, and
-`curve_boolean_clipping` cases instead use a strict debug envelope around one
-raw JessieCode source.
+`line_arrows`, `curve_arrows`, and `curve_boolean_clipping` cases instead use
+a strict debug envelope around one raw JessieCode source.
 The focused `point3d_projection` case uses the same ordered construction
 document on both renderers and projects its Point3D elements through the
 ordinary 2D scene consumed by Compose.
@@ -1647,92 +1647,101 @@ The Web audit uses `?audit=true&caseId=<id>&preview=official|native` to render
 only the comparison board. This removes the surrounding debug UI from image
 metrics while retaining the exact same source lookup and renderer adapters.
 
-Latest same-source workbench evidence (2026-09-28):
+Latest complete same-source workbench evidence (2026-09-30):
 
-`Compact` is the scheduled `390 x 844` profile unless a case paragraph records
-a different reviewed viewport; the new BisectorLines evidence uses
-`760 x 920` as recorded below.
+`Compact` is the scheduled `390 x 844` profile. All 79 focused cases passed
+the `0.90` floor in both profiles, and all 20 focused contact pages were
+manually reviewed.
 
 | Case | Desktop SSIM | Compact SSIM |
 |---|---:|---:|
-| `baseline_geometry` | 0.987120 | 0.974780 |
-| `finite_segment` | 0.987172 | 0.974567 |
-| `fixed_length_segment` | 0.986940 | 0.974092 |
-| `coordinate_parents` | 0.986543 | 0.978321 |
-| `shifted_geometry` | 0.986997 | 0.974236 |
-| `curves` | 0.986698 | 0.975236 |
-| `functiongraph_rdp` | 0.986736 | 0.977750 |
-| `ticks_2d` | 0.987918 | 0.983795 |
-| `axis_2d` | 0.986872 | 0.970148 |
+| `baseline_geometry` | 0.987119 | 0.974892 |
+| `finite_segment` | 0.987116 | 0.974527 |
+| `fixed_length_segment` | 0.986927 | 0.974280 |
+| `coordinate_parents` | 0.986544 | 0.978326 |
+| `shifted_geometry` | 0.986923 | 0.974238 |
+| `curves` | 0.986832 | 0.975269 |
+| `adaptive_plot_v2` | 0.987202 | 0.976693 |
+| `adaptive_plot_v3` | 0.987186 | 0.976694 |
+| `adaptive_plot_v4` | 0.987220 | 0.976712 |
+| `functiongraph_rdp` | 0.986738 | 0.977755 |
+| `ticks_2d` | 0.988043 | 0.984122 |
+| `axis_2d` | 0.986879 | 0.970183 |
+| `hatch_2d` | 0.988615 | 0.984945 |
 | `grid_2d` | 0.988817 | 0.980518 |
-| `hatch_2d` | 0.988453 | 0.984529 |
-| `image_2d` | 0.985178 | 0.985329 |
-| `glider_slider` | 0.987490 | 0.980515 |
-| `curve_glider` | 0.986233 | 0.977524 |
-| `tapemeasures` | 0.984781 | 0.969197 |
-| `measurements` | 0.982740 | 0.970961 |
-| `smartlabels` | 0.984719 | 0.974114 |
-| `integrals` | 0.984526 | 0.974454 |
-| `slope_triangle` | 0.982474 | 0.966707 |
-| `step_functions` | 0.987344 | 0.975382 |
-| `polygons` | 0.986562 | 0.973171 |
-| `polygonal_chains` | 0.986474 | 0.972464 |
-| `parallelograms` | 0.985806 | 0.978662 |
-| `regular_polygons` | 0.986177 | 0.977920 |
-| `radical_axis` | 0.986191 | 0.982487 |
-| `pole_point` | 0.985927 | 0.974830 |
-| `tangent_polar_circle` | 0.986486 | 0.976391 |
-| `tangent_to_circle` | 0.975735 | 0.959045 |
-| `ellipses` | 0.985972 | 0.974127 |
-| `hyperbolas` | 0.986155 | 0.973306 |
-| `parabolas` | 0.986569 | 0.953062 |
-| `tangent_line` | 0.986294 | 0.976234 |
-| `tangent_curve` | 0.986097 | 0.975965 |
-| `derivative_curve` | 0.986226 | 0.976714 |
-| `normal_constructions` | 0.985870 | 0.973272 |
-| `spline_curves` | 0.985026 | 0.970335 |
-| `riemann_sums` | 0.985966 | 0.977326 |
-| `box_plots` | 0.987288 | 0.976337 |
-| `combs` | 0.986352 | 0.974448 |
-| `inequalities` | 0.988722 | 0.973466 |
-| `vector_fields` | 0.986692 | 0.974773 |
-| `slope_fields` | 0.986516 | 0.974913 |
-| `text` | 0.981600 | 0.954662 |
-| `circular_regions` | 0.987047 | 0.974687 |
-| `arc_direction_point` | 0.986060 | 0.977713 |
-| `arc_compositions` | 0.986254 | 0.973086 |
-| `circumcircle_creators` | 0.986771 | 0.972397 |
-| `point_reflections` | 0.986216 | 0.972032 |
-| `bisector_lines` | 0.986575 | 0.983159 |
-| `sector_compositions` | 0.985269 | 0.971910 |
-| `jessiecode_native_source` | 0.987004 | 0.974865 |
-| `function_circle_radius` | 0.987261 | 0.975137 |
-| `transformed_points` | 0.986656 | 0.972766 |
-| `point3d_projection` | 0.986505 | 0.972805 |
-| `polygon3d_projection` | 0.988028 | 0.982365 |
-| `circle3d_projection` | 0.988886 | 0.985882 |
-| `intersectioncircle3d_projection` | 0.989030 | 0.986025 |
-| `intersectionline3d_projection` | 0.989049 | 0.986102 |
-| `vectorfield3d_projection` | 0.988321 | 0.984174 |
-| `sphere3d_projection` | 0.988514 | 0.985909 |
-| `surface3d_projection` | 0.985262 | 0.985297 |
-| `spatial_lines_planes` | 0.987328 | 0.975225 |
-| `plane3d_surfaces` | 0.987317 | 0.984636 |
+| `image_2d` | 0.989040 | 0.986101 |
+| `glider_slider` | 0.987069 | 0.978852 |
+| `tapemeasures` | 0.984770 | 0.968470 |
+| `measurements` | 0.981783 | 0.969421 |
+| `smartlabels` | 0.984550 | 0.972422 |
+| `curve_glider` | 0.985940 | 0.971959 |
+| `integrals` | 0.984616 | 0.974127 |
+| `slope_triangle` | 0.982261 | 0.965806 |
+| `step_functions` | 0.987346 | 0.975387 |
+| `polygons` | 0.986496 | 0.972632 |
+| `polygonal_chains` | 0.986439 | 0.971869 |
+| `parallelograms` | 0.985606 | 0.977967 |
+| `regular_polygons` | 0.986123 | 0.977642 |
+| `radical_axis` | 0.985972 | 0.974859 |
+| `pole_point` | 0.985626 | 0.973464 |
+| `tangent_polar_circle` | 0.986204 | 0.976099 |
+| `tangent_to_circle` | 0.975133 | 0.957132 |
+| `tangent_line` | 0.986250 | 0.975618 |
+| `tangent_curve` | 0.986173 | 0.975452 |
+| `normal_constructions` | 0.985679 | 0.972144 |
+| `derivative_curve` | 0.986229 | 0.976768 |
+| `spline_curves` | 0.984693 | 0.970078 |
+| `riemann_sums` | 0.985938 | 0.977176 |
+| `box_plots` | 0.987233 | 0.976314 |
+| `combs` | 0.986451 | 0.973960 |
+| `inequalities` | 0.988821 | 0.978912 |
+| `vector_fields` | 0.986771 | 0.974496 |
+| `slope_fields` | 0.986596 | 0.974636 |
+| `ellipses` | 0.985273 | 0.972819 |
+| `hyperbolas` | 0.985538 | 0.972087 |
+| `parabolas` | 0.986108 | 0.952397 |
+| `text` | 0.981601 | 0.954666 |
+| `circular_regions` | 0.987048 | 0.974692 |
+| `arc_direction_point` | 0.986095 | 0.977612 |
+| `arc_compositions` | 0.986092 | 0.972948 |
+| `circumcircle_creators` | 0.986299 | 0.971398 |
+| `point_reflections` | 0.985764 | 0.971048 |
+| `bisector_lines` | 0.986510 | 0.976406 |
+| `sector_compositions` | 0.985134 | 0.971736 |
+| `jessiecode_native_source` | 0.986935 | 0.974756 |
+| `function_circle_radius` | 0.987212 | 0.975012 |
+| `transformed_points` | 0.986319 | 0.972650 |
+| `point3d_projection` | 0.985801 | 0.970337 |
+| `spatial_lines_planes` | 0.987330 | 0.975248 |
+| `plane3d_surfaces` | 0.987317 | 0.984651 |
 | `polyhedron3d_faces` | 0.987380 | 0.984777 |
-| `view3d_default_axes` | 0.986921 | 0.977686 |
-| `view3d_center_axes` | 0.989085 | 0.986061 |
-| `function_coordinate_points` | 0.986724 | 0.973162 |
-| `parallel_constructions` | 0.986754 | 0.973271 |
-| `line_arrows` | 0.987817 | 0.981850 |
-| `triangle_centers` | 0.986836 | 0.974277 |
-| `intersection_points` | 0.986706 | 0.973276 |
-| `intersection_paths` | 0.987758 | 0.982089 |
-| `polygon_path_intersections` | 0.987353 | 0.981156 |
-| `curve_boolean_clipping` | 0.986428 | 0.976584 |
+| `polygon3d_projection` | 0.987083 | 0.980219 |
+| `curve3d_projection` | 0.988527 | 0.984836 |
+| `vectorfield3d_projection` | 0.987444 | 0.981519 |
+| `circle3d_projection` | 0.987863 | 0.984764 |
+| `intersectioncircle3d_projection` | 0.987344 | 0.984138 |
+| `intersectionline3d_projection` | 0.989049 | 0.986102 |
+| `sphere3d_projection` | 0.988495 | 0.985875 |
+| `surface3d_projection` | 0.985256 | 0.985282 |
+| `view3d_default_axes` | 0.986917 | 0.977681 |
+| `view3d_center_axes` | 0.989089 | 0.986084 |
+| `function_coordinate_points` | 0.986485 | 0.973153 |
+| `parallel_constructions` | 0.986780 | 0.973241 |
+| `line_arrows` | 0.987796 | 0.981923 |
+| `curve_arrows` | 0.988830 | 0.985632 |
+| `triangle_centers` | 0.986693 | 0.974315 |
+| `intersection_points` | 0.986439 | 0.972913 |
+| `intersection_paths` | 0.987347 | 0.980048 |
+| `polygon_path_intersections` | 0.987020 | 0.979948 |
+| `curve_boolean_clipping` | 0.986380 | 0.976494 |
 
-All captures passed the nonblank and browser-error checks. These numbers are
-evidence for this translated slice only; they do not satisfy the full Stable
-Gate. The Curve capture additionally verifies nonempty official SVG paths for
+All focused captures passed the nonblank/browser-error checks and the `0.90`
+floor. The same sweep reran the 30 production cases at the `0.93` floor:
+Desktop passed `30/30` with a `0.981780` minimum and Compact passed `30/30`
+with a `0.961783` minimum. Across both suites and viewports, `218/218` pairs
+passed and all 28 contact pages were manually reviewed. These numbers are
+evidence for this translated slice only; they do not expand the Stable
+contract. The Curve capture additionally verifies nonempty official SVG paths for
 the function graph, parametric curve, and discrete data plot. The capture
 harness rejects JSXGraph's `error compiling function` console warning so a
 JessieCode CSP failure cannot pass as an empty official curve. The Polygon
@@ -2336,7 +2345,7 @@ Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
 SmartLabel/Integral/SlopeTriangle,
 Polygon3D, Curve3D, VectorField3D, Circle3D,
 IntersectionCircle3D, IntersectionLine3D, Sphere3D, and Surface3D fixtures,
-the development corpus now contains 108 cases while the independently
+the development corpus now contains 109 cases while the independently
 qualified 30-case Stable corpus remains unchanged.
 The function-coordinate Point capture verifies one function returning a
 coordinate array, separate scalar coordinate functions, homogeneous

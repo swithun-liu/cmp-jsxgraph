@@ -28,9 +28,19 @@ internal data class ArrowHeadGeometry(
     val filled: Boolean,
 )
 
+internal data class CurveArrowRenderGeometry(
+    val firstArrow: ArrowHeadGeometry?,
+    val lastArrow: ArrowHeadGeometry?,
+)
+
 private data class ArrowHeadData(
     val offset: Float,
     val minimumLengthContribution: Float,
+)
+
+private data class CurveEndpointTangent(
+    val anchor: Offset,
+    val direction: Offset,
 )
 
 internal fun lineRenderGeometry(
@@ -109,6 +119,124 @@ internal fun lineRenderGeometry(
             )
         },
     )
+}
+
+// JSXGraph 1.13.3: src/renderer/canvas.js -> drawArrows.
+// Curves retain their full path and orient arrow heads using the first and
+// last drawable path tangents.
+internal fun curveArrowRenderGeometry(
+    commands: List<CurvePathCommand>,
+    strokeWidth: Float,
+    firstArrow: JsxGraphArrowHead?,
+    lastArrow: JsxGraphArrowHead?,
+): CurveArrowRenderGeometry? {
+    if (
+        !strokeWidth.isFinite() ||
+        strokeWidth < 0.0f
+    ) {
+        return null
+    }
+    var current: Offset? = null
+    var firstTangent: CurveEndpointTangent? = null
+    var lastTangent: CurveEndpointTangent? = null
+
+    fun record(
+        start: Offset,
+        startCandidates: List<Offset>,
+        end: Offset,
+        endCandidates: List<Offset>,
+    ) {
+        if (firstTangent == null) {
+            firstDirection(start, startCandidates)?.let { direction ->
+                firstTangent = CurveEndpointTangent(start, direction)
+            }
+        }
+        firstDirection(end, endCandidates)?.let { direction ->
+            lastTangent = CurveEndpointTangent(end, direction)
+        }
+    }
+
+    for (command in commands) {
+        when (command) {
+            is CurvePathCommand.MoveTo -> current = command.point
+            is CurvePathCommand.LineTo -> {
+                val start = current
+                if (start != null) {
+                    record(
+                        start = start,
+                        startCandidates = listOf(command.point),
+                        end = command.point,
+                        endCandidates = listOf(start),
+                    )
+                }
+                current = command.point
+            }
+            is CurvePathCommand.CubicTo -> {
+                val start = current
+                if (start != null) {
+                    record(
+                        start = start,
+                        startCandidates = listOf(
+                            command.control1,
+                            command.control2,
+                            command.end,
+                        ),
+                        end = command.end,
+                        endCandidates = listOf(
+                            command.control2,
+                            command.control1,
+                            start,
+                        ),
+                    )
+                }
+                current = command.end
+            }
+        }
+    }
+    return CurveArrowRenderGeometry(
+        firstArrow =
+            if (firstArrow == null) {
+                null
+            } else {
+                firstTangent?.let { tangent ->
+                    arrowHeadGeometry(
+                        arrow = firstArrow,
+                        anchor = tangent.anchor,
+                        direction = tangent.direction,
+                        strokeWidth = strokeWidth,
+                        isFirst = true,
+                    )
+                }
+            },
+        lastArrow =
+            if (lastArrow == null) {
+                null
+            } else {
+                lastTangent?.let { tangent ->
+                    arrowHeadGeometry(
+                        arrow = lastArrow,
+                        anchor = tangent.anchor,
+                        direction = -tangent.direction,
+                        strokeWidth = strokeWidth,
+                        isFirst = false,
+                    )
+                }
+            },
+    )
+}
+
+private fun firstDirection(
+    anchor: Offset,
+    candidates: List<Offset>,
+): Offset? {
+    for (candidate in candidates) {
+        val delta = candidate - anchor
+        val length = hypot(delta.x, delta.y)
+        if (length > 0.0f && length.isFinite()) {
+            return delta / length
+        }
+    }
+    return null
 }
 
 private fun displayLineEndpoints(

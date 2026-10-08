@@ -796,6 +796,61 @@ class PointTest {
         assertFalse(pointOnPath.isOn(turtle, tolerance = 0.2))
     }
 
+    @Test
+    fun screenHitStyleTraceAndIntersectionConversionMatchOfficialLifecycle() {
+        val board = board()
+        val point = point(
+            Point.create(board, doubleArrayOf(1.0, 2.0)),
+        )
+
+        assertTrue(point.hasPoint(300.0, 120.0, precision = 1.0))
+        assertFalse(point.hasPoint(320.0, 120.0, precision = 1.0))
+        assertIs<GMResult.Ok<Point>>(point.setStyle(8))
+        assertEquals("square", point.getAttribute("face"))
+        assertEquals(3, point.getAttribute("size"))
+        assertEquals("[]", point.normalizeFace("square"))
+        assertSame(point, point.face("diamond"))
+        assertEquals("diamond", point.getAttribute("face"))
+
+        point.setAttribute(mapOf("trace" to true))
+        point.prepareUpdate().update()
+        assertEquals(1, point.traceCoordinates.size)
+
+        val horizontal = line(
+            Line.create(
+                board,
+                point(Point.create(board, doubleArrayOf(-2.0, 1.0))),
+                point(Point.create(board, doubleArrayOf(3.0, 1.0))),
+            ),
+        )
+        val vertical = line(
+            Line.create(
+                board,
+                point(Point.create(board, doubleArrayOf(2.0, -2.0))),
+                point(Point.create(board, doubleArrayOf(2.0, 4.0))),
+            ),
+        )
+        assertIs<GMResult.Ok<Point>>(
+            point.makeIntersection(horizontal, vertical),
+        )
+        assertEquals(Const.OBJECT_TYPE_INTERSECTION, point.type)
+        assertEquals("intersection", point.elType)
+        assertEquals(2.0, point.X(), absoluteTolerance = 1.0e-12)
+        assertEquals(1.0, point.Y(), absoluteTolerance = 1.0e-12)
+
+        vertical.point1.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(4.0, -2.0),
+        )
+        vertical.point2.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(4.0, 4.0),
+        )
+        board.update()
+        assertEquals(4.0, point.X(), absoluteTolerance = 1.0e-12)
+        assertEquals(1.0, point.Y(), absoluteTolerance = 1.0e-12)
+    }
+
     private fun board(): Board = Board(
         originX = 250.0,
         originY = 200.0,

@@ -7,6 +7,54 @@ import kotlin.test.assertIs
 
 class NlpTest {
     @Test
+    fun sourceHelperOperationsPreserveArraySemantics() {
+        assertEquals(
+            listOf(0.0, 0.0, 0.0),
+            Nlp.arr(3).toList(),
+        )
+        assertEquals(
+            listOf(listOf(0.0, 0.0), listOf(0.0, 0.0)),
+            Nlp.arr2(2, 2).map(DoubleArray::toList),
+        )
+
+        val destination = doubleArrayOf(9.0, 9.0, 9.0, 9.0)
+        Nlp.arraycopy(
+            source = doubleArrayOf(1.0, 2.0, 3.0),
+            sourceStart = 1,
+            destination = destination,
+            destinationStart = 0,
+            count = 2,
+        )
+        assertEquals(
+            listOf(2.0, 3.0, 9.0, 9.0),
+            destination.toList(),
+        )
+        assertEquals(
+            listOf(3.0, 4.0),
+            Nlp.row(
+                arrayOf(
+                    doubleArrayOf(1.0, 2.0),
+                    doubleArrayOf(3.0, 4.0),
+                ),
+                1,
+            ).toList(),
+        )
+        assertEquals(
+            listOf(2.0, 3.0),
+            Nlp.part(doubleArrayOf(1.0, 2.0, 3.0, 4.0), 1, 2)
+                .toList(),
+        )
+        assertEquals("2.0,3.0", Nlp.format(doubleArrayOf(2.0, 3.0)))
+        assertEquals(
+            32.0,
+            Nlp.dotProduct(
+                doubleArrayOf(1.0, 2.0, 3.0),
+                doubleArrayOf(4.0, 5.0, 6.0),
+            ),
+        )
+    }
+
+    @Test
     fun unconstrainedQuadraticMatchesOfficialEvaluationPath() {
         val variables = doubleArrayOf(3.0, -4.0)
 

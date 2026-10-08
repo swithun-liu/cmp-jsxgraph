@@ -94,23 +94,6 @@ sealed interface JsxGraphJessieScriptError {
                 "arguments but received $actual"
     }
 
-    data class UnsupportedPropertyMutation(
-        val index: Int,
-        val elementName: String,
-        val propertyName: String,
-    ) : JsxGraphJessieScriptError {
-        override val message =
-            "Legacy property mutation '$elementName.$propertyName' is not " +
-                "supported"
-    }
-
-    data class UnsupportedDraftModifier(
-        val index: Int,
-    ) : JsxGraphJessieScriptError {
-        override val message =
-            "Legacy draft styling is not translated at statement $index"
-    }
-
     data class JessieCode(
         val error: JsxGraphJessieCodeError,
     ) : JsxGraphJessieScriptError {
@@ -306,12 +289,24 @@ object JsxGraphJessieScript {
             val assignment = splitAssignment(statement)
             if (assignment != null && '.' in assignment.first) {
                 val path = assignment.first.split('.')
-                return GMResult.Err(
-                    JsxGraphJessieScriptError.UnsupportedPropertyMutation(
-                        index = index,
-                        elementName = path.dropLast(1).joinToString("."),
-                        propertyName = path.last(),
-                    ),
+                val elementName = path.dropLast(1).joinToString(".").trim()
+                val propertyName = path.last().trim()
+                val element = when (
+                    val result = resolveReference(
+                        elementName,
+                        index,
+                        context,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (!IDENTIFIER.matches(propertyName)) {
+                    return malformed(index, statement)
+                }
+                return appendGenerated(
+                    "${element.variable}.$propertyName = " +
+                        "${legacyAttributeLiteral(assignment.second)};\n",
                 )
             }
 
@@ -322,11 +317,7 @@ object JsxGraphJessieScript {
                 val match = MODIFIER.find(expression) ?: break
                 expression = match.groupValues[1].trimEnd()
                 when (match.groupValues[2]) {
-                    "draft" ->
-                        return GMResult.Err(
-                            JsxGraphJessieScriptError
-                                .UnsupportedDraftModifier(index),
-                        )
+                    "draft" -> modifiers["draft"] = true
                     "invisible" -> modifiers["visible"] = false
                     "nolabel" -> modifiers["withLabel"] = false
                 }
@@ -943,7 +934,25 @@ object JsxGraphJessieScript {
                 }
                 append(";\n")
             }
-            if (generated.length + code.length > limits.maxGeneratedSourceLength) {
+            when (val result = appendGenerated(code)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+            if (fullName != null && variable != null) {
+                val symbol = Symbol(variable, kind)
+                globalSymbols[fullName] = symbol
+                context.locals[name] = symbol
+            }
+            return GMResult.Ok(Unit)
+        }
+
+        private fun appendGenerated(
+            code: String,
+        ): GMResult<Unit, JsxGraphJessieScriptError> {
+            if (
+                generated.length + code.length >
+                limits.maxGeneratedSourceLength
+            ) {
                 return GMResult.Err(
                     JsxGraphJessieScriptError
                         .GeneratedSourceLengthExceeded(
@@ -952,12 +961,16 @@ object JsxGraphJessieScript {
                 )
             }
             generated.append(code)
-            if (fullName != null && variable != null) {
-                val symbol = Symbol(variable, kind)
-                globalSymbols[fullName] = symbol
-                context.locals[name] = symbol
-            }
             return GMResult.Ok(Unit)
+        }
+
+        private fun legacyAttributeLiteral(rawValue: String): String {
+            val value = rawValue.trim()
+            return when {
+                value == "true" || value == "false" -> value
+                value.toDoubleOrNull()?.isFinite() == true -> value
+                else -> quote(value)
+            }
         }
 
         private fun addMacro(
@@ -1148,6 +1161,7 @@ object JsxGraphJessieScript {
         """^(?:\s*(\S+)\s*=\s*)?Macro\(([\s\S]*)\)\s*\{([\s\S]*)}$""",
     )
     private val MODIFIER = Regex("""^(.*?)(draft|invisible|nolabel)$""")
+    private val IDENTIFIER = Regex("""^[A-Za-z_$][A-Za-z0-9_$]*$""")
     private val JS_NUMBER = Regex(
         """^[+-]?(?:(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|Infinity)$""",
     )

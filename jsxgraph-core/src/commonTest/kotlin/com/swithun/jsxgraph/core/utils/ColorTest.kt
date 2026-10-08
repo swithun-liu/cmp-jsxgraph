@@ -176,6 +176,32 @@ class ColorTest {
         assertEquals("#D55E00", Color.palette["red"])
     }
 
+    @Test
+    fun classicColorsMutateTheProvidedOptionsTree() {
+        val options = linkedMapOf<String, Any?>(
+            "elements" to mapOf(
+                "strokeColor" to "#123456",
+                "fillColor" to "#654321",
+            ),
+            "point" to mapOf(
+                "fillColor" to "#111111",
+                "size" to 4,
+            ),
+        )
+        val result = Color.setClassicColors(options)
+
+        assertTrue(result === options)
+        val elements = assertIs<Map<*, *>>(options["elements"])
+        assertEquals("blue", elements["strokeColor"])
+        assertEquals("red", elements["fillColor"])
+        val point = assertIs<Map<*, *>>(options["point"])
+        assertEquals("red", point["fillColor"])
+        assertEquals("red", point["strokeColor"])
+        assertEquals(4, point["size"])
+        val integral = assertIs<Map<*, *>>(options["integral"])
+        assertEquals("red", integral["fillColor"])
+    }
+
     private fun assertRgb(
         source: String,
         red: Double,

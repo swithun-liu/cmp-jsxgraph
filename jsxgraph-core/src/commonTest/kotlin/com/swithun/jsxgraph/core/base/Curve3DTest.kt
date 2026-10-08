@@ -167,6 +167,59 @@ class Curve3DTest {
     }
 
     @Test
+    fun screenProjectionUsesViewSpaceAndUpdatesParameter() {
+        val view = createView(createBoard())
+        val curve = curve(
+            Curve3D.create(
+                view = view,
+                source = Curve3DSource.Components(
+                    x = Curve3DScalarEvaluator { parameter ->
+                        GMResult.Ok(cos(parameter))
+                    },
+                    y = Curve3DScalarEvaluator { parameter ->
+                        GMResult.Ok(sin(parameter))
+                    },
+                    z = Curve3DScalarEvaluator { parameter ->
+                        GMResult.Ok(parameter / PI)
+                    },
+                ),
+                rangeSource = range(0.0, 2.0 * PI),
+                sampleCount = 5,
+                name = "",
+            ),
+        )
+        val expectedAffine = assertIs<GMResult.Ok<DoubleArray>>(
+            curve.evalFResult(1.2),
+        ).value
+        val expected = doubleArrayOf(
+            1.0,
+            expectedAffine[0],
+            expectedAffine[1],
+            expectedAffine[2],
+        )
+        val projected = view.project3DTo2D(expected)
+        val parameters = mutableListOf(0.3)
+
+        val result = assertIs<GMResult.Ok<DoubleArray>>(
+            curve.projectScreenCoords(
+                screenCoordinates = projected.copyOfRange(1, 3),
+                parameters = parameters,
+            ),
+        ).value
+
+        assertArrayClose(
+            expected,
+            result,
+            absoluteTolerance = 1.0e-5,
+        )
+        assertEquals(
+            1.2,
+            parameters.single(),
+            absoluteTolerance = 1.0e-5,
+        )
+    }
+
+    @Test
     fun discreteAndTransformedCurvesPreserveUpstreamPointOrder() {
         val board = createBoard()
         val view = createView(board)

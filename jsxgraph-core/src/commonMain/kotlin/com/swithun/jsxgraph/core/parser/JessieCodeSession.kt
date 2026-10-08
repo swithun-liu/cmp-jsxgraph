@@ -81,6 +81,18 @@ internal class JessieCodeSession(
         source: String,
         storeSource: Boolean = true,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeSessionError> {
+        val ast = when (val result = getAST(source, storeSource)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return evaluate(ast)
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> getAST.
+    internal fun getAST(
+        source: String,
+        storeSource: Boolean = true,
+    ): GMResult<JessieCodeAstNode, JessieCodeSessionError> {
         if (sessionLimits.maxStoredSourceLength < 0) {
             return GMResult.Err(
                 JessieCodeSessionError.InvalidLimits(
@@ -117,11 +129,94 @@ internal class JessieCodeSession(
                 JessieCodeSessionError.ComputerAlgebra(result.error),
             )
         }
-        return when (val result = evaluator.evaluate(transformedAst)) {
+        return GMResult.Ok(transformedAst)
+    }
+
+    internal fun evaluate(
+        ast: JessieCodeAstNode,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeSessionError> =
+        when (val result = evaluator.evaluate(ast)) {
             is GMResult.Ok -> result
             is GMResult.Err -> GMResult.Err(
                 JessieCodeSessionError.Runtime(result.error),
             )
         }
-    }
+
+    internal val currentBoard
+        get() = evaluator.currentBoard
+
+    internal fun pushScope(
+        arguments: List<String>,
+    ): JessieCodeScopeSnapshot = evaluator.pushScope(arguments)
+
+    internal fun popScope(): JessieCodeScopeSnapshot =
+        evaluator.popScope()
+
+    internal fun letVariable(
+        name: String,
+        value: JessieCodeRuntimeValue,
+    ): JessieCodeScopeSnapshot = evaluator.letVariable(name, value)
+
+    internal fun localVariableScope(
+        name: String,
+    ): JessieCodeScopeSnapshot? = evaluator.localVariableScope(name)
+
+    internal fun parameterScope(
+        name: String,
+    ): JessieCodeScopeSnapshot? = evaluator.parameterScope(name)
+
+    internal fun resolve(
+        name: String,
+    ): JessieCodeRuntimeValue = evaluator.resolve(name)
+
+    internal fun resolveVariable(
+        name: String,
+        local: Boolean,
+        functionName: Boolean,
+    ): JessieCodeRuntimeValue =
+        evaluator.resolveVariable(name, local, functionName)
+
+    internal fun getElementById(
+        id: String,
+    ): JessieCodeRuntimeValue = evaluator.getElementById(id)
+
+    internal fun isMathMethod(name: String): Boolean =
+        evaluator.isMathMethod(name)
+
+    internal fun isBuiltIn(name: String): Boolean =
+        evaluator.isBuiltIn(name)
+
+    internal fun addBuiltIn(
+        name: String,
+        callable: JessieCodeCallable,
+    ): Boolean = evaluator.addBuiltIn(name, callable)
+
+    internal fun callBuiltIn(
+        name: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        evaluator.callBuiltIn(name, arguments, location)
+
+    internal fun findSymbol(
+        value: JessieCodeRuntimeValue,
+        scopeId: Int,
+    ): JessieCodeSymbol? = evaluator.findSymbol(value, scopeId)
+
+    internal fun assignProperty(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        evaluator.assignProperty(receiver, property, value, location)
+
+    internal fun evaluateValue(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        evaluator.evaluateValue(value, location)
+
+    internal fun possibleOperands(): JessieCodePossibleOperands =
+        evaluator.possibleOperands()
 }

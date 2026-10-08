@@ -15,6 +15,7 @@ package com.swithun.jsxgraph.core.base
  */
 internal open class Composition(
     members: Map<String, GeometryElement> = emptyMap(),
+    attributes: Map<String, Any?> = emptyMap(),
 ) {
     internal val elements = linkedMapOf<String, GeometryElement>()
     internal val objects: Map<String, GeometryElement>
@@ -26,6 +27,10 @@ internal open class Composition(
     internal var dump: Boolean = true
     internal var elType: String = ""
     internal val subs = linkedMapOf<String, GeometryElement>()
+    internal val attributes =
+        attributes.mapKeysTo(linkedMapOf()) { (key, _) ->
+            key.lowercase()
+        }
 
     private val membersByRole = linkedMapOf<String, GeometryElement>()
 
@@ -68,6 +73,19 @@ internal open class Composition(
 
     internal fun memberRole(element: GeometryElement): String? =
         membersByRole.entries.firstOrNull { it.value === element }?.key
+
+    // JSXGraph: src/base/composition.js -> generated setAttribute.
+    internal open fun setAttribute(
+        values: Map<String, Any?>,
+    ): Composition {
+        for (element in objectsList) {
+            element.setAttribute(values)
+        }
+        for ((key, value) in values) {
+            attributes[key.lowercase()] = value
+        }
+        return this
+    }
 
     // JSXGraph: src/base/composition.js -> generated setParents
     internal fun setParents(parents: Iterable<GeometryElement>): Composition {
@@ -115,6 +133,21 @@ internal open class Composition(
     // JSXGraph: src/base/composition.js -> getType
     internal fun getType(): String = elType
 
+    // JSXGraph: src/base/composition.js -> nameListener.
+    internal fun nameListener(
+        oldName: String,
+        newName: String,
+        element: GeometryElement,
+    ) {
+        @Suppress("UNUSED_VARIABLE")
+        val names = Triple(oldName, newName, element)
+        // elementsByName is derived from objectsList and needs no mutation.
+    }
+
+    // JSXGraph: src/base/composition.js -> getAttributes.
+    internal fun getAttributes(): Map<String, Any?> =
+        attributes.toMap()
+
     private companion object {
         val RESERVED_MEMBER_NAMES = setOf(
             "elements",
@@ -128,6 +161,7 @@ internal open class Composition(
             "add",
             "remove",
             "select",
+            "setAttribute",
             "setParents",
             "prepareUpdate",
             "update",
@@ -135,6 +169,8 @@ internal open class Composition(
             "updateRenderer",
             "getParents",
             "getType",
+            "getAttributes",
+            "nameListener",
         )
     }
 }

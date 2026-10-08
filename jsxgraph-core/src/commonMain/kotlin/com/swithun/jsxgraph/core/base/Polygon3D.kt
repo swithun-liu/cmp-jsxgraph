@@ -71,7 +71,7 @@ internal class Polygon3D private constructor(
 ) {
     internal lateinit var polygon2D: Polygon
         private set
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
 
     init {
         elType = POLYGON_3D_ELEMENT_TYPE

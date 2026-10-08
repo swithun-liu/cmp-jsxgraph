@@ -226,6 +226,27 @@ class LineTest {
     }
 
     @Test
+    fun hitTestingStraightFlagsAndLegacySlopeMatchOfficialBehavior() {
+        val board = board()
+        val first = point(board, doubleArrayOf(0.0, 0.0))
+        val second = point(board, doubleArrayOf(4.0, 2.0))
+        val line = line(Line.create(board, first, second))
+
+        assertEquals(line.Slope(), line.getSlope())
+        assertTrue(line.hasPoint(350.0, 160.0, precision = 0.5))
+        assertTrue(line.hasPoint(450.0, 120.0, precision = 0.5))
+
+        line.setStraight(straightFirst = false, straightLast = false)
+        assertTrue(line.hasPoint(350.0, 160.0, precision = 0.5))
+        assertFalse(line.hasPoint(475.0, 110.0, precision = 0.5))
+        assertFalse(line.hasPoint(225.0, 210.0, precision = 0.5))
+        assertArrayMatches(
+            doubleArrayOf(1.0, 2.0, 1.0),
+            line.getTextAnchor().usrCoords,
+        )
+    }
+
+    @Test
     fun idealPointParametricBranchesMatchOfficialLineBehavior() {
         val board = board()
         val finite = point(board, doubleArrayOf(2.0, 3.0))
@@ -766,6 +787,30 @@ class LineTest {
         assertEquals(setOf(first.id), point1.childElements.keys)
         assertEquals(setOf(first.id), point2.childElements.keys)
         assertEquals(3, board.numObjects)
+    }
+
+    @Test
+    fun symbolicPolynomialMatchesOfficialCollinearityFormula() {
+        val board = board()
+        val first = point(board, doubleArrayOf(0.0, 0.0))
+        val second = point(board, doubleArrayOf(1.0, 1.0))
+        val candidate = point(board, doubleArrayOf(2.0, 2.0))
+        first.symbolic["x"] = "u1"
+        first.symbolic["y"] = "u2"
+        second.symbolic["x"] = "v1"
+        second.symbolic["y"] = "v2"
+        candidate.symbolic["x"] = "w1"
+        candidate.symbolic["y"] = "w2"
+        val line = line(Line.create(board, first, second))
+
+        assertEquals(
+            listOf(
+                "(u2)*(w1)-(u2)*(v1)+(w2)*(v1)-" +
+                    "(u1)*(w2)+(u1)*(v2)-(w1)*(v2)",
+            ),
+            line.generatePolynomial(candidate),
+        )
+        assertTrue(line.generatePolynomial().isEmpty())
     }
 
     private fun board(): Board = Board(

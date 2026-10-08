@@ -13,12 +13,16 @@ import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.Numerics
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlin.math.tan
+import kotlin.random.Random
 
 // JSXGraph: src/base/element.js -> evalVisProp('projection')
 // and src/3d/view3d.js -> update.
@@ -41,6 +45,50 @@ internal sealed interface View3DProjectionSource {
         val evaluator: View3DProjectionEvaluator,
     ) : View3DProjectionSource
 }
+
+internal data class View3DAxisNavigationAttributes(
+    val pointerEnabled: Boolean = true,
+    val pointerSpeed: Double = 1.0,
+    val pointerButton: Int = -1,
+    val pointerKey: String = "none",
+    val keyboardEnabled: Boolean = true,
+    val keyboardStepDegrees: Double = 10.0,
+    val keyboardKey: String = "ctrl",
+    val continuous: Boolean = true,
+    val minimum: Double,
+    val maximum: Double,
+)
+
+internal data class View3DTrackballAttributes(
+    val enabled: Boolean = false,
+    val pointerButton: Int = -1,
+    val pointerKey: String = "none",
+)
+
+internal data class View3DNavigationEvent(
+    val screenX: Double = 0.0,
+    val screenY: Double = 0.0,
+    val boardX: Double = screenX,
+    val boardY: Double = screenY,
+    val deltaY: Double = 0.0,
+    val button: Int = -1,
+    val key: String? = null,
+    val shiftKey: Boolean = false,
+    val controlKey: Boolean = false,
+)
+
+internal fun interface View3DAzimuthAnimationScheduler {
+    fun schedule(
+        delayMilliseconds: Long,
+        action: () -> Unit,
+    )
+}
+
+internal data class View3DIntersectionData(
+    val x: DoubleArray,
+    val y: DoubleArray,
+    val z: DoubleArray,
+)
 
 internal sealed interface View3DError {
     data class InvalidLowerLeftCorner(
@@ -82,8 +130,19 @@ internal class View3D private constructor(
     azimuth: Double,
     elevation: Double,
     bank: Double,
-    private val cameraDistance: Double?,
+    private val cameraDistanceSource: Double?,
     private val fieldOfView: Double,
+    private val verticalDragEnabled: Boolean,
+    private val verticalDragKey: String,
+    private val azimuthNavigation: View3DAxisNavigationAttributes,
+    private val elevationNavigation: View3DAxisNavigationAttributes,
+    private val bankNavigation: View3DAxisNavigationAttributes,
+    private val trackballAttributes: View3DTrackballAttributes,
+    private val storedViews: List<DoubleArray>,
+    private val depthOrderEnabled: Boolean,
+    private val depthOrderLayers: IntArray,
+    private val azimuthAnimationScheduler:
+        View3DAzimuthAnimationScheduler?,
     id: String,
     name: String?,
     needsRegularUpdate: Boolean,
@@ -97,6 +156,9 @@ internal class View3D private constructor(
 ) {
     internal val objects = linkedMapOf<String, GeometryElement3D>()
     internal val elementsByName = linkedMapOf<String, GeometryElement3D>()
+    internal val depthOrdered =
+        linkedMapOf<Int, List<GeometryElement3D>>()
+    internal val resolvedShaderColors = linkedMapOf<String, String>()
 
     // JSXGraph: src/3d/view3d.js -> View3D constructor / createView3D.
     internal var defaultAxes: Axes3D? = null
@@ -124,12 +186,48 @@ internal class View3D private constructor(
         private set
     internal var projectionType: String = projection.lowercase()
         private set
+    internal var trackballEnabled: Boolean = trackballAttributes.enabled
+        private set
+    internal var zIndexMin: Double = Double.POSITIVE_INFINITY
+        private set
+    internal var zIndexMax: Double = Double.NEGATIVE_INFINITY
+        private set
+    internal var currentView: Int = 0
+        private set
     private var pendingProjection: String? = projection
+    private var cameraDistanceOverride: Double? = null
+    private var trackball: TrackballState? = null
+    private var lastPointerX: Double = 0.0
+    private var lastPointerY: Double = 0.0
+    private var hasMoveAzimuthElevation: Boolean = false
+    private var hasMoveAzimuth: Boolean = false
+    private var hasMoveElevation: Boolean = false
+    private var hasMoveBank: Boolean = false
+    private var hasMoveTrackball: Boolean = false
+    private var navigationActive: Boolean = false
+    private var azimuthAnimationActive: Boolean = false
+    private val azimuthSlider = AngleSliderState(
+        minimum = azimuthNavigation.minimum,
+        maximum = azimuthNavigation.maximum,
+        value = azimuth,
+    )
+    private val elevationSlider = AngleSliderState(
+        minimum = elevationNavigation.minimum,
+        maximum = elevationNavigation.maximum,
+        value = elevation,
+    )
+    private val bankSlider = AngleSliderState(
+        minimum = bankNavigation.minimum,
+        maximum = bankNavigation.maximum,
+        value = bank,
+    )
     internal var evaluationError: View3DError? = null
         private set
 
     init {
         elType = VIEW_3D_ELEMENT_TYPE
+        matrix3DRot = getRotationFromAngles()
+        updateAngleSliderBounds()
     }
 
     internal data class Angles(
@@ -138,9 +236,110 @@ internal class View3D private constructor(
         var bank: Double,
     )
 
+    private data class AngleSliderState(
+        var minimum: Double,
+        var maximum: Double,
+        var value: Double,
+    ) {
+        fun updateValue(next: Double) {
+            value = Mat.clamp(next, minimum, maximum)
+        }
+    }
+
+    private data class TrackballState(
+        val deltaX: Double,
+        val deltaY: Double,
+        val x: Double,
+        val y: Double,
+    )
+
     // JSXGraph: src/3d/view3d.js -> select, ID/name branch.
     internal fun select(reference: String): GeometryElement3D? =
         objects[reference] ?: elementsByName[reference]
+
+    // JSXGraph: src/3d/view3d.js -> setAnglesFromRotation.
+    internal fun setAnglesFromRotation(): View3D {
+        var remaining = matrix3DRot
+        val bankRadius = sqrt(
+            remaining[1][3] * remaining[1][3] +
+                remaining[2][3] * remaining[2][3],
+        )
+        val cosBank: Double
+        val sinBank: Double
+        if (bankRadius > Mat.eps) {
+            cosBank = remaining[2][3] / bankRadius
+            sinBank = remaining[1][3] / bankRadius
+        } else {
+            cosBank = cos(angles.bank)
+            sinBank = sin(angles.bank)
+        }
+        remaining = Mat.matMatMult(
+            arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+                doubleArrayOf(0.0, cosBank, -sinBank, 0.0),
+                doubleArrayOf(0.0, sinBank, cosBank, 0.0),
+                doubleArrayOf(0.0, 0.0, 0.0, 1.0),
+            ),
+            remaining,
+        )
+        angles.bank = atan2(sinBank, cosBank)
+
+        val cosElevation = remaining[2][3]
+        val sinElevation = remaining[3][3]
+        remaining = Mat.matMatMult(
+            arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+                doubleArrayOf(0.0, 1.0, 0.0, 0.0),
+                doubleArrayOf(
+                    0.0,
+                    0.0,
+                    cosElevation,
+                    sinElevation,
+                ),
+                doubleArrayOf(
+                    0.0,
+                    0.0,
+                    -sinElevation,
+                    cosElevation,
+                ),
+            ),
+            remaining,
+        )
+        angles.el = atan2(sinElevation, cosElevation)
+
+        val cosAzimuth = -remaining[1][1]
+        val sinAzimuth = remaining[3][1]
+        angles.az = atan2(sinAzimuth, cosAzimuth)
+        if (angles.az < 0.0) {
+            angles.az += 2.0 * PI
+        }
+        setSlidersFromAngles()
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> anglesHaveMoved.
+    internal fun anglesHaveMoved(): Boolean =
+        hasMoveAzimuth ||
+            hasMoveElevation ||
+            abs(angles.az - azimuthSlider.value) > Mat.eps ||
+            abs(angles.el - elevationSlider.value) > Mat.eps ||
+            abs(angles.bank - bankSlider.value) > Mat.eps
+
+    // JSXGraph: src/3d/view3d.js -> getAnglesFromSliders.
+    internal fun getAnglesFromSliders(): View3D {
+        angles.az = azimuthSlider.value
+        angles.el = elevationSlider.value
+        angles.bank = bankSlider.value
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> setSlidersFromAngles.
+    internal fun setSlidersFromAngles(): View3D {
+        azimuthSlider.updateValue(angles.az)
+        elevationSlider.updateValue(angles.el)
+        bankSlider.updateValue(angles.bank)
+        return this
+    }
 
     // JSXGraph: src/3d/view3d.js -> getRotationFromAngles.
     internal fun getRotationFromAngles(): Array<DoubleArray> {
@@ -173,14 +372,215 @@ internal class View3D private constructor(
         )
     }
 
+    // JSXGraph: src/3d/view3d.js -> _projectToSphere.
+    internal fun projectToSphere(
+        radius: Double,
+        x: Double,
+        y: Double,
+    ): Double {
+        val distance = Mat.hypot(x, y)
+        return if (distance < radius * 0.7071067811865475) {
+            sqrt(radius * radius - distance * distance)
+        } else {
+            val tangent = radius / 1.414213562373095
+            tangent * tangent / distance
+        }
+    }
+
+    // JSXGraph: src/3d/view3d.js -> updateProjectionTrackball.
+    internal fun updateProjectionTrackball(): Array<DoubleArray> {
+        val state = trackball ?: return matrix3DRot
+        var rotation = Mat.identity(4)
+        val squaredDistance =
+            state.deltaX * state.deltaX + state.deltaY * state.deltaY
+        if (squaredDistance > Mat.eps) {
+            val radius =
+                (
+                    size[0] * board.unitX +
+                        size[1] * board.unitY
+                    ) * 0.25
+            val second = doubleArrayOf(
+                state.x,
+                state.y,
+                projectToSphere(radius, state.x, state.y),
+            )
+            val firstX = state.x - state.deltaX
+            val firstY = state.y - state.deltaY
+            val first = doubleArrayOf(
+                firstX,
+                firstY,
+                projectToSphere(radius, firstX, firstY),
+            )
+            val axis = Mat.crossProduct(first, second)
+            val axisLength = Mat.hypot(axis[0], axis[1], axis[2])
+            if (axisLength > Mat.eps) {
+                for (index in axis.indices) {
+                    axis[index] /= axisLength
+                }
+                val sineInput = Mat.clamp(
+                    Geometry.distance(second, first, 3) /
+                        (2.0 * radius),
+                    -1.0,
+                    1.0,
+                )
+                val theta = 2.0 * asin(sineInput)
+                val cosine = cos(theta)
+                val complement = 1.0 - cosine
+                val sine = sin(theta)
+
+                rotation[1][1] =
+                    cosine + axis[0] * axis[0] * complement
+                rotation[2][1] =
+                    axis[1] * axis[0] * complement + axis[2] * sine
+                rotation[3][1] =
+                    axis[2] * axis[0] * complement - axis[1] * sine
+                rotation[1][2] =
+                    axis[0] * axis[1] * complement - axis[2] * sine
+                rotation[2][2] =
+                    cosine + axis[1] * axis[1] * complement
+                rotation[3][2] =
+                    axis[2] * axis[1] * complement + axis[0] * sine
+                rotation[1][3] =
+                    axis[0] * axis[2] * complement + axis[1] * sine
+                rotation[2][3] =
+                    axis[1] * axis[2] * complement - axis[0] * sine
+                rotation[3][3] =
+                    cosine + axis[2] * axis[2] * complement
+            }
+        }
+        rotation = Mat.matMatMult(rotation, matrix3DRot)
+        return rotation
+    }
+
+    // JSXGraph: src/3d/view3d.js -> updateAngleSliderBounds.
+    internal fun updateAngleSliderBounds(): View3D {
+        trackballEnabled = trackballAttributes.enabled
+        if (trackballEnabled) {
+            azimuthSlider.minimum = 0.0
+            azimuthSlider.maximum = 2.0 * PI
+            elevationSlider.minimum = -0.5 * PI
+            elevationSlider.maximum = 0.5 * PI
+            bankSlider.minimum = -PI
+            bankSlider.maximum = PI
+        } else {
+            azimuthSlider.minimum = azimuthNavigation.minimum
+            azimuthSlider.maximum = azimuthNavigation.maximum
+            elevationSlider.minimum = elevationNavigation.minimum
+            elevationSlider.maximum = elevationNavigation.maximum
+            bankSlider.minimum = bankNavigation.minimum
+            bankSlider.maximum = bankNavigation.maximum
+        }
+
+        if (trackballEnabled) {
+            val elevationCover = Mat.mod(angles.el, 2.0 * PI)
+            if (
+                elevationCover > 0.5 * PI &&
+                elevationCover < 1.5 * PI
+            ) {
+                angles.el = PI - elevationCover
+                angles.az = Mat.wrap(
+                    angles.az + PI,
+                    azimuthSlider.minimum,
+                    azimuthSlider.maximum,
+                )
+                angles.bank = Mat.wrap(
+                    angles.bank + PI,
+                    bankSlider.minimum,
+                    bankSlider.maximum,
+                )
+            }
+            angles.az = Mat.wrap(
+                angles.az,
+                azimuthSlider.minimum,
+                azimuthSlider.maximum,
+            )
+            angles.el = Mat.wrap(
+                angles.el,
+                elevationSlider.minimum,
+                elevationSlider.maximum,
+            )
+            angles.bank = Mat.wrap(
+                angles.bank,
+                bankSlider.minimum,
+                bankSlider.maximum,
+            )
+        } else {
+            val elevationMidpoint =
+                0.5 * (
+                    elevationSlider.minimum +
+                        elevationSlider.maximum
+                    )
+            val equivalent = Mat.wrap(
+                angles.el,
+                elevationMidpoint - PI,
+                elevationMidpoint + PI,
+            )
+            val flippedEquivalent = Mat.wrap(
+                PI - angles.el,
+                elevationMidpoint - PI,
+                elevationMidpoint + PI,
+            )
+            val equivalentLoss = intervalLoss(
+                equivalent,
+                elevationSlider.minimum,
+                elevationSlider.maximum,
+            )
+            val flippedLoss = intervalLoss(
+                flippedEquivalent,
+                elevationSlider.minimum,
+                elevationSlider.maximum,
+            )
+            if (equivalentLoss <= flippedLoss) {
+                angles.el = Mat.clamp(
+                    equivalent,
+                    elevationSlider.minimum,
+                    elevationSlider.maximum,
+                )
+            } else {
+                angles.el = Mat.clamp(
+                    flippedEquivalent,
+                    elevationSlider.minimum,
+                    elevationSlider.maximum,
+                )
+                angles.az = Mat.wrap(
+                    angles.az + PI,
+                    azimuthSlider.minimum,
+                    azimuthSlider.maximum,
+                )
+                angles.bank = Mat.wrap(
+                    angles.bank + PI,
+                    bankSlider.minimum,
+                    bankSlider.maximum,
+                )
+            }
+            angles.az = Mat.wrapAndClamp(
+                angles.az,
+                azimuthSlider.minimum,
+                azimuthSlider.maximum,
+                2.0 * PI,
+            )
+            angles.bank = Mat.wrapAndClamp(
+                angles.bank,
+                bankSlider.minimum,
+                bankSlider.maximum,
+                2.0 * PI,
+            )
+            matrix3DRot = getRotationFromAngles()
+        }
+        setSlidersFromAngles()
+        return this
+    }
+
     // JSXGraph: src/3d/view3d.js -> getCameraDistance.
     internal fun getCameraDistance(): Double {
+        val configuredDistance =
+            cameraDistanceOverride ?: cameraDistanceSource
         val automatic =
-            cameraDistance == null || cameraDistance == 0.0
+            configuredDistance == null || configuredDistance == 0.0
         var distance = when {
             automatic -> AUTO_CAMERA_DISTANCE
-            projectionType == CENTRAL_PROJECTION -> cameraDistance
-            else -> 1.0 / cameraDistance
+            projectionType == CENTRAL_PROJECTION -> configuredDistance
+            else -> 1.0 / configuredDistance
         }
         if (projectionType == CENTRAL_PROJECTION) {
             val diameter = Mat.hypot(
@@ -238,7 +638,16 @@ internal class View3D private constructor(
             }
         }
         val mat2D = Mat.identity(3)
-        matrix3DRot = getRotationFromAngles()
+        if (trackballEnabled != trackballAttributes.enabled) {
+            updateAngleSliderBounds()
+        }
+        if (hasMoveTrackball) {
+            matrix3DRot = updateProjectionTrackball()
+            setAnglesFromRotation()
+        } else if (anglesHaveMoved()) {
+            getAnglesFromSliders()
+            matrix3DRot = getRotationFromAngles()
+        }
         shift = arrayOf(
             doubleArrayOf(1.0, 0.0, 0.0, 0.0),
             doubleArrayOf(
@@ -306,7 +715,84 @@ internal class View3D private constructor(
         return this
     }
 
+    // JSXGraph: src/3d/view3d.js -> compareDepth.
+    internal fun compareDepth(
+        first: GeometryElement3D,
+        second: GeometryElement3D,
+    ): Double = first.zIndex - second.zIndex
+
+    // JSXGraph: src/3d/view3d.js -> updateZIndices.
+    internal fun updateZIndices(): View3D {
+        for (element in objects.values) {
+            when (element) {
+                is Line3D -> {
+                    if (isVisible(element.element2D)) {
+                        element.updateZIndex()
+                    }
+                }
+                is Polygon3D -> {
+                    if (isVisible(element.element2D)) {
+                        element.updateZIndex()
+                    }
+                }
+                else -> Unit
+            }
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> updateShaders.
+    internal fun updateShaders(): View3D {
+        for (element in objects.values) {
+            if (element is Face3D && element.faceAttributes.visible) {
+                val color = element.shadedFillColor() ?: continue
+                resolvedShaderColors[element.id] = color
+                if (element.zIndex < zIndexMin) {
+                    zIndexMin = element.zIndex
+                } else if (element.zIndex > zIndexMax) {
+                    zIndexMax = element.zIndex
+                }
+            }
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> updateDepthOrdering.
+    internal fun updateDepthOrdering(): View3D {
+        depthOrdered.clear()
+        for (layer in depthOrderLayers) {
+            depthOrdered[layer] = emptyList()
+        }
+        for (layer in depthOrderLayers) {
+            depthOrdered[layer] = objects.values
+                .asSequence()
+                .filter {
+                    it.type == Const.OBJECT_TYPE_FACE3D ||
+                        it.type == Const.OBJECT_TYPE_LINE3D ||
+                        it.type == Const.OBJECT_TYPE_POINT3D ||
+                        it.type == Const.OBJECT_TYPE_POLYGON3D
+                }
+                .filter { isVisible(it.element2D) }
+                .filter { elementLayer(it) == layer }
+                .sortedWith { first, second ->
+                    compareDepth(first, second).compareTo(0.0)
+                }
+                .toList()
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> updateRenderer.
     override fun updateRenderer(): GeometryElement {
+        if (!needsUpdate) {
+            return this
+        }
+        depthOrdered.clear()
+        if (depthOrderEnabled && shift.isNotEmpty()) {
+            updateZIndices()
+            updateShaders()
+            updateDepthOrdering()
+        }
         needsUpdate = false
         return this
     }
@@ -703,6 +1189,194 @@ internal class View3D private constructor(
         return result
     }
 
+    // JSXGraph: src/3d/view3d.js -> intersectionPlaneFace.
+    internal fun intersectionPlaneFace(
+        plane: Plane3D,
+        face: Face3D,
+    ): List<DoubleArray> {
+        val thirdNormal = Mat.crossProduct(
+            plane.normal.copyOfRange(1, 4),
+            face.normal.copyOfRange(1, 4),
+        ).let { direction ->
+            doubleArrayOf(
+                0.0,
+                direction[0],
+                direction[1],
+                direction[2],
+            )
+        }
+        val point = Geometry.meet3Planes(
+            firstNormal = plane.normal,
+            firstDistance = plane.d,
+            secondNormal = face.normal,
+            secondDistance = face.d,
+            thirdNormal = thirdNormal,
+            thirdDistance = 0.0,
+        )
+        val direction = Geometry.meetPlanePlane(
+            firstVector = plane.vec1,
+            secondVector = plane.vec2,
+            thirdVector = face.vec1,
+            fourthVector = face.vec2,
+        )
+        val faceKeys = face.polyhedron.faceKeys[face.faceNumber]
+        val result = mutableListOf<DoubleArray>()
+        for (index in faceKeys.indices) {
+            val first =
+                face.polyhedron.coords[faceKeys[index]] ?: continue
+            val second =
+                face.polyhedron.coords[
+                    faceKeys[(index + 1) % faceKeys.size]
+                ] ?: continue
+            val edge = doubleArrayOf(
+                0.0,
+                second[1] - first[1],
+                second[2] - first[2],
+                second[3] - first[3],
+            )
+            val x1 = Random.nextDouble()
+            val y1 = Random.nextDouble()
+            val x2 = Random.nextDouble()
+            val y2 = Random.nextDouble()
+            val matrix = arrayOf(
+                doubleArrayOf(
+                    x1 * direction[1] + y1 * direction[3],
+                    x1 * -edge[1] + y1 * -edge[3],
+                ),
+                doubleArrayOf(
+                    x2 * direction[2] + y2 * direction[3],
+                    x2 * -edge[2] + y2 * -edge[3],
+                ),
+            )
+            val rightHandSide = doubleArrayOf(
+                x1 * (first[1] - point[1]) +
+                    y1 * (first[3] - point[3]),
+                x2 * (first[2] - point[2]) +
+                    y2 * (first[3] - point[3]),
+            )
+            val solution = when (
+                val solved = Numerics.Gauss(matrix, rightHandSide)
+            ) {
+                is GMResult.Ok -> solved.value
+                is GMResult.Err -> continue
+            }
+            val ratio = solution[1]
+            if (ratio > -Mat.eps && ratio < 1.0 + Mat.eps) {
+                result += doubleArrayOf(
+                    1.0,
+                    first[1] + ratio * edge[1],
+                    first[2] + ratio * edge[2],
+                    first[3] + ratio * edge[3],
+                )
+            }
+        }
+        return result
+    }
+
+    // JSXGraph: src/3d/view3d.js -> intersectionPlanePolyhedron.
+    internal fun intersectionPlanePolyhedron(
+        plane: Plane3D,
+        polyhedron: Polyhedron3D,
+    ): View3DIntersectionData {
+        val segments = mutableListOf<Array<DoubleArray>>()
+        for (face in polyhedron.faces) {
+            if (
+                polyhedron.definition.faceKeys[face.faceNumber].size < 3
+            ) {
+                continue
+            }
+            val segment = intersectionPlaneFace(plane, face)
+            if (segment.size < 2) {
+                continue
+            }
+            val duplicate = segments.any { existing ->
+                (
+                    Geometry.distance(segment[0], existing[0], 4) <
+                        INTERSECTION_EPSILON &&
+                        Geometry.distance(segment[1], existing[1], 4) <
+                        INTERSECTION_EPSILON
+                    ) ||
+                    (
+                        Geometry.distance(segment[0], existing[1], 4) <
+                            INTERSECTION_EPSILON &&
+                            Geometry.distance(segment[1], existing[0], 4) <
+                            INTERSECTION_EPSILON
+                        )
+            }
+            if (!duplicate) {
+                segments += arrayOf(
+                    segment[0].copyOf(),
+                    segment[1].copyOf(),
+                )
+            }
+        }
+        if (segments.isEmpty()) {
+            return View3DIntersectionData(
+                x = DoubleArray(0),
+                y = DoubleArray(0),
+                z = DoubleArray(0),
+            )
+        }
+
+        val x = mutableListOf<Double>()
+        val y = mutableListOf<Double>()
+        val z = mutableListOf<Double>()
+        val firstSegment = 0
+        var position = firstSegment
+        var endpoint = 0
+        var visits = 0
+        do {
+            val current = segments[position][endpoint]
+            x += current[1]
+            y += current[2]
+            z += current[3]
+            endpoint = (endpoint + 1) % 2
+            val pending = segments[position][endpoint]
+            val previousPosition = position
+            for (candidate in segments.indices) {
+                if (
+                    candidate != position &&
+                    Geometry.distance(
+                        pending,
+                        segments[candidate][0],
+                    ) < INTERSECTION_EPSILON
+                ) {
+                    position = candidate
+                    endpoint = 0
+                    break
+                }
+                if (
+                    candidate != position &&
+                    Geometry.distance(
+                        pending,
+                        segments[candidate][1],
+                    ) < INTERSECTION_EPSILON
+                ) {
+                    position = candidate
+                    endpoint = 1
+                    break
+                }
+            }
+            visits += 1
+            if (
+                position == previousPosition ||
+                visits > segments.size * 2
+            ) {
+                break
+            }
+        } while (position != firstSegment)
+        if (x.isNotEmpty()) {
+            x += x[0]
+            y += y[0]
+            z += z[0]
+        }
+        return View3DIntersectionData(
+            x = x.toDoubleArray(),
+            y = y.toDoubleArray(),
+            z = z.toDoubleArray(),
+        )
+    }
+
     internal fun setAngles(
         azimuth: Double,
         elevation: Double,
@@ -711,9 +1385,353 @@ internal class View3D private constructor(
         angles.az = azimuth
         angles.el = elevation
         angles.bank = bank
+        matrix3DRot = getRotationFromAngles()
+        setSlidersFromAngles()
         prepareUpdate()
         return this
     }
+
+    // JSXGraph: src/3d/view3d.js -> freeR.
+    internal fun freeR(): View3D {
+        cameraDistanceOverride = null
+        prepareUpdate()
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> setView.
+    internal fun setView(
+        azimuth: Double,
+        elevation: Double,
+        cameraDistance: Double? = null,
+    ): View3D {
+        if (cameraDistance != null) {
+            cameraDistanceOverride = cameraDistance
+        }
+        azimuthSlider.updateValue(azimuth)
+        elevationSlider.updateValue(elevation)
+        board.update()
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> nextView.
+    internal fun nextView(): View3D {
+        if (storedViews.isNotEmpty()) {
+            setCurrentView((currentView + 1) % storedViews.size)
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> previousView.
+    internal fun previousView(): View3D {
+        if (storedViews.isNotEmpty()) {
+            setCurrentView(
+                (currentView + storedViews.size - 1) %
+                    storedViews.size,
+            )
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> setCurrentView.
+    internal fun setCurrentView(index: Int): View3D {
+        if (storedViews.isEmpty()) {
+            return this
+        }
+        val normalized =
+            ((index % storedViews.size) + storedViews.size) %
+                storedViews.size
+        val values = storedViews[normalized]
+        if (values.size >= 2) {
+            setView(
+                azimuth = values[0],
+                elevation = values[1],
+                cameraDistance = values.getOrNull(2),
+            )
+            currentView = normalized
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> animateAzimuth.
+    internal fun animateAzimuth(): View3D {
+        azimuthAnimationActive = true
+        advanceAzimuthAnimation()
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> stopAzimuth.
+    internal fun stopAzimuth(): View3D {
+        azimuthAnimationActive = false
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> _az_elEventHandler.
+    internal fun azimuthElevationEventHandler(
+        event: View3DNavigationEvent,
+    ): View3D {
+        val deltaX = event.screenX - lastPointerX
+        val deltaY = event.screenY - lastPointerY
+        lastPointerX = event.screenX
+        lastPointerY = event.screenY
+        if (!navigationActive && event.key == null) {
+            return this
+        }
+        var azimuth = azimuthSlider.value
+        var elevation = elevationSlider.value
+        val speed =
+            (azimuthSlider.maximum - azimuthSlider.minimum) /
+                board.canvasWidth *
+                azimuthNavigation.pointerSpeed
+        if (
+            azimuthNavigation.pointerEnabled &&
+            deltaX != 0.0 &&
+            event.key == null
+        ) {
+            azimuth += deltaX * speed
+        }
+        if (
+            elevationNavigation.pointerEnabled &&
+            deltaY != 0.0 &&
+            event.key == null
+        ) {
+            elevation += deltaY * speed
+        }
+        azimuth = constrainAngle(
+            azimuth,
+            azimuthSlider,
+            azimuthNavigation.continuous,
+        )
+        elevation = constrainAngle(
+            elevation,
+            elevationSlider,
+            elevationNavigation.continuous && !trackballEnabled,
+        )
+        return setView(azimuth, elevation)
+    }
+
+    // JSXGraph: src/3d/view3d.js -> _azEventHandler.
+    internal fun azimuthEventHandler(
+        event: View3DNavigationEvent,
+    ): View3D {
+        val delta = event.screenX - lastPointerX
+        lastPointerX = event.screenX
+        if (!navigationActive && event.key == null) {
+            return this
+        }
+        var azimuth = azimuthSlider.value
+        if (azimuthNavigation.keyboardEnabled) {
+            val step = azimuthNavigation.keyboardStepDegrees * PI / 180.0
+            when (event.key) {
+                "ArrowRight" -> azimuth += step
+                "ArrowLeft" -> azimuth -= step
+            }
+        }
+        if (
+            azimuthNavigation.pointerEnabled &&
+            delta != 0.0 &&
+            event.key == null
+        ) {
+            val speed =
+                (azimuthSlider.maximum - azimuthSlider.minimum) /
+                    board.canvasWidth *
+                    azimuthNavigation.pointerSpeed
+            azimuth += delta * speed
+        }
+        azimuth = constrainAngle(
+            azimuth,
+            azimuthSlider,
+            azimuthNavigation.continuous,
+        )
+        return setView(azimuth, elevationSlider.value)
+    }
+
+    // JSXGraph: src/3d/view3d.js -> _elEventHandler.
+    internal fun elevationEventHandler(
+        event: View3DNavigationEvent,
+    ): View3D {
+        val delta = event.screenY - lastPointerY
+        lastPointerY = event.screenY
+        if (!navigationActive && event.key == null) {
+            return this
+        }
+        var elevation = elevationSlider.value
+        if (elevationNavigation.keyboardEnabled) {
+            val step =
+                elevationNavigation.keyboardStepDegrees * PI / 180.0
+            when (event.key) {
+                "ArrowUp" -> elevation -= step
+                "ArrowDown" -> elevation += step
+            }
+        }
+        if (
+            elevationNavigation.pointerEnabled &&
+            delta != 0.0 &&
+            event.key == null
+        ) {
+            val speed =
+                (elevationSlider.maximum - elevationSlider.minimum) /
+                    board.canvasHeight *
+                    elevationNavigation.pointerSpeed
+            elevation += delta * speed
+        }
+        elevation = constrainAngle(
+            elevation,
+            elevationSlider,
+            elevationNavigation.continuous && !trackballEnabled,
+        )
+        return setView(azimuthSlider.value, elevation)
+    }
+
+    // JSXGraph: src/3d/view3d.js -> _bankEventHandler.
+    internal fun bankEventHandler(
+        event: View3DNavigationEvent,
+    ): View3D {
+        if (!navigationActive && event.key == null) {
+            return this
+        }
+        var bank = bankSlider.value
+        if (bankNavigation.keyboardEnabled) {
+            val step = bankNavigation.keyboardStepDegrees * PI / 180.0
+            when (event.key) {
+                ".", "<" -> bank -= step
+                ",", ">" -> bank += step
+            }
+        }
+        if (
+            bankNavigation.pointerEnabled &&
+            event.deltaY != 0.0 &&
+            event.key == null
+        ) {
+            val speed =
+                (bankSlider.maximum - bankSlider.minimum) /
+                    board.canvasHeight *
+                    bankNavigation.pointerSpeed
+            bank += event.deltaY * speed
+        }
+        bank = constrainAngle(
+            bank,
+            bankSlider,
+            bankNavigation.continuous,
+        )
+        bankSlider.updateValue(bank)
+        board.update()
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> _trackballHandler.
+    internal fun trackballHandler(
+        event: View3DNavigationEvent,
+    ): View3D {
+        val centerUserX = llftCorner[0] + size[0] * 0.5
+        val centerUserY = llftCorner[1] + size[1] * 0.5
+        val centerScreenX =
+            board.origin.scrCoords[1] + centerUserX * board.unitX
+        val centerScreenY =
+            board.origin.scrCoords[2] - centerUserY * board.unitY
+        val deltaX = event.screenX - lastPointerX
+        val deltaY = event.screenY - lastPointerY
+        lastPointerX = event.screenX
+        lastPointerY = event.screenY
+        trackball = TrackballState(
+            deltaX = deltaX,
+            deltaY = -deltaY,
+            x = event.boardX - centerScreenX,
+            y = -(event.boardY - centerScreenY),
+        )
+        board.update()
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> pointerDownHandler.
+    internal fun pointerDownHandler(
+        event: View3DNavigationEvent,
+    ): View3D {
+        hasMoveAzimuthElevation = false
+        hasMoveAzimuth = false
+        hasMoveElevation = false
+        hasMoveBank = false
+        hasMoveTrackball = false
+        navigationActive = true
+        lastPointerX = event.screenX
+        lastPointerY = event.screenY
+
+        if (
+            trackballEnabled &&
+            eventMatches(
+                event,
+                trackballAttributes.pointerButton,
+                trackballAttributes.pointerKey,
+            )
+        ) {
+            hasMoveTrackball = true
+            return this
+        }
+        if (
+            azimuthNavigation.pointerEnabled &&
+            elevationNavigation.pointerEnabled &&
+            azimuthNavigation.pointerButton ==
+            elevationNavigation.pointerButton &&
+            azimuthNavigation.pointerKey ==
+            elevationNavigation.pointerKey &&
+            eventMatches(
+                event,
+                azimuthNavigation.pointerButton,
+                azimuthNavigation.pointerKey,
+            )
+        ) {
+            hasMoveAzimuthElevation = true
+        } else {
+            hasMoveAzimuth =
+                azimuthNavigation.pointerEnabled &&
+                    eventMatches(
+                        event,
+                        azimuthNavigation.pointerButton,
+                        azimuthNavigation.pointerKey,
+                    )
+            hasMoveElevation =
+                elevationNavigation.pointerEnabled &&
+                    eventMatches(
+                        event,
+                        elevationNavigation.pointerButton,
+                        elevationNavigation.pointerKey,
+                    )
+        }
+        hasMoveBank =
+            bankNavigation.pointerEnabled &&
+                eventMatches(
+                    event,
+                    bankNavigation.pointerButton,
+                    bankNavigation.pointerKey,
+                )
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> pointerUpHandler.
+    internal fun pointerUpHandler(): View3D {
+        hasMoveAzimuthElevation = false
+        hasMoveAzimuth = false
+        hasMoveElevation = false
+        hasMoveBank = false
+        hasMoveTrackball = false
+        navigationActive = false
+        return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> removeObject.
+    internal fun removeObject(
+        element: GeometryElement3D?,
+        saveMethod: Boolean = false,
+    ): View3D {
+        if (element != null && objects[element.id] === element) {
+            board.removeObject(element, saveMethod)
+        }
+        return this
+    }
+
+    internal fun removeObject(
+        reference: String,
+        saveMethod: Boolean = false,
+    ): View3D = removeObject(select(reference), saveMethod)
 
     // JSXGraph: src/base/element.js -> setAttribute({projection})
     // and src/3d/view3d.js -> update.
@@ -725,6 +1743,18 @@ internal class View3D private constructor(
             board.fullUpdate()
         }
         return this
+    }
+
+    // JSXGraph: src/3d/view3d.js -> isVerticalDrag.
+    internal fun isVerticalDrag(): Boolean {
+        if (!verticalDragEnabled) {
+            return false
+        }
+        return when (verticalDragKey.lowercase()) {
+            "shift" -> board.shiftKeyPressed
+            "ctrl", "control" -> board.controlKeyPressed
+            else -> false
+        }
     }
 
     // JSXGraph: src/3d/view3d.js -> createView3D.
@@ -759,6 +1789,79 @@ internal class View3D private constructor(
         return super.remove()
     }
 
+    private fun advanceAzimuthAnimation() {
+        if (!azimuthAnimationActive) {
+            return
+        }
+        val difference =
+            azimuthSlider.maximum - azimuthSlider.minimum
+        var position =
+            (
+                azimuthSlider.value + AZIMUTH_ANIMATION_STEP -
+                    azimuthSlider.minimum
+                ) / difference
+        if (position > 1.0) {
+            position = 0.0
+        }
+        azimuthSlider.value =
+            azimuthSlider.minimum + position * difference
+        board.update()
+        azimuthAnimationScheduler?.schedule(
+            AZIMUTH_ANIMATION_DELAY_MILLISECONDS,
+        ) {
+            advanceAzimuthAnimation()
+        }
+    }
+
+    private fun constrainAngle(
+        value: Double,
+        slider: AngleSliderState,
+        continuous: Boolean,
+    ): Double =
+        if (continuous) {
+            Mat.wrap(value, slider.minimum, slider.maximum)
+        } else if (value > 0.0) {
+            min(slider.maximum, value)
+        } else if (value < 0.0) {
+            max(slider.minimum, value)
+        } else {
+            value
+        }
+
+    private fun eventMatches(
+        event: View3DNavigationEvent,
+        neededButton: Int,
+        neededKey: String,
+    ): Boolean {
+        val buttonMatches =
+            neededButton == -1 || neededButton == event.button
+        val normalizedKey = neededKey.lowercase()
+        val keyMatches =
+            normalizedKey == "none" ||
+                ("shift" in normalizedKey && event.shiftKey) ||
+                (
+                    ("ctrl" in normalizedKey ||
+                        "control" in normalizedKey) &&
+                        event.controlKey
+                    )
+        return buttonMatches && keyMatches
+    }
+
+    private fun isVisible(element: GeometryElement?): Boolean =
+        when (val visible = element?.getAttribute("visible")) {
+            is Boolean -> visible
+            else -> element != null
+        }
+
+    private fun elementLayer(element: GeometryElement3D): Int {
+        if (element is Face3D) {
+            return element.faceAttributes.layer
+        }
+        return (
+            element.element2D?.getAttribute("layer") as? Number
+            )?.toInt() ?: DEFAULT_3D_LAYER
+    }
+
     private fun solveOrNonFinite(
         matrix: Array<DoubleArray>,
         rightHandSide: DoubleArray,
@@ -773,12 +1876,27 @@ internal class View3D private constructor(
         private const val VIEW_3D_ELEMENT_TYPE = "view3d"
         private const val CENTRAL_PROJECTION = "central"
         private const val AUTO_CAMERA_DISTANCE = 1.01
+        private const val DEFAULT_3D_LAYER = 12
+        private const val INTERSECTION_EPSILON = 1.0e-12
+        private const val AZIMUTH_ANIMATION_STEP = 0.1
+        private const val AZIMUTH_ANIMATION_DELAY_MILLISECONDS = 200L
 
         // JSXGraph: src/options3d.js -> Options3D.view3d.
         internal const val DEFAULT_AZIMUTH: Double = 1.0
         internal const val DEFAULT_ELEVATION: Double = 0.3
         internal const val DEFAULT_BANK: Double = 0.0
         internal const val DEFAULT_FIELD_OF_VIEW: Double = 2.0 * PI / 5.0
+        private val DEFAULT_STORED_VIEWS = listOf(
+            doubleArrayOf(0.0, 1.57),
+            doubleArrayOf(0.78, 0.62),
+            doubleArrayOf(0.0, 0.0),
+            doubleArrayOf(5.49, 0.62),
+            doubleArrayOf(4.71, 0.0),
+            doubleArrayOf(3.93, 0.62),
+            doubleArrayOf(3.14, 0.0),
+            doubleArrayOf(2.36, 0.62),
+            doubleArrayOf(1.57, 1.57),
+        )
 
         // JSXGraph: src/3d/view3d.js -> createView3D / View3D constructor.
         internal fun create(
@@ -793,6 +1911,31 @@ internal class View3D private constructor(
             bank: Double = DEFAULT_BANK,
             cameraDistance: Double? = null,
             fieldOfView: Double = DEFAULT_FIELD_OF_VIEW,
+            verticalDragEnabled: Boolean = true,
+            verticalDragKey: String = "shift",
+            azimuthNavigation: View3DAxisNavigationAttributes =
+                View3DAxisNavigationAttributes(
+                    minimum = 0.0,
+                    maximum = 2.0 * PI,
+                ),
+            elevationNavigation: View3DAxisNavigationAttributes =
+                View3DAxisNavigationAttributes(
+                    minimum = 0.0,
+                    maximum = 2.0 * PI,
+                ),
+            bankNavigation: View3DAxisNavigationAttributes =
+                View3DAxisNavigationAttributes(
+                    pointerSpeed = 0.08,
+                    minimum = -PI,
+                    maximum = PI,
+                ),
+            trackballAttributes: View3DTrackballAttributes =
+                View3DTrackballAttributes(),
+            storedViews: List<DoubleArray> = DEFAULT_STORED_VIEWS,
+            depthOrderEnabled: Boolean = true,
+            depthOrderLayers: IntArray = intArrayOf(12, 13),
+            azimuthAnimationScheduler:
+                View3DAzimuthAnimationScheduler? = null,
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -842,8 +1985,20 @@ internal class View3D private constructor(
                 azimuth = azimuth,
                 elevation = elevation,
                 bank = bank,
-                cameraDistance = cameraDistance,
+                cameraDistanceSource = cameraDistance,
                 fieldOfView = fieldOfView,
+                verticalDragEnabled = verticalDragEnabled,
+                verticalDragKey = verticalDragKey,
+                azimuthNavigation = azimuthNavigation,
+                elevationNavigation = elevationNavigation,
+                bankNavigation = bankNavigation,
+                trackballAttributes = trackballAttributes,
+                storedViews =
+                    storedViews.map(DoubleArray::copyOf),
+                depthOrderEnabled = depthOrderEnabled,
+                depthOrderLayers = depthOrderLayers.copyOf(),
+                azimuthAnimationScheduler =
+                    azimuthAnimationScheduler,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -869,6 +2024,17 @@ internal class View3D private constructor(
                 Double.NaN,
                 Double.NaN,
             )
+
+        private fun intervalLoss(
+            value: Double,
+            minimum: Double,
+            maximum: Double,
+        ): Double =
+            when {
+                value < minimum -> minimum - value
+                value > maximum -> value - maximum
+                else -> 0.0
+            }
     }
 }
 

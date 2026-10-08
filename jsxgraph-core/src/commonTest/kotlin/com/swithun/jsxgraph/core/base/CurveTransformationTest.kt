@@ -208,6 +208,45 @@ class CurveTransformationTest {
     }
 
     @Test
+    fun hitCoordinatesTransformationSourceAndMoveMatchOfficialBehavior() {
+        val board = board("curve-api")
+        val source = curve(
+            Curve.createData(
+                board = board,
+                dataX = doubleArrayOf(0.0, 2.0, 4.0),
+                dataY = doubleArrayOf(0.0, 2.0, 0.0),
+                id = "source",
+                name = "",
+            ),
+        )
+        val translate = transformation("translate", 1.0, -1.0)
+        val transformed = curve(
+            Curve.createTransformed(
+                board = board,
+                source = source,
+                transformations = listOf(translate),
+                id = "transformed",
+                name = "",
+            ),
+        )
+
+        assertTrue(transformed.hasPoint(400.0, 240.0, precision = 0.5))
+        assertEquals(
+            transformed.points.map { it.usrCoords.toList() },
+            transformed.getCoords().map(DoubleArray::toList),
+        )
+        assertEquals(true to source, transformed.transformationSourceInfo())
+
+        assertIs<GMResult.Ok<Curve>>(
+            transformed.moveTo(doubleArrayOf(5.0, 6.0)),
+        )
+        assertCoordinates(
+            doubleArrayOf(1.0, 5.0, 6.0),
+            transformed.points.first().usrCoords,
+        )
+    }
+
+    @Test
     fun transformedCurveFailuresAreStructuredAndAtomic() {
         val board = board("transformed-failures")
         val source = curve(

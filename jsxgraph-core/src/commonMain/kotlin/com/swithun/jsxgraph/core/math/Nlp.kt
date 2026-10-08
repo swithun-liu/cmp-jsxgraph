@@ -68,8 +68,34 @@ internal fun interface NlpCalculation<E> {
  * and indexing of JSXGraph's jcobyla-derived implementation.
  */
 internal object Nlp {
+    // JSXGraph 1.13.3: src/math/nlp.js ->
+    // lastNumberOfEvaluations / GetLastNumberOfEvaluations.
     internal var lastNumberOfEvaluations: Int = 0
         private set
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> arr.
+    internal fun arr(size: Int): DoubleArray = DoubleArray(size)
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> arr2.
+    internal fun arr2(
+        rows: Int,
+        columns: Int,
+    ): Array<DoubleArray> =
+        Array(rows) { arr(columns) }
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> arraycopy.
+    internal fun arraycopy(
+        source: DoubleArray,
+        sourceStart: Int,
+        destination: DoubleArray,
+        destinationStart: Int,
+        count: Int,
+    ) {
+        for (index in 0 until count) {
+            destination[index + destinationStart] =
+                source[index + sourceStart]
+        }
+    }
 
     // JSXGraph: src/math/nlp.js -> FindMinimum.
     internal fun <E> findMinimum(
@@ -1489,6 +1515,7 @@ internal object Nlp {
         return false
     }
 
+    // JSXGraph 1.13.3: src/math/nlp.js -> PrintIterationResult.
     private fun printIterationResult(
         numberOfEvaluations: Int,
         objective: Double,
@@ -1504,39 +1531,71 @@ internal object Nlp {
                     "MAXCV = $maximumResidual",
             )
             logger?.invoke(
-                "X = " +
-                    variables
-                        .copyOfRange(1, variableCount + 1)
-                        .joinToString(","),
+                "X = ${format(part(variables, 1, variableCount))}",
             )
         }
     }
 
+    // JSXGraph 1.13.3: src/math/nlp.js -> arr2.
     private fun matrix(
         rows: Int,
         columns: Int,
-    ): Array<DoubleArray> =
-        Array(rows) { DoubleArray(columns) }
+    ): Array<DoubleArray> = arr2(rows, columns)
 
+    // JSXGraph 1.13.3: src/math/nlp.js -> arraycopy.
     private fun copy(
         source: DoubleArray,
         sourceStart: Int,
         destination: DoubleArray,
         destinationStart: Int,
         count: Int,
-    ) {
-        for (index in 0 until count) {
-            destination[index + destinationStart] =
-                source[index + sourceStart]
-        }
-    }
+    ) = arraycopy(
+        source,
+        sourceStart,
+        destination,
+        destinationStart,
+        count,
+    )
 
+    // JSXGraph 1.13.3: src/math/nlp.js -> ROW.
+    internal fun row(
+        source: Array<DoubleArray>,
+        rowIndex: Int,
+    ): DoubleArray =
+        source[rowIndex].copyOf()
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> COL.
     private fun column(
         source: Array<DoubleArray>,
         column: Int,
     ): DoubleArray =
         DoubleArray(source.size) { row -> source[row][column] }
 
+    // JSXGraph 1.13.3: src/math/nlp.js -> PART.
+    internal fun part(
+        source: DoubleArray,
+        from: Int,
+        to: Int,
+    ): DoubleArray =
+        source.copyOfRange(from, to + 1)
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> FORMAT.
+    internal fun format(source: DoubleArray): String =
+        source.joinToString(",")
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> DOT_PRODUCT.
+    internal fun dotProduct(
+        left: DoubleArray,
+        right: DoubleArray,
+    ): Double {
+        var sum = 0.0
+        for (index in left.indices) {
+            sum += left[index] * right[index]
+        }
+        return sum
+    }
+
+    // JSXGraph 1.13.3: src/math/nlp.js -> DOT_PRODUCT_ROW_COL.
     private fun dotProductRowColumn(
         left: Array<DoubleArray>,
         row: Int,

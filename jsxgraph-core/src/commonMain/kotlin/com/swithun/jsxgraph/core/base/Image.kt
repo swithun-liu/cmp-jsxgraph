@@ -122,7 +122,43 @@ internal class Image private constructor(
 
     internal fun W(): Double = usrSize[0]
 
+    // JSXGraph: src/base/image.js -> Image.H.
     internal fun H(): Double = usrSize[1]
+
+    // JSXGraph: src/base/image.js -> Image.hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        if (transformations.isEmpty()) {
+            val deltaX = screenX - coords.scrCoords[1]
+            val deltaY = coords.scrCoords[2] - screenY
+            return deltaX >= -precision &&
+                deltaX - size[0] <= precision &&
+                deltaY >= -precision &&
+                deltaY - size[1] <= precision
+        }
+        val userCoordinates = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        ).usrCoords
+        val offset = DoubleArray(3) { index ->
+            userCoordinates[index] - span[0][index]
+        }
+        val firstProjection = Mat.innerProduct(offset, span[1], 3)
+        if (
+            firstProjection < 0.0 ||
+            firstProjection > Mat.innerProduct(span[1], span[1], 3)
+        ) {
+            return false
+        }
+        val secondProjection = Mat.innerProduct(offset, span[2], 3)
+        return secondProjection >= 0.0 &&
+            secondProjection <= Mat.innerProduct(span[2], span[2], 3)
+    }
 
     // JSXGraph: src/base/image.js -> setSize.
     internal fun setSize(
@@ -248,6 +284,24 @@ internal class Image private constructor(
         renderSpan = transformedSpan(abs(W()), abs(H()))
     }
 
+    /*
+     * JSXGraph: src/base/image.js -> Image.addTransform /
+     * Image.removeTransform / Image.clearTransforms.
+     * The implementations are shared by CoordsElement.
+     */
+
+    // JSXGraph: src/base/image.js -> Image.getParents.
+    internal fun parentDefinitions(): List<Any?> =
+        if (parents.isNotEmpty()) {
+            parents.toList()
+        } else {
+            listOf(
+                url,
+                doubleArrayOf(Z(), X(), Y()),
+                usrSize.copyOf(),
+            )
+        }
+
     private fun transformedSpan(
         width: Double,
         height: Double,
@@ -300,6 +354,7 @@ internal class Image private constructor(
     internal companion object {
         private const val IMAGE_ID_PREFIX = "Im"
         private const val IMAGE_ELEMENT_TYPE = "image"
+        private const val DEFAULT_HIT_PRECISION = 4.0
 
         internal fun create(
             board: Board,

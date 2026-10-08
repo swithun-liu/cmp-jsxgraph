@@ -71,6 +71,32 @@ internal fun interface PlotFunction<E> {
  * Adaptive curve plotting translated from JSXGraph 1.13.3.
  */
 internal object Plot {
+    private const val OUTSIDE_POINT_MARGIN = 500.0
+
+    // JSXGraph 1.13.3: src/math/plot.js -> checkReal.
+    internal fun checkReal(points: List<Coords?>): Boolean =
+        points.any { point ->
+            point != null &&
+                !point.usrCoords[1].isNaN() &&
+                !point.usrCoords[2].isNaN() &&
+                abs(point.usrCoords[0]) > Mat.eps
+        }
+
+    // JSXGraph 1.13.3: src/math/plot.js -> _isOutsidePoint.
+    internal fun isOutsidePoint(
+        screenCoordinates: DoubleArray,
+        canvasWidth: Double,
+        canvasHeight: Double,
+    ): Boolean =
+        screenCoordinates.getOrElse(1) { Double.NaN } <
+            -OUTSIDE_POINT_MARGIN ||
+            screenCoordinates.getOrElse(2) { Double.NaN } <
+            -OUTSIDE_POINT_MARGIN ||
+            screenCoordinates.getOrElse(1) { Double.NaN } >
+            canvasWidth + OUTSIDE_POINT_MARGIN ||
+            screenCoordinates.getOrElse(2) { Double.NaN } >
+            canvasHeight + OUTSIDE_POINT_MARGIN
+
     // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurveOld.
     internal fun <E> updateParametricCurveV1(
         board: Board,
@@ -106,6 +132,29 @@ internal object Plot {
             y = y,
             random = random,
         ).updateParametricCurveV2(minimum, maximum)
+
+    // JSXGraph 1.13.3: src/math/plot.js ->
+    // updateParametricCurve compatibility alias.
+    internal fun <E> updateParametricCurve(
+        board: Board,
+        minimum: Double,
+        maximum: Double,
+        recursionDepthHigh: Int,
+        maximumPointCount: Int,
+        x: PlotFunction<E>,
+        y: PlotFunction<E>,
+        random: () -> Double = { Random.nextDouble() },
+    ): GMResult<PlotResult, PlotError<E>> =
+        updateParametricCurveV2(
+            board = board,
+            minimum = minimum,
+            maximum = maximum,
+            recursionDepthHigh = recursionDepthHigh,
+            maximumPointCount = maximumPointCount,
+            x = x,
+            y = y,
+            random = random,
+        )
 
     // JSXGraph 1.13.3: src/math/plot.js -> updateParametricCurve_v3.
     internal fun <E> updateParametricCurveV3(

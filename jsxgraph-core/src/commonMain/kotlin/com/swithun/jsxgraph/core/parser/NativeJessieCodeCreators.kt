@@ -1812,10 +1812,25 @@ internal object NativeJessieCodeCreators {
         },
     )
 
-    internal val names: Set<String>
-        get() = creators.keys
+    private val registeredCreators =
+        linkedMapOf<String, JessieCodeCreator>()
 
-    internal fun creator(name: String): JessieCodeCreator? = creators[name]
+    internal val names: Set<String>
+        get() = creators.keys + registeredCreators.keys
+
+    internal fun creator(name: String): JessieCodeCreator? =
+        registeredCreators[name.lowercase()] ?: creators[name.lowercase()]
+
+    // JSXGraph 1.13.3: src/jxg.js -> registerElement.
+    internal fun registerElement(
+        name: String,
+        creator: JessieCodeCreator,
+    ) {
+        registeredCreators[name.lowercase()] = creator
+    }
+
+    internal fun unregisterElement(name: String): JessieCodeCreator? =
+        registeredCreators.remove(name.lowercase())
 
     private fun createPointReflection(
         board: Board?,
@@ -4599,11 +4614,22 @@ internal object NativeJessieCodeCreators {
             parents,
             location,
         )
+        val slide =
+            if (parents.size > 3) {
+                (
+                    parents.lastOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element as? GeometryElement3D
+            } else {
+                null
+            }
+        val definingParents =
+            if (slide == null) parents else parents.dropLast(1)
         val coordinateValues: List<JessieCodeRuntimeValue>
         val contentValue: JessieCodeRuntimeValue
-        when (parents.size) {
+        when (definingParents.size) {
             3 -> {
-                val coordinateParent = parents[1]
+                val coordinateParent = definingParents[1]
                 if (coordinateParent is JessieCodeRuntimeValue.FunctionValue) {
                     val identity = when (
                         val result = creatorAttributes(
@@ -4626,7 +4652,8 @@ internal object NativeJessieCodeCreators {
                             ),
                         dependencies =
                             coordinateParent.dependencies.values,
-                        contentValue = parents[2],
+                        contentValue = definingParents[2],
+                        slide = slide,
                         identity = identity,
                         location = location,
                     )
@@ -4639,11 +4666,11 @@ internal object NativeJessieCodeCreators {
                     parents,
                     location,
                 )
-                contentValue = parents[2]
+                contentValue = definingParents[2]
             }
             5 -> {
-                coordinateValues = parents.subList(1, 4)
-                contentValue = parents[4]
+                coordinateValues = definingParents.subList(1, 4)
+                contentValue = definingParents[4]
             }
             else -> return unsupported(creatorName, parents, location)
         }
@@ -4683,6 +4710,7 @@ internal object NativeJessieCodeCreators {
                 Point3DCoordinateSource.Values(coordinates),
             dependencies = dependencies.values,
             contentValue = contentValue,
+            slide = slide,
             identity = identity,
             location = location,
         )
@@ -4693,6 +4721,7 @@ internal object NativeJessieCodeCreators {
         coordinateSource: Point3DCoordinateSource,
         dependencies: Iterable<GeometryElement>,
         contentValue: JessieCodeRuntimeValue,
+        slide: GeometryElement3D?,
         identity: CreatorAttributes,
         location: JessieCodeAstLocation,
     ): CreatorResult {
@@ -4713,6 +4742,7 @@ internal object NativeJessieCodeCreators {
                 view = view,
                 coordinateSource = coordinateSource,
                 content = content,
+                slide = slide,
                 dependencies = dependencies,
                 id = identity.id,
                 name = identity.name,

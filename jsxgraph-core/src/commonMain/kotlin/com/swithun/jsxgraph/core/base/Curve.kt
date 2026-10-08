@@ -23,6 +23,7 @@ import com.swithun.jsxgraph.core.JsxGraphGrid2D
 import com.swithun.jsxgraph.core.math.Clip
 import com.swithun.jsxgraph.core.math.ClipBooleanOperation
 import com.swithun.jsxgraph.core.math.ClipError
+import com.swithun.jsxgraph.core.math.DiscreteCurve2D
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.ImplicitPlot
 import com.swithun.jsxgraph.core.math.ImplicitPlotConfig
@@ -48,6 +49,7 @@ import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeIntervalEvaluation
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.utils.Type
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -136,6 +138,10 @@ internal sealed interface CurveError {
         val error: TransformationError,
     ) : CurveError
 
+    data class TransformationCreation(
+        val error: TransformationError,
+    ) : CurveError
+
     data class BooleanClipping(
         val error: ClipError,
     ) : CurveError
@@ -198,6 +204,12 @@ internal data class CurvePlotOptions(
     val recursionDepthHigh: Int = 17,
     val rdpSmoothing: Boolean = false,
     val rdpThreshold: Double = 0.2,
+)
+
+internal data class CurveTraceSnapshot(
+    val points: List<DoubleArray>,
+    val bezierDegree: Int,
+    val numberPoints: Int,
 )
 
 internal sealed interface CurveDataUpdateError {
@@ -733,11 +745,12 @@ private data class CurveVectorFieldDefinition(
 /**
  * Initial translated slice of JXG.Curve.
  *
- * This slice covers linear data plots and the upstream naive sampler for
- * explicit-domain parametric curves and function graphs, retained StepFunction
- * and RiemannSum data, BoxPlot geometry, splines, and Boolean clipping.
- * Advanced adaptive plotting, transformations, ordinary Curve fills, labels,
- * hit testing, and general curve mutation remain untranslated.
+ * This slice covers data and function plots, all four translated samplers,
+ * RDP smoothing, transforms, polar and cubic paths, fills, arrows, labels,
+ * hit testing, traces, mutable data, StepFunction, RiemannSum, Integral,
+ * BoxPlot, spline, vector-field, inequality, and Boolean-clipping behavior.
+ * Unsupported mixed-array, non-round-cap, and specialized mutation forms
+ * remain explicit at their boundaries.
  */
 internal class Curve private constructor(
     board: Board,
@@ -794,6 +807,10 @@ internal class Curve private constructor(
     internal var transformationSource: Curve? = null
         private set
     internal var evaluationError: CurveError? = null
+        private set
+    // JSXGraph 1.13.3: src/base/curve.js -> updateRenderer;
+    // src/math/plot.js -> checkReal.
+    internal var isReal: Boolean = false
         private set
     internal val isBooleanComposition: Boolean
         get() = booleanDefinition != null
@@ -865,7 +882,7 @@ internal class Curve private constructor(
         get() = parabolaDefinition?.focus
     internal val parabolaDirectrix: Line?
         get() = parabolaDefinition?.directrix
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     internal val subs = linkedMapOf<String, GeometryElement>()
     internal var gridDefinition: JsxGraphGrid2D? = null
         private set
@@ -879,6 +896,7 @@ internal class Curve private constructor(
     // JSXGraph 1.13.3: src/base/turtle.js -> _attributes / copyAttr.
     // Turtle snapshots the active pen attributes on every generated Curve.
     internal var turtlePenAttributes: TurtlePenAttributes? = null
+    internal val traceSnapshots = mutableListOf<CurveTraceSnapshot>()
 
     internal fun requestedPointCount(): Long? =
         mesh3DDefinition?.requestedPointCount
@@ -914,6 +932,9 @@ internal class Curve private constructor(
         if (!needsUpdate) {
             return this
         }
+        if (getAttribute("trace") == true) {
+            cloneToBackground()
+        }
         when (val result = updateCurve()) {
             is GMResult.Ok -> evaluationError = null
             is GMResult.Err -> {
@@ -923,6 +944,79 @@ internal class Curve private constructor(
             }
         }
         return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> updateRenderer.
+    override fun updateRenderer(): Curve {
+        isReal = Plot.checkReal(points)
+        needsUpdate = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> allocatePoints.
+    internal fun allocatePoints(): Curve {
+        while (points.size < numberPoints) {
+            points += Coords(
+                method = Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(0.0, 0.0),
+                board = board,
+                emitter = false,
+            )
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        val point = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        )
+        val usedPoints = points
+            .take(minOf(numberPoints, points.size))
+            .map { it.usrCoords.copyOf() }
+        if (
+            bezierDegree == 1 &&
+            ((getAttribute("hasinnerpoints") as? Boolean) == true) &&
+            Geometry.windingNumber(
+                point = point.usrCoords,
+                path = usedPoints,
+                doNotClosePath = false,
+            ) != 0
+        ) {
+            return true
+        }
+        val projection = when (
+            val result = Geometry.projectCoordsToCurve(
+                point = point.usrCoords,
+                curve = DiscreteCurve2D(
+                    points = usedPoints,
+                    bezierDegree = bezierDegree,
+                ),
+            )
+        ) {
+            is GMResult.Ok -> result.value.point
+            is GMResult.Err -> return false
+        }
+        val projectedScreen = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = projection,
+            board = board,
+            emitter = false,
+        ).scrCoords
+        val strokeWidth =
+            (getAttribute("strokewidth") as? Number)?.toDouble() ?: 1.0
+        val tolerance = precision + strokeWidth * 0.5
+        val deltaX = projectedScreen[1] - screenX
+        val deltaY = projectedScreen[2] - screenY
+        return deltaX * deltaX + deltaY * deltaY <=
+            tolerance * tolerance
     }
 
     // JSXGraph: src/base/curve.js -> updateCurve
@@ -2875,6 +2969,277 @@ internal class Curve private constructor(
 
     internal fun maxX(): Double = evaluateMaximum().valueOrNaN()
 
+    // JSXGraph 1.13.3: src/base/curve.js -> notifyParents.
+    @Suppress("UNUSED_PARAMETER")
+    internal fun notifyParents(content: String): Curve {
+        addParentsFromJCFunctions(
+            listOfNotNull(
+                xTerm,
+                yTerm,
+                minimumTerm,
+                maximumTerm,
+            ),
+        )
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> getLabelPosition.
+    internal fun getLabelPosition(
+        position: String,
+        distance: Double,
+        labelSize: DoubleArray,
+    ): Coords {
+        var minimum = minX()
+        var maximum = maxX()
+        when (
+            val result = Numerics.findDomain(
+                function = ::X,
+                interval = doubleArrayOf(minimum, maximum),
+                outer = false,
+            )
+        ) {
+            is GMResult.Ok -> {
+                minimum = result.value[0]
+                maximum = result.value[1]
+            }
+            is GMResult.Err -> Unit
+        }
+        when (
+            val result = Numerics.findDomain(
+                function = ::Y,
+                interval = doubleArrayOf(minimum, maximum),
+                outer = false,
+            )
+        ) {
+            is GMResult.Ok -> {
+                minimum = result.value[0]
+                maximum = result.value[1]
+            }
+            is GMResult.Err -> Unit
+        }
+
+        val parsed = Type.parsePosition(position)
+        var lambda = Type.parseNumber(
+            parsed.pos,
+            maximum - minimum,
+        )
+        if ("fr" !in parsed.pos && "%" !in parsed.pos) {
+            lambda = 0.0
+        }
+        var parameter = minimum + lambda
+        var curvePoint = Ft(parameter)
+        var x = curvePoint[1]
+        var y = curvePoint[2]
+        if ((x + y).isNaN()) {
+            lambda /= maximum - minimum
+            parameter = minimum + lambda
+            val first = Ft(minimum)
+            val last = Ft(maximum)
+            x = first[1] + lambda * (last[1] - first[1])
+            y = first[2] + lambda * (last[2] - first[2])
+            curvePoint = doubleArrayOf(1.0, x, y)
+        }
+        val screen = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(x, y),
+            board = board,
+            emitter = false,
+        ).scrCoords
+        val epsilon = Mat.eps
+        val nearby = when {
+            parameter < minimum + epsilon -> Ft(parameter + epsilon)
+            parameter > maximum - epsilon -> Ft(parameter - epsilon)
+            else -> Ft(parameter + epsilon)
+        }
+        var deltaX: Double
+        var deltaY: Double
+        if (parameter > maximum - epsilon) {
+            deltaX = (curvePoint[1] - nearby[1]) / epsilon
+            deltaY = (curvePoint[2] - nearby[2]) / epsilon
+        } else if (parameter < minimum + epsilon) {
+            deltaX = (nearby[1] - curvePoint[1]) / epsilon
+            deltaY = (nearby[2] - curvePoint[2]) / epsilon
+        } else {
+            val before = Ft(parameter - epsilon)
+            deltaX = 0.5 * (nearby[1] - before[1]) / epsilon
+            deltaY = 0.5 * (nearby[2] - before[2]) / epsilon
+        }
+        if (deltaX.isNaN()) {
+            deltaX = 1.0
+        }
+        if (deltaY.isNaN()) {
+            deltaY = 1.0
+        }
+        val norm = Mat.hypot(deltaX, deltaY)
+        if (parsed.side == "left") {
+            deltaY *= -1.0
+        } else {
+            deltaX *= -1.0
+        }
+        val factor = 0.5 * distance / norm
+        return Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(
+                screen[1] +
+                    deltaY * labelSize.getOrElse(0) { 0.0 } * factor,
+                screen[2] -
+                    deltaX * labelSize.getOrElse(1) { 0.0 } * factor,
+            ),
+            board = board,
+            emitter = false,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> getLabelAnchor.
+    internal override fun getLabelAnchor(): Coords {
+        val position =
+            (elementLabel?.evalVisProp("position") as? String)
+                ?: (evalVisProp("label.position") as? String)
+                ?: "lft"
+        val distance =
+            (elementLabel?.evalVisProp("distance") as? Number)
+                ?.toDouble()
+                ?: (evalVisProp("label.distance") as? Number)
+                    ?.toDouble()
+                ?: 0.0
+        return getLabelAnchor(
+            position = position,
+            distance = distance,
+            labelSize =
+                elementLabel?.size ?: doubleArrayOf(0.0, 0.0),
+        )
+    }
+
+    internal fun getLabelAnchor(
+        position: String,
+        distance: Double = 0.0,
+        labelSize: DoubleArray = doubleArrayOf(0.0, 0.0),
+    ): Coords {
+        if ("right" in position || "left" in position) {
+            return getLabelPosition(position, distance, labelSize)
+        }
+        val lower = 0.1
+        val upper = 0.9
+        val screen = when (position) {
+            "ulft" -> doubleArrayOf(
+                lower * board.canvasWidth,
+                lower * board.canvasHeight,
+            )
+            "llft" -> doubleArrayOf(
+                lower * board.canvasWidth,
+                upper * board.canvasHeight,
+            )
+            "rt" -> doubleArrayOf(
+                upper * board.canvasWidth,
+                0.5 * upper * board.canvasHeight,
+            )
+            "lrt" -> doubleArrayOf(
+                upper * board.canvasWidth,
+                upper * board.canvasHeight,
+            )
+            "urt" -> doubleArrayOf(
+                upper * board.canvasWidth,
+                lower * board.canvasHeight,
+            )
+            "top" -> doubleArrayOf(
+                0.5 * upper * board.canvasWidth,
+                lower * board.canvasHeight,
+            )
+            "bot" -> doubleArrayOf(
+                0.5 * upper * board.canvasWidth,
+                upper * board.canvasHeight,
+            )
+            else -> doubleArrayOf(
+                lower * board.canvasWidth,
+                0.5 * upper * board.canvasHeight,
+            )
+        }
+        val user = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = screen,
+            board = board,
+            emitter = false,
+        ).usrCoords
+        val projection = Geometry.projectCoordsToCurve(
+            point = user,
+            curve = DiscreteCurve2D(
+                points = points
+                    .take(minOf(numberPoints, points.size))
+                    .map { it.usrCoords.copyOf() },
+                bezierDegree = bezierDegree,
+            ),
+        )
+        return when (projection) {
+            is GMResult.Ok -> Coords(
+                method = Const.COORDS_BY_USER,
+                coordinates = projection.value.point,
+                board = board,
+                emitter = false,
+            )
+            is GMResult.Err -> Coords(
+                method = Const.COORDS_BY_SCREEN,
+                coordinates = doubleArrayOf(Double.NaN, Double.NaN),
+                board = board,
+                emitter = false,
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> getParents.
+    // GeometryElement.parents already owns the JVM getParents signature.
+    internal fun parentData(): List<Any?> =
+        if (parents.isNotEmpty()) {
+            parents.toList()
+        } else {
+            listOf(xTerm, yTerm, minX(), maxX())
+        }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> moveTo.
+    internal fun moveTo(
+        target: DoubleArray,
+    ): GMResult<Curve, CurveError> {
+        if (points.isEmpty() || getAttribute("fixed") == true) {
+            return GMResult.Ok(this)
+        }
+        val first = points[0].usrCoords
+        val delta = if (target.size == 3) {
+            doubleArrayOf(
+                target[1] - first[1],
+                target[2] - first[2],
+            )
+        } else {
+            doubleArrayOf(
+                target.getOrElse(0) { Double.NaN } - first[1],
+                target.getOrElse(1) { Double.NaN } - first[2],
+            )
+        }
+        val transformation = when (
+            val result = Transformation.create("translate", delta)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                CurveError.TransformationCreation(result.error),
+            )
+        }
+        addTransform(transformation)
+        prepareUpdate()
+        board.update()
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> getTransformationSource.
+    // The Kotlin property owns the JVM getter name.
+    internal fun transformationSourceInfo(): Pair<Boolean, Curve?> {
+        val source = transformationSource
+        return (source?.elementClass == Const.OBJECT_CLASS_CURVE) to source
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> getCoords.
+    internal fun getCoords(): List<DoubleArray> =
+        points
+            .take(minOf(numberPoints, points.size))
+            .map { it.usrCoords.copyOf() }
+
     internal fun Value(): Double =
         integralDefinition?.let(::integralValue)
             ?: riemannDefinition?.sum
@@ -2919,6 +3284,128 @@ internal class Curve private constructor(
                 JessieCodeRuntimeValue.NumberValue(parameter),
             ),
         ).valueOrNaN()
+
+    // JSXGraph 1.13.3: src/base/curve.js -> Z.
+    @Suppress("UNUSED_PARAMETER")
+    internal fun Z(parameter: Double): Double = 1.0
+
+    // JSXGraph 1.13.3: src/base/curve.js -> cloneToBackground.
+    internal override fun cloneToBackground(): Curve {
+        traceSnapshots += CurveTraceSnapshot(
+            points = points
+                .take(minOf(numberPoints, points.size))
+                .map { it.usrCoords.copyOf() },
+            bezierDegree = bezierDegree,
+            numberPoints = numberPoints,
+        )
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/curve.js -> bounds.
+    internal fun bounds(): DoubleArray {
+        val usedPoints = points.take(minOf(numberPoints, points.size))
+        if (bezierDegree != 3) {
+            var minimumX = Double.POSITIVE_INFINITY
+            var maximumX = Double.NEGATIVE_INFINITY
+            var minimumY = Double.POSITIVE_INFINITY
+            var maximumY = Double.NEGATIVE_INFINITY
+            for (point in usedPoints) {
+                val x = point.usrCoords[1]
+                val y = point.usrCoords[2]
+                if (x.isFinite()) {
+                    minimumX = minOf(minimumX, x)
+                    maximumX = maxOf(maximumX, x)
+                }
+                if (y.isFinite()) {
+                    minimumY = minOf(minimumY, y)
+                    maximumY = maxOf(maximumY, y)
+                }
+            }
+            return doubleArrayOf(
+                minimumX,
+                maximumY,
+                maximumX,
+                minimumY,
+            )
+        }
+
+        var minimumX = Double.POSITIVE_INFINITY
+        var maximumX = Double.NEGATIVE_INFINITY
+        var minimumY = Double.POSITIVE_INFINITY
+        var maximumY = Double.NEGATIVE_INFINITY
+        var start = 0
+        while (start + 3 < usedPoints.size) {
+            val controlX = DoubleArray(4) {
+                usedPoints[start + it].usrCoords[1]
+            }
+            val controlY = DoubleArray(4) {
+                usedPoints[start + it].usrCoords[2]
+            }
+            val parameters = linkedSetOf(0.0, 1.0)
+            parameters += cubicDerivativeRoots(controlX)
+                .filter { it in 0.0..1.0 }
+            parameters += cubicDerivativeRoots(controlY)
+                .filter { it in 0.0..1.0 }
+            for (parameter in parameters) {
+                val x = cubicValue(controlX, parameter)
+                val y = cubicValue(controlY, parameter)
+                minimumX = minOf(minimumX, x)
+                maximumX = maxOf(maximumX, x)
+                minimumY = minOf(minimumY, y)
+                maximumY = maxOf(maximumY, y)
+            }
+            start += 3
+        }
+        return doubleArrayOf(
+            minimumX,
+            maximumY,
+            maximumX,
+            minimumY,
+        )
+    }
+
+    private fun cubicValue(
+        values: DoubleArray,
+        parameter: Double,
+    ): Double {
+        val opposite = 1.0 - parameter
+        return opposite * opposite *
+            (opposite * values[0] + 3.0 * parameter * values[1]) +
+            (
+                3.0 * opposite * values[2] +
+                    parameter * values[3]
+                ) * parameter * parameter
+    }
+
+    private fun cubicDerivativeRoots(
+        values: DoubleArray,
+    ): List<Double> {
+        val quadratic =
+            -values[0] + 3.0 * values[1] -
+                3.0 * values[2] + values[3]
+        val linear =
+            2.0 * (
+                values[0] - 2.0 * values[1] + values[2]
+                )
+        val constant = values[1] - values[0]
+        if (abs(quadratic) < Mat.eps) {
+            return if (abs(linear) < Mat.eps) {
+                emptyList()
+            } else {
+                listOf(-constant / linear)
+            }
+        }
+        val discriminant =
+            linear * linear - 4.0 * quadratic * constant
+        if (discriminant < 0.0) {
+            return emptyList()
+        }
+        val root = sqrt(discriminant)
+        return listOf(
+            (-linear - root) / (2.0 * quadratic),
+            (-linear + root) / (2.0 * quadratic),
+        )
+    }
 
     private fun evaluateMinimum(): GMResult<Double, CurveError> {
         conicDefinition?.let { definition ->
@@ -3715,6 +4202,7 @@ internal class Curve private constructor(
     internal companion object {
         internal const val DEFAULT_SAMPLE_COUNT: Int = 1600
         internal const val MAX_SAMPLE_COUNT: Int = 10_000
+        private const val DEFAULT_HIT_PRECISION: Double = 4.0
         internal const val DEFAULT_PLOT_VERSION: Int = 2
         private val SUPPORTED_PLOT_VERSIONS: Set<Int> = setOf(1, 2, 3, 4)
         internal const val DEFAULT_RECURSION_DEPTH_HIGH: Int = 17

@@ -13,6 +13,46 @@ import kotlin.test.assertTrue
 
 class JsxGraphJessieCodeTest {
     @Test
+    fun functionVisualPropertiesReorderAndRestyleSceneSnapshots() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initial = scene(
+            session.execute(
+                """
+                A = point(1, 2) <<
+                    id: "A", name: "", withLabel: false
+                >>;
+                A.layer = function (element) {
+                    return element.X() + 5;
+                };
+                A.strokeColor = function (element) {
+                    return element.X() > 2 ? "#112233" : "#445566";
+                };
+                A.strokeWidth = function (element) {
+                    return element.X() + 1;
+                };
+                """.trimIndent(),
+            ),
+        )
+        val initialPoint = scenePoint(initial, "A")
+        assertEquals(6, initialPoint.style.layer)
+        assertEquals(JsxGraphColor(68, 85, 102), initialPoint.style.strokeColor)
+        assertEquals(2.0, initialPoint.style.strokeWidth)
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "A",
+                coordinates = JsxGraphPoint2D(4.0, 2.0),
+            ),
+        ).value
+        val movedPoint = scenePoint(moved, "A")
+        assertEquals(9, movedPoint.style.layer)
+        assertEquals(JsxGraphColor(17, 34, 51), movedPoint.style.strokeColor)
+        assertEquals(5.0, movedPoint.style.strokeWidth)
+    }
+
+    @Test
     fun dynamicFunctionGraphResamplesEveryPointFromMovedDependency() {
         val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
             JsxGraphJessieCode.createSession(

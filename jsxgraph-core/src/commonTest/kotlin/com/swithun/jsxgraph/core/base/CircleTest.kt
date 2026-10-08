@@ -129,6 +129,34 @@ class CircleTest {
     }
 
     @Test
+    fun hitTestingRadiusResetAndAnchorsMatchOfficialBehavior() {
+        val board = board()
+        val center = point(board, doubleArrayOf(1.0, -2.0))
+        val circle = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radius = 3.0,
+            ),
+        )
+
+        assertTrue(circle.hasPoint(450.0, 280.0, precision = 0.5))
+        assertTrue(!circle.hasPoint(250.0, 200.0, precision = 0.5))
+        circle.hasInnerPoints = true
+        assertTrue(circle.hasPoint(250.0, 200.0, precision = 0.5))
+
+        assertSame(circle, circle.setRadius(-5.0))
+        assertEquals(5.0, circle.Radius(), absoluteTolerance = TOLERANCE)
+        assertEquals(5.0, circle.legacyRadius(), absoluteTolerance = TOLERANCE)
+        assertSame(center.coords, circle.getTextAnchor())
+        assertArrayMatches(
+            doubleArrayOf(1.0, 6.0, -2.0),
+            circle.getLabelAnchor("rt").usrCoords,
+        )
+        assertEquals(listOf(center.id, 5.0), circle.parentData())
+    }
+
+    @Test
     fun smallAndZeroRadiusNormalizationMatchOfficialResults() {
         val board = board()
         val small = circle(
@@ -858,6 +886,54 @@ class CircleTest {
         assertEquals(setOf(first.id), center.childElements.keys)
         assertEquals(setOf(first.id), point2.childElements.keys)
         assertEquals(3, board.numObjects)
+    }
+
+    @Test
+    fun symbolicPolynomialAndRadiusMatchOfficialStringConstruction() {
+        val board = board()
+        val center = point(board, doubleArrayOf(0.0, 0.0))
+        val circumference = point(board, doubleArrayOf(3.0, 4.0))
+        val glider = point(board, doubleArrayOf(5.0, 6.0))
+        center.symbolic["x"] = "m1"
+        center.symbolic["y"] = "m2"
+        circumference.symbolic["x"] = "p1"
+        circumference.symbolic["y"] = "p2"
+        glider.symbolic["x"] = "g1"
+        glider.symbolic["y"] = "g2"
+        val twoPoint = circle(
+            Circle.create(board, center, circumference),
+        )
+
+        assertEquals(
+            "((p1)-(m1))^2 + ((p2)-(m2))^2",
+            twoPoint.generateRadiusSquared(),
+        )
+        assertEquals(
+            listOf(
+                "((g1)-(m1))^2 + ((g2)-(m2))^2 - " +
+                    "(((p1)-(m1))^2 + ((p2)-(m2))^2)",
+            ),
+            twoPoint.generatePolynomial(glider),
+        )
+
+        val fixed = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radius = 2.5,
+            ),
+        )
+        assertEquals("6.25", fixed.generateRadiusSquared())
+
+        val dynamic = circle(
+            Circle.create(
+                board = board,
+                center = center,
+                radiusFunction = { 2.5 },
+            ),
+        )
+        assertEquals("", dynamic.generateRadiusSquared())
+        assertTrue(dynamic.generatePolynomial(glider).isEmpty())
     }
 
     private fun board(): Board = Board(

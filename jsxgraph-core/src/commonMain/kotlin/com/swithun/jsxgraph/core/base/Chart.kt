@@ -25,6 +25,7 @@ internal class Chart private constructor(
     id: String,
     name: String?,
     needsRegularUpdate: Boolean,
+    private var dataArrayUpdater: (() -> Unit)?,
 ) : GeometryElement(
     board = board,
     id = id,
@@ -32,10 +33,30 @@ internal class Chart private constructor(
     elementClass = Const.OBJECT_CLASS_OTHER,
     needsRegularUpdate = needsRegularUpdate,
 ) {
-    override fun update(fromParent: Boolean): Chart = this
+    // JSXGraph 1.13.3: src/base/chart.js -> update.
+    override fun update(fromParent: Boolean): Chart {
+        if (needsUpdate) {
+            updateDataArray()
+        }
+        return this
+    }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> updateRenderer.
     override fun updateRenderer(): Chart {
         needsUpdate = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/chart.js -> updateDataArray.
+    internal fun updateDataArray(): Chart {
+        dataArrayUpdater?.invoke()
+        return this
+    }
+
+    internal fun setDataArrayUpdater(
+        updater: (() -> Unit)?,
+    ): Chart {
+        dataArrayUpdater = updater
         return this
     }
 
@@ -47,6 +68,7 @@ internal class Chart private constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
+            dataArrayUpdater: (() -> Unit)? = null,
         ): GMResult<Chart, ChartContainerError> {
             val chart = Chart(
                 board = board,
@@ -54,6 +76,7 @@ internal class Chart private constructor(
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
+                dataArrayUpdater = dataArrayUpdater,
             )
             return when (val result = board.setId(chart, "Chart")) {
                 is GMResult.Ok -> GMResult.Ok(chart)

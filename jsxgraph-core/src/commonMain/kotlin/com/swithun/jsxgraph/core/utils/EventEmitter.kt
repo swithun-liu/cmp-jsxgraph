@@ -11,6 +11,9 @@ fun interface EventHandler {
     fun handle(context: Any, arguments: List<Any?>)
 }
 
+// JSXGraph 1.13.3: src/utils/event.js -> eventify.
+// Kotlin installs the event state and operations through construction instead
+// of mutating an arbitrary object's method table.
 class EventEmitter(
     private val owner: Any,
 ) {

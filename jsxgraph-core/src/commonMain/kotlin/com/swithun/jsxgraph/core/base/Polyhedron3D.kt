@@ -467,6 +467,7 @@ internal class Face3D internal constructor(
         return this
     }
 
+    // JSXGraph: src/3d/face3d.js -> Face3D.updateRenderer.
     override fun updateRenderer(): Face3D {
         needsUpdate = false
         return this
@@ -476,6 +477,7 @@ internal class Face3D internal constructor(
      * Resolves the color mutation performed by Face3D.shader into a CSS hex
      * color so the portable scene does not depend on a browser CSS parser.
      */
+    // JSXGraph: src/3d/face3d.js -> Face3D.shader.
     internal fun resolvedFillColor(): String =
         shadedFillColor()
             ?: faceAttributes.fillColorEvaluator?.evaluate(this)
@@ -600,6 +602,7 @@ internal class Face3D internal constructor(
         }
     }
 
+    // JSXGraph: src/3d/face3d.js -> Face3D.getRotationFromAngles.
     private fun rotationFromAngles(
         azimuth: Double,
         elevation: Double,
@@ -735,7 +738,7 @@ internal class Polyhedron3D private constructor(
 ) {
     internal val numberFaces: Int
         get() = faces.size
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
 
     init {
         elType = POLYHEDRON_3D_ELEMENT_TYPE

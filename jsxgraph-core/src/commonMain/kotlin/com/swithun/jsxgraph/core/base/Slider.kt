@@ -146,7 +146,7 @@ internal class Slider private constructor(
     internal var sliderTicks: Ticks? = null
     internal var label: Text? = null
     internal val subs = linkedMapOf<String, GeometryElement>()
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
 
     init {
         sliderMinimum = minimum

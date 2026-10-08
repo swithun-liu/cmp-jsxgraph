@@ -12,6 +12,7 @@ import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
 import com.swithun.jsxgraph.core.math.ParametricProjectionError
+import com.swithun.jsxgraph.core.math.ParametricScreenProjector
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 
 internal sealed interface Curve3DDynamicError {
@@ -140,7 +141,7 @@ internal class Curve3D private constructor(
         private set
     internal lateinit var curve2D: Curve
         private set
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     internal var evaluationError: Curve3DError? = null
         private set
     internal val isVectorField3D: Boolean
@@ -395,6 +396,7 @@ internal class Curve3D private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> updateRenderer.
     override fun updateRenderer(): Curve3D {
         needsUpdate = false
         return this
@@ -419,6 +421,39 @@ internal class Curve3D private constructor(
                 dimension = 1,
                 parameters = parameters,
                 rangeU = range,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                Curve3DError.ParametricProjection(result.error),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/3d/element3d.js ->
+    // projectScreenCoords;
+    // src/math/geometry.js -> projectScreenCoordsToParametric.
+    internal fun projectScreenCoords(
+        screenCoordinates: DoubleArray,
+        parameters: MutableList<Double>,
+        cyclic: Boolean = false,
+    ): GMResult<DoubleArray, Curve3DError> {
+        val range = when (val result = evaluateRange()) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Geometry.projectScreenCoordsToParametric(
+                screenCoordinates = screenCoordinates,
+                evaluator = Parametric3DEvaluator { values ->
+                    evalFResult(values[0])
+                },
+                projector = ParametricScreenProjector(
+                    view::project3DTo2D,
+                ),
+                parameters = parameters,
+                rangeU = range,
+                cyclic = cyclic,
             )
         ) {
             is GMResult.Ok -> result

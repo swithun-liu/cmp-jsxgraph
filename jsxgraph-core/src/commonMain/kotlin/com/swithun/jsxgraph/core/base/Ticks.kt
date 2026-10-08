@@ -14,6 +14,11 @@ import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.math.log10
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.round
 
 internal sealed interface TicksError {
@@ -108,7 +113,7 @@ internal class Ticks private constructor(
     board: Board,
     internal val parent: GeometryElement,
     internal val source: TicksSource,
-    internal val attributes: TicksAttributes,
+    internal var attributes: TicksAttributes,
     id: String,
     name: String?,
     needsRegularUpdate: Boolean,
@@ -129,6 +134,27 @@ internal class Ticks private constructor(
     init {
         elType = TICKS_ELEMENT_TYPE
         isDraggable = true
+    }
+
+    // JSXGraph 1.13.3: src/options.js -> useStandardOptions line ticks.
+    internal fun applyStandardOptions(
+        minTicksDistance: Double,
+        minorHeight: Double,
+        majorHeight: Double,
+    ): Ticks {
+        attributes = attributes.copy(
+            minTicksDistance = minTicksDistance,
+            minorHeight = minorHeight,
+            majorHeight = majorHeight,
+        )
+        setAttribute(
+            mapOf(
+                "minticksdistance" to minTicksDistance,
+                "minorheight" to minorHeight,
+                "majorheight" to majorHeight,
+            ),
+        )
+        return this
     }
 
     // JSXGraph 1.13.3: src/base/ticks.js -> update /
@@ -156,8 +182,319 @@ internal class Ticks private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/ticks.js -> updateRenderer.
+    override fun updateRenderer(): Ticks {
+        needsUpdate = false
+        return this
+    }
+
     override fun remove(): Ticks {
         parent.ticks.remove(this)
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/ticks.js -> hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        val line = parent as? Line ?: return false
+        val scalable =
+            (line.getAttribute("scalable") as? Boolean) ?: true
+        if (!scalable) {
+            return false
+        }
+        val horizontal = line.stdform[1] == 0.0
+        val vertical = line.stdform[2] == 0.0
+        if (!horizontal && !vertical) {
+            return false
+        }
+        val strokeWidth =
+            (getAttribute("strokewidth") as? Number)?.toDouble() ?: 1.0
+        val tolerance = precision + strokeWidth * 0.5
+        val tickSpan =
+            if (attributes.majorHeight < 0.0) {
+                Double.POSITIVE_INFINITY
+            } else {
+                abs(attributes.majorHeight) * 0.5 *
+                    attributes.majorTickEndings.count { it > 0.0 }
+            }
+        if (tickSpan < 1.0) {
+            return false
+        }
+        for (position in majorLineTickPositions(line)) {
+            val base = lineTickBase(line, position) ?: continue
+            val screen = Coords(
+                method = Const.COORDS_BY_USER,
+                coordinates = base,
+                board = board,
+                emitter = false,
+            ).scrCoords
+            if (
+                horizontal &&
+                abs(
+                    screen[1] - line.point1.coords.scrCoords[1],
+                ) >= Mat.eps &&
+                abs(
+                    screenY - line.point1.coords.scrCoords[2],
+                ) < 2.0 * tolerance &&
+                screenX > screen[1] - tolerance &&
+                screenX < screen[1] + tolerance
+            ) {
+                return true
+            }
+            if (
+                vertical &&
+                abs(
+                    screen[2] - line.point1.coords.scrCoords[2],
+                ) >= Mat.eps &&
+                abs(
+                    screenX - line.point1.coords.scrCoords[1],
+                ) < 2.0 * tolerance &&
+                screenY > screen[2] - tolerance &&
+                screenY < screen[2] + tolerance
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    // JSXGraph 1.13.3: src/base/ticks.js -> setPositionDirectly.
+    internal fun setPositionDirectly(
+        method: Int,
+        coordinates: DoubleArray,
+        oldCoordinates: DoubleArray,
+    ): GMResult<Ticks, BoardError> {
+        val line = parent as? Line ?: return GMResult.Ok(this)
+        val scalable =
+            (line.getAttribute("scalable") as? Boolean) ?: true
+        if (line.type != Const.OBJECT_TYPE_AXIS || !scalable) {
+            return GMResult.Ok(this)
+        }
+        val current = Coords(
+            method = method,
+            coordinates = coordinates,
+            board = board,
+            emitter = false,
+        )
+        val previous = Coords(
+            method = method,
+            coordinates = oldCoordinates,
+            board = board,
+            emitter = false,
+        )
+        val boundingBox = board.getBoundingBox()
+        if (
+            abs(line.stdform[1]) < Mat.eps &&
+            abs(
+                current.usrCoords[1] *
+                    previous.usrCoords[1],
+            ) > Mat.eps
+        ) {
+            val scale =
+                previous.usrCoords[1] / current.usrCoords[1]
+            boundingBox[0] *= scale
+            boundingBox[2] *= scale
+        } else if (
+            abs(line.stdform[2]) < Mat.eps &&
+            abs(
+                current.usrCoords[2] *
+                    previous.usrCoords[2],
+            ) > Mat.eps
+        ) {
+            val scale =
+                previous.usrCoords[2] / current.usrCoords[2]
+            boundingBox[1] *= scale
+            boundingBox[3] *= scale
+        } else {
+            return GMResult.Ok(this)
+        }
+        return when (
+            val result = board.setBoundingBox(
+                bbox = boundingBox,
+                keepAspectRatio = board.keepAspectRatio,
+                setZoom = BoardZoomMode.UPDATE,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(this)
+            is GMResult.Err -> result
+        }
+    }
+
+    private fun majorLineTickPositions(
+        line: Line,
+    ): List<Double> {
+        val point1 = line.point1.coords.usrCoords
+        val point2 = line.point2.coords.usrCoords
+        val deltaX = point2[1] - point1[1]
+        val deltaY = point2[2] - point1[2]
+        val length = hypot(deltaX, deltaY)
+        if (!length.isFinite() || length <= Mat.eps) {
+            return emptyList()
+        }
+        val directionX = deltaX / length
+        val directionY = deltaY / length
+        val anchor = attributes.anchor
+        val anchorParameter = when {
+            line.type == Const.OBJECT_TYPE_AXIS ->
+                (
+                    -point1[1] * deltaX -
+                        point1[2] * deltaY
+                    ) / (length * length)
+            anchor == TicksAnchor.Right -> 1.0
+            anchor == TicksAnchor.Middle -> 0.5
+            anchor is TicksAnchor.Fraction -> anchor.value
+            else -> 0.0
+        }
+        val zeroX = point1[1] + deltaX * anchorParameter
+        val zeroY = point1[2] + deltaY * anchorParameter
+        val boundingBox = board.getBoundingBox()
+        val cornerDistances = listOf(
+            (boundingBox[0] - zeroX) * directionX +
+                (boundingBox[1] - zeroY) * directionY,
+            (boundingBox[2] - zeroX) * directionX +
+                (boundingBox[1] - zeroY) * directionY,
+            (boundingBox[0] - zeroX) * directionX +
+                (boundingBox[3] - zeroY) * directionY,
+            (boundingBox[2] - zeroX) * directionX +
+                (boundingBox[3] - zeroY) * directionY,
+        )
+        var lower = cornerDistances.minOrNull() ?: return emptyList()
+        var upper = cornerDistances.maxOrNull() ?: return emptyList()
+        if (!line.straightFirst) {
+            lower = max(
+                lower,
+                (point1[1] - zeroX) * directionX +
+                    (point1[2] - zeroY) * directionY,
+            )
+        }
+        if (!line.straightLast) {
+            upper = min(
+                upper,
+                (point2[1] - zeroX) * directionX +
+                    (point2[2] - zeroY) * directionY,
+            )
+        }
+        if (lower > upper) {
+            return emptyList()
+        }
+        val fixed = source as? TicksSource.Fixed
+        if (fixed != null) {
+            return fixed.values.filter {
+                it >= lower - Mat.eps && it <= upper + Mat.eps
+            }
+        }
+        val distance =
+            if (attributes.insertTicks) {
+                val screenUnits = hypot(
+                    directionX * board.unitX,
+                    directionY * board.unitY,
+                )
+                val minimumDistance =
+                    attributes.minTicksDistance /
+                        attributes.scale /
+                        screenUnits *
+                        (attributes.minorTicks + 1)
+                val maximumDistance =
+                    (upper - lower) / 6.0 / attributes.scale
+                max(
+                    nextNiceMinimum(minimumDistance),
+                    previousNiceMaximum(maximumDistance),
+                ) * attributes.scale
+            } else {
+                attributes.ticksDistance * attributes.scale
+            }
+        if (!distance.isFinite() || distance <= Mat.eps) {
+            return emptyList()
+        }
+        val firstIndex = ceil((lower - Mat.eps) / distance).toLong()
+        val lastIndex = floor((upper + Mat.eps) / distance).toLong()
+        val requested = lastIndex - firstIndex + 1L
+        if (
+            requested <= 0L ||
+            requested > maximumTickCount
+        ) {
+            return emptyList()
+        }
+        return List(requested.toInt()) { index ->
+            (firstIndex + index) * distance
+        }
+    }
+
+    private fun lineTickBase(
+        line: Line,
+        position: Double,
+    ): DoubleArray? {
+        val point1 = line.point1.coords.usrCoords
+        val point2 = line.point2.coords.usrCoords
+        val deltaX = point2[1] - point1[1]
+        val deltaY = point2[2] - point1[2]
+        val length = hypot(deltaX, deltaY)
+        if (!length.isFinite() || length <= Mat.eps) {
+            return null
+        }
+        val anchor = attributes.anchor
+        val anchorParameter = when {
+            line.type == Const.OBJECT_TYPE_AXIS ->
+                (
+                    -point1[1] * deltaX -
+                        point1[2] * deltaY
+                    ) / (length * length)
+            anchor == TicksAnchor.Right -> 1.0
+            anchor == TicksAnchor.Middle -> 0.5
+            anchor is TicksAnchor.Fraction -> anchor.value
+            else -> 0.0
+        }
+        return doubleArrayOf(
+            1.0,
+            point1[1] + deltaX * anchorParameter +
+                position * deltaX / length,
+            point1[2] + deltaY * anchorParameter +
+                position * deltaY / length,
+        )
+    }
+
+    private fun nextNiceMinimum(
+        value: Double,
+    ): Double {
+        if (!value.isFinite() || value <= 0.0) {
+            return 0.0
+        }
+        var delta = 10.0.pow(floor(log10(value)))
+        if (2.0 * delta >= value) {
+            delta *= 2.0
+        } else if (5.0 * delta >= value) {
+            delta *= 5.0
+        }
+        return delta
+    }
+
+    private fun previousNiceMaximum(
+        value: Double,
+    ): Double {
+        if (!value.isFinite() || value <= 0.0) {
+            return 0.0
+        }
+        var delta = 10.0.pow(floor(log10(value)))
+        if (5.0 * delta < value) {
+            delta *= 5.0
+        } else if (2.0 * delta < value) {
+            delta *= 2.0
+        }
+        return delta
+    }
+
+    // JSXGraph 1.13.3: src/base/ticks.js -> hideElement.
+    internal override fun hideElement(): Ticks {
+        setAttribute(mapOf("visible" to false))
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/ticks.js -> showElement.
+    internal override fun showElement(): Ticks {
+        setAttribute(mapOf("visible" to true))
         return this
     }
 
@@ -350,6 +687,7 @@ internal class Ticks private constructor(
     internal companion object {
         private const val TICKS_ELEMENT_TYPE = "ticks"
         private const val TICKS_ID_PREFIX = "Ti"
+        private const val DEFAULT_HIT_PRECISION = 4.0
         internal const val DEFAULT_MAXIMUM_TICK_COUNT = 2048
 
         // JSXGraph 1.13.3: src/base/ticks.js -> createTicks / Ticks.

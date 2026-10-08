@@ -33,6 +33,62 @@ internal open class GeometryElement3D(
     internal val is3D: Boolean = true
     internal var zIndex: Double = 0.0
 
+    // JSXGraph: src/3d/element3d.js -> setAttr2D.
+    internal fun setAttr2D(
+        attributes3D: MutableMap<String, Any?>,
+    ): MutableMap<String, Any?> {
+        attributes3D["name"] = name
+        attributes3D["element3d"] = this
+        attributes3D["id"] = null
+        return attributes3D
+    }
+
+    // JSXGraph: src/3d/element3d.js -> setAttribute.
+    override fun setAttribute(
+        attributes: Map<String, Any?>,
+    ): GeometryElement3D {
+        super.setAttribute(attributes)
+        val delegated = attributes.filterKeys { rawKey ->
+            normalize3DAttributeKey(rawKey) !in LOCAL_3D_ATTRIBUTES
+        }
+        if (delegated.isNotEmpty()) {
+            element2D?.setAttribute(delegated)
+        }
+        return this
+    }
+
+    // JSXGraph: src/3d/element3d.js -> getAttribute.
+    override fun getAttribute(key: String): Any? {
+        val normalized = normalize3DAttributeKey(key)
+        return if (normalized in LOCAL_3D_ATTRIBUTES) {
+            super.getAttribute(normalized)
+        } else {
+            element2D?.getAttribute(normalized)
+                ?: super.getAttribute(normalized)
+        }
+    }
+
+    // JSXGraph: src/3d/element3d.js -> getAttributes.
+    override fun getAttributes(): Map<String, Any?> {
+        val result = linkedMapOf<String, Any?>()
+        result.putAll(element2D?.getAttributes().orEmpty())
+        result.remove("id")
+        result.remove("name")
+        for (key in LOCAL_3D_ATTRIBUTES) {
+            if (key in visualProperties) {
+                result[key] = visualProperties[key]
+            }
+        }
+        return result
+    }
+
+    /*
+     * JSXGraph: src/3d/element3d.js -> setPosition2D / projectCoords.
+     * These upstream base methods are intentional stubs. Kotlin keeps the
+     * executable contracts on concrete 3D element types, where result and
+     * error types can remain explicit.
+     */
+
     internal fun registerInView(): GeometryElement3D {
         view.objects[id] = this
         if (name.isNotEmpty()) {
@@ -79,5 +135,17 @@ internal open class GeometryElement3D(
             view.elementsByName.remove(name)
         }
         return this
+    }
+
+    private fun normalize3DAttributeKey(key: String): String =
+        key.filterNot(Char::isWhitespace).lowercase()
+
+    private companion object {
+        val LOCAL_3D_ATTRIBUTES = setOf(
+            "fillcolor",
+            "numberpointshigh",
+            "stepsu",
+            "stepsv",
+        )
     }
 }

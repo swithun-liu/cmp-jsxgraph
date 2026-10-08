@@ -10,6 +10,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
@@ -88,6 +89,8 @@ internal class ForeignObject private constructor(
         private set
     internal var size: DoubleArray? = initialSize?.let(::pixelSize)
         private set
+    internal var span: Array<DoubleArray> = invalidSpan()
+        private set
     internal var sizeEvaluationError: ForeignObjectError? = null
         private set
 
@@ -100,7 +103,44 @@ internal class ForeignObject private constructor(
 
     internal fun W(): Double? = usrSize?.get(0)
 
+    // JSXGraph: src/base/foreignobject.js -> ForeignObject.H.
     internal fun H(): Double? = usrSize?.get(1)
+
+    // JSXGraph: src/base/foreignobject.js -> ForeignObject.hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        val resolvedSize = size ?: return false
+        if (transformations.isEmpty()) {
+            val deltaX = screenX - coords.scrCoords[1]
+            val deltaY = coords.scrCoords[2] - screenY
+            return deltaX >= -precision &&
+                deltaX - resolvedSize[0] <= precision &&
+                deltaY >= -precision &&
+                deltaY - resolvedSize[1] <= precision
+        }
+        val userCoordinates = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        ).usrCoords
+        val offset = DoubleArray(3) { index ->
+            userCoordinates[index] - span[0][index]
+        }
+        val firstProjection = Mat.innerProduct(offset, span[1], 3)
+        if (
+            firstProjection < 0.0 ||
+            firstProjection > Mat.innerProduct(span[1], span[1], 3)
+        ) {
+            return false
+        }
+        val secondProjection = Mat.innerProduct(offset, span[2], 3)
+        return secondProjection >= 0.0 &&
+            secondProjection <= Mat.innerProduct(span[2], span[2], 3)
+    }
 
     // JSXGraph 1.13.3: src/base/foreignobject.js -> setSize.
     internal fun setSize(
@@ -152,15 +192,81 @@ internal class ForeignObject private constructor(
         }
     }
 
+    // JSXGraph: src/base/foreignobject.js -> ForeignObject.updateSpan.
+    internal fun updateSpan(): ForeignObject {
+        val width = W()
+        val height = H()
+        if (width == null || height == null) {
+            span = invalidSpan()
+            return this
+        }
+        span =
+            if (transformations.isEmpty()) {
+                arrayOf(
+                    doubleArrayOf(Z(), X(), Y()),
+                    doubleArrayOf(Z(), width, 0.0),
+                    doubleArrayOf(Z(), 0.0, height),
+                )
+            } else {
+                val vectors = arrayOf(
+                    doubleArrayOf(Z(), X(), Y()),
+                    doubleArrayOf(Z(), X() + width, Y()),
+                    doubleArrayOf(Z(), X(), Y() + height),
+                )
+                for (transformation in transformations) {
+                    for (index in vectors.indices) {
+                        vectors[index] = Mat.matVecMult(
+                            transformation.matrix,
+                            vectors[index],
+                        )
+                    }
+                }
+                for (vector in vectors) {
+                    vector[1] /= vector[0]
+                    vector[2] /= vector[0]
+                    vector[0] /= vector[0]
+                }
+                for (index in 1..2) {
+                    for (component in 0..2) {
+                        vectors[index][component] -= vectors[0][component]
+                    }
+                }
+                vectors
+            }
+        return this
+    }
+
+    /*
+     * JSXGraph: src/base/foreignobject.js -> ForeignObject.addTransform /
+     * ForeignObject.removeTransform / ForeignObject.clearTransforms.
+     * The implementations are shared by CoordsElement.
+     */
+
+    // JSXGraph: src/base/foreignobject.js -> ForeignObject.getParents.
+    internal fun parentDefinitions(): List<Any?> =
+        if (parents.isNotEmpty()) {
+            parents.toList()
+        } else {
+            listOf(
+                content,
+                doubleArrayOf(Z(), X(), Y()),
+                usrSize?.copyOf(),
+            )
+        }
+
     private fun pixelSize(userSize: DoubleArray): DoubleArray =
         doubleArrayOf(
             abs(userSize[0] * board.unitX),
             abs(userSize[1] * board.unitY),
         )
 
+    private fun invalidSpan(): Array<DoubleArray> =
+        Array(3) { DoubleArray(3) { Double.NaN } }
+
     internal companion object {
         private const val FOREIGN_OBJECT_ID_PREFIX = "Im"
         private const val FOREIGN_OBJECT_ELEMENT_TYPE = "foreignobject"
+        private const val DEFAULT_HIT_PRECISION = 4.0
 
         internal fun create(
             board: Board,

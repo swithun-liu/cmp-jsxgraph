@@ -8,7 +8,11 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
+import com.swithun.jsxgraph.core.math.ParametricProjectionError
+import com.swithun.jsxgraph.core.math.ParametricScreenProjector
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -166,6 +170,10 @@ internal sealed interface Plane3DError {
     data class Polyhedron3DFactory(
         val error: Polyhedron3DError,
     ) : Plane3DError
+
+    data class ParametricProjection(
+        val error: ParametricProjectionError<Plane3DError>,
+    ) : Plane3DError
 }
 
 /**
@@ -257,12 +265,14 @@ internal class Plane3D private constructor(
         v: Double,
     ): Double = F(u, v)[1]
 
+    // JSXGraph: src/3d/linspace3d.js -> Plane3D.Y.
     @Suppress("FunctionName")
     internal fun Y(
         u: Double,
         v: Double,
     ): Double = F(u, v)[2]
 
+    // JSXGraph: src/3d/linspace3d.js -> Plane3D.Z.
     @Suppress("FunctionName")
     internal fun Z(
         u: Double,
@@ -466,6 +476,7 @@ internal class Plane3D private constructor(
         return this
     }
 
+    // JSXGraph: src/3d/linspace3d.js -> Plane3D.updateRenderer.
     override fun updateRenderer(): GeometryElement {
         needsUpdate = false
         return this
@@ -528,6 +539,35 @@ internal class Plane3D private constructor(
         }
         return F(u, v)
     }
+
+    // JSXGraph 1.13.3: src/3d/element3d.js ->
+    // projectScreenCoords;
+    // src/math/geometry.js -> projectScreenCoordsToParametric.
+    internal fun projectScreenCoords(
+        screenCoordinates: DoubleArray,
+        parameters: MutableList<Double>,
+        cyclic: Boolean = false,
+    ): GMResult<DoubleArray, Plane3DError> =
+        when (
+            val result = Geometry.projectScreenCoordsToParametric(
+                screenCoordinates = screenCoordinates,
+                evaluator = Parametric3DEvaluator { values ->
+                    GMResult.Ok(F(values[0], values[1]))
+                },
+                projector = ParametricScreenProjector(
+                    view::project3DTo2D,
+                ),
+                parameters = parameters,
+                rangeU = evaluatedRangeU,
+                rangeV = evaluatedRangeV,
+                cyclic = cyclic,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                Plane3DError.ParametricProjection(result.error),
+            )
+        }
 
     private fun parameterDirection(direction: DoubleArray): DoubleArray =
         if (usesSurfaceMapping) {

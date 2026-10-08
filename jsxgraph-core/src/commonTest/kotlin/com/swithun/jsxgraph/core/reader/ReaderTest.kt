@@ -182,6 +182,64 @@ class ReaderTest {
         )
     }
 
+    @Test
+    fun injectedLoadersSupportRemoteLocalAndRawSources() {
+        val events = mutableListOf<String>()
+        val registry = ReaderRegistry<FixtureBoard>()
+        registry.registerReader(
+            reader = JsxGraphReaderFactory { board, source ->
+                GMResult.Ok(
+                    JsxGraphReader {
+                        board.selected = source
+                        GMResult.Ok(Unit)
+                    },
+                )
+            },
+            extensions = listOf("fixture"),
+        )
+        val loader = FileContentLoader { source, encoding ->
+            val kind = when (source) {
+                is FileContentSource.RemoteUrl -> "RemoteUrl"
+                is FileContentSource.LocalBlob -> "LocalBlob"
+            }
+            events += "$kind:$encoding"
+            GMResult.Ok("loaded")
+        }
+        val board = FixtureBoard()
+
+        assertIs<GMResult.Ok<Unit>>(
+            FileReader.parseFileContent(
+                source = FileContentSource.RemoteUrl("https://example.test"),
+                board = board,
+                format = "fixture",
+                encoding = "UTF-8",
+                registry = registry,
+                remoteLoader = loader,
+            ),
+        )
+        assertEquals("loaded", board.selected)
+
+        assertIs<GMResult.Ok<Unit>>(
+            FileReader.parseFileContent(
+                source = FileContentSource.LocalBlob("fixture"),
+                board = board,
+                format = "raw",
+                encoding = "UTF-8",
+                registry = registry,
+                localLoader = loader,
+                rawContentHandler = { events += "raw:$it" },
+            ),
+        )
+        assertEquals(
+            listOf(
+                "RemoteUrl:UTF-8",
+                "LocalBlob:UTF-8",
+                "raw:loaded",
+            ),
+            events,
+        )
+    }
+
     private data class FixtureBoard(
         var selected: String? = null,
     )

@@ -9,6 +9,7 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
@@ -77,6 +78,83 @@ internal class JessieCodeEvaluationSession(
 
     internal val log: List<List<JessieCodeRuntimeValue>>
         get() = state.log
+
+    internal val currentBoard
+        get() = state.currentBoardValue
+
+    internal fun pushScope(
+        arguments: List<String>,
+    ): JessieCodeScopeSnapshot = state.pushScope(arguments)
+
+    internal fun popScope(): JessieCodeScopeSnapshot = state.popScope()
+
+    internal fun letVariable(
+        name: String,
+        value: JessieCodeRuntimeValue,
+    ): JessieCodeScopeSnapshot = state.letVariable(name, value)
+
+    internal fun localVariableScope(
+        name: String,
+    ): JessieCodeScopeSnapshot? = state.localVariableScope(name)
+
+    internal fun parameterScope(
+        name: String,
+    ): JessieCodeScopeSnapshot? = state.parameterScope(name)
+
+    internal fun resolve(
+        name: String,
+    ): JessieCodeRuntimeValue = state.resolve(name)
+
+    internal fun resolveVariable(
+        name: String,
+        local: Boolean,
+        functionName: Boolean,
+    ): JessieCodeRuntimeValue =
+        state.resolveVariable(name, local, functionName)
+
+    internal fun getElementById(
+        id: String,
+    ): JessieCodeRuntimeValue = state.getElementById(id)
+
+    internal fun isMathMethod(name: String): Boolean =
+        state.isMathMethod(name)
+
+    internal fun isBuiltIn(name: String): Boolean =
+        state.isBuiltIn(name)
+
+    internal fun addBuiltIn(
+        name: String,
+        callable: JessieCodeCallable,
+    ): Boolean = state.addBuiltIn(name, callable)
+
+    internal fun callBuiltIn(
+        name: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        state.callBuiltIn(name, arguments, location)
+
+    internal fun findSymbol(
+        value: JessieCodeRuntimeValue,
+        scopeId: Int = -1,
+    ): JessieCodeSymbol? = state.findSymbol(value, scopeId)
+
+    internal fun assignProperty(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        state.assignFacadeProperty(receiver, property, value, location)
+
+    internal fun evaluateValue(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        state.evaluateFacadeValue(value, location)
+
+    internal fun possibleOperands(): JessieCodePossibleOperands =
+        state.possibleOperands()
 }
 
 private class EvaluationState(
@@ -86,16 +164,278 @@ private class EvaluationState(
     private var evaluationSteps = 0
     private var functionCallDepth = 0
     private var currentBoard = environment.board
+    private val scopes = mutableListOf<RuntimeScope>()
     private var currentScope = RuntimeScope(
+        id = 0,
         parameters = emptyList(),
         locals = environment.variables.toMutableMap(),
         previous = null,
-    )
+    ).also(scopes::add)
+    private val addedBuiltIns =
+        linkedMapOf<String, JessieCodeCallable>()
     private val logEntries =
         mutableListOf<List<JessieCodeRuntimeValue>>()
 
     internal val log: List<List<JessieCodeRuntimeValue>>
         get() = logEntries
+
+    internal val currentBoardValue: Board?
+        get() = currentBoard
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> pushScope.
+    internal fun pushScope(
+        arguments: List<String>,
+    ): JessieCodeScopeSnapshot {
+        val scope = RuntimeScope(
+            id = scopes.size,
+            parameters = arguments.toList(),
+            locals = mutableMapOf(),
+            previous = currentScope,
+        )
+        scopes += scope
+        currentScope = scope
+        return scope.snapshot()
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> popScope.
+    internal fun popScope(): JessieCodeScopeSnapshot {
+        currentScope = currentScope.previous ?: currentScope
+        return currentScope.snapshot()
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> letvar.
+    internal fun letVariable(
+        name: String,
+        value: JessieCodeRuntimeValue,
+    ): JessieCodeScopeSnapshot {
+        currentScope.locals[name] = value
+        return currentScope.snapshot()
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> isLocalVariable.
+    internal fun localVariableScope(
+        name: String,
+    ): JessieCodeScopeSnapshot? = localScope(name)?.snapshot()
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> isParameter.
+    internal fun parameterScope(
+        name: String,
+    ): JessieCodeScopeSnapshot? {
+        var scope: RuntimeScope? = currentScope
+        while (scope != null) {
+            if (name in scope.parameters) {
+                return scope.snapshot()
+            }
+            scope = scope.previous
+        }
+        return null
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> resolve.
+    internal fun resolve(name: String): JessieCodeRuntimeValue =
+        localScope(name)?.locals?.get(name)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> getvarJS.
+    // The native target resolves the value directly instead of emitting JS.
+    internal fun resolveVariable(
+        name: String,
+        local: Boolean,
+        functionName: Boolean,
+    ): JessieCodeRuntimeValue {
+        localScope(name)?.locals?.get(name)?.let { return it }
+        when (name) {
+            "PI" -> return JessieCodeRuntimeValue.NumberValue(PI)
+            "EULER" -> return JessieCodeRuntimeValue.NumberValue(E)
+            "\$board" -> return currentBoard?.let {
+                JessieCodeRuntimeValue.BoardReference(it)
+            } ?: JessieCodeRuntimeValue.UndefinedValue
+        }
+        if (functionName) {
+            val callable = standardCallable(name)
+                ?: addedBuiltIns[name]
+                ?: environment.functions[name]
+            if (callable != null) {
+                return JessieCodeRuntimeValue.FunctionValue(
+                    name = name,
+                    callable = callable,
+                )
+            }
+            val creator = environment.creators[name]
+                ?: NativeJessieCodeCreators.creator(name)
+            if (creator != null) {
+                return JessieCodeRuntimeValue.FunctionValue(
+                    name = name,
+                    callable = JessieCodeCallable {
+                            arguments,
+                            location,
+                        ->
+                        creator.create(
+                            board = currentBoard,
+                            parents = arguments,
+                            attributes =
+                                JessieCodeRuntimeValue.ObjectValue(
+                                    emptyMap(),
+                                ),
+                            location = location,
+                        )
+                    },
+                    creator = creator,
+                )
+            }
+        }
+        if (local) {
+            return JessieCodeRuntimeValue.UndefinedValue
+        }
+        val element = currentBoard?.select(name)
+        val group = currentBoard?.groupById(name)
+        return element?.let {
+            JessieCodeRuntimeValue.ElementReference(it)
+        } ?: group?.let {
+            JessieCodeRuntimeValue.CompositionReference(it)
+        } ?: JessieCodeRuntimeValue.UndefinedValue
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> getElementById.
+    internal fun getElementById(id: String): JessieCodeRuntimeValue {
+        val element = currentBoard?.elementById(id)
+        val group = currentBoard?.groupById(id)
+        return element?.let {
+            JessieCodeRuntimeValue.ElementReference(it)
+        } ?: group?.let {
+            JessieCodeRuntimeValue.CompositionReference(it)
+        } ?: JessieCodeRuntimeValue.UndefinedValue
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> isMathMethod.
+    internal fun isMathMethod(name: String): Boolean =
+        name != "E" && name in MATH_METHOD_NAMES
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> isBuiltIn.
+    internal fun isBuiltIn(name: String): Boolean =
+        name in BUILT_IN_CONSTANT_NAMES ||
+            name in BUILT_IN_CALLABLE_NAMES ||
+            name in addedBuiltIns
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> addBuiltIn.
+    internal fun addBuiltIn(
+        name: String,
+        callable: JessieCodeCallable,
+    ): Boolean {
+        if (isBuiltIn(name)) {
+            return false
+        }
+        addedBuiltIns[name] = callable
+        return true
+    }
+
+    internal fun callBuiltIn(
+        name: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val callable = standardCallable(name)
+            ?: addedBuiltIns[name]
+            ?: environment.functions[name]
+            ?: return GMResult.Err(
+                JessieCodeRuntimeError.NotCallable(
+                    valueType = name,
+                    location = location,
+                ),
+            )
+        return callWithFreshBudget {
+            callable.call(arguments, location)
+        }
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> findSymbol.
+    internal fun findSymbol(
+        value: JessieCodeRuntimeValue,
+        scopeId: Int,
+    ): JessieCodeSymbol? {
+        var scope = if (scopeId == -1) {
+            currentScope
+        } else {
+            scopes.getOrNull(scopeId) ?: return null
+        }
+        while (true) {
+            for ((name, candidate) in scope.locals) {
+                if (sameRuntimeValue(candidate, value)) {
+                    return JessieCodeSymbol(name, scope.snapshot())
+                }
+            }
+            scope = scope.previous ?: return null
+        }
+    }
+
+    internal fun assignFacadeProperty(
+        receiver: JessieCodeRuntimeValue,
+        property: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> =
+        assignProperty(receiver, property, value, location)
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> eval.
+    internal fun evaluateFacadeValue(
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult = callWithFreshBudget {
+        evaluateBuiltInValue(value, location)
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> getPossibleOperands.
+    internal fun possibleOperands(): JessieCodePossibleOperands {
+        val entries = mutableListOf<JessieCodeOperand>()
+        for (name in BUILT_IN_CALLABLE_NAMES.sortedWith(NAME_COMPARATOR)) {
+            if (!name.startsWith("\$")) {
+                entries += JessieCodeOperand(
+                    name = name,
+                    type = JessieCodeOperandType.FUNCTION,
+                    origin = if (name in MATH_METHOD_NAMES) {
+                        JessieCodeOperandOrigin.MATH
+                    } else {
+                        JessieCodeOperandOrigin.JESSIE_CODE
+                    },
+                )
+            }
+        }
+        for (name in addedBuiltIns.keys.sortedWith(NAME_COMPARATOR)) {
+            entries += JessieCodeOperand(
+                name = name,
+                type = JessieCodeOperandType.FUNCTION,
+                origin = JessieCodeOperandOrigin.JESSIE_CODE,
+            )
+        }
+        entries += JessieCodeOperand(
+            name = "EULER",
+            type = JessieCodeOperandType.CONSTANT,
+            origin = JessieCodeOperandOrigin.JESSIE_CODE,
+            value = E,
+        )
+        entries += JessieCodeOperand(
+            name = "PI",
+            type = JessieCodeOperandType.CONSTANT,
+            origin = JessieCodeOperandOrigin.JESSIE_CODE,
+            value = PI,
+        )
+        val sorted = entries.distinctBy { it.name }
+            .sortedWith(compareBy(NAME_COMPARATOR) { it.name })
+        return JessieCodePossibleOperands(
+            all = sorted.associateBy { it.name },
+            list = sorted,
+            functions = sorted.filter {
+                it.type == JessieCodeOperandType.FUNCTION
+            }.map { it.name },
+            jessieCodeFunctions = sorted.filter {
+                it.type == JessieCodeOperandType.FUNCTION &&
+                    it.origin == JessieCodeOperandOrigin.JESSIE_CODE
+            }.map { it.name },
+            constants = sorted.filter {
+                it.type == JessieCodeOperandType.CONSTANT
+            }.map { it.name },
+        )
+    }
 
     fun evaluateRoot(
         node: JessieCodeAstNode,
@@ -486,10 +826,12 @@ private class EvaluationState(
         }
 
         val functionScope = RuntimeScope(
+            id = scopes.size,
             parameters = parameters,
             locals = mutableMapOf(),
             previous = currentScope,
         )
+        scopes += functionScope
         // The interpreter's defineFunction calls pushScope and intentionally
         // leaves that function scope current when compile mode is disabled.
         currentScope = functionScope
@@ -1488,6 +1830,7 @@ private class EvaluationState(
 
         if (functionPosition) {
             val callable = standardCallable(name)
+                ?: addedBuiltIns[name]
                 ?: environment.functions[name]
             if (callable != null) {
                 return GMResult.Ok(
@@ -3804,6 +4147,89 @@ private class EvaluationState(
         const val CALL_WITH_ATTRIBUTES_CHILD_COUNT = 4
         val NEGATIVE_ZERO_BITS = (-0.0).toBits()
         val ARRAY_INDEX = Regex("""^(0|[1-9][0-9]*)$""")
+        val NAME_COMPARATOR = Comparator<String> { left, right ->
+            left.lowercase().compareTo(right.lowercase())
+        }
+        val BUILT_IN_CONSTANT_NAMES = setOf("PI", "EULER", "\$board")
+        val MATH_METHOD_NAMES = setOf(
+            "abs",
+            "acos",
+            "acosh",
+            "asin",
+            "asinh",
+            "atan",
+            "atan2",
+            "atanh",
+            "cbrt",
+            "ceil",
+            "cos",
+            "cosh",
+            "exp",
+            "floor",
+            "log",
+            "log10",
+            "log2",
+            "max",
+            "min",
+            "pow",
+            "round",
+            "sign",
+            "sin",
+            "sinh",
+            "sqrt",
+            "tan",
+            "tanh",
+            "trunc",
+        )
+        val BUILT_IN_CALLABLE_NAMES = MATH_METHOD_NAMES + setOf(
+            "\$",
+            "\$value",
+            "\$log",
+            "A",
+            "Area",
+            "D",
+            "Dist",
+            "IfThen",
+            "L",
+            "Length",
+            "Perimeter",
+            "R",
+            "Radius",
+            "Slope",
+            "V",
+            "Value",
+            "X",
+            "Y",
+            "acot",
+            "area",
+            "binomial",
+            "cot",
+            "deg",
+            "dist",
+            "erf",
+            "erfc",
+            "erfi",
+            "eval",
+            "factorial",
+            "gcd",
+            "getName",
+            "lb",
+            "lcm",
+            "ld",
+            "lg",
+            "ln",
+            "name",
+            "ndtr",
+            "ndtri",
+            "nthroot",
+            "perimeter",
+            "rad",
+            "radius",
+            "randint",
+            "ratpow",
+            "remove",
+            "slope",
+        )
     }
 
     private sealed interface AssignmentTarget {
@@ -3827,11 +4253,20 @@ private class EvaluationState(
     }
 
     private class RuntimeScope(
+        val id: Int,
         val parameters: List<String>,
         val locals: MutableMap<String, JessieCodeRuntimeValue>,
         val previous: RuntimeScope?,
     ) {
         var implicitCreatorName: String? = null
+
+        fun snapshot(): JessieCodeScopeSnapshot =
+            JessieCodeScopeSnapshot(
+                id = id,
+                arguments = parameters.toList(),
+                locals = locals.toMap(),
+                previousId = previous?.id,
+            )
     }
 }
 
@@ -3847,6 +4282,23 @@ private typealias TextListResult =
     GMResult<List<String>, JessieCodeRuntimeError>
 
 private const val MAX_SUPPORTED_EVALUATION_DEPTH = 64
+
+private fun sameRuntimeValue(
+    left: JessieCodeRuntimeValue,
+    right: JessieCodeRuntimeValue,
+): Boolean =
+    when {
+        left is JessieCodeRuntimeValue.NumberValue &&
+            right is JessieCodeRuntimeValue.NumberValue ->
+            left.value == right.value
+        left is JessieCodeRuntimeValue.BooleanValue &&
+            right is JessieCodeRuntimeValue.BooleanValue ->
+            left.value == right.value
+        left is JessieCodeRuntimeValue.StringValue &&
+            right is JessieCodeRuntimeValue.StringValue ->
+            left.value == right.value
+        else -> left === right
+    }
 
 private fun parseJavaScriptNumber(source: String): Double {
     val value = source.trim()

@@ -176,24 +176,44 @@ class JessieCodeElementSetPropTest {
     }
 
     @Test
-    fun untranslatedVisualPropertiesReturnAStructuredFailure() {
+    fun visualPropertiesAreAssignedThroughSetAttribute() {
         val board = board()
-        val error = evaluateError(
-            source = "A = point(1, 2); A.x = 9;",
+        evaluate(
+            source =
+                "A = point(1, 2); A.x = 9; " +
+                    "A.strokeColor = \"#123456\"; A.strokeWidth = 3;",
             board = board,
         )
         val point = assertIs<Point>(board.select("A"))
 
-        assertEquals(
-            "x",
-            assertIs<
-                JessieCodeRuntimeError.ElementPropertyAssignmentUnavailable
-                >(error).property,
-        )
+        assertEquals(9.0, point.getAttribute("x"))
+        assertEquals("#123456", point.getAttribute("strokecolor"))
+        assertEquals(3.0, point.getAttribute("strokewidth"))
         assertContentEquals(
             doubleArrayOf(1.0, 1.0, 2.0),
             point.coords.usrCoords,
         )
+    }
+
+    @Test
+    fun functionVisualPropertiesReceiveTheElementAndStayDynamic() {
+        val board = board()
+        evaluate(
+            source =
+                "A = point(1, 2); " +
+                    "A.strokeWidth = function (element) { " +
+                    "return element.X() + 2; };",
+            board = board,
+        )
+        val point = assertIs<Point>(board.select("A"))
+
+        assertEquals(3.0, point.evalVisProp("strokewidth"))
+        point.setPosition(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(4.0, 2.0),
+        )
+        board.update()
+        assertEquals(6.0, point.evalVisProp("strokewidth"))
     }
 
     @Test

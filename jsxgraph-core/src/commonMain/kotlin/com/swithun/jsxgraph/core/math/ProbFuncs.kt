@@ -215,7 +215,9 @@ object ProbFuncs {
         return result
     }
 
-    private fun underflow(value: Double): Double = if (value < 0.0) 2.0 else 0.0
+    // JSXGraph 1.13.3: src/math/probfuncs.js -> _underflow.
+    private fun underflow(value: Double): Double =
+        if (value < 0.0) 2.0 else 0.0
 
     // JSXGraph: src/math/probfuncs.js -> erfc
     fun erfc(value: Double): Double {

@@ -793,6 +793,7 @@ object Numerics {
         val error: Double,
     )
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> _workspace.
     private class IntegrationWorkspace(
         interval: DoubleArray,
         private val limit: Int,
@@ -812,6 +813,8 @@ object Numerics {
             ends[0] = interval[1]
         }
 
+        // JSXGraph 1.13.3: src/math/numerics.js ->
+        // _workspace.set_initial_result.
         fun setInitialResult(
             result: Double,
             error: Double,
@@ -821,6 +824,7 @@ object Numerics {
             errors[0] = error
         }
 
+        // JSXGraph 1.13.3: src/math/numerics.js -> _workspace.update.
         fun update(
             firstStart: Double,
             firstEnd: Double,
@@ -861,6 +865,7 @@ object Numerics {
             sortErrors()
         }
 
+        // JSXGraph 1.13.3: src/math/numerics.js -> _workspace.retrieve.
         fun retrieve(): IntegrationSubinterval {
             val index = currentIndex
             return IntegrationSubinterval(
@@ -871,6 +876,8 @@ object Numerics {
             )
         }
 
+        // JSXGraph 1.13.3: src/math/numerics.js ->
+        // _workspace.sum_results.
         fun sumResults(): Double {
             var sum = 0.0
             for (index in 0 until size) {
@@ -879,6 +886,8 @@ object Numerics {
             return sum
         }
 
+        // JSXGraph 1.13.3: src/math/numerics.js ->
+        // _workspace.subinterval_too_small.
         fun subintervalTooSmall(
             firstStart: Double,
             secondStart: Double,
@@ -892,6 +901,8 @@ object Numerics {
             return abs(firstStart) <= threshold && abs(secondEnd) <= threshold
         }
 
+        // JSXGraph 1.13.3: src/math/numerics.js ->
+        // _workspace.qpsrt.
         private fun sortErrors() {
             val last = size - 1
             var errorPosition = maximumErrorPosition

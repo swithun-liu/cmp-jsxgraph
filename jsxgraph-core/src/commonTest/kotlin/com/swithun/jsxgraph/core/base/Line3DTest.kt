@@ -253,6 +253,105 @@ class Line3DTest {
     }
 
     @Test
+    fun setPosition2DTransformsOnlyDraggableDefiningPoints() {
+        val board = createBoard()
+        val view = createView(board)
+        val point1 = point(view, doubleArrayOf(0.0, 0.0, 0.0), "A")
+        val point2 = point(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(1.0, 1.0, 1.0),
+                id = "B",
+                name = "",
+                fixed = true,
+            ),
+        )
+        val line = line(
+            Line3D.create(
+                view = view,
+                point1 = point1,
+                point2 = point2,
+                id = "line",
+                name = "",
+            ),
+        )
+        val firstProjection = point1.point2D.coords.usrCoords.copyOf()
+        val secondProjection = point2.point2D.coords.usrCoords.copyOf()
+        val translation = assertIs<GMResult.Ok<Transformation>>(
+            Transformation.create(
+                type = "translate",
+                parameters = doubleArrayOf(2.0, -3.0),
+            ),
+        ).value
+
+        assertIs<GMResult.Ok<Line3D>>(
+            line.setPosition2D(translation),
+        )
+
+        assertContentEquals(
+            doubleArrayOf(
+                firstProjection[0],
+                firstProjection[1] + 2.0,
+                firstProjection[2] - 3.0,
+            ),
+            point1.point2D.coords.usrCoords,
+        )
+        assertContentEquals(
+            secondProjection,
+            point2.point2D.coords.usrCoords,
+        )
+
+        board.fullUpdate()
+
+        assertVectorMatches(point1.coords, line.endpoints[0].coords)
+        assertVectorMatches(point2.coords, line.endpoints[1].coords)
+    }
+
+    @Test
+    fun setPosition2DReturnsTransformationFailures() {
+        val board = createBoard()
+        val view = createView(board)
+        val point1 = point(view, doubleArrayOf(0.0, 0.0, 0.0), "A")
+        val point2 = point(view, doubleArrayOf(1.0, 1.0, 1.0), "B")
+        val line = line(
+            Line3D.create(
+                view = view,
+                point1 = point1,
+                point2 = point2,
+                id = "line",
+                name = "",
+            ),
+        )
+        val rejected = assertIs<GMResult.Ok<Transformation>>(
+            Transformation.create(
+                board = board,
+                type = "translate",
+                parameters = listOf(
+                    TransformationParameter.Dynamic(
+                        TransformationDynamicParameter {
+                            GMResult.Err(
+                                TransformationDynamicParameterError.Rejected(
+                                    "not available",
+                                ),
+                            )
+                        },
+                    ),
+                    TransformationParameter.Numeric(0.0),
+                ),
+            ),
+        ).value
+
+        val result = assertIs<
+            GMResult.Err<Line3DError.PositionTransformation>
+            >(line.setPosition2D(rejected))
+
+        assertEquals(0, result.error.parentIndex)
+        assertIs<TransformationError.DynamicParameterEvaluation>(
+            result.error.error,
+        )
+    }
+
+    @Test
     fun removalCleansOwnedEndpointsProxyAndViewRegistry() {
         val board = createBoard()
         val view = createView(board)

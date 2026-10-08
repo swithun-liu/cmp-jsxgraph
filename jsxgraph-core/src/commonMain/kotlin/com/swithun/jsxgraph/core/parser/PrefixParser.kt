@@ -81,6 +81,7 @@ internal sealed interface PrefixParserError {
  * hostile construction cannot exhaust the host stack or CPU.
  */
 internal object PrefixParser {
+    // JSXGraph 1.13.3: src/parser/prefix.js -> parse.
     internal fun execute(
         board: Board,
         term: JessieCodeRuntimeValue,
@@ -91,6 +92,7 @@ internal object PrefixParser {
             execute(board, term, location, state, depth = 0)
         }
 
+    // JSXGraph 1.13.3: src/parser/prefix.js -> dimension.
     internal fun dimension(
         board: Board,
         term: JessieCodeRuntimeValue,
@@ -100,6 +102,7 @@ internal object PrefixParser {
             dimension(board, term, state, depth = 0)
         }
 
+    // JSXGraph 1.13.3: src/parser/prefix.js -> toPrefix.
     internal fun toPrefix(
         board: Board,
         term: JessieCodeRuntimeValue,
@@ -109,6 +112,7 @@ internal object PrefixParser {
             toPrefix(board, term, state, depth = 0)
         }
 
+    // JSXGraph 1.13.3: src/parser/prefix.js -> getParents.
     internal fun getParents(
         board: Board,
         term: JessieCodeRuntimeValue,

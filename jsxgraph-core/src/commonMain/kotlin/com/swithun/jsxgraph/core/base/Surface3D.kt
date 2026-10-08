@@ -14,6 +14,7 @@ import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
 import com.swithun.jsxgraph.core.math.ParametricProjectionError
+import com.swithun.jsxgraph.core.math.ParametricScreenProjector
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -192,7 +193,7 @@ internal class Surface3D private constructor(
         private set
     internal var polyhedron: Polyhedron3D? = null
         private set
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     internal var evaluationError: Surface3DError? = null
         private set
     internal val isFunctionGraph: Boolean = functionGraph
@@ -415,6 +416,9 @@ internal class Surface3D private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/3d/surface3d.js -> updateDataArray.
+    internal fun updateDataArray(): Surface3D = this
+
     // JSXGraph: src/3d/surface3d.js -> updateTransform.
     internal fun updateTransformResult():
         GMResult<Surface3D, Surface3DError> {
@@ -465,6 +469,7 @@ internal class Surface3D private constructor(
         if (!needsUpdate) {
             return this
         }
+        updateDataArray()
         when (val result = updateCoordsResult()) {
             is GMResult.Ok -> {
                 evaluationError = null
@@ -494,6 +499,7 @@ internal class Surface3D private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/3d/surface3d.js -> updateRenderer.
     override fun updateRenderer(): Surface3D {
         needsUpdate = false
         return this
@@ -523,6 +529,44 @@ internal class Surface3D private constructor(
                 parameters = parameters,
                 rangeU = rangeU,
                 rangeV = rangeV,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                Surface3DError.ParametricProjection(result.error),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/3d/element3d.js ->
+    // projectScreenCoords;
+    // src/math/geometry.js -> projectScreenCoordsToParametric.
+    internal fun projectScreenCoords(
+        screenCoordinates: DoubleArray,
+        parameters: MutableList<Double>,
+        cyclic: Boolean = false,
+    ): GMResult<DoubleArray, Surface3DError> {
+        val rangeU = when (val result = evaluateRange(rangeUSource, 0)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rangeV = when (val result = evaluateRange(rangeVSource, 1)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return when (
+            val result = Geometry.projectScreenCoordsToParametric(
+                screenCoordinates = screenCoordinates,
+                evaluator = Parametric3DEvaluator { values ->
+                    evalFResult(values[0], values[1])
+                },
+                projector = ParametricScreenProjector(
+                    view::project3DTo2D,
+                ),
+                parameters = parameters,
+                rangeU = rangeU,
+                rangeV = rangeV,
+                cyclic = cyclic,
             )
         ) {
             is GMResult.Ok -> result

@@ -360,3 +360,41 @@ internal data class JessieCodeRuntimeEnvironment(
     val randomSource: RandomSource =
         RandomSource { Random.nextDouble() },
 )
+
+internal data class JessieCodeScopeSnapshot(
+    val id: Int,
+    val arguments: List<String>,
+    val locals: Map<String, JessieCodeRuntimeValue>,
+    val previousId: Int?,
+)
+
+internal data class JessieCodeSymbol(
+    val name: String,
+    val scope: JessieCodeScopeSnapshot,
+)
+
+internal enum class JessieCodeOperandType {
+    FUNCTION,
+    CONSTANT,
+}
+
+internal enum class JessieCodeOperandOrigin {
+    JESSIE_CODE,
+    MATH,
+}
+
+internal data class JessieCodeOperand(
+    val name: String,
+    val type: JessieCodeOperandType,
+    val origin: JessieCodeOperandOrigin,
+    val parameterCount: Int? = null,
+    val value: Double? = null,
+)
+
+internal data class JessieCodePossibleOperands(
+    val all: Map<String, JessieCodeOperand>,
+    val list: List<JessieCodeOperand>,
+    val functions: List<String>,
+    val jessieCodeFunctions: List<String>,
+    val constants: List<String>,
+)

@@ -191,6 +191,37 @@ sealed interface JsxGraphFillGradient {
     ) : JsxGraphFillGradient
 }
 
+/**
+ * Platform-neutral shadow parameters.
+ *
+ * JSXGraph 1.13.3: src/options.js -> Options.elements.shadow;
+ * src/renderer/svg.js -> setShadow.
+ */
+data class JsxGraphShadow(
+    val enabled: Boolean = false,
+    val color: JsxGraphColor = JsxGraphColor(0, 0, 0),
+    val opacity: Double = 1.0,
+    val blur: Double = 3.0,
+    val blend: Double = 0.1,
+    val offsetX: Double = 5.0,
+    val offsetY: Double = 5.0,
+)
+
+/**
+ * JSXGraph's legacy draft paint override.
+ *
+ * JSXGraph 1.13.3: src/options.js -> Options.elements.draft;
+ * src/renderer/abstract.js -> setDraft.
+ */
+data class JsxGraphDraftStyle(
+    val enabled: Boolean = false,
+    val strokeColor: JsxGraphColor = JsxGraphColor(86, 86, 86),
+    val fillColor: JsxGraphColor = JsxGraphColor(86, 86, 86),
+    val strokeOpacity: Double = 0.8,
+    val fillOpacity: Double = 0.8,
+    val strokeWidth: Double = 1.0,
+)
+
 data class JsxGraphElementStyle(
     val visible: Boolean,
     val strokeColor: JsxGraphColor,
@@ -205,6 +236,89 @@ data class JsxGraphElementStyle(
     // Values are resolved CSS-pixel dash and gap lengths.
     val strokeDashPattern: List<Double> = emptyList(),
     val fillGradient: JsxGraphFillGradient? = null,
+    // JSXGraph 1.13.3: src/options.js -> Options.elements;
+    // src/renderer/abstract.js -> _updateVisual.
+    val highlighted: Boolean = false,
+    val highlightEnabled: Boolean = true,
+    val highlightStrokeColor: JsxGraphColor = JsxGraphColor(195, 217, 255),
+    val highlightFillColor: JsxGraphColor = JsxGraphColor.Transparent,
+    val highlightStrokeWidth: Double = 2.0,
+    val highlightStrokeOpacity: Double = 1.0,
+    val highlightFillOpacity: Double = 1.0,
+    val lineCap: String = "butt",
+    val clipToViewport: Boolean = true,
+    val shadow: JsxGraphShadow = JsxGraphShadow(),
+    val draft: JsxGraphDraftStyle = JsxGraphDraftStyle(),
+    // CSS classes have no direct Canvas equivalent. They remain in the
+    // portable scene for SVG/host adapters and diagnostics.
+    val cssClass: String = "",
+    val highlightCssClass: String = "",
+    // Canvas has one semantics node, rather than one DOM node per element.
+    // Preserve element ARIA and focus metadata for host adapters.
+    val aria: Map<String, String> = emptyMap(),
+    val tabIndex: Int? = -1,
+    // Compose renders immutable scene snapshots. Transition metadata is kept
+    // for stateful host adapters which interpolate between snapshots.
+    val transitionDurationMillis: Double = 100.0,
+    val transitionProperties: List<String> = DEFAULT_TRANSITION_PROPERTIES,
+)
+
+data class JsxGraphResolvedElementStyle(
+    val strokeColor: JsxGraphColor,
+    val fillColor: JsxGraphColor,
+    val strokeWidth: Double,
+    val strokeOpacity: Double,
+    val fillOpacity: Double,
+    val cssClass: String,
+    val isDraft: Boolean,
+    val isHighlighted: Boolean,
+)
+
+// JSXGraph 1.13.3: src/renderer/abstract.js -> _updateVisual, setDraft.
+fun JsxGraphElementStyle.resolveVisualStyle():
+    JsxGraphResolvedElementStyle {
+    if (draft.enabled) {
+        return JsxGraphResolvedElementStyle(
+            strokeColor = draft.strokeColor,
+            fillColor = draft.fillColor,
+            strokeWidth = draft.strokeWidth,
+            strokeOpacity = draft.strokeOpacity,
+            fillOpacity = draft.fillOpacity,
+            cssClass = cssClass,
+            isDraft = true,
+            isHighlighted = false,
+        )
+    }
+    if (highlighted) {
+        return JsxGraphResolvedElementStyle(
+            strokeColor = highlightStrokeColor,
+            fillColor = highlightFillColor,
+            strokeWidth = max(strokeWidth, highlightStrokeWidth),
+            strokeOpacity = highlightStrokeOpacity,
+            fillOpacity = highlightFillOpacity,
+            cssClass = highlightCssClass,
+            isDraft = false,
+            isHighlighted = true,
+        )
+    }
+    return JsxGraphResolvedElementStyle(
+        strokeColor = strokeColor,
+        fillColor = fillColor,
+        strokeWidth = strokeWidth,
+        strokeOpacity = strokeOpacity,
+        fillOpacity = fillOpacity,
+        cssClass = cssClass,
+        isDraft = false,
+        isHighlighted = false,
+    )
+}
+
+private val DEFAULT_TRANSITION_PROPERTIES = listOf(
+    "fill",
+    "fill-opacity",
+    "stroke",
+    "stroke-opacity",
+    "stroke-width",
 )
 
 /**
@@ -799,7 +913,8 @@ data class JsxGraphTicks2D(
     val labelStyle: JsxGraphTicksLabelStyle,
 ) {
     // JSXGraph 1.13.3: src/base/ticks.js ->
-    // calculateTicksCoordinates / createTickPath / generateLabelData.
+    // calculateTicksCoordinates / updateRenderer / createTickPath /
+    // generateLabelData / generateLabelText.
     fun resolve(
         visibleLeft: Double,
         visibleTop: Double,
@@ -1006,6 +1121,10 @@ data class JsxGraphTicks2D(
         }
     }
 
+    // JSXGraph 1.13.3: src/base/ticks.js ->
+    // getZeroCoordinates / getLowerAndUpperBounds / getDistanceFromZero /
+    // getXandYdeltas / generateEquidistantTicks / generateFixedTicks /
+    // processTickPosition.
     private fun lineLocations(
         parent: JsxGraphTicksParent2D.Line,
         visibleLeft: Double,
@@ -1205,6 +1324,8 @@ data class JsxGraphTicks2D(
         return majorDistance * scale / (minorTicks.toDouble() + 1.0)
     }
 
+    // JSXGraph 1.13.3: src/base/ticks.js ->
+    // createTickPath / _isInsideCanvas.
     private fun tickPath(
         location: JsxGraphCurveTickLocation,
         visibleLeft: Double,
@@ -1522,6 +1643,8 @@ sealed interface JsxGraphSceneElement {
         val points: List<JsxGraphPoint2D?>,
         val bezierDegree: Int,
         val lineCap: String,
+        val firstArrow: JsxGraphArrowHead? = null,
+        val lastArrow: JsxGraphArrowHead? = null,
         val autoRadiusAngle: JsxGraphAutoRadiusAngle? = null,
         val boxPlot: JsxGraphBoxPlot? = null,
         val vectorField: JsxGraphVectorField? = null,

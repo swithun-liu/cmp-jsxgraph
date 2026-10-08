@@ -546,6 +546,7 @@ internal class Group private constructor(
     internal fun removeScalePoint(point: CoordsElement): Group =
         removeActionPoint(GroupAction.SCALING, point)
 
+    // JSXGraph: src/base/group.js -> Group._setActionPoints.
     private fun setActionPoints(
         action: GroupAction,
         points: Iterable<CoordsElement>,
@@ -557,6 +558,7 @@ internal class Group private constructor(
         return this
     }
 
+    // JSXGraph: src/base/group.js -> Group._addActionPoint.
     private fun addActionPoint(
         action: GroupAction,
         point: CoordsElement,
@@ -565,6 +567,7 @@ internal class Group private constructor(
         return this
     }
 
+    // JSXGraph: src/base/group.js -> Group._removeActionPoint.
     private fun removeActionPoint(
         action: GroupAction,
         point: CoordsElement,
@@ -582,6 +585,21 @@ internal class Group private constructor(
             GroupAction.SCALING -> scalePoints
             GroupAction.NOTHING -> mutableListOf()
         }
+
+    // JSXGraph: src/base/group.js -> Group.setAttribute.
+    override fun setAttribute(
+        values: Map<String, Any?>,
+    ): Group {
+        for (element in groupObjects.values) {
+            element.setAttribute(values)
+        }
+        return this
+    }
+
+    // JSXGraph: src/base/group.js -> Group.setProperty.
+    internal fun setProperty(
+        values: Map<String, Any?>,
+    ): Group = setAttribute(values)
 
     internal companion object {
         private const val GROUP_ELEMENT_TYPE = "group"

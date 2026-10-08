@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class Text3DTest {
     @Test
@@ -58,6 +59,157 @@ class Text3DTest {
             expectedY = -2.584926429716491,
             actual = text.text2D.coords.usrCoords,
         )
+    }
+
+    @Test
+    fun setPositionNormalizesHomogeneousCoordinatesAndPersists() {
+        val text = text3D(
+            Text3D.create(
+                view = createView(createBoard()),
+                coordinateSource = numericCoordinates(1.0, 2.0, 3.0),
+                content = "position",
+                id = "text",
+                name = "",
+            ),
+        )
+
+        assertIs<GMResult.Ok<Text3D>>(
+            text.setPosition(
+                doubleArrayOf(2.0, 8.0, -4.0, 6.0),
+            ),
+        )
+        text.prepareUpdate().update()
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 4.0, -2.0, 3.0),
+            text.coords,
+        )
+        assertTrue(text.testIfFinite())
+        assertIs<GMResult.Err<Text3DError.InvalidCoordinateCount>>(
+            text.setPosition(doubleArrayOf(1.0, 2.0)),
+        )
+    }
+
+    @Test
+    fun proxyDragUpdatesThreeDimensionalCoordinates() {
+        val board = createBoard()
+        val text = text3D(
+            Text3D.create(
+                view = createView(board),
+                coordinateSource = numericCoordinates(1.0, 2.0, 3.0),
+                content = "drag",
+                id = "text",
+                name = "",
+            ),
+        )
+        val original = text.coords.copyOf()
+        val projection = text.text2D.coords.usrCoords.copyOf()
+        text.text2D.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(
+                projection[1] + 0.5,
+                projection[2] - 0.25,
+            ),
+        )
+
+        board.fullUpdate()
+
+        assertEquals(original[3], text.coords[3], TOLERANCE)
+        assertTrue(
+            original[1] != text.coords[1] ||
+                original[2] != text.coords[2],
+        )
+    }
+
+    @Test
+    fun slideProjectsTextOntoLineAndRegistersDependency() {
+        val board = createBoard()
+        val view = createView(board)
+        val first = point(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(-2.0, 0.0, 0.0),
+                id = "A",
+                name = "",
+            ),
+        )
+        val second = point(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(2.0, 0.0, 0.0),
+                id = "B",
+                name = "",
+            ),
+        )
+        val line = assertIs<GMResult.Ok<Line3D>>(
+            Line3D.create(
+                view = view,
+                point1 = first,
+                point2 = second,
+                id = "line",
+                name = "",
+            ),
+        ).value
+        val text = text3D(
+            Text3D.create(
+                view = view,
+                coordinateSource = numericCoordinates(0.5, 3.0, -2.0),
+                content = "slide",
+                slide = line,
+                id = "text",
+                name = "",
+            ),
+        )
+
+        assertVectorMatches(
+            doubleArrayOf(1.0, 2.0, 0.0, 0.0),
+            text.coords,
+        )
+        assertEquals(listOf(line.id), text.parents)
+        assertSame(text, line.childElements[text.id])
+    }
+
+    @Test
+    fun geometryElement3DAttributesDelegateToTheTwoDimensionalProxy() {
+        val text = text3D(
+            Text3D.create(
+                view = createView(createBoard()),
+                coordinateSource = numericCoordinates(1.0, 2.0, 3.0),
+                content = "attributes",
+                id = "text",
+                name = "label",
+            ),
+        )
+
+        text.setAttribute(
+            mapOf(
+                "fillColor" to "#123456",
+                "stepsU" to 12,
+                "strokeWidth" to 3.0,
+            ),
+        )
+
+        assertEquals("#123456", text.getAttribute("fillColor"))
+        assertEquals(12, text.getAttribute("stepsU"))
+        assertEquals(3.0, text.getAttribute("strokeWidth"))
+        assertNull(text.text2D.getAttribute("fillColor"))
+        assertEquals(3.0, text.text2D.getAttribute("strokeWidth"))
+        assertEquals(
+            mapOf(
+                "strokewidth" to 3.0,
+                "highlightstrokewidth" to 3.0,
+                "fillcolor" to "#123456",
+                "stepsu" to 12,
+            ),
+            text.getAttributes(),
+        )
+
+        val proxyAttributes = linkedMapOf<String, Any?>("visible" to true)
+        assertSame(proxyAttributes, text.setAttr2D(proxyAttributes))
+        assertEquals("label", proxyAttributes["name"])
+        assertSame(text, proxyAttributes["element3d"])
+        assertTrue("id" in proxyAttributes)
+        assertNull(proxyAttributes["id"])
     }
 
     @Test
@@ -140,6 +292,10 @@ class Text3DTest {
         result: GMResult<Text3D, Text3DError>,
     ): Text3D = assertIs<GMResult.Ok<Text3D>>(result).value
 
+    private fun point(
+        result: GMResult<Point3D, Point3DError>,
+    ): Point3D = assertIs<GMResult.Ok<Point3D>>(result).value
+
     private fun assertCoordinates(
         expectedX: Double,
         expectedY: Double,
@@ -147,6 +303,16 @@ class Text3DTest {
     ) {
         assertEquals(expectedX, actual[1], TOLERANCE)
         assertEquals(expectedY, actual[2], TOLERANCE)
+    }
+
+    private fun assertVectorMatches(
+        expected: DoubleArray,
+        actual: DoubleArray,
+    ) {
+        assertEquals(expected.size, actual.size)
+        for (index in expected.indices) {
+            assertEquals(expected[index], actual[index], TOLERANCE)
+        }
     }
 
     private companion object {

@@ -59,6 +59,82 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun portableStyleCarriesRendererVisualSemantics() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"A",
+                      "type":"point",
+                      "parents":[0,0],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "highlight":false,
+                        "highlightStrokeColor":"#123456",
+                        "highlightFillColor":"#abcdef",
+                        "highlightStrokeWidth":7,
+                        "highlightStrokeOpacity":0.4,
+                        "highlightFillOpacity":0.3,
+                        "lineCap":"square",
+                        "clip":false,
+                        "shadow":{
+                          "enabled":true,
+                          "color":[1,2,3],
+                          "opacity":0.5,
+                          "blur":4,
+                          "blend":0.25,
+                          "offset":[6,7]
+                        },
+                        "draft":{
+                          "draft":true,
+                          "strokeColor":"#565656",
+                          "fillColor":"#787878",
+                          "strokeOpacity":0.8,
+                          "fillOpacity":0.7,
+                          "strokeWidth":3
+                        },
+                        "cssClass":"normal",
+                        "highlightCssClass":"hot",
+                        "aria":{
+                          "enabled":true,
+                          "label":"point A",
+                          "live":"polite"
+                        },
+                        "tabindex":null,
+                        "transitionDuration":250,
+                        "transitionProperties":["fill","stroke-width"]
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        val style = scene.elements.single().style
+        assertFalse(style.highlightEnabled)
+        assertEquals(JsxGraphColor(18, 52, 86), style.highlightStrokeColor)
+        assertEquals(JsxGraphColor(171, 205, 239), style.highlightFillColor)
+        assertEquals(7.0, style.highlightStrokeWidth)
+        assertEquals("square", style.lineCap)
+        assertFalse(style.clipToViewport)
+        assertTrue(style.shadow.enabled)
+        assertEquals(JsxGraphColor(1, 2, 3), style.shadow.color)
+        assertEquals(6.0, style.shadow.offsetX)
+        assertTrue(style.draft.enabled)
+        assertEquals(JsxGraphColor(120, 120, 120), style.draft.fillColor)
+        assertEquals(mapOf("label" to "point A", "live" to "polite"), style.aria)
+        assertEquals(null, style.tabIndex)
+        assertEquals(250.0, style.transitionDurationMillis)
+        assertEquals(listOf("fill", "stroke-width"), style.transitionProperties)
+        val resolved = style.resolveVisualStyle()
+        assertTrue(resolved.isDraft)
+        assertEquals(JsxGraphColor(86, 86, 86), resolved.strokeColor)
+        assertEquals(3.0, resolved.strokeWidth)
+    }
+
+    @Test
     fun coordinateParentsCreateOnlyRequestedSceneElements() {
         val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
             JsxGraphEngine.parse(
@@ -719,6 +795,104 @@ class JsxGraphEngineTest {
             baseLine = sceneLine(moved, "base"),
             parallel = sceneLine(moved, "parallelIdeal"),
             through = JsxGraphPoint2D(3.0, -3.0),
+        )
+    }
+
+    @Test
+    fun curvesArcsAndSectorsUseOfficialCurveArrowDefaults() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"O",
+                      "type":"point",
+                      "parents":[0,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"A",
+                      "type":"point",
+                      "parents":[2,0],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"B",
+                      "type":"point",
+                      "parents":[0,2],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"curve",
+                      "type":"curve",
+                      "parents":[[0,1,2],[0,1,0]],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "firstArrow":true,
+                        "lastArrow":{"size":4,"highlightSize":5}
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"arc",
+                      "type":"arc",
+                      "parents":["O","A","B"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "firstArrow":{"type":2,"size":3},
+                        "lastArrow":true
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"sector",
+                      "type":"sector",
+                      "parents":["O","A","B"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "firstArrow":false,
+                        "lastArrow":{"type":6}
+                      }
+                    }
+                    """.trimIndent(),
+                ),
+            ),
+        ).value
+
+        val curve = sceneCurve(scene, "curve")
+        assertEquals(
+            JsxGraphArrowHead(type = 7, size = 6.0, highlightSize = null),
+            curve.firstArrow,
+        )
+        assertEquals(
+            JsxGraphArrowHead(type = 7, size = 4.0, highlightSize = 5.0),
+            curve.lastArrow,
+        )
+        val arc = sceneCurve(scene, "arc")
+        assertEquals(
+            JsxGraphArrowHead(type = 2, size = 3.0, highlightSize = null),
+            arc.firstArrow,
+        )
+        assertEquals(
+            JsxGraphArrowHead(type = 7, size = 6.0, highlightSize = null),
+            arc.lastArrow,
+        )
+        val sector = sceneCurve(scene, "sector")
+        assertEquals(null, sector.firstArrow)
+        assertEquals(
+            JsxGraphArrowHead(type = 6, size = 6.0, highlightSize = null),
+            sector.lastArrow,
         )
     }
 
@@ -3409,6 +3583,60 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun polygonNestedStylesApplyToOwnedVerticesAndBorders() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-1, 4, 5, -1],
+                  "objects": [
+                    {
+                      "id": "triangle",
+                      "type": "polygon",
+                      "parents": [[0, 0], [4, 0], [0, 3]],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "vertices": {
+                          "size": 5,
+                          "fillColor": "#112233",
+                          "strokeColor": "#445566",
+                          "layer": 11
+                        },
+                        "borders": {
+                          "strokeColor": "#778899",
+                          "strokeWidth": 4,
+                          "strokeOpacity": 0.5,
+                          "dash": 2,
+                          "layer": 12
+                        }
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val polygon = assertIs<JsxGraphSceneElement.Polygon>(
+            scene.elements.single(),
+        )
+        assertTrue(
+            polygon.implicitVertices.all { vertex ->
+                vertex.size == 5.0 &&
+                    vertex.style.fillColor == JsxGraphColor(17, 34, 51) &&
+                    vertex.style.strokeColor == JsxGraphColor(68, 85, 102) &&
+                    vertex.style.layer == 11
+            },
+        )
+        assertEquals(JsxGraphColor(119, 136, 153), polygon.borderStyle.strokeColor)
+        assertEquals(4.0, polygon.borderStyle.strokeWidth)
+        assertEquals(0.5, polygon.borderStyle.strokeOpacity)
+        assertEquals(listOf(5.0, 5.0), polygon.borderStyle.strokeDashPattern)
+        assertEquals(12, polygon.borderStyle.layer)
+    }
+
+    @Test
     fun polygonalChainDocumentsPreserveAllVerticesAndOpenBorders() {
         val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
             JsxGraphEngine.parse(
@@ -5400,8 +5628,8 @@ class JsxGraphEngineTest {
                 ),
             ),
         )
-        assertIs<JsxGraphDocumentError.UnsupportedAttribute>(
-            assertError(
+        val shadowScene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
                 documentWithObjects(
                     """
                     {
@@ -5417,8 +5645,10 @@ class JsxGraphEngineTest {
                     """.trimIndent(),
                 ),
             ),
-        )
-        assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(
+        ).value
+        assertTrue(shadowScene.elements.single().style.shadow.enabled)
+        val squareFaceError =
+            assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(
             assertError(
                 documentWithObjects(
                     """
@@ -5436,6 +5666,7 @@ class JsxGraphEngineTest {
                 ),
             ),
         )
+        assertEquals("[]", squareFaceError.value)
         assertIs<JsxGraphDocumentError.ElementCreation>(
             assertError(
                 documentWithObjects(

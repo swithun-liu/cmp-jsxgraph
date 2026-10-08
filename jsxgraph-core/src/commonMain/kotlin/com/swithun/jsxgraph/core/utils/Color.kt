@@ -465,12 +465,14 @@ object Color {
         )
     }
 
+    // JSXGraph 1.13.3: src/utils/color.js -> lightenColor.
     fun lightenColor(
         color: String,
         percent: Double,
     ): GMResult<String, ColorError> =
         shadeColor(color, percent)
 
+    // JSXGraph 1.13.3: src/utils/color.js -> darkenColor.
     fun darkenColor(
         color: String,
         percent: Double,
@@ -582,6 +584,16 @@ object Color {
     val palette: Map<String, String>
         get() = paletteWong
 
+    // JSXGraph 1.13.3: src/utils/color.js -> setClassicColors.
+    fun setClassicColors(
+        options: MutableMap<String, Any?>,
+    ): MutableMap<String, Any?> {
+        applyOptionsPatch(options, CLASSIC_OPTIONS_PATCH)
+        return options
+    }
+
+    // JSXGraph 1.13.3: src/utils/color.js -> colorDefs.process
+    // for rgba() and rgb().
     private fun parseFunctionalColor(value: String): IntArray? {
         val match = RGBA_REGEX.matchEntire(value)
             ?: RGB_REGEX.matchEntire(value)
@@ -593,6 +605,8 @@ object Color {
         )
     }
 
+    // JSXGraph 1.13.3: src/utils/color.js -> colorDefs.process
+    // for six- and three-digit hexadecimal colors.
     private fun parseHexColor(value: String): IntArray? {
         HEX6_REGEX.matchEntire(value)?.let { match ->
             return intArrayOf(
@@ -638,6 +652,30 @@ object Color {
             blue = channels[2],
             alpha = channels[3],
         )
+    }
+
+    private fun applyOptionsPatch(
+        target: MutableMap<String, Any?>,
+        patch: Map<String, Any?>,
+    ) {
+        for ((key, value) in patch) {
+            if (value is Map<*, *>) {
+                val nested = (target[key] as? Map<*, *>)
+                    ?.entries
+                    ?.associateTo(linkedMapOf()) { entry ->
+                        entry.key.toString() to entry.value
+                    }
+                    ?: linkedMapOf()
+                @Suppress("UNCHECKED_CAST")
+                applyOptionsPatch(
+                    target = nested,
+                    patch = value as Map<String, Any?>,
+                )
+                target[key] = nested
+            } else {
+                target[key] = value
+            }
+        }
     }
 
     private fun formatCss(
@@ -949,5 +987,93 @@ object Color {
         "lightgray" to "lightgrey",
         "lightslategrey" to "lightslategray",
         "slategrey" to "slategray",
+    )
+
+    private val CLASSIC_OPTIONS_PATCH: Map<String, Any?> = mapOf(
+        "elements" to mapOf(
+            "strokeColor" to "blue",
+            "fillColor" to "red",
+        ),
+        "hatch" to mapOf("strokeColor" to "blue"),
+        "angle" to mapOf(
+            "fillColor" to "#ff7f00",
+            "highlightFillColor" to "#ff7f00",
+            "strokeColor" to "#ff7f00",
+            "label" to mapOf("strokeColor" to "blue"),
+        ),
+        "arc" to mapOf("strokeColor" to "blue"),
+        "circle" to mapOf(
+            "center" to mapOf(
+                "fillColor" to "red",
+                "strokeColor" to "blue",
+            ),
+        ),
+        "circumcircle" to mapOf(
+            "strokeColor" to "blue",
+            "center" to mapOf(
+                "fillColor" to "red",
+                "strokeColor" to "blue",
+            ),
+        ),
+        "circumcirclearc" to mapOf("strokeColor" to "blue"),
+        "circumcirclesector" to mapOf(
+            "strokeColor" to "blue",
+            "fillColor" to "green",
+            "highlightFillColor" to "green",
+        ),
+        "conic" to mapOf("strokeColor" to "blue"),
+        "curve" to mapOf("strokeColor" to "blue"),
+        "incircle" to mapOf(
+            "strokeColor" to "blue",
+            "center" to mapOf(
+                "fillColor" to "red",
+                "strokeColor" to "blue",
+            ),
+        ),
+        "inequality" to mapOf("fillColor" to "red"),
+        "integral" to mapOf(
+            "fillColor" to "red",
+            "curveLeft" to mapOf("color" to "red"),
+            "curveRight" to mapOf("color" to "red"),
+        ),
+        "line" to mapOf("strokeColor" to "blue"),
+        "point" to mapOf(
+            "fillColor" to "red",
+            "strokeColor" to "red",
+        ),
+        "polygon" to mapOf(
+            "fillColor" to "green",
+            "highlightFillColor" to "green",
+            "vertices" to mapOf(
+                "strokeColor" to "red",
+                "fillColor" to "red",
+            ),
+        ),
+        "regularpolygon" to mapOf(
+            "fillColor" to "green",
+            "highlightFillColor" to "green",
+            "vertices" to mapOf(
+                "strokeColor" to "red",
+                "fillColor" to "red",
+            ),
+        ),
+        "riemannsum" to mapOf("fillColor" to "yellow"),
+        "sector" to mapOf(
+            "fillColor" to "green",
+            "highlightFillColor" to "green",
+        ),
+        "semicircle" to mapOf(
+            "center" to mapOf(
+                "fillColor" to "red",
+                "strokeColor" to "blue",
+            ),
+        ),
+        "slopetriangle" to mapOf(
+            "fillColor" to "red",
+            "highlightFillColor" to "red",
+        ),
+        "turtle" to mapOf(
+            "arrow" to mapOf("strokeColor" to "blue"),
+        ),
     )
 }

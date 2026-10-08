@@ -346,6 +346,57 @@ class TicksTest {
         assertFalse(board.objects.values.any { it is Ticks })
     }
 
+    @Test
+    fun lineTickHitTestingMatchesOfficialMajorTickAndZeroRules() {
+        val board = board()
+        val line = line(
+            Line.createSegment(
+                board = board,
+                point1 = point(board, -2.0, 0.0),
+                point2 = point(board, 2.0, 0.0),
+                id = "line",
+                name = "",
+            ),
+        )
+        val ticks = ticks(
+            Ticks.create(
+                board = board,
+                parent = line,
+                source = TicksSource.Fixed(
+                    doubleArrayOf(0.0, 1.0),
+                ),
+                attributes = TicksAttributes(
+                    majorHeight = 10.0,
+                ),
+                id = "ticks",
+                name = "",
+            ),
+        )
+
+        assertFalse(
+            ticks.hasPoint(
+                screenX = line.point1.coords.scrCoords[1],
+                screenY = line.point1.coords.scrCoords[2],
+                precision = 1.0,
+            ),
+        )
+        assertTrue(
+            ticks.hasPoint(
+                screenX = 200.0,
+                screenY = 250.0,
+                precision = 1.0,
+            ),
+        )
+        assertFalse(
+            ticks.hasPoint(
+                screenX = 220.0,
+                screenY = 250.0,
+                precision = 1.0,
+            ),
+        )
+        assertTrue(ticks.hasPoint(200.0, 250.0))
+    }
+
     private fun board(): Board = Board(
         originX = 250.0,
         originY = 250.0,

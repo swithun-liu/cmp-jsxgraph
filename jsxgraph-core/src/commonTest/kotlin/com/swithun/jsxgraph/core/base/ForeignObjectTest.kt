@@ -9,9 +9,11 @@ import com.swithun.jsxgraph.core.parser.JessieCodeNumericCoordinateFunction
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class ForeignObjectTest {
     @Test
@@ -47,6 +49,9 @@ class ForeignObjectTest {
         assertContentEquals(doubleArrayOf(3.0, 2.0), explicit.usrSize)
         assertContentEquals(doubleArrayOf(120.0, 80.0), explicit.size)
         assertSame(explicit, board.elementById("full"))
+        assertEquals("<b>full</b>", explicit.parentDefinitions()[0])
+        assertTrue(explicit.hasPoint(240.0, 280.0))
+        assertFalse(explicit.hasPoint(400.0, 280.0))
 
         assertEquals(false, intrinsic.usesUserSize)
         assertNull(intrinsic.usrSize)

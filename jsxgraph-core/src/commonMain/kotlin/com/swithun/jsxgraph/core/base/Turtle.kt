@@ -11,7 +11,14 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.ContinuousCurve2D
+import com.swithun.jsxgraph.core.math.ContinuousCurveType
+import com.swithun.jsxgraph.core.math.DiscreteCurve2D
+import com.swithun.jsxgraph.core.math.Geometry
+import com.swithun.jsxgraph.core.math.GeometryError
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.ParametricCurve2D
+import com.swithun.jsxgraph.core.math.ProjectionResult
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -81,7 +88,7 @@ internal class Turtle private constructor(
     internal val stack = mutableListOf<DoubleArray>()
     internal val objects = mutableListOf<GeometryElement>()
     internal val subs = linkedMapOf<String, GeometryElement>()
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     internal val arrowLength: Double =
         20.0 / Mat.hypot(board.unitX, board.unitY)
 
@@ -325,17 +332,61 @@ internal class Turtle private constructor(
         return createPathCurve()
     }
 
+    // JSXGraph 1.13.3: src/base/turtle.js -> getPenAttribute.
+    internal fun getPenAttribute(
+        key: String,
+    ): Any? {
+        val element = if (objects.size == 4) {
+            objects.firstOrNull()
+        } else {
+            objects.lastOrNull()
+        }
+        return element?.evalVisProp(key)
+    }
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> getPenSize.
     internal fun getPenSize(): Double =
-        curve.turtlePenAttributes?.strokeWidth
+        (getPenAttribute("strokewidth") as? Number)?.toDouble()
+            ?: curve.turtlePenAttributes?.strokeWidth
             ?: penAttributes.strokeWidth
 
+    // JSXGraph 1.13.3: src/base/turtle.js -> getPenColor.
     internal fun getPenColor(): String =
-        curve.turtlePenAttributes?.strokeColor
+        getPenAttribute("strokecolor") as? String
+            ?: curve.turtlePenAttributes?.strokeColor
             ?: penAttributes.strokeColor
 
+    // JSXGraph 1.13.3: src/base/turtle.js -> getHighlightPenColor.
     internal fun getHighlightPenColor(): String =
-        curve.turtlePenAttributes?.highlightStrokeColor
+        getPenAttribute("highlightstrokecolor") as? String
+            ?: curve.turtlePenAttributes?.highlightStrokeColor
             ?: penAttributes.highlightStrokeColor
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> setAttribute.
+    override fun setAttribute(
+        attributes: Map<String, Any?>,
+    ): Turtle {
+        super.setAttribute(attributes)
+        for (element in objects) {
+            if (element.type == Const.OBJECT_TYPE_CURVE) {
+                element.setAttribute(attributes)
+            }
+        }
+        val current = curve.turtlePenAttributes ?: penAttributes
+        penAttributes = current.copy(
+            strokeWidth =
+                (curve.evalVisProp("strokewidth") as? Number)
+                    ?.toDouble() ?: current.strokeWidth,
+            strokeColor =
+                curve.evalVisProp("strokecolor") as? String
+                    ?: current.strokeColor,
+            highlightStrokeColor =
+                curve.evalVisProp("highlightstrokecolor") as? String
+                    ?: current.highlightStrokeColor,
+        )
+        curve.turtlePenAttributes = penAttributes.copy()
+        return this
+    }
 
     // JSXGraph 1.13.3: src/base/turtle.js -> showTurtle / hideTurtle.
     internal fun showTurtle(): GMResult<Turtle, TurtleError> {
@@ -438,6 +489,41 @@ internal class Turtle private constructor(
         return GMResult.Ok(this)
     }
 
+    // JSXGraph 1.13.3: src/base/turtle.js -> fd.
+    internal fun fd(length: Double): GMResult<Turtle, TurtleError> =
+        forward(length)
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> bk.
+    internal fun bk(length: Double): GMResult<Turtle, TurtleError> =
+        back(length)
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> lt.
+    internal fun lt(angle: Double): Turtle = left(angle)
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> rt.
+    internal fun rt(angle: Double): Turtle = right(angle)
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> pu.
+    internal fun pu(): Turtle = penUp()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> pd.
+    internal fun pd(): GMResult<Turtle, TurtleError> = penDown()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> ht.
+    internal fun ht(): Turtle = hideTurtle()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> st.
+    internal fun st(): GMResult<Turtle, TurtleError> = showTurtle()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> cs.
+    internal fun cs(): GMResult<Turtle, TurtleError> = clearScreen()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> push.
+    internal fun push(): Turtle = pushTurtle()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> pop.
+    internal fun pop(): GMResult<Turtle, TurtleError> = popTurtle()
+
     // JSXGraph 1.13.3: src/base/turtle.js -> evalAt / X / Y / Z /
     // minX / maxX.
     internal fun X(parameter: Double? = null): Double =
@@ -463,6 +549,114 @@ internal class Turtle private constructor(
         objects.filterIsInstance<Curve>()
             .sumOf(Curve::numberPoints)
             .toDouble()
+
+    // JSXGraph 1.13.3: src/base/turtle.js -> hasPoint.
+    override fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+    ): Boolean =
+        objects
+            .filterIsInstance<Curve>()
+            .any { it.hasPoint(screenX, screenY) }
+
+    // JSXGraph 1.13.3: src/math/geometry.js ->
+    // projectPointToTurtle.
+    internal fun projectPoint(
+        point: DoubleArray,
+    ): GMResult<ProjectionResult, GeometryError> {
+        var pointOffset = 0
+        var bestProjection: ProjectionResult? = null
+        var bestDistance = Double.POSITIVE_INFINITY
+        for (path in objects.filterIsInstance<Curve>()) {
+            val projection =
+                if (path.curveType == DATA_CURVE_TYPE) {
+                    val rawX = path.dataX
+                    val rawY = path.dataY
+                    val points =
+                        if (rawX != null) {
+                            List(minOf(path.numberPoints, rawX.size)) { index ->
+                                doubleArrayOf(
+                                    1.0,
+                                    rawX[index],
+                                    rawY?.getOrNull(index) ?: Double.NaN,
+                                )
+                            }
+                        } else {
+                            path.points
+                                .take(path.numberPoints)
+                                .map { it.usrCoords.copyOf() }
+                        }
+                    Geometry.projectCoordsToCurve(
+                        point = point,
+                        curve = DiscreteCurve2D(
+                            points = points,
+                            bezierDegree = path.bezierDegree,
+                        ),
+                    )
+                } else {
+                    Geometry.projectCoordsToCurve(
+                        horizontal = point.getOrNull(1) ?: Double.NaN,
+                        vertical = point.getOrNull(2) ?: Double.NaN,
+                        initialParameter =
+                            if (
+                                path.curveType ==
+                                FUNCTION_GRAPH_CURVE_TYPE
+                            ) {
+                                point.getOrNull(1) ?: Double.NaN
+                            } else {
+                                0.0
+                            },
+                        continuousCurve = ContinuousCurve2D(
+                            curve = ParametricCurve2D(
+                                x = path::X,
+                                y = path::Y,
+                            ),
+                            minimumParameter = path.minX(),
+                            maximumParameter = path.maxX(),
+                            type =
+                                if (
+                                    path.curveType ==
+                                    FUNCTION_GRAPH_CURVE_TYPE
+                                ) {
+                                    ContinuousCurveType.FUNCTION_GRAPH
+                                } else {
+                                    ContinuousCurveType.PARAMETER
+                                },
+                        ),
+                    )
+                }
+            val resolved = when (projection) {
+                is GMResult.Ok -> projection.value
+                is GMResult.Err -> return projection
+            }
+            val transformed = path.updateTransform(
+                Coords(
+                    method = Const.COORDS_BY_USER,
+                    coordinates = resolved.point,
+                    board = board,
+                    emitter = false,
+                ),
+            ).usrCoords.copyOf()
+            val candidateDistance = Geometry.distance(
+                transformed,
+                point,
+            )
+            if (candidateDistance < bestDistance) {
+                bestProjection = ProjectionResult(
+                    point = transformed,
+                    parameter = resolved.parameter + pointOffset,
+                )
+                bestDistance = candidateDistance
+            }
+            pointOffset += path.numberPoints
+        }
+        val resolvedProjection = bestProjection
+        return if (resolvedProjection != null) {
+            GMResult.Ok(resolvedProjection)
+        } else {
+            GMResult.Err(GeometryError.TurtleProjectionUnavailable)
+        }
+    }
 
     private fun evalAt(
         parameter: Double,
@@ -571,6 +765,8 @@ internal class Turtle private constructor(
         private const val DEFAULT_DIRECTION = 90.0
         private const val FULL_TURN = 360.0
         private const val CURVE_SPLIT_POINT_COUNT = 8192
+        private const val DATA_CURVE_TYPE = "plot"
+        private const val FUNCTION_GRAPH_CURVE_TYPE = "functiongraph"
 
         // JSXGraph 1.13.3: src/base/turtle.js -> createTurtle / Turtle.
         internal fun create(

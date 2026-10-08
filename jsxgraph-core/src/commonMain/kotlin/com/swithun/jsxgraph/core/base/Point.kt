@@ -35,6 +35,14 @@ internal sealed interface PointError {
         val count: Int,
     ) : PointError
 
+    data class InvalidStyleIndex(
+        val index: Int,
+    ) : PointError
+
+    data class IntersectionConversion(
+        val error: IntersectionError,
+    ) : PointError
+
     data class Registration(val error: BoardError) : PointError
 }
 
@@ -47,9 +55,9 @@ internal sealed interface PointError {
  * Polygon elements, including the static incidence visual flags. It also
  * covers transformed-point construction, persistent 2D transformations, and
  * the Line/Segment/Circle Intersection wrappers in [IntersectionPoint] and
- * [OtherIntersectionPoint]. Remaining visual attributes, screen hit testing,
- * traces, slider/Coords-object constraints, and remaining intersection parent
- * families remain untranslated.
+ * [OtherIntersectionPoint], screen hit testing, trace snapshots, face/style
+ * mutation, and coordinate-constraint replacement. Remaining specialized
+ * visual APIs and intersection parent families stay outside this slice.
  */
 internal open class Point internal constructor(
     board: Board,
@@ -72,6 +80,10 @@ internal open class Point internal constructor(
 ) {
     // JSXGraph: src/options.js -> GeometryElement.fixed
     internal var isFixed: Boolean = fixed
+    internal val traceCoordinates = mutableListOf<DoubleArray>()
+    internal var convertedIntersectionError: IntersectionError? = null
+        private set
+    private var convertedIntersection: ConvertedIntersection? = null
 
     init {
         elType = POINT_ELEMENT_TYPE
@@ -82,7 +94,46 @@ internal open class Point internal constructor(
         if (!needsUpdate) {
             return this
         }
-        updateCoords(fromParent)
+        val intersection = convertedIntersection
+        if (intersection == null) {
+            updateCoords(fromParent)
+        } else {
+            if (intersection.first.needsUpdate) {
+                intersection.first.update(fromParent = true)
+            }
+            if (intersection.second.needsUpdate) {
+                intersection.second.update(fromParent = true)
+            }
+            when (
+                val result = intersectionCoordinates(
+                    first = intersection.first,
+                    second = intersection.second,
+                    firstIndex = intersection.firstIndex,
+                    firstIndexIsFunction = false,
+                    secondInitialParameter = intersection.secondIndex,
+                    alwaysIntersect = alwaysIntersect,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    coords.setCoordinates(
+                        coordType = Const.COORDS_BY_USER,
+                        coordinates = result.value,
+                    )
+                    convertedIntersectionError = null
+                }
+                is GMResult.Err -> {
+                    coords.setCoordinates(
+                        coordType = Const.COORDS_BY_USER,
+                        coordinates =
+                            doubleArrayOf(0.0, Double.NaN, Double.NaN),
+                    )
+                    convertedIntersectionError = result.error
+                }
+            }
+        }
+        if (getAttribute("trace") == true) {
+            cloneToBackground()
+        }
         return this
     }
 
@@ -114,6 +165,136 @@ internal open class Point internal constructor(
     // JSXGraph: src/base/point.js -> bounds
     internal fun bounds(): DoubleArray =
         doubleArrayOf(X(), Y(), X(), Y())
+
+    // JSXGraph 1.13.3: src/base/point.js -> hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        var radius =
+            (getAttribute("size") as? Number)?.toDouble()
+                ?: DEFAULT_POINT_SIZE
+        if (
+            (getAttribute("sizeunit") as? String)
+                ?.lowercase() == "user"
+        ) {
+            radius *= kotlin.math.sqrt(abs(board.unitX * board.unitY))
+        }
+        radius +=
+            (
+                (getAttribute("strokewidth") as? Number)?.toDouble()
+                    ?: DEFAULT_STROKE_WIDTH
+                ) * 0.5
+        radius = maxOf(radius, precision)
+        return abs(coords.scrCoords[1] - screenX) < radius + 2.0 &&
+            abs(coords.scrCoords[2] - screenY) < radius + 2.0
+    }
+
+    // JSXGraph 1.13.3: src/base/point.js -> updateRenderer.
+    override fun updateRenderer(): Point {
+        needsUpdate = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/point.js -> makeIntersection.
+    internal fun makeIntersection(
+        first: GeometryElement,
+        second: GeometryElement,
+        firstIndex: Double = 0.0,
+        secondIndex: Double = 0.0,
+    ): GMResult<Point, PointError> {
+        for ((index, element) in listOf(first, second).withIndex()) {
+            if (element.board !== board) {
+                return GMResult.Err(
+                    PointError.IntersectionConversion(
+                        IntersectionError.ParentBoardMismatch(index),
+                    ),
+                )
+            }
+            if (board.elementById(element.id) !== element) {
+                return GMResult.Err(
+                    PointError.IntersectionConversion(
+                        IntersectionError.ParentNotRegistered(
+                            parentIndex = index,
+                            id = element.id,
+                        ),
+                    ),
+                )
+            }
+        }
+        if (!isSupportedIntersectionPair(first, second)) {
+            return GMResult.Err(
+                PointError.IntersectionConversion(
+                    IntersectionError.UnsupportedParentTypes(
+                        firstType = first.elType,
+                        secondType = second.elType,
+                    ),
+                ),
+            )
+        }
+        val initial = when (
+            val result = intersectionCoordinates(
+                first = first,
+                second = second,
+                firstIndex = firstIndex,
+                firstIndexIsFunction = false,
+                secondInitialParameter = secondIndex,
+                alwaysIntersect = alwaysIntersect,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                PointError.IntersectionConversion(result.error),
+            )
+        }
+        convertedIntersection = ConvertedIntersection(
+            first = first,
+            second = second,
+            firstIndex = firstIndex,
+            secondIndex = secondIndex,
+        )
+        replaceCoordinateFunctions(emptyList())
+        first.addChild(this)
+        second.addChild(this)
+        setParents(listOf(first, second))
+        type = Const.OBJECT_TYPE_INTERSECTION
+        elType = INTERSECTION_ELEMENT_TYPE
+        isDraggable = false
+        coords.setCoordinates(Const.COORDS_BY_USER, initial)
+        prepareUpdate().update()
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/point.js -> setStyle.
+    internal fun setStyle(index: Int): GMResult<Point, PointError> {
+        if (index !in POINT_STYLE_FACES.indices) {
+            return GMResult.Err(PointError.InvalidStyleIndex(index))
+        }
+        setAttribute(
+            mapOf(
+                "face" to POINT_STYLE_FACES[index],
+                "size" to POINT_STYLE_SIZES[index],
+            ),
+        )
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/point.js -> normalizeFace.
+    internal fun normalizeFace(value: String): String? =
+        NORMALIZED_POINT_FACES[value]
+
+    // JSXGraph 1.13.3: src/base/point.js -> face.
+    internal fun face(value: String): Point {
+        setAttribute(mapOf("face" to value))
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/point.js -> cloneToBackground.
+    internal override fun cloneToBackground(): Point {
+        traceCoordinates += coords.usrCoords.copyOf()
+        return this
+    }
 
     // JSXGraph: src/base/point.js -> isOn
     internal fun isOn(
@@ -331,6 +512,55 @@ internal open class Point internal constructor(
         private const val POINT_ELEMENT_TYPE = "point"
         private const val DATA_CURVE_TYPE = "plot"
         private const val FUNCTION_GRAPH_CURVE_TYPE = "functiongraph"
+        private const val INTERSECTION_ELEMENT_TYPE = "intersection"
+        private const val DEFAULT_HIT_PRECISION = 4.0
+        private const val DEFAULT_POINT_SIZE = 3.0
+        private const val DEFAULT_STROKE_WIDTH = 2.0
+        private val POINT_STYLE_FACES = listOf(
+            "cross",
+            "cross",
+            "cross",
+            "circle",
+            "circle",
+            "circle",
+            "circle",
+            "square",
+            "square",
+            "square",
+            "plus",
+            "plus",
+            "plus",
+        )
+        private val POINT_STYLE_SIZES =
+            listOf(2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 2, 3, 4)
+        private val NORMALIZED_POINT_FACES = mapOf(
+            "cross" to "x",
+            "x" to "x",
+            "circle" to "o",
+            "o" to "o",
+            "square" to "[]",
+            "[]" to "[]",
+            "plus" to "+",
+            "+" to "+",
+            "divide" to "|",
+            "|" to "|",
+            "minus" to "-",
+            "-" to "-",
+            "diamond" to "<>",
+            "<>" to "<>",
+            "diamond2" to "<<>>",
+            "<<>>" to "<<>>",
+            "triangleup" to "^",
+            "A" to "^",
+            "a" to "^",
+            "^" to "^",
+            "triangledown" to "v",
+            "v" to "v",
+            "triangleleft" to "<",
+            "<" to "<",
+            "triangleright" to ">",
+            ">" to ">",
+        )
 
         // JSXGraph: src/base/point.js -> createPoint / Point constructor
         fun create(
@@ -552,4 +782,11 @@ internal open class Point internal constructor(
             return GMResult.Ok(functions)
         }
     }
+
+    private data class ConvertedIntersection(
+        val first: GeometryElement,
+        val second: GeometryElement,
+        val firstIndex: Double,
+        val secondIndex: Double,
+    )
 }

@@ -8,6 +8,7 @@
 package com.swithun.jsxgraph.core.utils
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Board
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -43,8 +44,31 @@ internal sealed interface DumpError {
         val key: String,
     ) : DumpError
 
+    data class AttributeOperation(
+        val error: TypeError,
+    ) : DumpError
+
+    data class InvalidAttributeObject(
+        val context: String,
+        val value: Any?,
+    ) : DumpError
+
     data object UnsupportedValue : DumpError
 }
+
+internal data class DumpElementSnapshot(
+    val id: String,
+    val name: String,
+    val elType: String,
+    val attributes: Map<String, Any?>,
+    val subs: Map<String, DumpElementSnapshot> = emptyMap(),
+)
+
+internal data class DumpMethodCall(
+    val obj: String,
+    val method: String,
+    val params: List<Any?>,
+)
 
 /**
  * Typed marker for JavaScript's `undefined` value.
@@ -59,6 +83,45 @@ internal data object DumpUndefined
  * visual-property snapshot.
  */
 internal object Dump {
+    // JSXGraph 1.13.3: src/utils/dump.js -> addMarkers.
+    fun addMarkers(
+        board: Board,
+        markers: List<String>,
+        values: List<Any?>,
+    ): Board {
+        val length = minOf(markers.size, values.size)
+        for (element in board.objects.values) {
+            for (index in 0 until length) {
+                element.dumpMarkers[markers[index]] = values[index]
+            }
+        }
+        return board
+    }
+
+    fun addMarkers(
+        board: Board,
+        marker: String,
+        value: Any?,
+    ): Board = addMarkers(board, listOf(marker), listOf(value))
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> deleteMarkers.
+    fun deleteMarkers(
+        board: Board,
+        markers: List<String>,
+    ): Board {
+        for (element in board.objects.values) {
+            for (marker in markers) {
+                element.dumpMarkers.remove(marker)
+            }
+        }
+        return board
+    }
+
+    fun deleteMarkers(
+        board: Board,
+        marker: String,
+    ): Board = deleteMarkers(board, listOf(marker))
+
     // JSXGraph 1.13.3: src/utils/dump.js -> str.
     fun str(value: Any?): Any? =
         if (
@@ -100,6 +163,285 @@ internal object Dump {
             }
         }
         return GMResult.Ok(state.output.toString())
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> _minimizeSubObject.
+    fun minimizeSubObject(
+        instance: MutableMap<String, Any?>,
+        defaults: Map<String, Any?>,
+    ): GMResult<Boolean, DumpError> {
+        var deleteAll = true
+        for ((property, defaultValue) in defaults) {
+            val lowerProperty = property.lowercase()
+            val instanceValue = instance[lowerProperty]
+            when {
+                jsStrictEquals(defaultValue, instanceValue) ||
+                    !Type.exists(defaultValue) &&
+                    !Type.exists(instanceValue) ->
+                    instance.remove(lowerProperty)
+                isArrayValue(defaultValue) &&
+                    isArrayValue(instanceValue) -> {
+                    if (
+                        Type.cmpArrays(
+                            arrayValues(defaultValue).orEmpty(),
+                            arrayValues(instanceValue).orEmpty(),
+                        )
+                    ) {
+                        instance.remove(lowerProperty)
+                    } else {
+                        deleteAll = false
+                    }
+                }
+                defaultValue is Map<*, *> &&
+                    instanceValue is Map<*, *> -> {
+                    val defaultMap = when (
+                        val result = stringMap(
+                            defaultValue,
+                            "default.$property",
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    val instanceMap = when (
+                        val result = mutableStringMap(
+                            instanceValue,
+                            "instance.$lowerProperty",
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    val remove = when (
+                        val result = minimizeSubObject(
+                            instance = instanceMap,
+                            defaults = defaultMap,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    if (remove) {
+                        instance.remove(lowerProperty)
+                    } else {
+                        instance[lowerProperty] = instanceMap
+                        deleteAll = false
+                    }
+                }
+                else -> deleteAll = false
+            }
+        }
+        if (
+            deleteAll &&
+            defaults.isEmpty() &&
+            instance.isNotEmpty()
+        ) {
+            deleteAll = false
+        }
+        return GMResult.Ok(deleteAll)
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> minimizeObject.
+    fun minimizeObject(
+        instance: Map<String, Any?>,
+        elementDefaults: Map<String, Any?> = emptyMap(),
+        defaults: List<Map<String, Any?>> = emptyList(),
+    ): GMResult<Map<String, Any?>, DumpError> {
+        val copy = when (
+            val result = Type.deepCopy(instance)
+        ) {
+            is GMResult.Ok -> when (
+                val typed = mutableStringMap(
+                    result.value,
+                    "instance",
+                )
+            ) {
+                is GMResult.Ok -> typed.value
+                is GMResult.Err -> return typed
+            }
+            is GMResult.Err -> return GMResult.Err(
+                DumpError.AttributeOperation(result.error),
+            )
+        }
+        var mergedDefaults: MutableMap<String, Any?> = linkedMapOf()
+        for (source in listOf(elementDefaults) + defaults.asReversed()) {
+            val merged = when (
+                val result = Type.deepCopy(
+                    value = mergedDefaults,
+                    secondary = source,
+                    toLower = true,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    DumpError.AttributeOperation(result.error),
+                )
+            }
+            mergedDefaults = when (
+                val result = mutableStringMap(
+                    merged,
+                    "defaults",
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        }
+        val removeAll = when (
+            val result = minimizeSubObject(copy, mergedDefaults)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(if (removeAll) emptyMap() else copy)
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> prepareAttributes.
+    fun prepareAttributes(
+        snapshot: DumpElementSnapshot,
+        options: Map<String, Any?>,
+    ): GMResult<Map<String, Any?>, DumpError> {
+        val elements = when (
+            val result = optionalStringMap(
+                options["elements"],
+                "options.elements",
+            )
+        ) {
+            is GMResult.Ok -> result.value.orEmpty()
+            is GMResult.Err -> return result
+        }
+        val elementOptions = when (
+            val result = optionalStringMap(
+                options[snapshot.elType],
+                "options.${snapshot.elType}",
+            )
+        ) {
+            is GMResult.Ok -> result.value.orEmpty()
+            is GMResult.Err -> return result
+        }
+        val attributes = when (
+            val result = minimizeObject(
+                instance = snapshot.attributes,
+                elementDefaults = elements,
+                defaults = listOf(elementOptions),
+            )
+        ) {
+            is GMResult.Ok -> result.value.toMutableMap()
+            is GMResult.Err -> return result
+        }
+
+        for ((name, sub) in snapshot.subs) {
+            val subtypeOptions = when (
+                val result = optionalStringMap(
+                    options[sub.elType],
+                    "options.${sub.elType}",
+                )
+            ) {
+                is GMResult.Ok -> result.value.orEmpty()
+                is GMResult.Err -> return result
+            }
+            val inheritedOptions = when (
+                val result = optionalStringMap(
+                    elementOptions[name],
+                    "options.${snapshot.elType}.$name",
+                )
+            ) {
+                is GMResult.Ok -> result.value.orEmpty()
+                is GMResult.Err -> return result
+            }
+            val subAttributes = when (
+                val result = minimizeObject(
+                    instance = sub.attributes,
+                    elementDefaults = elements,
+                    defaults = listOf(
+                        inheritedOptions,
+                        subtypeOptions,
+                    ),
+                )
+            ) {
+                is GMResult.Ok -> result.value.toMutableMap()
+                is GMResult.Err -> return result
+            }
+            subAttributes["id"] = sub.id
+            subAttributes["name"] = sub.name
+            attributes[name] = subAttributes
+        }
+
+        val label = attributes["label"]
+        if (label is Map<*, *>) {
+            val labelAttributes = when (
+                val result = stringMap(label, "attributes.label")
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val labelOptions = when (
+                val result = optionalStringMap(
+                    options["label"],
+                    "options.label",
+                )
+            ) {
+                is GMResult.Ok -> result.value.orEmpty()
+                is GMResult.Err -> return result
+            }
+            val minimizedLabel = when (
+                val result = minimizeObject(
+                    instance = labelAttributes,
+                    elementDefaults = elements,
+                    defaults = listOf(labelOptions),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            if (minimizedLabel.isEmpty()) {
+                attributes.remove("label")
+            } else {
+                attributes["label"] = minimizedLabel
+            }
+        }
+
+        val layerDefaults = when (
+            val result = optionalStringMap(
+                options["layer"],
+                "options.layer",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (
+            "layer" in attributes &&
+            jsStrictEquals(
+                attributes["layer"],
+                layerDefaults?.get(snapshot.elType),
+            )
+        ) {
+            attributes.remove("layer")
+        }
+        if (attributes["draft"] == false) {
+            attributes.remove("draft")
+        }
+        attributes["id"] = snapshot.id
+        attributes["name"] = snapshot.name
+        return GMResult.Ok(attributes)
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> setBoundingBox.
+    fun setBoundingBox(
+        methods: MutableList<DumpMethodCall>,
+        board: Board,
+        boardVariableName: String,
+    ): MutableList<DumpMethodCall> {
+        methods += DumpMethodCall(
+            obj = boardVariableName,
+            method = "setBoundingBox",
+            params = listOf(
+                board.getBoundingBox().toList(),
+                board.keepAspectRatio,
+            ),
+        )
+        return methods
     }
 
     private fun appendJCAN(
@@ -267,6 +609,78 @@ internal object Dump {
 
     private fun formatNumber(value: Number): String =
         JsNumberFormat.compact(value.toDouble())
+
+    private fun optionalStringMap(
+        value: Any?,
+        context: String,
+    ): GMResult<Map<String, Any?>?, DumpError> =
+        if (!Type.exists(value)) {
+            GMResult.Ok(null)
+        } else {
+            when (val result = stringMap(value, context)) {
+                is GMResult.Ok -> GMResult.Ok(result.value)
+                is GMResult.Err -> result
+            }
+        }
+
+    private fun stringMap(
+        value: Any?,
+        context: String,
+    ): GMResult<Map<String, Any?>, DumpError> {
+        val source = value as? Map<*, *>
+            ?: return GMResult.Err(
+                DumpError.InvalidAttributeObject(context, value),
+            )
+        val result = linkedMapOf<String, Any?>()
+        for ((key, entryValue) in source) {
+            if (key !is String) {
+                return GMResult.Err(
+                    DumpError.InvalidAttributeObject(context, value),
+                )
+            }
+            result[key] = entryValue
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun mutableStringMap(
+        value: Any?,
+        context: String,
+    ): GMResult<MutableMap<String, Any?>, DumpError> =
+        when (val result = stringMap(value, context)) {
+            is GMResult.Ok -> GMResult.Ok(result.value.toMutableMap())
+            is GMResult.Err -> result
+        }
+
+    private fun jsStrictEquals(
+        first: Any?,
+        second: Any?,
+    ): Boolean =
+        when {
+            first === second -> true
+            first is Number && second is Number ->
+                first.toDouble() == second.toDouble()
+            first is String && second is String -> first == second
+            first is Boolean && second is Boolean -> first == second
+            else -> false
+        }
+
+    private fun isArrayValue(value: Any?): Boolean =
+        arrayValues(value) != null
+
+    private fun arrayValues(value: Any?): List<Any?>? =
+        when (value) {
+            is List<*> -> value.map { item -> item }
+            is Array<*> -> value.map { item -> item }
+            is BooleanArray -> value.map { item -> item }
+            is ByteArray -> value.map { item -> item }
+            is ShortArray -> value.map { item -> item }
+            is IntArray -> value.map { item -> item }
+            is LongArray -> value.map { item -> item }
+            is FloatArray -> value.map { item -> item }
+            is DoubleArray -> value.map { item -> item }
+            else -> null
+        }
 
     private fun validateLimits(
         limits: DumpLimits,

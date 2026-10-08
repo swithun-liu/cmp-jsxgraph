@@ -104,7 +104,7 @@ internal class Sphere3D private constructor(
 ) {
     internal val points = mutableListOf<Point>()
     internal val aux2D = mutableListOf<Point>()
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     internal var projectionType: String = view.projectionType
         private set
     internal var evaluationError: Sphere3DError? = null
@@ -331,6 +331,7 @@ internal class Sphere3D private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/3d/sphere3d.js -> updateRenderer.
     override fun updateRenderer(): Sphere3D {
         needsUpdate = false
         return this
@@ -375,6 +376,7 @@ internal class Sphere3D private constructor(
             }
         }
 
+    // JSXGraph 1.13.3: src/3d/sphere3d.js -> buildParallelProjection.
     private fun buildParallelProjection():
         GMResult<Sphere3D, Sphere3DError> {
         val boxSize = view.bbox3D[0][1] - view.bbox3D[0][0]

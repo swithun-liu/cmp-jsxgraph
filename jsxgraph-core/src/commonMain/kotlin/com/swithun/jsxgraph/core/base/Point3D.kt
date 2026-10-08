@@ -9,7 +9,11 @@ package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Mat
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.pow
+import kotlin.math.sin
 
 internal sealed interface Point3DDynamicError {
     data class Rejected(
@@ -75,7 +79,28 @@ internal sealed interface Point3DError {
     data class ProxyPointFactory(
         val error: PointError,
     ) : Point3DError
+
+    data class InvalidAnimationDuration(
+        val milliseconds: Double,
+    ) : Point3DError
+
+    data class InvalidAnimationEffect(
+        val effect: String,
+    ) : Point3DError
+
+    data class AnimationPosition(
+        val error: Point3DError,
+    ) : Point3DError
+
+    data class AnimationCallback(
+        val message: String,
+    ) : Point3DError
 }
+
+internal data class Point3DMoveOptions(
+    val callback: (() -> Unit)? = null,
+    val effect: String? = null,
+)
 
 /**
  * Translated Point3D lifecycle with the same ordinary Point proxy used by
@@ -107,17 +132,26 @@ internal class Point3D private constructor(
         private set
 
     private var projectedCoordinates: DoubleArray? = null
+    private val movePath = ArrayDeque<DoubleArray>()
+    private var moveCallback: (() -> Unit)? = null
+    private var movementScheduled: Boolean = false
+    internal var movementError: Point3DError? = null
+        private set
 
     init {
         elType = POINT_3D_ELEMENT_TYPE
     }
 
+    // JSXGraph 1.13.3: src/3d/point3d.js -> X.
     internal fun X(): Double = coords[1]
 
+    // JSXGraph 1.13.3: src/3d/point3d.js -> Y.
     internal fun Y(): Double = coords[2]
 
+    // JSXGraph 1.13.3: src/3d/point3d.js -> Z.
     internal fun Z(): Double = coords[3]
 
+    // JSXGraph 1.13.3: src/3d/point3d.js -> W.
     internal fun W(): Double = coords[0]
 
     // JSXGraph: src/3d/point3d.js -> initCoords.
@@ -303,6 +337,7 @@ internal class Point3D private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/3d/point3d.js -> updateRenderer.
     override fun updateRenderer(): GeometryElement {
         needsUpdate = false
         return this
@@ -327,6 +362,169 @@ internal class Point3D private constructor(
         } else {
             Double.POSITIVE_INFINITY
         }
+
+    // JSXGraph 1.13.3: src/3d/point3d.js -> moveTo.
+    internal fun moveTo(
+        where: DoubleArray,
+        timeMilliseconds: Double? = null,
+        options: Point3DMoveOptions = Point3DMoveOptions(),
+    ): GMResult<Point3D, Point3DError> {
+        if (where.size !in setOf(3, 4)) {
+            return GMResult.Err(
+                Point3DError.InvalidCoordinateCount(where.size),
+            )
+        }
+        val duration = timeMilliseconds ?: 0.0
+        if (!duration.isFinite() || duration < 0.0) {
+            return GMResult.Err(
+                Point3DError.InvalidAnimationDuration(duration),
+            )
+        }
+        val target = if (where.size == 4) {
+            val homogeneous = homogeneousCoordinates(where)
+            when (homogeneous) {
+                is GMResult.Ok -> homogeneous.value
+                is GMResult.Err -> return homogeneous
+            }
+        } else {
+            doubleArrayOf(1.0, where[0], where[1], where[2])
+        }
+        if (duration == 0.0) {
+            return when (val result = setPosition(target)) {
+                is GMResult.Ok -> {
+                    board.update(this)
+                    GMResult.Ok(this)
+                }
+                is GMResult.Err -> result
+            }
+        }
+
+        val deltaX = coords[1] - target[1]
+        val deltaY = coords[2] - target[2]
+        val deltaZ = coords[3] - target[3]
+        if (
+            options.callback == null &&
+            abs(deltaX) < Mat.eps &&
+            abs(deltaY) < Mat.eps &&
+            abs(deltaZ) < Mat.eps
+        ) {
+            return GMResult.Ok(this)
+        }
+        val steps = ceil(duration / board.animationDelay).toInt()
+        val path = List(steps + 1) { index ->
+            val reverseStep = steps - index
+            val progress = animationProgress(
+                step = reverseStep,
+                steps = steps,
+                effect = options.effect,
+            )
+            when (progress) {
+                is GMResult.Ok -> doubleArrayOf(
+                    target[1] + deltaX * progress.value,
+                    target[2] + deltaY * progress.value,
+                    target[3] + deltaZ * progress.value,
+                )
+                is GMResult.Err -> return progress
+            }
+        }
+        return moveAlong(
+            traversePath = path,
+            timeMilliseconds = duration,
+            options = Point3DMoveOptions(callback = options.callback),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/3d/point3d.js -> moveAlong.
+    internal fun moveAlong(
+        traversePath: List<DoubleArray>,
+        timeMilliseconds: Double,
+        options: Point3DMoveOptions = Point3DMoveOptions(),
+    ): GMResult<Point3D, Point3DError> {
+        if (!timeMilliseconds.isFinite() || timeMilliseconds < 0.0) {
+            return GMResult.Err(
+                Point3DError.InvalidAnimationDuration(timeMilliseconds),
+            )
+        }
+        for (coordinates in traversePath) {
+            if (coordinates.size !in setOf(3, 4)) {
+                return GMResult.Err(
+                    Point3DError.InvalidCoordinateCount(coordinates.size),
+                )
+            }
+        }
+        options.callback?.let { moveCallback = it }
+        movePath.clear()
+        movePath.addAll(traversePath.map(DoubleArray::copyOf))
+        movementError = null
+        if (movementScheduled) {
+            return GMResult.Ok(this)
+        }
+        movementScheduled = true
+        val stepTime =
+            if (traversePath.isEmpty()) {
+                timeMilliseconds
+            } else {
+                timeMilliseconds / traversePath.size
+            }
+        board.animationScheduler.schedule(stepTime, ::advanceMovement)
+        val error = movementError
+        return if (error == null) {
+            GMResult.Ok(this)
+        } else {
+            GMResult.Err(error)
+        }
+    }
+
+    private fun advanceMovement(): Boolean {
+        val next = movePath.removeFirstOrNull()
+        if (next != null) {
+            when (val result = setPosition(next)) {
+                is GMResult.Ok -> board.update(this)
+                is GMResult.Err -> {
+                    movementError =
+                        Point3DError.AnimationPosition(result.error)
+                    movePath.clear()
+                }
+            }
+        }
+        if (movePath.isNotEmpty()) {
+            return true
+        }
+        movementScheduled = false
+        val callback = moveCallback
+        moveCallback = null
+        if (callback != null) {
+            try {
+                callback()
+            } catch (exception: Exception) {
+                movementError = Point3DError.AnimationCallback(
+                    exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                )
+            }
+        }
+        return false
+    }
+
+    private fun animationProgress(
+        step: Int,
+        steps: Int,
+        effect: String?,
+    ): GMResult<Double, Point3DError> {
+        val progress = step.toDouble() / steps
+        return when (effect) {
+            null, "==" -> GMResult.Ok(progress)
+            "<>" -> GMResult.Ok(sin(progress * PI * 0.5).pow(2))
+            "<" -> GMResult.Ok(progress.pow(3))
+            ">" -> GMResult.Ok(1.0 - (1.0 - progress).pow(3))
+            else -> GMResult.Err(
+                Point3DError.InvalidAnimationEffect(effect),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/3d/point3d.js -> __evt__update3D.
+    internal fun update3DEvent(oldCoordinates: DoubleArray) = Unit
 
     internal fun setPositionFrom2D(
         coordinates: DoubleArray,

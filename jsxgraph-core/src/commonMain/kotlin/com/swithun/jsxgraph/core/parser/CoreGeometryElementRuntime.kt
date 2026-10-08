@@ -14,9 +14,13 @@ import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
+import com.swithun.jsxgraph.core.base.CoordsElementAnimationError
+import com.swithun.jsxgraph.core.base.CoordsElementMoveOptions
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.ForeignObject
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.GeometryElementEvaluationError
+import com.swithun.jsxgraph.core.base.GeometryElementPropertyResultEvaluator
 import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.HtmlControlDefinition
 import com.swithun.jsxgraph.core.base.Image
@@ -862,7 +866,149 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 return GMResult.Ok(Unit)
             }
         }
-        return assignmentUnavailable(element, property, location)
+        val attributeValue = when (
+            val result = runtimeAttributeValue(
+                value = value,
+                elementId = element.id,
+                property = property,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        element.setAttribute(mapOf(property to attributeValue))
+        element.board.update()
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/parser/jessiescript.js ->
+    // Board.construct property mutation; src/base/element.js -> setAttribute.
+    private fun runtimeAttributeValue(
+        value: JessieCodeRuntimeValue,
+        elementId: String,
+        property: String,
+        location: JessieCodeAstLocation,
+        depth: Int = 0,
+        allowFunction: Boolean = true,
+    ): GMResult<Any?, JessieCodeRuntimeError> {
+        if (depth > MAX_ATTRIBUTE_VALUE_DEPTH) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidElementPropertyValue(
+                    elementId = elementId,
+                    property = property,
+                    expected = "an attribute value with bounded depth",
+                    actual = "nested value",
+                    location = location,
+                ),
+            )
+        }
+        return when (value) {
+            JessieCodeRuntimeValue.UndefinedValue,
+            JessieCodeRuntimeValue.NullValue,
+            -> GMResult.Ok(null)
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.BooleanValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.StringValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.ElementReference ->
+                GMResult.Ok(value.element)
+            is JessieCodeRuntimeValue.BoardReference ->
+                GMResult.Ok(value.board)
+            is JessieCodeRuntimeValue.TransformationReference ->
+                GMResult.Ok(value.transformation)
+            is JessieCodeRuntimeValue.CompositionReference ->
+                GMResult.Ok(value.composition)
+            is JessieCodeRuntimeValue.FunctionValue -> if (!allowFunction) {
+                GMResult.Err(
+                    JessieCodeRuntimeError.InvalidElementPropertyValue(
+                        elementId = elementId,
+                        property = property,
+                        expected = "a portable non-function result",
+                        actual = "function",
+                        location = location,
+                    ),
+                )
+            } else {
+                GMResult.Ok(
+                    GeometryElementPropertyResultEvaluator { element ->
+                        when (
+                            val evaluated = value.externalCallable.call(
+                                arguments = listOf(
+                                    JessieCodeRuntimeValue.ElementReference(
+                                        element,
+                                    ),
+                                ),
+                                location = location,
+                            )
+                        ) {
+                            is GMResult.Err -> GMResult.Err(
+                                GeometryElementEvaluationError.CallbackFailed(
+                                    evaluated.error.toString(),
+                                ),
+                            )
+                            is GMResult.Ok -> when (
+                                val converted = runtimeAttributeValue(
+                                    value = evaluated.value,
+                                    elementId = elementId,
+                                    property = property,
+                                    location = location,
+                                    allowFunction = false,
+                                )
+                            ) {
+                                is GMResult.Ok -> converted
+                                is GMResult.Err -> GMResult.Err(
+                                    GeometryElementEvaluationError
+                                        .CallbackFailed(
+                                            converted.error.toString(),
+                                        ),
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val values = mutableListOf<Any?>()
+                for (child in value.values) {
+                    when (
+                        val result = runtimeAttributeValue(
+                            value = child,
+                            elementId = elementId,
+                            property = property,
+                            location = location,
+                            depth = depth + 1,
+                            allowFunction = allowFunction,
+                        )
+                    ) {
+                        is GMResult.Ok -> values += result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                GMResult.Ok(values)
+            }
+            is JessieCodeRuntimeValue.ObjectValue -> {
+                val values = linkedMapOf<String, Any?>()
+                for ((name, child) in value.properties) {
+                    when (
+                        val result = runtimeAttributeValue(
+                            value = child,
+                            elementId = elementId,
+                            property = "$property.$name",
+                            location = location,
+                            depth = depth + 1,
+                            allowFunction = allowFunction,
+                        )
+                    ) {
+                        is GMResult.Ok -> values[name] = result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                GMResult.Ok(values)
+            }
+        }
     }
 
     private fun resolveGeometryProperty(
@@ -1961,16 +2107,12 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val time = arguments.getOrNull(1)
-            ?: JessieCodeRuntimeValue.UndefinedValue
-        val immediate = when (time) {
-            JessieCodeRuntimeValue.UndefinedValue -> true
-            is JessieCodeRuntimeValue.NumberValue ->
-                time.value == 0.0 ||
-                    (
-                        coordinates.size == 3 &&
-                            abs(coordinates[0] - element.Z()) > Mat.eps
-                        )
+        val duration = when (
+            val time = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> null
+            is JessieCodeRuntimeValue.NumberValue -> time.value
             else -> return invalidArgumentType(
                 functionName = "moveTo",
                 argumentIndex = 1,
@@ -1979,21 +2121,105 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 location = location,
             )
         }
-        if (!immediate) {
-            return GMResult.Err(
+        val options = when (
+            val result = moveOptions(
+                element = element,
+                value = arguments.getOrNull(2)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+
+        return when (
+            val result = element.moveTo(
+                where = coordinates,
+                timeMilliseconds = duration,
+                options = options,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(
+                JessieCodeRuntimeValue.BoardReference(element.board),
+            )
+            is GMResult.Err -> GMResult.Err(
                 JessieCodeRuntimeError.ElementMethodUnavailable(
                     elementId = element.id,
                     method = "moveTo",
-                    reason = "animated movement is not translated",
+                    reason = result.error.toString(),
                     location = location,
                 ),
             )
         }
+    }
 
-        element.setPosition(Const.COORDS_BY_USER, coordinates)
-        element.board.update(element)
+    private fun moveOptions(
+        element: CoordsElement,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<CoordsElementMoveOptions, JessieCodeRuntimeError> {
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            return GMResult.Ok(CoordsElementMoveOptions())
+        }
+        val properties = (
+            value as? JessieCodeRuntimeValue.ObjectValue
+            )?.properties ?: return invalidArgumentType(
+            functionName = "moveTo",
+            argumentIndex = 2,
+            expected = "object or undefined",
+            actual = value,
+            location = location,
+        )
+        val effect = when (
+            val raw = properties["effect"]
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> null
+            is JessieCodeRuntimeValue.StringValue -> raw.value
+            else -> return invalidArgumentType(
+                functionName = "moveTo",
+                argumentIndex = 2,
+                expected = "options.effect string",
+                actual = raw,
+                location = location,
+            )
+        }
+        val callback = when (
+            val raw = properties["callback"]
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> null
+            is JessieCodeRuntimeValue.FunctionValue -> {
+                {
+                    when (
+                        val callbackResult = raw.externalCallable.call(
+                            arguments = emptyList(),
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> Unit
+                        is GMResult.Err -> element.reportMovementError(
+                            CoordsElementAnimationError.Callback(
+                                callbackResult.error.toString(),
+                            ),
+                        )
+                    }
+                }
+            }
+            else -> return invalidArgumentType(
+                functionName = "moveTo",
+                argumentIndex = 2,
+                expected = "options.callback function",
+                actual = raw,
+                location = location,
+            )
+        }
         return GMResult.Ok(
-            JessieCodeRuntimeValue.BoardReference(element.board),
+            CoordsElementMoveOptions(
+                callback = callback,
+                effect = effect,
+            ),
         )
     }
 
@@ -2161,6 +2387,8 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 "composition"
             is JessieCodeRuntimeValue.ElementReference -> "element"
         }
+
+    private const val MAX_ATTRIBUTE_VALUE_DEPTH = 64
 }
 
 private typealias ElementPropertyResult =

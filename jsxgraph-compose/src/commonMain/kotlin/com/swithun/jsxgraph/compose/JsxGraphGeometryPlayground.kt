@@ -65,11 +65,14 @@ import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shadow as ComposeShadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -92,6 +95,7 @@ import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphArrowHead
 import com.swithun.jsxgraph.core.JsxGraphColor
 import com.swithun.jsxgraph.core.JsxGraphControlInteraction
 import com.swithun.jsxgraph.core.JsxGraphElementStyle
@@ -104,11 +108,13 @@ import com.swithun.jsxgraph.core.JsxGraphPoint2D
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import com.swithun.jsxgraph.core.JsxGraphSession
+import com.swithun.jsxgraph.core.JsxGraphShadow
 import com.swithun.jsxgraph.core.JsxGraphSmartLabelBoxKind
 import com.swithun.jsxgraph.core.JsxGraphSmartLabelParentKind
 import com.swithun.jsxgraph.core.JsxGraphSmartLabelVisibility
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.resolveVisualStyle
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -424,64 +430,72 @@ fun JsxGraphScenePreview(
                     ) {
                         continue
                     }
-                    when (element) {
-                        is JsxGraphSceneElement.Point ->
-                            drawScenePoint(element, metrics)
-                        is JsxGraphSceneElement.Line ->
-                            drawSceneLine(element, metrics)
-                        is JsxGraphSceneElement.Ticks ->
-                            drawSceneTicks(
-                                ticks = element,
-                                metrics = metrics,
-                                textMeasurer = textMeasurer,
-                                fontFamily = axisFontFamily,
-                            )
-                        is JsxGraphSceneElement.Circle ->
-                            drawSceneCircle(element, metrics)
-                        is JsxGraphSceneElement.Curve ->
-                            drawSceneCurve(element, metrics)
-                        is JsxGraphSceneElement.Polygon -> Unit
-                        is JsxGraphSceneElement.Text ->
-                            if (element.htmlControl == null) {
-                                drawSceneText(
-                                    text = element,
+                    withSceneClip(element.style) {
+                        when (element) {
+                            is JsxGraphSceneElement.Point ->
+                                drawScenePoint(element, metrics)
+                            is JsxGraphSceneElement.Line ->
+                                drawSceneLine(element, metrics)
+                            is JsxGraphSceneElement.Ticks ->
+                                drawSceneTicks(
+                                    ticks = element,
                                     metrics = metrics,
                                     textMeasurer = textMeasurer,
                                     fontFamily = axisFontFamily,
                                 )
+                            is JsxGraphSceneElement.Circle ->
+                                drawSceneCircle(element, metrics)
+                            is JsxGraphSceneElement.Curve ->
+                                drawSceneCurve(element, metrics)
+                            is JsxGraphSceneElement.Polygon -> Unit
+                            is JsxGraphSceneElement.Text ->
+                                if (element.htmlControl == null) {
+                                    drawSceneText(
+                                        text = element,
+                                        metrics = metrics,
+                                        textMeasurer = textMeasurer,
+                                        fontFamily = axisFontFamily,
+                                    )
+                                }
+                            is JsxGraphSceneElement.Image -> {
+                                val result = resolvedImages[element.id]
+                                if (result is GMResult.Ok) {
+                                    drawSceneImage(
+                                        image = element,
+                                        bitmap = result.value,
+                                        metrics = metrics,
+                                    )
+                                }
                             }
-                        is JsxGraphSceneElement.Image -> {
-                            val result = resolvedImages[element.id]
-                            if (result is GMResult.Ok) {
-                                drawSceneImage(
-                                    image = element,
-                                    bitmap = result.value,
-                                    metrics = metrics,
-                                )
-                            }
+                            // SVG foreignObject requires a browser DOM. Core
+                            // exposes this explicitly in unsupportedRenderFeatures.
+                            is JsxGraphSceneElement.ForeignObject -> Unit
                         }
-                        // SVG foreignObject requires a browser DOM. Core
-                        // exposes this explicitly in unsupportedRenderFeatures.
-                        is JsxGraphSceneElement.ForeignObject -> Unit
                     }
                 }
                 is JsxGraphSceneRenderItem.PolygonFill ->
                     if (item.polygon.style.visible) {
-                        drawScenePolygonFill(item.polygon, metrics)
+                        withSceneClip(item.polygon.style) {
+                            drawScenePolygonFill(item.polygon, metrics)
+                        }
                     }
                 is JsxGraphSceneRenderItem.PolygonBorder ->
                     if (
                         item.polygon.style.visible &&
                         item.polygon.borderStyle.visible
                     ) {
-                        drawScenePolygonBorder(item.polygon, metrics)
+                        withSceneClip(item.polygon.borderStyle) {
+                            drawScenePolygonBorder(item.polygon, metrics)
+                        }
                     }
                 is JsxGraphSceneRenderItem.PolygonVertex ->
                     if (
                         item.polygon.style.visible &&
                         item.vertex.style.visible
                     ) {
-                        drawScenePoint(item.vertex, metrics)
+                        withSceneClip(item.vertex.style) {
+                            drawScenePoint(item.vertex, metrics)
+                        }
                     }
             }
         }
@@ -560,8 +574,9 @@ private fun SceneHtmlControl(
     onInteraction: ((JsxGraphControlInteraction) -> Unit)?,
 ) {
     val control = text.htmlControl ?: return
-    val textColor = text.style.strokeColor.toComposeColor(
-        opacity = text.style.strokeOpacity,
+    val visual = text.style.resolveVisualStyle()
+    val textColor = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
     )
     when (control) {
         is JsxGraphHtmlControl.Button ->
@@ -791,7 +806,8 @@ internal fun draggablePointAt(
             // JSXGraph: src/base/point.js -> hasPoint.
             val radius = max(
                 point.size.toFloat() * density +
-                    point.style.strokeWidth.toFloat() * density * 0.5f,
+                    point.style.resolveVisualStyle()
+                        .strokeWidth.toFloat() * density * 0.5f,
                 POINT_HIT_PRECISION_DP * density,
             ) + POINT_HIT_PADDING_DP * density
             abs(center.x - position.x) < radius &&
@@ -984,37 +1000,281 @@ private fun DrawScope.drawAxes(
     )
 }
 
+private fun DrawScope.withSceneClip(
+    style: JsxGraphElementStyle,
+    block: DrawScope.() -> Unit,
+) {
+    if (style.clipToViewport) {
+        clipRect(
+            left = 0.0f,
+            top = 0.0f,
+            right = size.width,
+            bottom = size.height,
+            block = block,
+        )
+    } else {
+        block()
+    }
+}
+
+internal data class SceneShadowPaint(
+    val color: Color,
+    val offset: Offset,
+    val blurRadius: Float,
+)
+
+// JSXGraph 1.13.3: src/renderer/svg.js -> setShadow.
+internal fun JsxGraphElementStyle.shadowPaint(
+    sourceColor: JsxGraphColor,
+    sourceOpacity: Double,
+    density: Float,
+): SceneShadowPaint? {
+    val value = shadow
+    if (!value.enabled || sourceOpacity <= 0.0) {
+        return null
+    }
+    fun blended(source: Int, overlay: Int): Int =
+        (source * value.blend + overlay)
+            .roundToInt()
+            .coerceIn(0, 255)
+    return SceneShadowPaint(
+        color = JsxGraphColor(
+            red = blended(sourceColor.red, value.color.red),
+            green = blended(sourceColor.green, value.color.green),
+            blue = blended(sourceColor.blue, value.color.blue),
+            alpha = value.color.alpha,
+        ).toComposeColor(
+            opacity =
+                sourceOpacity *
+                    value.opacity *
+                    sourceColor.alpha / 255.0,
+        ),
+        offset = Offset(
+            x = value.offsetX.toFloat() * density,
+            y = value.offsetY.toFloat() * density,
+        ),
+        blurRadius = value.blur.toFloat() * density,
+    )
+}
+
 private fun DrawScope.drawScenePoint(
     point: JsxGraphSceneElement.Point,
     metrics: BoardMetrics,
 ) {
     val center = metrics.toScreen(point.coordinates.toOffset())
-    val radius = point.size.dp.toPx()
-    val fill = point.style.fillColor.toComposeColor(
-        opacity = point.style.fillOpacity,
+    val size = point.size.dp.toPx()
+    val visual = point.style.resolveVisualStyle()
+    val fill = visual.fillColor.toComposeColor(
+        opacity = visual.fillOpacity,
     )
-    if (fill.alpha > 0.0f) {
-        drawCircle(
-            color = fill,
-            radius = radius,
-            center = center,
+    val stroke = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
+    )
+    val strokeWidth = visual.strokeWidth.dp.toPx()
+    point.style.shadowPaint(
+        sourceColor =
+            if (fill.alpha > 0.0f) visual.fillColor
+            else visual.strokeColor,
+        sourceOpacity =
+            if (fill.alpha > 0.0f) visual.fillOpacity
+            else visual.strokeOpacity,
+        density = density,
+    )?.let { shadow ->
+        drawPointPrimitive(
+            center = center + shadow.offset,
+            size = size,
+            face = point.face,
+            fill = shadow.color,
+            stroke = shadow.color,
+            strokeWidth = strokeWidth + shadow.blurRadius,
+            pathEffect = null,
         )
     }
-    val stroke = point.style.strokeColor.toComposeColor(
-        opacity = point.style.strokeOpacity,
+    drawPointPrimitive(
+        center = center,
+        size = size,
+        face = point.face,
+        fill = fill,
+        stroke = stroke,
+        strokeWidth = strokeWidth,
+        pathEffect = strokeDashPathEffect(point.style),
     )
-    if (stroke.alpha > 0.0f && point.style.strokeWidth > 0.0) {
-        drawCircle(
+}
+
+// JSXGraph 1.13.3: src/renderer/canvas.js -> drawPoint.
+private fun DrawScope.drawPointPrimitive(
+    center: Offset,
+    size: Float,
+    face: String,
+    fill: Color,
+    stroke: Color,
+    strokeWidth: Float,
+    pathEffect: PathEffect?,
+) {
+    val normalized = normalizePointFace(face)
+    if (normalized == "o") {
+        val radius = if (size == 0.0f) 0.0f else size + 1.dp.toPx() +
+            strokeWidth * 0.5f
+        if (fill.alpha > 0.0f) {
+            drawCircle(color = fill, radius = radius, center = center)
+        }
+        if (stroke.alpha > 0.0f && strokeWidth > 0.0f) {
+            drawCircle(
+                color = stroke,
+                radius = radius,
+                center = center,
+                style = Stroke(width = strokeWidth, pathEffect = pathEffect),
+            )
+        }
+        return
+    }
+    if (normalized == "[]") {
+        if (size <= 0.0f) {
+            return
+        }
+        val topLeft = center - Offset(size, size)
+        val squareSize = Size(size * 2.0f, size * 2.0f)
+        if (fill.alpha > 0.0f) {
+            drawRect(color = fill, topLeft = topLeft, size = squareSize)
+        }
+        if (stroke.alpha > 0.0f && strokeWidth > 0.0f) {
+            drawRect(
+                color = stroke,
+                topLeft = topLeft,
+                size = squareSize,
+                style = Stroke(width = strokeWidth, pathEffect = pathEffect),
+            )
+        }
+        return
+    }
+
+    val path = pointPath(center, size, normalized)
+    if (path == null) {
+        return
+    }
+    val fillable = normalized in POINT_FILLABLE_FACES
+    if (fillable && fill.alpha > 0.0f) {
+        drawPath(path = path, color = fill)
+    }
+    if (stroke.alpha > 0.0f && strokeWidth > 0.0f) {
+        drawPath(
+            path = path,
             color = stroke,
-            radius = radius,
-            center = center,
             style = Stroke(
-                width = point.style.strokeWidth.dp.toPx(),
-                pathEffect = strokeDashPathEffect(point.style),
+                width = strokeWidth,
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+                pathEffect = pathEffect,
             ),
         )
     }
 }
+
+// JSXGraph 1.13.3: src/options.js -> normalizePointFace;
+// src/renderer/canvas.js -> drawPoint.
+internal fun normalizePointFace(face: String): String =
+    when (face.lowercase()) {
+        "circle", "o" -> "o"
+        "square", "[]" -> "[]"
+        "cross", "x" -> "x"
+        "plus", "+" -> "+"
+        "divide", "|" -> "|"
+        "minus", "-" -> "-"
+        "diamond", "<>" -> "<>"
+        "diamond2", "<<>>" -> "<<>>"
+        "triangleup", "a", "^" -> "^"
+        "triangledown", "v" -> "v"
+        "triangleleft", "<" -> "<"
+        "triangleright", ">" -> ">"
+        else -> face
+    }
+
+private fun pointPath(
+    center: Offset,
+    size: Float,
+    face: String,
+): Path? {
+    val half = size * 0.5f
+    val triangle = size * 0.8660254f
+    return Path().apply {
+        when (face) {
+            "x" -> {
+                moveTo(center.x - size, center.y - size)
+                lineTo(center.x + size, center.y + size)
+                moveTo(center.x + size, center.y - size)
+                lineTo(center.x - size, center.y + size)
+            }
+            "+" -> {
+                moveTo(center.x - size, center.y)
+                lineTo(center.x + size, center.y)
+                moveTo(center.x, center.y - size)
+                lineTo(center.x, center.y + size)
+            }
+            "|" -> {
+                moveTo(center.x, center.y - size)
+                lineTo(center.x, center.y + size)
+            }
+            "-" -> {
+                moveTo(center.x - size, center.y)
+                lineTo(center.x + size, center.y)
+            }
+            "<>", "<<>>" -> {
+                val radius = if (face == "<<>>") size * 1.41f else size
+                moveTo(center.x - radius, center.y)
+                lineTo(center.x, center.y + radius)
+                lineTo(center.x + radius, center.y)
+                lineTo(center.x, center.y - radius)
+                close()
+            }
+            "^" -> {
+                moveTo(center.x, center.y - size)
+                lineTo(center.x - triangle, center.y + half)
+                lineTo(center.x + triangle, center.y + half)
+                close()
+            }
+            "v" -> {
+                moveTo(center.x, center.y + size)
+                lineTo(center.x - triangle, center.y - half)
+                lineTo(center.x + triangle, center.y - half)
+                close()
+            }
+            "<" -> {
+                moveTo(center.x - size, center.y)
+                lineTo(center.x + half, center.y - triangle)
+                lineTo(center.x + half, center.y + triangle)
+                close()
+            }
+            ">" -> {
+                moveTo(center.x + size, center.y)
+                lineTo(center.x - half, center.y - triangle)
+                lineTo(center.x - half, center.y + triangle)
+                close()
+            }
+            else -> return null
+        }
+    }
+}
+
+private fun String.toStrokeCap(): StrokeCap =
+    when (this) {
+        "round" -> StrokeCap.Round
+        "square" -> StrokeCap.Square
+        else -> StrokeCap.Butt
+    }
+
+private fun JsxGraphArrowHead?.forVisualState(
+    highlighted: Boolean,
+): JsxGraphArrowHead? =
+    this?.let { arrow ->
+        val highlightSize = arrow.highlightSize
+        if (highlighted && highlightSize != null) {
+            arrow.copy(size = highlightSize)
+        } else {
+            arrow
+        }
+    }
+
+private val POINT_FILLABLE_FACES = setOf("<>", "<<>>", "^", "v", "<", ">")
 
 private fun DrawScope.drawSceneLine(
     line: JsxGraphSceneElement.Line,
@@ -1032,10 +1292,11 @@ private fun DrawScope.drawSceneLine(
     ) ?: (line.point1 to line.point2)
     val point1 = metrics.toScreen(resolvedPoints.first.toOffset())
     val point2 = metrics.toScreen(resolvedPoints.second.toOffset())
-    val color = line.style.strokeColor.toComposeColor(
-        opacity = line.style.strokeOpacity,
+    val visual = line.style.resolveVisualStyle()
+    val color = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
     )
-    val strokeWidth = line.style.strokeWidth.dp.toPx()
+    val strokeWidth = visual.strokeWidth.dp.toPx()
     val geometry = lineRenderGeometry(
         point1 = point1,
         point2 = point2,
@@ -1043,16 +1304,30 @@ private fun DrawScope.drawSceneLine(
         straightLast = line.straightLast,
         viewportSize = size,
         strokeWidth = strokeWidth,
-        firstArrow = line.firstArrow,
-        lastArrow = line.lastArrow,
+        firstArrow = line.firstArrow.forVisualState(visual.isHighlighted),
+        lastArrow = line.lastArrow.forVisualState(visual.isHighlighted),
     ) ?: return
     if (color.alpha > 0.0f && strokeWidth > 0.0f) {
+        val cap = line.style.lineCap.toStrokeCap()
+        line.style.shadowPaint(
+            sourceColor = visual.strokeColor,
+            sourceOpacity = visual.strokeOpacity,
+            density = density,
+        )?.let { shadow ->
+            drawLine(
+                color = shadow.color,
+                start = geometry.strokeStart + shadow.offset,
+                end = geometry.strokeEnd + shadow.offset,
+                strokeWidth = strokeWidth + shadow.blurRadius,
+                cap = cap,
+            )
+        }
         drawLine(
             color = color,
             start = geometry.strokeStart,
             end = geometry.strokeEnd,
             strokeWidth = strokeWidth,
-            cap = StrokeCap.Butt,
+            cap = cap,
             pathEffect = strokeDashPathEffect(line.style),
         )
         geometry.firstArrow?.let { arrow ->
@@ -1137,10 +1412,11 @@ private fun DrawScope.drawSceneTicks(
         cssPixelsPerUnitX = metrics.scaleX.toDouble() / density,
         cssPixelsPerUnitY = metrics.scaleY.toDouble() / density,
     )
-    val stroke = ticks.style.strokeColor.toComposeColor(
-        opacity = ticks.style.strokeOpacity,
+    val visual = ticks.style.resolveVisualStyle()
+    val stroke = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
     )
-    if (stroke.alpha > 0.0f && ticks.style.strokeWidth > 0.0) {
+    if (stroke.alpha > 0.0f && visual.strokeWidth > 0.0) {
         for (tick in resolved.paths) {
             val points = tick.points.map { point ->
                 metrics.toScreen(point.toOffset())
@@ -1158,8 +1434,8 @@ private fun DrawScope.drawSceneTicks(
                 path = path,
                 color = stroke,
                 style = Stroke(
-                    width = ticks.style.strokeWidth.dp.toPx(),
-                    cap = StrokeCap.Butt,
+                    width = visual.strokeWidth.dp.toPx(),
+                    cap = ticks.style.lineCap.toStrokeCap(),
                     pathEffect = strokeDashPathEffect(ticks.style),
                 ),
             )
@@ -1198,6 +1474,7 @@ private fun DrawScope.drawSceneCircle(
     circle: JsxGraphSceneElement.Circle,
     metrics: BoardMetrics,
 ) {
+    val visual = circle.style.resolveVisualStyle()
     val center = metrics.toScreen(circle.center.toOffset())
     val radiusX = circle.radius.toFloat() * metrics.scaleX
     val radiusY = circle.radius.toFloat() * metrics.scaleY
@@ -1205,8 +1482,41 @@ private fun DrawScope.drawSceneCircle(
     val ellipseSize = Size(radiusX * 2.0f, radiusY * 2.0f)
     val bounds = Rect(offset = topLeft, size = ellipseSize)
     if (circle.style.fillGradient == null) {
-        val fill = circle.style.fillColor.toComposeColor(
-            opacity = circle.style.fillOpacity,
+        circle.style.shadowPaint(
+            sourceColor =
+                if (visual.fillColor.alpha > 0) {
+                    visual.fillColor
+                } else {
+                    visual.strokeColor
+                },
+            sourceOpacity =
+                if (visual.fillColor.alpha > 0) {
+                    visual.fillOpacity
+                } else {
+                    visual.strokeOpacity
+                },
+            density = density,
+        )?.let { shadow ->
+            drawOval(
+                color = shadow.color,
+                topLeft = topLeft + shadow.offset,
+                size = ellipseSize,
+                style =
+                    if (visual.fillColor.alpha > 0) {
+                        androidx.compose.ui.graphics.drawscope.Fill
+                    } else {
+                        Stroke(
+                            width =
+                                visual.strokeWidth.dp.toPx() +
+                                    shadow.blurRadius,
+                        )
+                    },
+            )
+        }
+    }
+    if (circle.style.fillGradient == null) {
+        val fill = visual.fillColor.toComposeColor(
+            opacity = visual.fillOpacity,
         )
         if (fill.alpha > 0.0f) {
             drawOval(
@@ -1225,16 +1535,17 @@ private fun DrawScope.drawSceneCircle(
             style = circle.style,
         )
     }
-    val stroke = circle.style.strokeColor.toComposeColor(
-        opacity = circle.style.strokeOpacity,
+    val stroke = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
     )
-    if (stroke.alpha > 0.0f && circle.style.strokeWidth > 0.0) {
+    if (stroke.alpha > 0.0f && visual.strokeWidth > 0.0) {
         drawOval(
             color = stroke,
             topLeft = topLeft,
             size = ellipseSize,
             style = Stroke(
-                width = circle.style.strokeWidth.dp.toPx(),
+                width = visual.strokeWidth.dp.toPx(),
+                cap = circle.style.lineCap.toStrokeCap(),
                 pathEffect = strokeDashPathEffect(circle.style),
             ),
         )
@@ -1246,6 +1557,7 @@ private fun DrawScope.drawSceneCurve(
     curve: JsxGraphSceneElement.Curve,
     metrics: BoardMetrics,
 ) {
+    val visual = curve.style.resolveVisualStyle()
     val resolvedGrid = curve.grid?.let { grid ->
         when (
             val result = grid.resolve(
@@ -1300,32 +1612,69 @@ private fun DrawScope.drawSceneCurve(
             style = curve.style,
         )
     }
-    val stroke = curve.style.strokeColor.toComposeColor(
-        opacity = curve.style.strokeOpacity,
+    val stroke = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
     )
     val strokeWidth =
-        resolvedGrid?.pointStrokeWidth ?: curve.style.strokeWidth
+        resolvedGrid?.pointStrokeWidth ?: visual.strokeWidth
     if (
         segmentCount > 0 &&
         stroke.alpha > 0.0f &&
         strokeWidth > 0.0
     ) {
+        val strokeWidthPixels = strokeWidth.dp.toPx()
+        val cap = (
+            resolvedGrid?.lineCap ?: curve.lineCap
+            ).toStrokeCap()
+        curve.style.shadowPaint(
+            sourceColor = visual.strokeColor,
+            sourceOpacity = visual.strokeOpacity,
+            density = density,
+        )?.let { shadow ->
+            translate(shadow.offset.x, shadow.offset.y) {
+                drawPath(
+                    path = path,
+                    color = shadow.color,
+                    style = Stroke(
+                        width =
+                            strokeWidthPixels +
+                                shadow.blurRadius,
+                        cap = cap,
+                    ),
+                )
+            }
+        }
         drawPath(
             path = path,
             color = stroke,
             style = Stroke(
-                width = strokeWidth.dp.toPx(),
-                cap =
-                    if (
-                        (resolvedGrid?.lineCap ?: curve.lineCap) == "square"
-                    ) {
-                        StrokeCap.Square
-                    } else {
-                        StrokeCap.Round
-                    },
+                width = strokeWidthPixels,
+                cap = cap,
                 pathEffect = strokeDashPathEffect(curve.style),
             ),
         )
+        val arrows = curveArrowRenderGeometry(
+            commands = commands,
+            strokeWidth = strokeWidthPixels,
+            firstArrow =
+                curve.firstArrow.forVisualState(visual.isHighlighted),
+            lastArrow =
+                curve.lastArrow.forVisualState(visual.isHighlighted),
+        )
+        arrows?.firstArrow?.let { arrow ->
+            drawArrowHead(
+                arrow = arrow,
+                color = stroke,
+                strokeWidth = strokeWidthPixels,
+            )
+        }
+        arrows?.lastArrow?.let { arrow ->
+            drawArrowHead(
+                arrow = arrow,
+                color = stroke,
+                strokeWidth = strokeWidthPixels,
+            )
+        }
     }
 }
 
@@ -1338,7 +1687,22 @@ private fun DrawScope.drawSceneFill(
     bounds: Rect,
     style: JsxGraphElementStyle,
 ) {
-    val gradient = style.fillGradient
+    val visual = style.resolveVisualStyle()
+    style.shadowPaint(
+        sourceColor = visual.fillColor,
+        sourceOpacity = visual.fillOpacity,
+        density = density,
+    )?.let { shadow ->
+        translate(shadow.offset.x, shadow.offset.y) {
+            drawPath(path = path, color = shadow.color)
+        }
+    }
+    val gradient =
+        if (visual.isDraft) {
+            null
+        } else {
+            style.fillGradient
+        }
     if (
         gradient == null ||
         bounds.width <= 0.0f ||
@@ -1348,7 +1712,7 @@ private fun DrawScope.drawSceneFill(
         !bounds.right.isFinite() ||
         !bounds.bottom.isFinite()
     ) {
-        val fill = style.fillColor.toComposeColor(style.fillOpacity)
+        val fill = visual.fillColor.toComposeColor(visual.fillOpacity)
         if (fill.alpha > 0.0f) {
             drawPath(path = path, color = fill)
         }
@@ -1500,13 +1864,15 @@ internal fun radialGradientStepCount(bounds: Rect): Int =
 internal fun gradientStopColors(
     style: JsxGraphElementStyle,
     gradient: JsxGraphFillGradient,
-): Pair<Color, Color> =
-    style.fillColor.toComposeColor(
+): Pair<Color, Color> {
+    val visual = style.resolveVisualStyle()
+    return visual.fillColor.toComposeColor(
         // SVG assigns fillOpacity both to the first stop and to the element.
-        opacity = style.fillOpacity * style.fillOpacity,
+        opacity = visual.fillOpacity * visual.fillOpacity,
     ) to gradient.secondColor.toComposeColor(
-        opacity = style.fillOpacity * gradient.secondOpacity,
+        opacity = visual.fillOpacity * gradient.secondOpacity,
     )
+}
 
 internal fun gradientColorAt(
     style: JsxGraphElementStyle,
@@ -1633,11 +1999,14 @@ private fun DrawScope.drawScenePolygonFill(
         metrics = metrics,
         close = true,
     ) ?: return
-    val fill = polygon.style.fillColor.toComposeColor(
-        opacity = polygon.style.fillOpacity,
-    )
+    val visual = polygon.style.resolveVisualStyle()
+    val fill = visual.fillColor.toComposeColor(visual.fillOpacity)
     if (polygon.vertices.size >= 3 && fill.alpha > 0.0f) {
-        drawPath(path = path, color = fill)
+        drawSceneFill(
+            path = path,
+            bounds = path.getBounds(),
+            style = polygon.style,
+        )
     }
 }
 
@@ -1650,20 +2019,40 @@ private fun DrawScope.drawScenePolygonBorder(
         metrics = metrics,
         close = polygon.isClosed,
     ) ?: return
-    val stroke = polygon.borderStyle.strokeColor.toComposeColor(
-        opacity = polygon.borderStyle.strokeOpacity,
+    val visual = polygon.borderStyle.resolveVisualStyle()
+    val stroke = visual.strokeColor.toComposeColor(
+        opacity = visual.strokeOpacity,
     )
     if (
         polygon.vertices.size >= 2 &&
         stroke.alpha > 0.0f &&
-        polygon.borderStyle.strokeWidth > 0.0
+        visual.strokeWidth > 0.0
     ) {
+        polygon.borderStyle.shadowPaint(
+            sourceColor = visual.strokeColor,
+            sourceOpacity = visual.strokeOpacity,
+            density = density,
+        )?.let { shadow ->
+            translate(shadow.offset.x, shadow.offset.y) {
+                drawPath(
+                    path = path,
+                    color = shadow.color,
+                    style = Stroke(
+                        width =
+                            visual.strokeWidth.dp.toPx() +
+                                shadow.blurRadius,
+                        cap = polygon.borderStyle.lineCap.toStrokeCap(),
+                        join = StrokeJoin.Miter,
+                    ),
+                )
+            }
+        }
         drawPath(
             path = path,
             color = stroke,
             style = Stroke(
-                width = polygon.borderStyle.strokeWidth.dp.toPx(),
-                cap = StrokeCap.Butt,
+                width = visual.strokeWidth.dp.toPx(),
+                cap = polygon.borderStyle.lineCap.toStrokeCap(),
                 join = StrokeJoin.Miter,
                 pathEffect = strokeDashPathEffect(polygon.borderStyle),
             ),
@@ -1723,18 +2112,31 @@ private fun DrawScope.drawSceneText(
     if (text.content.isEmpty() || text.fontSize <= 0.0) {
         return
     }
+    val visual = text.style.resolveVisualStyle()
+    val shadow = text.style.shadowPaint(
+        sourceColor = visual.strokeColor,
+        sourceOpacity = visual.strokeOpacity,
+        density = density,
+    )
     val layout = textMeasurer.measure(
         text = sceneTextAnnotatedString(
             content = text.content,
             fontSize = text.fontSize,
         ),
         style = TextStyle(
-            color = text.style.strokeColor.toComposeColor(
-                opacity = text.style.strokeOpacity,
+            color = visual.strokeColor.toComposeColor(
+                opacity = visual.strokeOpacity,
             ),
             fontSize = text.fontSize.toFloat().sp,
             fontFamily = fontFamily,
             letterSpacing = 0.sp,
+            shadow = shadow?.let {
+                ComposeShadow(
+                    color = it.color,
+                    offset = it.offset,
+                    blurRadius = it.blurRadius,
+                )
+            },
         ),
     )
     val coordinates =
@@ -2034,8 +2436,9 @@ private fun DrawScope.drawSceneImage(
     matrix[1, 1] = geometry.vertical.y / bitmap.height
     matrix[3, 0] = geometry.topLeft.x
     matrix[3, 1] = geometry.topLeft.y
+    val visual = image.style.resolveVisualStyle()
     val paint = Paint().apply {
-        alpha = image.style.fillOpacity.toFloat()
+        alpha = visual.fillOpacity.toFloat()
     }
     drawContext.canvas.save()
     try {

@@ -1217,6 +1217,23 @@ object JsxGraphParityCorpus {
             suite = JsxGraphParitySuite.Focused,
         ),
         JsxGraphParityCase(
+            id = "curve_arrows",
+            title = "Curve arrows",
+            scenario = "Degree-one Curve and cubic Arc/Sector paths exercise endpoint tangents and the non-Line type-seven default.",
+            source = CURVE_ARROWS_SOURCE,
+            features = setOf(
+                "construction-document",
+                "curve",
+                "arc",
+                "sector",
+                "first-arrow",
+                "last-arrow",
+                "curve-arrow-default",
+                "cubic-bezier",
+            ),
+            suite = JsxGraphParitySuite.Focused,
+        ),
+        JsxGraphParityCase(
             id = "triangle_centers",
             title = "Triangle centers",
             scenario = "Three draggable vertices drive a Bisector, Incenter, and Incircle.",
@@ -3746,6 +3763,137 @@ private const val LINE_ARROWS_SOURCE: String = """
         "lastArrow": {"type": 7, "size": 30},
         "strokeColor": "#E69F00",
         "strokeWidth": 3,
+        "fixed": true,
+        "highlight": false
+      }
+    }
+  ]
+}
+"""
+
+private const val CURVE_ARROWS_SOURCE: String = """
+{
+  "schemaVersion": 1,
+  "boundingBox": [-8, 6, 8, -6],
+  "axis": false,
+  "grid": false,
+  "keepAspectRatio": true,
+  "objects": [
+    {
+      "id": "curve",
+      "type": "curve",
+      "parents": [[-7, -5, -2, 0], [3, 5, 2, 4]],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "firstArrow": true,
+        "lastArrow": {"type": 4, "size": 6},
+        "strokeColor": "#1565C0",
+        "strokeWidth": 4,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "arcOrigin",
+      "type": "point",
+      "parents": [3, 3],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "arcFirst",
+      "type": "point",
+      "parents": [6, 3],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "arcLast",
+      "type": "point",
+      "parents": [3, 5.5],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "arc",
+      "type": "arc",
+      "parents": ["arcOrigin", "arcFirst", "arcLast"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "firstArrow": {"type": 2, "size": 3},
+        "lastArrow": true,
+        "strokeColor": "#16877A",
+        "strokeWidth": 4,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "sectorOrigin",
+      "type": "point",
+      "parents": [3, -3],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "sectorFirst",
+      "type": "point",
+      "parents": [6, -3],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "sectorLast",
+      "type": "point",
+      "parents": [3, -0.5],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "visible": false,
+        "fixed": true,
+        "highlight": false
+      }
+    },
+    {
+      "id": "sector",
+      "type": "sector",
+      "parents": ["sectorOrigin", "sectorFirst", "sectorLast"],
+      "attributes": {
+        "name": "",
+        "withLabel": false,
+        "firstArrow": false,
+        "lastArrow": {"type": 6, "size": 5},
+        "strokeColor": "#B44335",
+        "strokeWidth": 4,
+        "fillColor": "#E69F00",
+        "fillOpacity": 0.16,
         "fixed": true,
         "highlight": false
       }

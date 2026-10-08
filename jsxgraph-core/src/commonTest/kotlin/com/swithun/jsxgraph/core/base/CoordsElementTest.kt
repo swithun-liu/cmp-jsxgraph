@@ -239,6 +239,232 @@ class CoordsElementTest {
         assertEquals(failure.error, point.transformationEvaluationError)
     }
 
+    @Test
+    fun gridAndPointSnappingFollowVisualProperties() {
+        val target = point(3.0, 4.0, id = "target")
+        val point = point(2.7, 4.2, id = "moving")
+        point.setAttribute(
+            mapOf(
+                "snaptogrid" to true,
+                "snapsizex" to 0.5,
+                "snapsizey" to 1.0,
+            ),
+        )
+
+        point.handleSnapToGrid()
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 2.5, 4.0),
+            point.coords.usrCoords,
+        )
+
+        point.setAttribute(
+            mapOf(
+                "snaptogrid" to false,
+                "snaptopoints" to true,
+                "attractordistance" to 1.0,
+            ),
+        )
+        point.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(2.8, 4.1),
+        )
+
+        assertContentEquals(
+            target.coords.usrCoords,
+            point.coords.usrCoords,
+        )
+    }
+
+    @Test
+    fun positionByTransformMeltsConsecutiveTranslations() {
+        val point = point(1.0, 2.0, id = "translated")
+
+        assertIs<GMResult.Ok<CoordsElement>>(
+            point.setPositionByTransformResult(
+                Const.COORDS_BY_USER,
+                doubleArrayOf(3.0, -1.0),
+            ),
+        )
+        assertIs<GMResult.Ok<CoordsElement>>(
+            point.setPositionByTransformResult(
+                Const.COORDS_BY_USER,
+                doubleArrayOf(2.0, 4.0),
+            ),
+        )
+        board.update()
+
+        assertEquals(1, point.transformations.size)
+        assertContentEquals(
+            doubleArrayOf(1.0, 6.0, 5.0),
+            point.coords.usrCoords,
+        )
+    }
+
+    @Test
+    fun moveToMoveAlongAndVisitCompleteThroughBoardScheduler() {
+        val point = point(1.0, 2.0, id = "animated")
+        var callbacks = 0
+
+        assertIs<GMResult.Ok<CoordsElement>>(
+            point.moveTo(
+                where = doubleArrayOf(5.0, 6.0),
+                timeMilliseconds = 100.0,
+                options = CoordsElementMoveOptions(
+                    callback = { callbacks += 1 },
+                    effect = "<>",
+                ),
+            ),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 5.0, 6.0),
+            point.coords.usrCoords,
+        )
+
+        assertIs<GMResult.Ok<CoordsElement>>(
+            point.moveAlong(
+                path = listOf(
+                    doubleArrayOf(5.0, 6.0),
+                    doubleArrayOf(7.0, 4.0),
+                    doubleArrayOf(9.0, 8.0),
+                ),
+                timeMilliseconds = 100.0,
+                options = CoordsElementMoveOptions(
+                    callback = { callbacks += 1 },
+                    interpolate = false,
+                ),
+            ),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 9.0, 8.0),
+            point.coords.usrCoords,
+        )
+
+        assertIs<GMResult.Ok<CoordsElement>>(
+            point.visit(
+                where = doubleArrayOf(-2.0, 3.0),
+                timeMilliseconds = 100.0,
+                options = CoordsElementMoveOptions(
+                    callback = { callbacks += 1 },
+                    repeat = 2,
+                ),
+            ),
+        )
+        assertContentEquals(
+            doubleArrayOf(1.0, 9.0, 8.0),
+            point.coords.usrCoords,
+        )
+        assertEquals(3, callbacks)
+        assertNull(point.movementError)
+    }
+
+    @Test
+    fun animationValidationAndCallbackFailuresAreStructured() {
+        val point = point(1.0, 2.0, id = "animation-errors")
+
+        assertIs<
+            GMResult.Err<
+                CoordsElementAnimationError.InvalidCoordinateCount
+                >
+            >(
+            point.moveTo(
+                where = doubleArrayOf(1.0),
+                timeMilliseconds = 100.0,
+            ),
+        )
+        assertIs<
+            GMResult.Err<
+                CoordsElementAnimationError.InvalidDuration
+                >
+            >(
+            point.moveTo(
+                where = doubleArrayOf(3.0, 4.0),
+                timeMilliseconds = -1.0,
+            ),
+        )
+        assertIs<
+            GMResult.Err<CoordsElementAnimationError.Callback>
+            >(
+            point.moveTo(
+                where = doubleArrayOf(3.0, 4.0),
+                timeMilliseconds = 0.0,
+                options = CoordsElementMoveOptions(
+                    callback = { throw IllegalStateException("failed") },
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun parentDataUsesCoordinatesParentsAndGliderHost() {
+        val parent = point(0.0, 0.0, id = "parent")
+        val point = point(2.0, 3.0, id = "child")
+
+        assertEquals(listOf(1.0, 2.0, 3.0), point.parentData())
+
+        point.addParents(listOf(parent))
+        assertEquals(listOf("parent"), point.parentData())
+
+        point.slideObject = parent
+        point.slideObjects += parent
+        point.type = Const.OBJECT_TYPE_GLIDER
+        assertEquals(
+            listOf(2.0, 3.0, "parent"),
+            point.parentData(),
+        )
+
+        point.popSlideObject()
+        assertEquals(Const.OBJECT_TYPE_POINT, point.type)
+        assertNull(point.slideObject)
+    }
+
+    @Test
+    fun rendererAdapterOnlyInvokesVisibleRealElementsNeedingUpdate() {
+        val element = CoordsElement(
+            board = board,
+            coordinates = doubleArrayOf(2.0, 3.0),
+        )
+        element.visualPropertiesCalculated["visible"] = true
+        var renderCount = 0
+
+        assertSame(
+            element,
+            element.updateRendererGeneric { renderCount += 1 },
+        )
+        assertEquals(1, renderCount)
+        assertFalse(element.needsUpdate)
+
+        element.updateRendererGeneric { renderCount += 1 }
+        assertEquals(1, renderCount)
+
+        element.needsUpdate = true
+        element.coords.setCoordinates(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(0.0, 2.0, 3.0),
+        )
+        element.visualPropertiesCalculated["visible"] = true
+        element.updateRendererGeneric { renderCount += 1 }
+        assertEquals(1, renderCount)
+        assertEquals(
+            false,
+            element.visualPropertiesCalculated["visible"],
+        )
+    }
+
+    private fun point(
+        horizontal: Double,
+        vertical: Double,
+        id: String,
+    ): Point =
+        assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates =
+                    doubleArrayOf(horizontal, vertical),
+                id = id,
+            ),
+        ).value
+
     private fun transformation(
         type: String,
         vararg parameters: Double,

@@ -173,6 +173,7 @@ internal class Circle3D private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/3d/circle3d.js -> updateRenderer.
     override fun updateRenderer(): Circle3D {
         needsUpdate = false
         return this
@@ -184,6 +185,19 @@ internal class Circle3D private constructor(
         parameters: MutableList<Double>,
     ): GMResult<DoubleArray, Curve3DError> =
         curve.projectCoords(coordinates, parameters)
+
+    // JSXGraph 1.13.3: src/3d/circle3d.js ->
+    // projectScreenCoords.
+    internal fun projectScreenCoords(
+        screenCoordinates: DoubleArray,
+        parameters: MutableList<Double>,
+        cyclic: Boolean = false,
+    ): GMResult<DoubleArray, Curve3DError> =
+        curve.projectScreenCoords(
+            screenCoordinates = screenCoordinates,
+            parameters = parameters,
+            cyclic = cyclic,
+        )
 
     override fun remove(): GeometryElement {
         return super.remove()

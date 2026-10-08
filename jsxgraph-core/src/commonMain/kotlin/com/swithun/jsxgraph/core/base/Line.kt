@@ -8,6 +8,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.math.RandomSource
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
@@ -15,6 +16,7 @@ import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.utils.Type
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -65,6 +67,14 @@ internal data class LineFixedLengthFunction(
     val location: JessieCodeAstLocation,
 )
 
+internal data class LineTraceSnapshot(
+    val point1: DoubleArray,
+    val point2: DoubleArray,
+    val standardForm: DoubleArray,
+    val slope: Double,
+    val rise: Double,
+)
+
 /**
  * Initial translated slice of JXG.Line.
  *
@@ -72,8 +82,8 @@ internal data class LineFixedLengthFunction(
  * coordinate-derived numeric queries, parametric coordinates, and the dynamic
  * fixed-length Segment lifecycle. The native creator registry supplies
  * coordinate, coefficient, Arrow, and construction wrappers around this
- * class. Ticks, dynamic visual mutation, and hit testing remain untranslated;
- * Compose owns the translated static Line-arrow rendering.
+ * class. It also covers Ticks ownership, transforms, visual mutation, hit
+ * testing, traces, snapping, labels, and Line-arrow rendering.
  */
 internal open class Line internal constructor(
     board: Board,
@@ -107,7 +117,7 @@ internal open class Line internal constructor(
     internal var glider: Point? = null
     // JSXGraph 1.13.3: src/reader/geonext.js -> parallel compositions.
     internal var parallelPoint: Point? = null
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     // JSXGraph: src/base/line.js -> createNormal Line/Point branch.
     internal var normalPoint: Point? = null
     // JSXGraph: src/base/line.js -> createTangentTo.
@@ -119,6 +129,8 @@ internal open class Line internal constructor(
     internal var defaultTicks: Ticks? = null
     // JSXGraph 1.13.3: src/element/measure.js -> createTapemeasure.
     internal var tapemeasureDefinition: TapemeasureDefinition? = null
+    internal var labelElement: Text? = null
+    internal val traceSnapshots = mutableListOf<LineTraceSnapshot>()
 
     internal var hasFixedLength: Boolean = false
         private set
@@ -148,6 +160,15 @@ internal open class Line internal constructor(
         updateSegmentFixedLength()
         updateStdform()
         tapemeasureDefinition?.updateLabel()
+        if (getAttribute("trace") == true) {
+            cloneToBackground()
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> updateRenderer.
+    override fun updateRenderer(): Line {
+        needsUpdate = false
         return this
     }
 
@@ -434,6 +455,136 @@ internal open class Line internal constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/line.js -> hasPoint.
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        val strokeWidth =
+            (getAttribute("strokewidth") as? Number)?.toDouble() ?: 1.0
+        val tolerance = precision + strokeWidth * 0.5
+        val screenStdform = doubleArrayOf(
+            stdform[0] -
+                stdform[1] * board.origin.scrCoords[1] / board.unitX +
+                stdform[2] * board.origin.scrCoords[2] / board.unitY,
+            stdform[1] / board.unitX,
+            stdform[2] / -board.unitY,
+        )
+        val screenPoint = doubleArrayOf(1.0, screenX, screenY)
+        val distance = Geometry.distPointLine(
+            screenPoint,
+            screenStdform,
+        )
+        if (distance.isNaN() || distance > tolerance) {
+            return false
+        }
+        if (straightFirst && straightLast) {
+            return true
+        }
+
+        var projected = Mat.crossProduct(
+            doubleArrayOf(0.0, screenStdform[1], screenStdform[2]),
+            screenPoint,
+        )
+        projected = Mat.crossProduct(projected, screenStdform)
+        projected[1] /= projected[0]
+        projected[2] /= projected[0]
+        projected[0] = 1.0
+        val projectedUser = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = projected.copyOfRange(1, projected.size),
+            board = board,
+            emitter = false,
+        ).usrCoords
+
+        var first = point1.coords.usrCoords.copyOf()
+        var second = point2.coords.usrCoords.copyOf()
+        var length = point1.coords.distance(
+            Const.COORDS_BY_USER,
+            point2.coords,
+        )
+        val position =
+            if (length < Mat.eps) {
+                0.0
+            } else {
+                if (length == Double.POSITIVE_INFINITY) {
+                    length = 1.0 / Mat.eps
+                    if (abs(second[0]) < Mat.eps) {
+                        val scale =
+                            length /
+                                Geometry.distance(
+                                    doubleArrayOf(0.0, 0.0, 0.0),
+                                    second,
+                                )
+                        second = doubleArrayOf(
+                            1.0,
+                            first[1] + second[1] * scale,
+                            first[2] + second[2] * scale,
+                        )
+                    } else {
+                        val scale =
+                            length /
+                                Geometry.distance(
+                                    doubleArrayOf(0.0, 0.0, 0.0),
+                                    first,
+                                )
+                        first = doubleArrayOf(
+                            1.0,
+                            second[1] + first[1] * scale,
+                            second[2] + first[2] * scale,
+                        )
+                    }
+                }
+                var coordinateIndex = 1
+                var delta = second[coordinateIndex] - first[coordinateIndex]
+                if (abs(delta) < Mat.eps) {
+                    coordinateIndex = 2
+                    delta = second[coordinateIndex] - first[coordinateIndex]
+                }
+                (projectedUser[coordinateIndex] - first[coordinateIndex]) /
+                    delta
+            }
+
+        if (!straightFirst && position < 0.0) {
+            return false
+        }
+        return straightLast || position <= 1.0
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> generatePolynomial.
+    override fun generatePolynomial(
+        point: Point?,
+    ): List<String> {
+        val candidate = point ?: return emptyList()
+        val point1X = point1.symbolic["x"].orEmpty()
+        val point1Y = point1.symbolic["y"].orEmpty()
+        val point2X = point2.symbolic["x"].orEmpty()
+        val point2Y = point2.symbolic["y"].orEmpty()
+        val candidateX = candidate.symbolic["x"].orEmpty()
+        val candidateY = candidate.symbolic["y"].orEmpty()
+        return listOf(
+            "($point1Y)*($candidateX)-($point1Y)*($point2X)+" +
+                "($candidateY)*($point2X)-($point1X)*($candidateY)+" +
+                "($point1X)*($point2Y)-($candidateX)*($point2Y)",
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> setStraight.
+    internal fun setStraight(
+        straightFirst: Boolean,
+        straightLast: Boolean,
+    ): Line {
+        configureVisibleRange(straightFirst, straightLast)
+        setAttribute(
+            mapOf(
+                "straightfirst" to straightFirst,
+                "straightlast" to straightLast,
+            ),
+        )
+        return this
+    }
+
     // JSXGraph 1.13.3: src/base/line.js -> createArrow.
     internal fun configureArrow(
         elementType: String = ARROW_ELEMENT_TYPE,
@@ -474,6 +625,9 @@ internal open class Line internal constructor(
         } else {
             Double.POSITIVE_INFINITY
         }
+
+    // JSXGraph 1.13.3: src/base/line.js -> getSlope.
+    internal fun getSlope(): Double = Slope()
 
     // JSXGraph: src/base/line.js -> getAngle
     internal fun getAngle(): Double = atan2(-stdform[1], stdform[2])
@@ -591,6 +745,234 @@ internal open class Line internal constructor(
     // JSXGraph: src/base/line.js -> L
     internal fun L(): Double = point1.Dist(point2)
 
+    // JSXGraph 1.13.3: src/base/line.js -> getTextAnchor.
+    internal override fun getTextAnchor(): Coords =
+        Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(
+                0.5 * (point2.X() + point1.X()),
+                0.5 * (point2.Y() + point1.Y()),
+            ),
+            board = board,
+        )
+
+    // JSXGraph 1.13.3: src/base/line.js -> getLabelAnchor.
+    internal override fun getLabelAnchor(): Coords {
+        val delimited =
+            if (straightFirst || straightLast) {
+                Geometry.calcLineDelimitingPoints(
+                    lineStandardForm = stdform,
+                    firstPoint = point1.coords.usrCoords,
+                    secondPoint = point2.coords.usrCoords,
+                    straightFirst = straightFirst,
+                    straightLast = straightLast,
+                    boundingBox = board.getBoundingBox(),
+                )
+            } else {
+                com.swithun.jsxgraph.core.math.LineDelimitingPoints(
+                    first = point1.coords.usrCoords.copyOf(),
+                    second = point2.coords.usrCoords.copyOf(),
+                )
+            }
+        val first = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = delimited.first,
+            board = board,
+            emitter = false,
+        ).scrCoords
+        val second = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = delimited.second,
+            board = board,
+            emitter = false,
+        ).scrCoords
+        val position =
+            (elementLabel?.evalVisProp("position") as? String)
+                ?: (evalVisProp("label.position") as? String)
+                ?: "middle"
+        var x: Double
+        var y: Double
+        if ("right" !in position && "left" !in position) {
+            when (position) {
+                "last" -> {
+                    x = second[1]
+                    y = second[2]
+                }
+                "first" -> {
+                    x = first[1]
+                    y = first[2]
+                }
+                "lft", "llft", "ulft" -> {
+                    val point = if (first[1] < second[1] + Mat.eps) {
+                        first
+                    } else {
+                        second
+                    }
+                    x = point[1]
+                    y = point[2]
+                }
+                "rt", "lrt", "urt" -> {
+                    val point = if (first[1] > second[1] + Mat.eps) {
+                        first
+                    } else {
+                        second
+                    }
+                    x = point[1]
+                    y = point[2]
+                }
+                else -> {
+                    x = 0.5 * (first[1] + second[1])
+                    y = 0.5 * (first[2] + second[2])
+                }
+            }
+        } else {
+            val parsed = Type.parsePosition(position)
+            var lambda = Type.parseNumber(parsed.pos, 1.0, 1.0)
+            var deltaX = second[1] - first[1]
+            var deltaY = second[2] - first[2]
+            val length = Mat.hypot(deltaX, deltaY)
+            if (
+                "px" in parsed.pos ||
+                "fr" in parsed.pos ||
+                "%" in parsed.pos
+            ) {
+                if ("px" in parsed.pos) {
+                    lambda /= length
+                }
+                x = first[1] + lambda * deltaX
+                y = first[2] + lambda * deltaY
+            } else {
+                x = first[1] + lambda * board.unitX * deltaX / length
+                y = first[2] + lambda * board.unitY * deltaY / length
+            }
+            if (parsed.side == "left") {
+                deltaX *= -1.0
+            } else {
+                deltaY *= -1.0
+            }
+            val label = elementLabel
+            val distance =
+                0.5 *
+                    (
+                        (label?.evalVisProp("distance") as? Number)
+                            ?.toDouble() ?: 3.0
+                        ) / length
+            x += deltaY * (label?.size?.getOrElse(0) { 0.0 } ?: 0.0) *
+                distance
+            y += deltaX * (label?.size?.getOrElse(1) { 0.0 } ?: 0.0) *
+                distance
+        }
+        if (straightFirst || straightLast) {
+            val fontSize =
+                (elementLabel?.evalVisProp("fontsize") as? Number)
+                    ?.toDouble() ?: 0.0
+            x = when {
+                abs(x) < Mat.eps -> fontSize
+                x < board.canvasWidth + Mat.eps &&
+                    x > board.canvasWidth - fontSize - Mat.eps ->
+                    board.canvasWidth - fontSize
+                else -> x
+            }
+            y = when {
+                y > -Mat.eps && y < Mat.eps + fontSize -> fontSize
+                y < board.canvasHeight + Mat.eps &&
+                    y > board.canvasHeight - fontSize - Mat.eps ->
+                    board.canvasHeight - fontSize
+                else -> y
+            }
+        }
+        return Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(x, y),
+            board = board,
+            emitter = false,
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> setLabelRelativeCoords.
+    internal fun setLabelRelativeCoords(
+        relativeCoordinates: DoubleArray,
+    ): Line {
+        labelElement?.screenOffset = doubleArrayOf(
+            relativeCoordinates.getOrElse(0) { Double.NaN },
+            -relativeCoordinates.getOrElse(1) { Double.NaN },
+        )
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> cloneToBackground.
+    internal override fun cloneToBackground(): Line {
+        traceSnapshots += LineTraceSnapshot(
+            point1 = point1.coords.usrCoords.copyOf(),
+            point2 = point2.coords.usrCoords.copyOf(),
+            standardForm = stdform.copyOf(),
+            slope = Slope(),
+            rise = getRise(),
+        )
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> addTransform.
+    internal fun addTransform(
+        transformation: Transformation,
+    ): Line = addTransform(listOf(transformation))
+
+    internal fun addTransform(
+        values: Iterable<Transformation>,
+    ): Line {
+        val additions = values.toList()
+        point1.transformations += additions
+        point2.transformations += additions
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> removeTransform.
+    internal fun removeTransform(
+        transformation: Transformation,
+    ): Line = removeTransform(listOf(transformation))
+
+    internal fun removeTransform(
+        values: Iterable<Transformation>,
+    ): Line {
+        for (transformation in values) {
+            point1.transformations.remove(transformation)
+            point2.transformations.remove(transformation)
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> clearTransforms.
+    internal fun clearTransforms(): Line {
+        point1.transformations.clear()
+        point2.transformations.clear()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> snapToGrid.
+    internal override fun snapToGrid(): Line {
+        val force =
+            (getAttribute("snaptogrid") as? Boolean) ?: false
+        if (parents.size < 3) {
+            if (force) {
+                point1.handleSnapToGrid()
+                point2.handleSnapToGrid()
+            } else {
+                point1.handleSnapToGrid()
+                point2.handleSnapToGrid()
+            }
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> snapToPoints.
+    internal override fun snapToPoints(): Line {
+        if (parents.size < 3) {
+            point1.handleSnapToPoints()
+            point2.handleSnapToPoints()
+        }
+        return this
+    }
+
     // JSXGraph: src/base/line.js -> minX
     internal fun minX(): Double = 0.0
 
@@ -612,11 +994,14 @@ internal open class Line internal constructor(
     // JSXGraph 1.13.3: src/element/measure.js -> li.remove.
     override fun remove(): GeometryElement {
         tapemeasureDefinition?.remove()
+        board.removeObjects(ticks.toList())
+        ticks.clear()
         return this
     }
 
     internal companion object {
         private const val IDEAL_POINT_SCALE = 1.0e5
+        private const val DEFAULT_HIT_PRECISION = 4.0
         private const val COEFFICIENT_COUNT = 3
         private const val LINE_ID_PREFIX = "L"
         private const val LINE_ELEMENT_TYPE = "line"

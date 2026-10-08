@@ -10,8 +10,22 @@ package com.swithun.jsxgraph.core.utils
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Coords
+import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Point3D
+import com.swithun.jsxgraph.core.base.Point3DArrayEvaluator
+import com.swithun.jsxgraph.core.base.Point3DCoordinateSource
+import com.swithun.jsxgraph.core.base.Point3DCoordinateValue
+import com.swithun.jsxgraph.core.base.Point3DDynamicError
+import com.swithun.jsxgraph.core.base.Point3DError
+import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.Slider
+import com.swithun.jsxgraph.core.base.View3D
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeNumericCoordinateFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import kotlin.math.abs
 
 internal data class ParsedPosition(
@@ -196,6 +210,28 @@ internal sealed interface TypeError {
         val message: String,
     ) : TypeError
 
+    data class PointProvisionEvaluationFailed(
+        val dimension: Int,
+        val parentIndex: Int,
+        val message: String,
+    ) : TypeError
+
+    data class UnsupportedPointProvisionParent(
+        val dimension: Int,
+        val parentIndex: Int,
+        val value: Any?,
+    ) : TypeError
+
+    data class PointProvisionFactoryFailed(
+        val parentIndex: Int,
+        val error: PointError,
+    ) : TypeError
+
+    data class Point3DProvisionFactoryFailed(
+        val parentIndex: Int,
+        val error: Point3DError,
+    ) : TypeError
+
     data class InvalidMethodMap(
         val owner: String,
         val value: Any?,
@@ -266,6 +302,104 @@ internal sealed interface TypeJsonValue {
 
     data object Undefined : TypeJsonValue
 }
+
+/**
+ * Pure-KMP adapter for the DOM node types inspected by `isDocumentOrFragment`.
+ */
+internal fun interface TypeDocumentNode {
+    fun nodeType(): Int
+}
+
+internal enum class DecimalAdjustment {
+    ROUND,
+    FLOOR,
+    CEIL,
+}
+
+private class ProvidedPointCoordinateFunction(
+    private val parentIndex: Int,
+    private val callback: () -> Any?,
+    override val returnsCoordinateArray: Boolean,
+) : JessieCodeCoordinateFunction {
+    override val origin: String? = null
+    override val dependencies = emptyMap<String, com.swithun.jsxgraph.core.base.GeometryElement>()
+
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
+        val value = try {
+            callback()
+        } catch (exception: Exception) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.BuiltInInvocationFailure(
+                    functionName = "providePoints",
+                    reason = exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                    location = PROVIDED_POINT_LOCATION,
+                ),
+            )
+        }
+        return if (returnsCoordinateArray) {
+            val coordinates = pointCoordinateValues(value)
+                ?: return GMResult.Err(
+                    JessieCodeRuntimeError.BuiltInInvocationFailure(
+                        functionName = "providePoints",
+                        reason =
+                            "Parent $parentIndex did not return a coordinate array",
+                        location = PROVIDED_POINT_LOCATION,
+                    ),
+                )
+            val runtimeCoordinates = mutableListOf<JessieCodeRuntimeValue>()
+            for (coordinate in coordinates) {
+                val number = coordinate as? Number
+                    ?: return GMResult.Err(
+                        JessieCodeRuntimeError.BuiltInInvocationFailure(
+                            functionName = "providePoints",
+                            reason =
+                                "Parent $parentIndex returned a non-numeric coordinate",
+                            location = PROVIDED_POINT_LOCATION,
+                        ),
+                    )
+                runtimeCoordinates +=
+                    JessieCodeRuntimeValue.NumberValue(number.toDouble())
+            }
+            GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(runtimeCoordinates),
+            )
+        } else {
+            val number = value as? Number
+                ?: return GMResult.Err(
+                    JessieCodeRuntimeError.BuiltInInvocationFailure(
+                        functionName = "providePoints",
+                        reason =
+                            "Parent $parentIndex returned a non-numeric coordinate",
+                        location = PROVIDED_POINT_LOCATION,
+                    ),
+                )
+            GMResult.Ok(JessieCodeRuntimeValue.NumberValue(number.toDouble()))
+        }
+    }
+}
+
+private val PROVIDED_POINT_LOCATION = JessieCodeAstLocation(
+    line = 0,
+    column = 0,
+    endLine = 0,
+    endColumn = 0,
+)
+
+private fun pointCoordinateValues(value: Any?): List<Any?>? =
+    when (value) {
+        is List<*> -> value.map { item -> item }
+        is Array<*> -> value.map { item -> item }
+        is ByteArray -> value.map { item -> item }
+        is ShortArray -> value.map { item -> item }
+        is IntArray -> value.map { item -> item }
+        is LongArray -> value.map { item -> item }
+        is FloatArray -> value.map { item -> item }
+        is DoubleArray -> value.map { item -> item }
+        else -> null
+    }
 
 internal class TypeClonedCallable(
     prototype: Any?,
@@ -397,6 +531,21 @@ internal object Type {
     fun isPoint3D(value: Any?): Boolean =
         TypePredicates.isPoint3D(value)
 
+    // JSXGraph 1.13.3: src/utils/type.js -> isDocumentOrFragment.
+    // DOM nodes are represented by a portable adapter or a structural map.
+    fun isDocumentOrFragment(value: Any?): Boolean {
+        if (!isObject(value)) {
+            return false
+        }
+        val nodeType = when (value) {
+            is TypeDocumentNode -> value.nodeType()
+            is Map<*, *> -> (value["nodeType"] as? Number)?.toInt()
+            else -> null
+        }
+        return nodeType == DOCUMENT_NODE ||
+            nodeType == DOCUMENT_FRAGMENT_NODE
+    }
+
     // JSXGraph 1.13.3: src/utils/type.js -> isPointType.
     fun isPointType(
         board: Board,
@@ -414,6 +563,147 @@ internal object Type {
     // JSXGraph 1.13.3: src/utils/type.js -> isTransformationOrArray.
     fun isTransformationOrArray(value: Any?): Boolean =
         TypePredicates.isTransformationOrArray(value)
+
+    // JSXGraph 1.13.3: src/utils/type.js -> providePoints.
+    fun providePoints(
+        board: Board,
+        parents: Any?,
+        attributes: Map<String, Any?>? = null,
+        options: Map<String, Any?> = emptyMap(),
+        attrClass: String = "point",
+        attrArray: List<String> = emptyList(),
+    ): GMResult<List<Point>, TypeError> {
+        val parentValues = arrayValues(parents) ?: listOf(parents)
+        val points = mutableListOf<Point>()
+        for ((index, parent) in parentValues.withIndex()) {
+            val point = when (parent) {
+                is Point -> parent
+                is String -> board.select(parent) as? Point
+                else -> null
+            }
+            if (point != null) {
+                points += point
+                continue
+            }
+
+            val copiedAttributes = when (
+                val result = pointProvisionAttributes(
+                    attributes = attributes,
+                    options = options,
+                    attrClass = attrClass,
+                    attrArray = attrArray,
+                    parentIndex = index,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val created = when (
+                val result = createProvidedPoint(
+                    board = board,
+                    parent = parent,
+                    attributes = copiedAttributes,
+                    parentIndex = index,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            created.isNewByProvision = true
+            points += created
+        }
+        return GMResult.Ok(points)
+    }
+
+    // JSXGraph 1.13.3: src/utils/type.js -> providePoints3D.
+    fun providePoints3D(
+        view: View3D,
+        parents: Any?,
+        attributes: Map<String, Any?>? = null,
+        options: Map<String, Any?> = emptyMap(),
+        attrClass: String = "point3d",
+        attrArray: List<String> = emptyList(),
+    ): GMResult<List<Point3D>, TypeError> {
+        val parentValues = arrayValues(parents) ?: listOf(parents)
+        val points = mutableListOf<Point3D>()
+        for ((index, parent) in parentValues.withIndex()) {
+            val nestedCoordinates = arrayValues(parent)
+            if (
+                nestedCoordinates != null &&
+                nestedCoordinates.isNotEmpty() &&
+                nestedCoordinates.all { coordinate ->
+                    val values = arrayValues(coordinate)
+                    values != null && values.firstOrNull() is Number
+                }
+            ) {
+                for (coordinates in nestedCoordinates) {
+                    val copiedAttributes = when (
+                        val result = pointProvisionAttributes(
+                            attributes = attributes,
+                            options = options,
+                            attrClass = attrClass,
+                            attrArray = attrArray,
+                            parentIndex = index,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    val created = when (
+                        val result = createProvidedPoint3D(
+                            view = view,
+                            parent = coordinates,
+                            attributes = copiedAttributes,
+                            parentIndex = index,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    created.isNewByProvision = true
+                    points += created
+                }
+                continue
+            }
+
+            val point = when (parent) {
+                is Point3D -> parent
+                is String -> view.select(parent) as? Point3D
+                else -> null
+            }
+            if (point != null) {
+                points += point
+                continue
+            }
+
+            val copiedAttributes = when (
+                val result = pointProvisionAttributes(
+                    attributes = attributes,
+                    options = options,
+                    attrClass = attrClass,
+                    attrArray = attrArray,
+                    parentIndex = index,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val created = when (
+                val result = createProvidedPoint3D(
+                    view = view,
+                    parent = parent,
+                    attributes = copiedAttributes,
+                    parentIndex = index,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            created.isNewByProvision = true
+            points += created
+        }
+        return GMResult.Ok(points)
+    }
 
     // JSXGraph 1.13.3: src/utils/type.js -> isArray.
     fun isArray(value: Any?): Boolean = isArrayValue(value)
@@ -879,23 +1169,38 @@ internal object Type {
         return destination
     }
 
+    // JSXGraph 1.13.3: src/utils/type.js -> _decimalAdjust.
+    fun decimalAdjust(
+        type: DecimalAdjustment,
+        value: Double,
+        exponent: Int = 0,
+    ): Double =
+        when (type) {
+            DecimalAdjustment.ROUND ->
+                JsNumberFormat.roundDecimal(value, -exponent)
+            DecimalAdjustment.FLOOR ->
+                JsNumberFormat.floorDecimal(value, -exponent)
+            DecimalAdjustment.CEIL ->
+                JsNumberFormat.ceilDecimal(value, -exponent)
+        }
+
     // JSXGraph 1.13.3: src/utils/type.js -> _round10.
     fun round10(
         value: Double,
         exponent: Int = 0,
-    ): Double = JsNumberFormat.roundDecimal(value, -exponent)
+    ): Double = decimalAdjust(DecimalAdjustment.ROUND, value, exponent)
 
     // JSXGraph 1.13.3: src/utils/type.js -> _floor10.
     fun floor10(
         value: Double,
         exponent: Int = 0,
-    ): Double = JsNumberFormat.floorDecimal(value, -exponent)
+    ): Double = decimalAdjust(DecimalAdjustment.FLOOR, value, exponent)
 
     // JSXGraph 1.13.3: src/utils/type.js -> _ceil10.
     fun ceil10(
         value: Double,
         exponent: Int = 0,
-    ): Double = JsNumberFormat.ceilDecimal(value, -exponent)
+    ): Double = decimalAdjust(DecimalAdjustment.CEIL, value, exponent)
 
     // JSXGraph 1.13.3: src/utils/type.js -> toFixed.
     fun toFixed(
@@ -1085,6 +1390,317 @@ internal object Type {
             StackExpression.Scalar(normalized)
         }
     }
+
+    private fun pointProvisionAttributes(
+        attributes: Map<String, Any?>?,
+        options: Map<String, Any?>,
+        attrClass: String,
+        attrArray: List<String>,
+        parentIndex: Int,
+    ): GMResult<Map<String, Any?>, TypeError> {
+        val path = mutableListOf(attrClass)
+        if (attrArray.isNotEmpty()) {
+            path += attrArray[minOf(parentIndex, attrArray.lastIndex)]
+                .lowercase()
+        }
+        return copyAttributes(
+            attributes = attributes,
+            options = options,
+            path = path,
+        )
+    }
+
+    private fun createProvidedPoint(
+        board: Board,
+        parent: Any?,
+        attributes: Map<String, Any?>,
+        parentIndex: Int,
+    ): GMResult<Point, TypeError> {
+        val id = attributes["id"] as? String ?: ""
+        val name = attributes["name"] as? String
+        val fixed = attributes["fixed"] as? Boolean ?: false
+        val needsRegularUpdate =
+            attributes["needsregularupdate"] as? Boolean ?: true
+        val coordinateValues = arrayValues(parent)
+        val result = when {
+            coordinateValues != null &&
+                coordinateValues.size > 1 &&
+                coordinateValues.all { it is Number } ->
+                Point.create(
+                    board = board,
+                    coordinates = coordinateValues
+                        .map { (it as Number).toDouble() }
+                        .toDoubleArray(),
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                    fixed = fixed,
+                )
+            coordinateValues != null &&
+                coordinateValues.size > 1 &&
+                coordinateValues.all {
+                    it is Number || it is String
+                } ->
+                Point.create(
+                    board = board,
+                    coordinateExpressions = coordinateValues.map { value ->
+                        if (value is Number) {
+                            jsNumberToString(value.toDouble())
+                        } else {
+                            value as String
+                        }
+                    },
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                    fixed = fixed,
+                )
+            coordinateValues != null &&
+                coordinateValues.size > 1 &&
+                coordinateValues.all {
+                    it is Number || it is Function0<*>
+                } ->
+                Point.createConstrained(
+                    board = board,
+                    coordinateFunctions =
+                        coordinateValues.map { coordinate ->
+                            if (coordinate is Number) {
+                                JessieCodeNumericCoordinateFunction(
+                                    coordinate.toDouble(),
+                                )
+                            } else {
+                                val callback = coordinate as Function0<*>
+                                ProvidedPointCoordinateFunction(
+                                    parentIndex = parentIndex,
+                                    callback = { callback.invoke() },
+                                    returnsCoordinateArray = false,
+                                )
+                            }
+                        },
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                    fixed = fixed,
+                )
+            parent is Function0<*> -> {
+                when (
+                    val evaluated = evaluateProvidedPointArray(
+                        callback = parent,
+                        dimension = 2,
+                        parentIndex = parentIndex,
+                    )
+                ) {
+                    is GMResult.Err -> return evaluated
+                    is GMResult.Ok -> Unit
+                }
+                Point.createConstrained(
+                    board = board,
+                    coordinateFunctions = listOf(
+                        ProvidedPointCoordinateFunction(
+                            parentIndex = parentIndex,
+                            callback = { parent.invoke() },
+                            returnsCoordinateArray = true,
+                        ),
+                    ),
+                    id = id,
+                    name = name,
+                    needsRegularUpdate = needsRegularUpdate,
+                    fixed = fixed,
+                )
+            }
+            else -> return GMResult.Err(
+                TypeError.UnsupportedPointProvisionParent(
+                    dimension = 2,
+                    parentIndex = parentIndex,
+                    value = parent,
+                ),
+            )
+        }
+        return when (result) {
+            is GMResult.Ok -> GMResult.Ok(result.value)
+            is GMResult.Err -> GMResult.Err(
+                TypeError.PointProvisionFactoryFailed(
+                    parentIndex = parentIndex,
+                    error = result.error,
+                ),
+            )
+        }
+    }
+
+    private fun createProvidedPoint3D(
+        view: View3D,
+        parent: Any?,
+        attributes: Map<String, Any?>,
+        parentIndex: Int,
+    ): GMResult<Point3D, TypeError> {
+        val id = attributes["id"] as? String ?: ""
+        val name = attributes["name"] as? String
+        val fixed = attributes["fixed"] as? Boolean ?: false
+        val needsRegularUpdate =
+            attributes["needsregularupdate"] as? Boolean ?: true
+        val coordinateValues = arrayValues(parent)
+        val source = when {
+            coordinateValues != null &&
+                coordinateValues.all { it is Number } ->
+                Point3DCoordinateSource.Values(
+                    coordinateValues.map { coordinate ->
+                        Point3DCoordinateValue.Numeric(
+                            (coordinate as Number).toDouble(),
+                        )
+                    },
+                )
+            coordinateValues != null &&
+                coordinateValues.all {
+                    it is Number || it is Function0<*>
+                } ->
+                Point3DCoordinateSource.Values(
+                    coordinateValues.map { coordinate ->
+                        if (coordinate is Number) {
+                            Point3DCoordinateValue.Numeric(
+                                coordinate.toDouble(),
+                            )
+                        } else {
+                            val callback = coordinate as Function0<*>
+                            Point3DCoordinateValue.Dynamic {
+                                evaluateProvidedPoint3DScalar(callback)
+                            }
+                        }
+                    },
+                )
+            parent is Function0<*> -> {
+                when (
+                    val evaluated = evaluateProvidedPointArray(
+                        callback = parent,
+                        dimension = 3,
+                        parentIndex = parentIndex,
+                    )
+                ) {
+                    is GMResult.Err -> return evaluated
+                    is GMResult.Ok -> Unit
+                }
+                Point3DCoordinateSource.Function(
+                    Point3DArrayEvaluator {
+                        evaluateProvidedPoint3DArray(parent)
+                    },
+                )
+            }
+            else -> return GMResult.Err(
+                TypeError.UnsupportedPointProvisionParent(
+                    dimension = 3,
+                    parentIndex = parentIndex,
+                    value = parent,
+                ),
+            )
+        }
+        return when (
+            val result = Point3D.create(
+                view = view,
+                coordinateSource = source,
+                id = id,
+                name = name,
+                needsRegularUpdate = needsRegularUpdate,
+                fixed = fixed,
+            )
+        ) {
+            is GMResult.Ok -> GMResult.Ok(result.value)
+            is GMResult.Err -> GMResult.Err(
+                TypeError.Point3DProvisionFactoryFailed(
+                    parentIndex = parentIndex,
+                    error = result.error,
+                ),
+            )
+        }
+    }
+
+    private fun evaluateProvidedPointArray(
+        callback: Function0<*>,
+        dimension: Int,
+        parentIndex: Int,
+    ): GMResult<List<Any?>, TypeError> {
+        val value = try {
+            callback.invoke()
+        } catch (exception: Exception) {
+            return GMResult.Err(
+                TypeError.PointProvisionEvaluationFailed(
+                    dimension = dimension,
+                    parentIndex = parentIndex,
+                    message = exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                ),
+            )
+        }
+        val coordinates = arrayValues(value)
+            ?: return GMResult.Err(
+                TypeError.UnsupportedPointProvisionParent(
+                    dimension = dimension,
+                    parentIndex = parentIndex,
+                    value = value,
+                ),
+            )
+        if (coordinates.size <= 1) {
+            return GMResult.Err(
+                TypeError.UnsupportedPointProvisionParent(
+                    dimension = dimension,
+                    parentIndex = parentIndex,
+                    value = value,
+                ),
+            )
+        }
+        return GMResult.Ok(coordinates)
+    }
+
+    private fun evaluateProvidedPoint3DScalar(
+        callback: Function0<*>,
+    ): GMResult<Double, Point3DDynamicError> =
+        try {
+            val value = callback.invoke()
+            if (value is Number) {
+                GMResult.Ok(value.toDouble())
+            } else {
+                GMResult.Err(
+                    Point3DDynamicError.Rejected(
+                        "Expected numeric coordinate",
+                    ),
+                )
+            }
+        } catch (exception: Exception) {
+            GMResult.Err(
+                Point3DDynamicError.Rejected(
+                    exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                ),
+            )
+        }
+
+    private fun evaluateProvidedPoint3DArray(
+        callback: Function0<*>,
+    ): GMResult<DoubleArray, Point3DDynamicError> =
+        try {
+            val values = arrayValues(callback.invoke())
+                ?: return GMResult.Err(
+                    Point3DDynamicError.Rejected(
+                        "Expected coordinate array",
+                    ),
+                )
+            val coordinates = DoubleArray(values.size)
+            for ((index, value) in values.withIndex()) {
+                val number = value as? Number
+                    ?: return GMResult.Err(
+                        Point3DDynamicError.Rejected(
+                            "Coordinate $index is not numeric",
+                        ),
+                    )
+                coordinates[index] = number.toDouble()
+            }
+            GMResult.Ok(coordinates)
+        } catch (exception: Exception) {
+            GMResult.Err(
+                Point3DDynamicError.Rejected(
+                    exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                ),
+            )
+        }
 
     private fun cmpArrayValues(
         first: Any?,
@@ -1417,4 +2033,6 @@ internal object Type {
     private const val MAX_FIXED_DIGITS = 100
     private const val MAX_JS_ARRAY_INDEX = 4_294_967_295L
     private const val PROTOTYPE_PROPERTY = "__proto__"
+    private const val DOCUMENT_NODE = 9
+    private const val DOCUMENT_FRAGMENT_NODE = 11
 }

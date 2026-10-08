@@ -8,7 +8,11 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.utils.Color
+import com.swithun.jsxgraph.core.utils.EventEmitter
+import com.swithun.jsxgraph.core.utils.EventHandler
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.sign
 
 internal sealed interface BoardError {
@@ -17,12 +21,78 @@ internal sealed interface BoardError {
     data class InvalidBoundingBoxCoordinateCount(
         val count: Int,
     ) : BoardError
+
+    data class UnsupportedConditionExpression(
+        val expression: String,
+    ) : BoardError
 }
 
 internal enum class BoardZoomMode {
     RESET,
     KEEP,
     UPDATE,
+}
+
+internal data class BoardInputEvent(
+    val screenX: Double,
+    val screenY: Double,
+    val pointerId: Long? = null,
+    val shiftKey: Boolean = false,
+    val controlKey: Boolean = false,
+    val timestampMilliseconds: Long = 0L,
+    val inputDevice: String = "mouse",
+    val deltaY: Double = 0.0,
+    val key: String? = null,
+)
+
+internal interface BoardHostAdapter {
+    fun topLeft(): DoubleArray = doubleArrayOf(0.0, 0.0)
+    fun size(): DoubleArray? = null
+
+    fun resize(
+        width: Double,
+        height: Double,
+    ) = Unit
+
+    fun addEventHandlers() = Unit
+    fun removeEventHandlers() = Unit
+    fun startResizeObserver() = Unit
+    fun stopResizeObserver() = Unit
+    fun startIntersectionObserver() = Unit
+    fun stopIntersectionObserver() = Unit
+    fun setFullscreen(enabled: Boolean) = Unit
+}
+
+private object NoBoardHostAdapter : BoardHostAdapter
+
+internal data class BoardUserLogEntry(
+    val type: String,
+    val elementId: String,
+    val startMilliseconds: Long,
+    var endMilliseconds: Long,
+)
+
+internal fun interface BoardAnimationScheduler {
+    fun schedule(
+        intervalMilliseconds: Double,
+        advance: () -> Boolean,
+    )
+
+    val runsSynchronously: Boolean
+        get() = false
+}
+
+private object ImmediateBoardAnimationScheduler : BoardAnimationScheduler {
+    override val runsSynchronously: Boolean = true
+
+    override fun schedule(
+        intervalMilliseconds: Double,
+        advance: () -> Boolean,
+    ) {
+        while (advance()) {
+            // Platform hosts may inject a frame-backed scheduler.
+        }
+    }
 }
 
 /**
@@ -37,8 +107,8 @@ internal class Board(
     originY: Double,
     unitX: Double,
     unitY: Double,
-    internal val canvasWidth: Double = DEFAULT_CANVAS_WIDTH,
-    internal val canvasHeight: Double = DEFAULT_CANVAS_HEIGHT,
+    internal var canvasWidth: Double = DEFAULT_CANVAS_WIDTH,
+    internal var canvasHeight: Double = DEFAULT_CANVAS_HEIGHT,
     internal var updateQuality: Int = BOARD_QUALITY_HIGH,
     internal var zoomX: Double = 1.0,
     internal var zoomY: Double = 1.0,
@@ -60,9 +130,118 @@ internal class Board(
                 originX
             ) / (unitX * zoomX),
     internal val maxCurvePoints: Int = 10_000,
+    internal var animationDelay: Double = DEFAULT_ANIMATION_DELAY,
+    internal val animationScheduler: BoardAnimationScheduler =
+        ImmediateBoardAnimationScheduler,
+    internal var zoomFactorX: Double = DEFAULT_ZOOM_FACTOR,
+    internal var zoomFactorY: Double = DEFAULT_ZOOM_FACTOR,
+    internal var minimumZoom: Double = DEFAULT_MINIMUM_ZOOM,
+    internal var maximumZoom: Double = DEFAULT_MAXIMUM_ZOOM,
+    internal var maxBoundingBox: DoubleArray = doubleArrayOf(
+        Double.NEGATIVE_INFINITY,
+        Double.POSITIVE_INFINITY,
+        Double.POSITIVE_INFINITY,
+        Double.NEGATIVE_INFINITY,
+    ),
+    internal var maximumFrameRate: Double = DEFAULT_MAXIMUM_FRAME_RATE,
+    internal val hostAdapter: BoardHostAdapter = NoBoardHostAdapter,
 ) {
     private val initialZoomX = zoomX
     private val initialZoomY = zoomY
+    private val initialBoundingBox = boundingBox.copyOf()
+    private val events = EventEmitter(this)
+    private val hooks =
+        mutableListOf<Pair<String, EventHandler>?>()
+    internal val dependentBoards = mutableListOf<Board>()
+    internal val animationObjects =
+        linkedMapOf<String, GeometryElement>()
+    private var animationLoopScheduled: Boolean = false
+    internal val attributes = linkedMapOf<String, Any?>(
+        "animationdelay" to animationDelay,
+        "boundingbox" to initialBoundingBox.copyOf(),
+        "keepaspectratio" to keepAspectRatio,
+        "zoomx" to zoomX,
+        "zoomy" to zoomY,
+    )
+    internal val userLog = mutableListOf<BoardUserLogEntry>()
+    internal var currentColorBlindness: String = "none"
+        private set
+    internal val colorBlindnessErrors =
+        linkedMapOf<String, com.swithun.jsxgraph.core.utils.ColorError>()
+    internal var snapSizeX: Double = 1.0
+        private set
+    internal var snapSizeY: Double = 1.0
+        private set
+    internal var mode: Int = BOARD_MODE_NONE
+        private set
+    internal var dragDx: Double = 0.0
+        private set
+    internal var dragDy: Double = 0.0
+        private set
+    internal var dragPosition: DoubleArray = doubleArrayOf(0.0, 0.0)
+        private set
+    internal var dragOffset: DoubleArray = doubleArrayOf(0.0, 0.0)
+        private set
+    internal var activeDragElement: GeometryElement? = null
+        private set
+    internal val downObjects = mutableListOf<GeometryElement>()
+    internal val clickObjects =
+        linkedMapOf<String, GeometryElement>()
+    internal val focusObjects = mutableListOf<String>()
+    internal val pointerPositions =
+        linkedMapOf<Long, BoardInputEvent>()
+    internal var inputDevice: String = "mouse"
+        private set
+    internal var hasMouseHandlers: Boolean = false
+        private set
+    internal var hasTouchHandlers: Boolean = false
+        private set
+    internal var hasPointerHandlers: Boolean = false
+        private set
+    internal var hasWheelHandlers: Boolean = false
+        private set
+    internal var hasKeyboardHandlers: Boolean = false
+        private set
+    internal var hasResizeHandlers: Boolean = false
+        private set
+    internal var hasFullscreenHandlers: Boolean = false
+        private set
+    internal var resizeObserverStarted: Boolean = false
+        private set
+    internal var intersectionObserverStarted: Boolean = false
+        private set
+    internal var fullscreen: Boolean = false
+        private set
+    internal var infoboxVisible: Boolean = false
+        private set
+    internal var infoboxText: String = ""
+        private set
+    internal var infoboxElement: GeometryElement? = null
+        private set
+    internal var selectingMode: Boolean = false
+        private set
+    internal var isSelecting: Boolean = false
+        private set
+    internal val selectingBox = arrayOf(
+        doubleArrayOf(0.0, 0.0),
+        doubleArrayOf(0.0, 0.0),
+    )
+    internal val sketchPoints = arrayOf(
+        mutableListOf<DoubleArray>(),
+        mutableListOf<DoubleArray>(),
+    )
+    internal val isSketching = booleanArrayOf(false, false)
+    internal var geonextCompatibilityMode: Boolean = false
+        private set
+    internal var xmlString: String = ""
+    private var touchMoveLastMilliseconds: Long = 0L
+    private var touchMoveLastId: Long? = null
+    private var gestureStartDistance: Double = Double.NaN
+    private var gestureStartBoundingBox: DoubleArray? = null
+
+    // JSXGraph: src/base/board.js -> _shiftKey / _ctrlKey.
+    internal var shiftKeyPressed: Boolean = false
+    internal var controlKeyPressed: Boolean = false
 
     internal class Origin(
         val usrCoords: DoubleArray,
@@ -84,6 +263,10 @@ internal class Board(
     internal val objects = linkedMapOf<String, GeometryElement>()
     internal val objectsList = mutableListOf<GeometryElement>()
     internal val elementsByName = linkedMapOf<String, GeometryElement>()
+    // JSXGraph 1.13.3: src/base/board.js -> Board constructor /
+    // highlightedObjects.
+    internal val highlightedObjects =
+        linkedMapOf<String, GeometryElement>()
     // JSXGraph 1.13.3: src/base/board.js -> Board constructor / groups.
     internal val groups = linkedMapOf<String, Group>()
     // JSXGraph 1.13.3: src/base/board.js -> Board constructor / grids.
@@ -141,6 +324,133 @@ internal class Board(
         elementsByName[name]
 
     internal fun groupById(id: String): Group? = groups[id]
+
+    // JSXGraph 1.13.3: src/base/board.js -> generateId.
+    internal fun generateId(): String =
+        "$GENERATED_BOARD_ID_PREFIX${nextGeneratedBoardId++}"
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // finalizeAdding / finalizeLabel.
+    internal fun finalizeAdding(element: GeometryElement): Board {
+        if (element.evalVisProp("visible") == false) {
+            element.setDisplayRendNode(false)
+        }
+        return this
+    }
+
+    internal fun finalizeLabel(element: GeometryElement): Board {
+        val label = element.elementLabel
+        if (
+            element.hasLabel &&
+            label != null &&
+            label.evalVisProp("islabel") != true &&
+            label.evalVisProp("visible") == false
+        ) {
+            label.setDisplayRendNode(false)
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> checkFrameRate.
+    internal fun checkFrameRate(event: BoardInputEvent): Boolean {
+        var handleEvent = false
+        if (
+            event.pointerId != null &&
+            touchMoveLastId != event.pointerId
+        ) {
+            handleEvent = true
+            touchMoveLastId = event.pointerId
+        }
+        if (
+            !handleEvent &&
+            (
+                event.timestampMilliseconds -
+                    touchMoveLastMilliseconds
+                ) * maximumFrameRate >= 1_000.0
+        ) {
+            handleEvent = true
+        }
+        if (handleEvent) {
+            touchMoveLastMilliseconds = event.timestampMilliseconds
+        }
+        return handleEvent
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // getCoordsTopLeftCorner / getMousePosition.
+    internal fun getCoordsTopLeftCorner(): DoubleArray =
+        hostAdapter.topLeft().copyOf(2)
+
+    internal fun getMousePosition(
+        event: BoardInputEvent,
+        touchIndex: Int? = null,
+    ): DoubleArray {
+        @Suppress("UNUSED_VARIABLE")
+        val upstreamTouchIndex = touchIndex
+        val topLeft = getCoordsTopLeftCorner()
+        return doubleArrayOf(
+            event.screenX - topLeft.getOrElse(0) { 0.0 },
+            event.screenY - topLeft.getOrElse(1) { 0.0 },
+        )
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // getPointLoc / getLocationOrigin.
+    internal fun getPointLoc(
+        position: DoubleArray,
+        margin: DoubleArray = doubleArrayOf(0.0, 0.0, 0.0, 0.0),
+    ): IntArray {
+        val coordinates =
+            if (position.size == 2) {
+                doubleArrayOf(1.0, position[0], position[1])
+            } else {
+                position
+            }
+        val normalizedMargin =
+            if (margin.size == 1) {
+                DoubleArray(4) { margin[0] }
+            } else {
+                DoubleArray(4) {
+                    margin.getOrElse(it) { 0.0 }
+                }
+            }
+        val bbox = getBoundingBox()
+        val result = intArrayOf(0, 0)
+        if (coordinates.getOrElse(1) { Double.NaN } >
+            bbox[2] - normalizedMargin[1]
+        ) {
+            result[0] = 1
+        }
+        if (coordinates.getOrElse(1) { Double.NaN } <
+            bbox[0] + normalizedMargin[3]
+        ) {
+            result[0] = -1
+        }
+        if (coordinates.getOrElse(2) { Double.NaN } >
+            bbox[1] - normalizedMargin[0]
+        ) {
+            result[1] = 1
+        }
+        if (coordinates.getOrElse(2) { Double.NaN } <
+            bbox[3] + normalizedMargin[2]
+        ) {
+            result[1] = -1
+        }
+        return result
+    }
+
+    internal fun getPointLoc(
+        position: DoubleArray,
+        margin: Double,
+    ): IntArray = getPointLoc(position, doubleArrayOf(margin))
+
+    internal fun getLocationOrigin(
+        margin: DoubleArray =
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0),
+    ): IntArray = getPointLoc(doubleArrayOf(0.0, 0.0), margin)
+
+    internal fun getLocationOrigin(margin: Double): IntArray =
+        getPointLoc(doubleArrayOf(0.0, 0.0), margin)
 
     // JSXGraph: src/base/board.js -> getBoundingBox
     internal fun getBoundingBox(): DoubleArray = boundingBox.copyOf()
@@ -233,6 +543,1063 @@ internal class Board(
             (origin.scrCoords[2] - canvasHeight) / unitY
     }
 
+    // JSXGraph 1.13.3: src/base/board.js -> initMoveOrigin.
+    internal fun initMoveOrigin(
+        screenX: Double,
+        screenY: Double,
+    ): Board {
+        dragDx = screenX - origin.scrCoords[1]
+        dragDy = screenY - origin.scrCoords[2]
+        mode = BOARD_MODE_MOVE_ORIGIN
+        updateQuality = BOARD_QUALITY_LOW
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> initMoveObject.
+    internal fun initMoveObject(
+        screenX: Double,
+        screenY: Double,
+        event: BoardInputEvent,
+        type: String = event.inputDevice,
+    ): List<GeometryElement> {
+        shiftKeyPressed = event.shiftKey
+        controlKeyPressed = event.controlKey
+        val draggable = mutableListOf<GeometryElement>()
+        for (element in objectsList) {
+            val hit = element.hasPoint(screenX, screenY)
+            if (
+                element.visualPropertiesCalculated["visible"] == true &&
+                hit
+            ) {
+                element.trigger(
+                    listOf("${type}down", "down"),
+                    listOf(event),
+                )
+                downObjects += element
+            }
+            if (
+                hit &&
+                element.isDraggable &&
+                element.visualPropertiesCalculated["visible"] == true &&
+                element.evalVisProp("fixed") != true
+            ) {
+                draggable += element
+            }
+        }
+        val selected = draggable.maxWithOrNull(
+            compareBy<GeometryElement> {
+                (it.evalVisProp("layer") as? Number)?.toDouble()
+                    ?: 0.0
+            }.thenBy { it.positionInBoard },
+        )
+        if (selected != null) {
+            activeDragElement = selected
+            mode = BOARD_MODE_DRAG
+            dragOffset =
+                if (selected is CoordsElement) {
+                    doubleArrayOf(
+                        selected.coords.scrCoords[1] - screenX,
+                        selected.coords.scrCoords[2] - screenY,
+                    )
+                } else {
+                    doubleArrayOf(0.0, 0.0)
+                }
+            selected.highlight(force = true)
+            trigger(
+                events = listOf("mousehit", "hit"),
+                arguments = listOf(event, selected),
+            )
+            return listOf(selected)
+        }
+        dragOffset = doubleArrayOf(0.0, 0.0)
+        return emptyList()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> moveObject.
+    internal fun moveObject(
+        screenX: Double,
+        screenY: Double,
+        element: GeometryElement? = activeDragElement,
+        event: BoardInputEvent,
+        type: String = event.inputDevice,
+    ): Board {
+        val draggedElement = element ?: return this
+        val oldPosition =
+            if (draggedElement is CoordsElement) {
+                draggedElement.coords.scrCoords.copyOfRange(1, 3)
+            } else {
+                dragPosition.copyOf()
+            }
+        dragPosition = doubleArrayOf(
+            screenX + dragOffset[0],
+            screenY + dragOffset[1],
+        )
+        shiftKeyPressed = event.shiftKey
+        controlKeyPressed = event.controlKey
+        if (draggedElement is CoordsElement) {
+            draggedElement.setPosition(
+                method = Const.COORDS_BY_SCREEN,
+                coordinates = dragPosition,
+            )
+        } else {
+            draggedElement.setPositionDirectlyBase(
+                method = Const.COORDS_BY_SCREEN,
+                coordinates = dragPosition,
+                oldCoordinates = oldPosition,
+            )
+        }
+        draggedElement.trigger(
+            events = listOf("${type}drag", "drag"),
+            arguments = listOf(event),
+        )
+        update(draggedElement)
+        draggedElement.highlight(force = true)
+        trigger(
+            events = listOf("mousehit", "hit"),
+            arguments = listOf(event, draggedElement),
+        )
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> highlightElements.
+    internal fun highlightElements(
+        screenX: Double,
+        screenY: Double,
+        event: BoardInputEvent,
+        target: Any? = null,
+    ): Board {
+        val overObjects = linkedSetOf<String>()
+        for (element in objectsList) {
+            if (
+                element.visualPropertiesCalculated["visible"] == true &&
+                element.hasPoint(screenX, screenY)
+            ) {
+                overObjects += element.id
+                if (element.id !in highlightedObjects) {
+                    element.highlight()
+                    trigger(
+                        events = listOf("mousehit", "hit"),
+                        arguments = listOf(event, element, target),
+                    )
+                }
+                element.trigger(
+                    events =
+                        if (element.mouseover) {
+                            listOf("mousemove", "move")
+                        } else {
+                            listOf("mouseover", "over")
+                        },
+                    arguments = listOf(event),
+                )
+                element.mouseover = true
+            }
+        }
+        for (element in objectsList) {
+            if (element.mouseover && element.id !in overObjects) {
+                element.trigger(
+                    events = listOf("mouseout", "out"),
+                    arguments = listOf(event),
+                )
+                element.mouseover = false
+            }
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> saveStartPos.
+    internal fun saveStartPos(
+        element: GeometryElement,
+    ): List<DoubleArray> =
+        when (element) {
+            is Line -> listOf(
+                element.point1.coords.usrCoords.copyOf(),
+                element.point2.coords.usrCoords.copyOf(),
+            )
+            is Circle -> buildList {
+                add(element.center.coords.usrCoords.copyOf())
+                element.point2?.let {
+                    add(it.coords.usrCoords.copyOf())
+                }
+            }
+            is Polygon -> element.vertices
+                .dropLast(1)
+                .map { it.coords.usrCoords.copyOf() }
+            is Sector -> listOf(
+                element.point1.coords.usrCoords.copyOf(),
+                element.point2.coords.usrCoords.copyOf(),
+                element.point3.coords.usrCoords.copyOf(),
+            )
+            is CoordsElement ->
+                listOf(element.coords.usrCoords.copyOf())
+            is Curve -> element.points.firstOrNull()
+                ?.usrCoords
+                ?.copyOf()
+                ?.let(::listOf)
+                .orEmpty()
+            else -> emptyList()
+        }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // mouseOriginMoveStart / mouseOriginMove /
+    // touchStartMoveOriginOneFinger / touchOriginMove.
+    internal fun mouseOriginMoveStart(
+        event: BoardInputEvent,
+        panEnabled: Boolean = true,
+    ): Boolean {
+        if (!panEnabled) {
+            return false
+        }
+        val position = getMousePosition(event)
+        initMoveOrigin(position[0], position[1])
+        return true
+    }
+
+    internal fun mouseOriginMove(event: BoardInputEvent): Boolean {
+        if (mode != BOARD_MODE_MOVE_ORIGIN) {
+            return false
+        }
+        val position = getMousePosition(event)
+        moveOrigin(position[0], position[1], diff = true)
+        return true
+    }
+
+    internal fun touchStartMoveOriginOneFinger(
+        event: BoardInputEvent,
+        panEnabled: Boolean = true,
+        needsTwoFingers: Boolean = false,
+    ): Boolean =
+        if (panEnabled && !needsTwoFingers) {
+            mouseOriginMoveStart(event)
+        } else {
+            false
+        }
+
+    internal fun touchOriginMove(event: BoardInputEvent): Boolean =
+        mouseOriginMove(event)
+
+    // JSXGraph 1.13.3: src/base/board.js -> suppressDefault.
+    internal fun suppressDefault(event: BoardInputEvent?): Boolean {
+        @Suppress("UNUSED_VARIABLE")
+        val platformEvent = event
+        return false
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // addEventHandlers / removeEventHandlers /
+    // addPointerEventHandlers / removePointerEventHandlers /
+    // addMouseEventHandlers / removeMouseEventHandlers /
+    // addTouchEventHandlers / removeTouchEventHandlers /
+    // addWheelEventHandlers / addKeyboardEventHandlers /
+    // removeKeyboardEventHandlers / addResizeEventHandlers /
+    // removeResizeEventHandlers / addFullscreenEventHandlers /
+    // removeFullscreenEventHandlers.
+    internal fun addEventHandlers(): Board {
+        hostAdapter.addEventHandlers()
+        hasPointerHandlers = true
+        return this
+    }
+
+    internal fun removeEventHandlers(): Board {
+        hostAdapter.removeEventHandlers()
+        hasPointerHandlers = false
+        hasMouseHandlers = false
+        hasTouchHandlers = false
+        return this
+    }
+
+    internal fun addPointerEventHandlers(): Board {
+        hasPointerHandlers = true
+        return this
+    }
+
+    internal fun removePointerEventHandlers(): Board {
+        hasPointerHandlers = false
+        pointerPositions.clear()
+        return this
+    }
+
+    internal fun addMouseEventHandlers(): Board {
+        hasMouseHandlers = true
+        return this
+    }
+
+    internal fun removeMouseEventHandlers(): Board {
+        hasMouseHandlers = false
+        return this
+    }
+
+    internal fun addTouchEventHandlers(
+        appleGestures: Boolean = false,
+    ): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val platformGestureMode = appleGestures
+        hasTouchHandlers = true
+        return this
+    }
+
+    internal fun removeTouchEventHandlers(): Board {
+        hasTouchHandlers = false
+        return this
+    }
+
+    internal fun addWheelEventHandlers(): Board {
+        hasWheelHandlers = true
+        return this
+    }
+
+    internal fun addKeyboardEventHandlers(): Board {
+        hasKeyboardHandlers = true
+        return this
+    }
+
+    internal fun removeKeyboardEventHandlers(): Board {
+        hasKeyboardHandlers = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> addResizeEventHandlers.
+    internal fun addResizeEventHandlers(): Board {
+        hasResizeHandlers = true
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> removeResizeEventHandlers.
+    internal fun removeResizeEventHandlers(): Board {
+        hasResizeHandlers = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> addFullscreenEventHandlers.
+    internal fun addFullscreenEventHandlers(): Board {
+        hasFullscreenHandlers = true
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> removeFullscreenEventHandlers.
+    internal fun removeFullscreenEventHandlers(): Board {
+        hasFullscreenHandlers = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // _isRequiredKeyPressed / _isPointerRegistered /
+    // _pointerStorePosition / _pointerRemoveTouches /
+    // _pointerClearTouches / _getPointerInputDevice.
+    internal fun _isRequiredKeyPressed(
+        event: BoardInputEvent,
+        action: String,
+    ): Boolean =
+        when (action.lowercase()) {
+            "pan" -> !event.shiftKey && !event.controlKey
+            "zoom" -> event.controlKey
+            "selection" -> event.shiftKey
+            else -> false
+        }
+
+    internal fun _isPointerRegistered(
+        event: BoardInputEvent,
+    ): Boolean =
+        event.pointerId?.let(pointerPositions::containsKey) == true
+
+    internal fun _pointerStorePosition(
+        event: BoardInputEvent,
+    ): Board {
+        event.pointerId?.let { pointerPositions[it] = event }
+        return this
+    }
+
+    internal fun _pointerRemoveTouches(
+        event: BoardInputEvent,
+    ): Board {
+        event.pointerId?.let(pointerPositions::remove)
+        return this
+    }
+
+    internal fun _pointerClearTouches(
+        pointerId: Long? = null,
+    ): Board {
+        if (pointerId == null) {
+            pointerPositions.clear()
+        } else {
+            pointerPositions.remove(pointerId)
+        }
+        return this
+    }
+
+    internal fun _getPointerInputDevice(
+        event: BoardInputEvent,
+    ): String =
+        event.inputDevice
+            .lowercase()
+            .takeIf { it in setOf("touch", "mouse", "pen") }
+            ?: "mouse"
+
+    // JSXGraph 1.13.3: src/base/board.js -> pointerDownListener.
+    internal fun pointerDownListener(
+        event: BoardInputEvent,
+        element: GeometryElement? = null,
+        allowDefaultEventHandling: Boolean = false,
+    ): Boolean {
+        if (element == null && _isPointerRegistered(event)) {
+            return false
+        }
+        inputDevice = _getPointerInputDevice(event)
+        val position = getMousePosition(event)
+        val selected =
+            if (element != null && element.draggable()) {
+                activeDragElement = element
+                mode = BOARD_MODE_DRAG
+                listOf(element)
+            } else {
+                initMoveObject(
+                    screenX = position[0],
+                    screenY = position[1],
+                    event = event,
+                    type = inputDevice,
+                )
+            }
+        if (selected.isEmpty() && inputDevice != "touch") {
+            mouseOriginMoveStart(
+                event,
+                panEnabled = _isRequiredKeyPressed(event, "pan"),
+            )
+        }
+        _pointerStorePosition(event)
+        trigger(
+            events = listOf(
+                "touchstart",
+                "down",
+                "pointerdown",
+                "MSPointerDown",
+            ),
+            arguments = listOf(event),
+        )
+        @Suppress("UNUSED_VARIABLE")
+        val platformDefaultHandling = allowDefaultEventHandling
+        return true
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> pointerMoveListener.
+    internal fun pointerMoveListener(
+        event: BoardInputEvent,
+    ): Boolean {
+        if (
+            inputDevice == "touch" &&
+            event.pointerId != null &&
+            !_isPointerRegistered(event)
+        ) {
+            return mode == BOARD_MODE_NONE
+        }
+        if (!checkFrameRate(event)) {
+            return false
+        }
+        updateQuality = BOARD_QUALITY_LOW
+        inputDevice = _getPointerInputDevice(event)
+        val position = getMousePosition(event)
+        when {
+            mode == BOARD_MODE_DRAG && activeDragElement != null ->
+                moveObject(
+                    screenX = position[0],
+                    screenY = position[1],
+                    element = requireNotNull(activeDragElement),
+                    event = event,
+                    type = inputDevice,
+                )
+            mode == BOARD_MODE_MOVE_ORIGIN -> mouseOriginMove(event)
+            else -> highlightElements(
+                screenX = position[0],
+                screenY = position[1],
+                event = event,
+            )
+        }
+        _pointerStorePosition(event)
+        trigger(
+            events = listOf("pointermove", "MSPointerMove", "move"),
+            arguments = listOf(event, mode),
+        )
+        updateQuality = BOARD_QUALITY_HIGH
+        return mode == BOARD_MODE_NONE
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> pointerUpListener.
+    internal fun pointerUpListener(
+        event: BoardInputEvent,
+    ): Boolean {
+        trigger(
+            events = listOf(
+                "touchend",
+                "up",
+                "pointerup",
+                "MSPointerUp",
+            ),
+            arguments = listOf(event),
+        )
+        val dragged = activeDragElement
+        if (dragged != null) {
+            dragged.trigger(
+                events = listOf(
+                    "${inputDevice}up",
+                    "up",
+                ),
+                arguments = listOf(event),
+            )
+            if (dragged !is CoordsElement) {
+                dragged.snapToGrid()
+                dragged.snapToPoints()
+            }
+        }
+        activeDragElement = null
+        downObjects.clear()
+        _pointerRemoveTouches(event)
+        originMoveEnd()
+        update()
+        if (inputDevice != "touch") {
+            dehighlightAll()
+        }
+        return true
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> pointerLeaveListener.
+    internal fun pointerLeaveListener(
+        event: BoardInputEvent,
+    ): Boolean {
+        @Suppress("UNUSED_VARIABLE")
+        val platformEvent = event
+        dehighlightAll()
+        return true
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // _handleClicks / _handleDblClicks / pointerClickListener /
+    // pointerDblClickListener / mouseClickListener /
+    // mouseDblClickListener.
+    internal fun _handleClicks(
+        event: BoardInputEvent,
+        eventNames: List<String>,
+    ): Board {
+        trigger(eventNames, listOf(event))
+        for (element in clickObjects.values) {
+            element.trigger(eventNames, listOf(event))
+        }
+        clickObjects.clear()
+        return this
+    }
+
+    internal fun _handleDblClicks(
+        event: BoardInputEvent,
+        eventNames: List<String>,
+    ): Board = _handleClicks(event, eventNames)
+
+    internal fun pointerClickListener(event: BoardInputEvent): Board =
+        _handleClicks(event, listOf("click", "pointerclick"))
+
+    internal fun pointerDblClickListener(event: BoardInputEvent): Board =
+        _handleDblClicks(event, listOf("dblclick", "pointerdblclick"))
+
+    internal fun mouseClickListener(event: BoardInputEvent): Board =
+        _handleClicks(event, listOf("click", "mouseclick"))
+
+    internal fun mouseDblClickListener(event: BoardInputEvent): Board =
+        _handleDblClicks(event, listOf("dblclick", "mousedblclick"))
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // mouseDownListener / mouseMoveListener / mouseUpListener /
+    // touchStartListener / touchMoveListener / touchEndListener.
+    internal fun mouseDownListener(event: BoardInputEvent): Boolean =
+        pointerDownListener(event.copy(inputDevice = "mouse"))
+
+    internal fun mouseMoveListener(event: BoardInputEvent): Boolean =
+        pointerMoveListener(event.copy(inputDevice = "mouse"))
+
+    internal fun mouseUpListener(event: BoardInputEvent): Boolean =
+        pointerUpListener(event.copy(inputDevice = "mouse"))
+
+    internal fun touchStartListener(event: BoardInputEvent): Boolean =
+        pointerDownListener(event.copy(inputDevice = "touch"))
+
+    internal fun touchMoveListener(event: BoardInputEvent): Boolean =
+        pointerMoveListener(event.copy(inputDevice = "touch"))
+
+    internal fun touchEndListener(event: BoardInputEvent): Boolean =
+        pointerUpListener(event.copy(inputDevice = "touch"))
+
+    // JSXGraph 1.13.3: src/base/board.js -> mouseWheelListener.
+    internal fun mouseWheelListener(event: BoardInputEvent): Board {
+        val user = getUsrCoordsOfMouse(event)
+        if (event.deltaY < 0.0) {
+            zoomIn(user[0], user[1])
+        } else if (event.deltaY > 0.0) {
+            zoomOut(user[0], user[1])
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // keyDownListener / keyFocusInListener / keyFocusOutListener.
+    internal fun keyDownListener(event: BoardInputEvent): Boolean {
+        val step = KEYBOARD_PAN_FRACTION
+        when (event.key) {
+            "ArrowLeft" -> clickLeftArrow()
+            "ArrowRight" -> clickRightArrow()
+            "ArrowUp" -> clickUpArrow()
+            "ArrowDown" -> clickDownArrow()
+            "+", "=" -> zoomIn()
+            "-", "_" -> zoomOut()
+            "0" -> zoom100()
+            else -> return false
+        }
+        @Suppress("UNUSED_VARIABLE")
+        val upstreamStep = step
+        trigger(listOf("keymove"), listOf(event, mode))
+        return true
+    }
+
+    internal fun keyFocusInListener(element: GeometryElement): Board {
+        if (element.id !in focusObjects) {
+            focusObjects += element.id
+        }
+        element.highlight(force = true)
+        return this
+    }
+
+    internal fun keyFocusOutListener(element: GeometryElement): Board {
+        focusObjects.remove(element.id)
+        element.noHighlight()
+        return this
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/base/board.js -> __evt__attribute,
+     * __evt__down, __evt__mousedown, __evt__pendown,
+     * __evt__pointerdown, __evt__touchstart, __evt__up,
+     * __evt__mouseup, __evt__pointerup, __evt__touchend,
+     * __evt__click, __evt__dblclick, __evt__mouseclick,
+     * __evt__mousedblclick, __evt__pointerclick,
+     * __evt__pointerdblclick, __evt__move, __evt__mousemove,
+     * __evt__penmove, __evt__pointermove, __evt__touchmove,
+     * __evt__keymove, __evt__hit, __evt__mousehit, __evt__update,
+     * __evt__boundingbox, __evt__startselecting,
+     * __evt__mousestartselecting, __evt__pointerstartselecting,
+     * __evt__touchstartselecting, __evt__stopselecting,
+     * __evt__mousestopselecting, __evt__pointerstopselecting,
+     * __evt__touchstopselecting, __evt__moveselecting,
+     * __evt__mousemoveselecting, __evt__pointermoveselecting,
+     * __evt__touchmoveselecting, __evt.
+     *
+     * These methods are empty in JSXGraph and only declare the event API.
+     */
+    internal fun __evt__attribute(event: Any?) = consumeEvent(event)
+    internal fun __evt__down(event: Any?) = consumeEvent(event)
+    internal fun __evt__mousedown(event: Any?) = consumeEvent(event)
+    internal fun __evt__pendown(event: Any?) = consumeEvent(event)
+    internal fun __evt__pointerdown(event: Any?) = consumeEvent(event)
+    internal fun __evt__touchstart(event: Any?) = consumeEvent(event)
+    internal fun __evt__up(event: Any?) = consumeEvent(event)
+    internal fun __evt__mouseup(event: Any?) = consumeEvent(event)
+    internal fun __evt__pointerup(event: Any?) = consumeEvent(event)
+    internal fun __evt__touchend(event: Any?) = consumeEvent(event)
+    internal fun __evt__click(event: Any?) = consumeEvent(event)
+    internal fun __evt__dblclick(event: Any?) = consumeEvent(event)
+    internal fun __evt__mouseclick(event: Any?) = consumeEvent(event)
+    internal fun __evt__mousedblclick(event: Any?) = consumeEvent(event)
+    internal fun __evt__pointerclick(event: Any?) = consumeEvent(event)
+    internal fun __evt__pointerdblclick(event: Any?) = consumeEvent(event)
+    // JSXGraph 1.13.3: src/base/board.js -> __evt__move,
+    // __evt__mousemove, __evt__penmove, __evt__pointermove,
+    // __evt__touchmove, __evt__keymove.
+    internal fun __evt__move(event: Any?) = consumeEvent(event)
+    internal fun __evt__mousemove(event: Any?) = consumeEvent(event)
+    internal fun __evt__penmove(event: Any?) = consumeEvent(event)
+    internal fun __evt__pointermove(event: Any?) = consumeEvent(event)
+    internal fun __evt__touchmove(event: Any?) = consumeEvent(event)
+    internal fun __evt__keymove(event: Any?) = consumeEvent(event)
+
+    // JSXGraph 1.13.3: src/base/board.js -> __evt__hit,
+    // __evt__mousehit, __evt__update, __evt__boundingbox,
+    // __evt__startselecting, __evt__mousestartselecting,
+    // __evt__pointerstartselecting, __evt__touchstartselecting,
+    // __evt__stopselecting, __evt__mousestopselecting,
+    // __evt__pointerstopselecting, __evt__touchstopselecting,
+    // __evt__moveselecting, __evt__mousemoveselecting,
+    // __evt__pointermoveselecting, __evt__touchmoveselecting, __evt.
+    internal fun __evt__hit(event: Any?) = consumeEvent(event)
+    internal fun __evt__mousehit(event: Any?) = consumeEvent(event)
+    internal fun __evt__update() = Unit
+    internal fun __evt__boundingbox() = Unit
+    internal fun __evt__startselecting() = Unit
+    internal fun __evt__mousestartselecting() = Unit
+    internal fun __evt__pointerstartselecting() = Unit
+    internal fun __evt__touchstartselecting() = Unit
+    internal fun __evt__stopselecting() = Unit
+    internal fun __evt__mousestopselecting() = Unit
+    internal fun __evt__pointerstopselecting() = Unit
+    internal fun __evt__touchstopselecting() = Unit
+    // JSXGraph 1.13.3: src/base/board.js -> __evt__moveselecting,
+    // __evt__mousemoveselecting, __evt__pointermoveselecting,
+    // __evt__touchmoveselecting, __evt.
+    internal fun __evt__moveselecting() = Unit
+    internal fun __evt__mousemoveselecting() = Unit
+    internal fun __evt__pointermoveselecting() = Unit
+    internal fun __evt__touchmoveselecting() = Unit
+    internal fun __evt__() = Unit
+
+    private fun consumeEvent(event: Any?) {
+        @Suppress("UNUSED_VARIABLE")
+        val upstreamEvent = event
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // gestureStartListener / gestureChangeListener.
+    internal fun gestureStartListener(
+        events: List<BoardInputEvent>,
+    ): Boolean {
+        if (events.size < 2) {
+            return false
+        }
+        val first = getMousePosition(events[0])
+        val second = getMousePosition(events[1])
+        gestureStartDistance = com.swithun.jsxgraph.core.math.Mat.hypot(
+            second[0] - first[0],
+            second[1] - first[1],
+        )
+        gestureStartBoundingBox = getBoundingBox()
+        mode = BOARD_MODE_ZOOM
+        return gestureStartDistance.isFinite() &&
+            gestureStartDistance > 0.0
+    }
+
+    internal fun gestureChangeListener(
+        events: List<BoardInputEvent>,
+    ): Boolean {
+        val startBox = gestureStartBoundingBox ?: return false
+        if (events.size < 2 || !gestureStartDistance.isFinite()) {
+            return false
+        }
+        val first = getMousePosition(events[0])
+        val second = getMousePosition(events[1])
+        val distance = com.swithun.jsxgraph.core.math.Mat.hypot(
+            second[0] - first[0],
+            second[1] - first[1],
+        )
+        if (!distance.isFinite() || distance <= 0.0) {
+            return false
+        }
+        val scale = gestureStartDistance / distance
+        val centerXScreen = 0.5 * (first[0] + second[0])
+        val centerYScreen = 0.5 * (first[1] + second[1])
+        val center = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(centerXScreen, centerYScreen),
+            board = this,
+            emitter = false,
+        ).usrCoords
+        val leftRatio =
+            (center[1] - startBox[0]) / (startBox[2] - startBox[0])
+        val topRatio =
+            (startBox[1] - center[2]) / (startBox[1] - startBox[3])
+        val width = (startBox[2] - startBox[0]) * scale
+        val height = (startBox[1] - startBox[3]) * scale
+        setBoundingBox(
+            bbox = doubleArrayOf(
+                center[1] - width * leftRatio,
+                center[2] + height * topRatio,
+                center[1] + width * (1.0 - leftRatio),
+                center[2] - height * (1.0 - topRatio),
+            ),
+            keepAspectRatio = keepAspectRatio,
+            setZoom = BoardZoomMode.UPDATE,
+        )
+        applyZoom()
+        return true
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // twoFingerMove / twoFingerTouchObject / twoFingerTouchCircle.
+    internal fun twoFingerMove(
+        element: GeometryElement,
+        first: BoardInputEvent,
+        second: BoardInputEvent,
+    ): Board {
+        if (element is Circle) {
+            return twoFingerTouchCircle(element, first, second)
+        }
+        return twoFingerTouchObject(element, first, second)
+    }
+
+    internal fun twoFingerTouchObject(
+        element: GeometryElement,
+        first: BoardInputEvent,
+        second: BoardInputEvent,
+    ): Board {
+        val firstPosition = getMousePosition(first)
+        val secondPosition = getMousePosition(second)
+        val midpoint = doubleArrayOf(
+            0.5 * (firstPosition[0] + secondPosition[0]),
+            0.5 * (firstPosition[1] + secondPosition[1]),
+        )
+        element.setPosition(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = midpoint,
+        )
+        update(element)
+        element.highlight(force = true)
+        return this
+    }
+
+    internal fun twoFingerTouchCircle(
+        circle: Circle,
+        first: BoardInputEvent,
+        second: BoardInputEvent,
+    ): Board {
+        val firstPosition = getMousePosition(first)
+        val secondPosition = getMousePosition(second)
+        val center = doubleArrayOf(
+            0.5 * (firstPosition[0] + secondPosition[0]),
+            0.5 * (firstPosition[1] + secondPosition[1]),
+        )
+        circle.setPosition(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = center,
+        )
+        update(circle.center)
+        circle.highlight(force = true)
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // startSelectionMode / stopSelectionMode / _startSelecting /
+    // _moveSelecting / _stopSelecting / _setSelectionPolygonFromBox /
+    // _testForSelection / _createSelectionPolygon.
+    internal fun startSelectionMode(): Board {
+        selectingMode = true
+        return this
+    }
+
+    internal fun stopSelectionMode(): Board {
+        selectingMode = false
+        isSelecting = false
+        return this
+    }
+
+    internal fun _startSelecting(position: DoubleArray): Board {
+        selectingBox[0] = position.copyOf(2)
+        selectingBox[1] = position.copyOf(2)
+        isSelecting = true
+        return this
+    }
+
+    internal fun _moveSelecting(position: DoubleArray): Board {
+        if (isSelecting) {
+            selectingBox[1] = position.copyOf(2)
+        }
+        return this
+    }
+
+    internal fun _stopSelecting(
+        event: BoardInputEvent? = null,
+    ): List<DoubleArray> {
+        @Suppress("UNUSED_VARIABLE")
+        val platformEvent = event
+        isSelecting = false
+        return _setSelectionPolygonFromBox()
+    }
+
+    internal fun _setSelectionPolygonFromBox(): List<DoubleArray> {
+        val first = selectingBox[0]
+        val second = selectingBox[1]
+        return listOf(
+            doubleArrayOf(first[0], first[1]),
+            doubleArrayOf(second[0], first[1]),
+            doubleArrayOf(second[0], second[1]),
+            doubleArrayOf(first[0], second[1]),
+        )
+    }
+
+    internal fun _testForSelection(
+        event: BoardInputEvent,
+    ): Boolean {
+        if (_isRequiredKeyPressed(event, "selection")) {
+            startSelectionMode()
+        }
+        return selectingMode
+    }
+
+    internal fun _createSelectionPolygon(
+        attributes: Map<String, Any?> = emptyMap(),
+    ): List<DoubleArray> {
+        @Suppress("UNUSED_VARIABLE")
+        val portableAttributes = attributes
+        return _setSelectionPolygonFromBox()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // initSketchCurve / addToSketchCurve / finalizeSketchCurve.
+    internal fun initSketchCurve(
+        event: BoardInputEvent,
+        index: Int = 0,
+    ): Board {
+        if (index !in sketchPoints.indices) {
+            return this
+        }
+        sketchPoints[index].clear()
+        sketchPoints[index] += getUsrCoordsOfMouse(event)
+        isSketching[index] = true
+        return this
+    }
+
+    internal fun addToSketchCurve(
+        event: BoardInputEvent,
+        index: Int = 0,
+    ): Board {
+        if (index in sketchPoints.indices && isSketching[index]) {
+            sketchPoints[index] += getUsrCoordsOfMouse(event)
+        }
+        return this
+    }
+
+    internal fun finalizeSketchCurve(
+        event: BoardInputEvent?,
+        index: Int = 0,
+    ): List<DoubleArray> {
+        @Suppress("UNUSED_VARIABLE")
+        val platformEvent = event
+        if (index !in sketchPoints.indices) {
+            return emptyList()
+        }
+        isSketching[index] = false
+        return sketchPoints[index].map(DoubleArray::copyOf)
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> originMoveEnd.
+    internal fun originMoveEnd(): Board {
+        mode = BOARD_MODE_NONE
+        updateQuality = BOARD_QUALITY_HIGH
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> moveOrigin.
+    internal fun moveOrigin(
+        screenX: Double,
+        screenY: Double,
+        diff: Boolean = false,
+    ): Board {
+        val oldX = origin.scrCoords[1]
+        val oldY = origin.scrCoords[2]
+        origin.scrCoords[1] =
+            if (diff) screenX - dragDx else screenX
+        origin.scrCoords[2] =
+            if (diff) screenY - dragDy else screenY
+        val upperLeft = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(0.0, 0.0),
+            board = this,
+            emitter = false,
+        ).usrCoords
+        val lowerRight = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(canvasWidth, canvasHeight),
+            board = this,
+            emitter = false,
+        ).usrCoords
+        if (
+            upperLeft[1] < maxBoundingBox[0] - com.swithun.jsxgraph.core.math.Mat.eps ||
+            upperLeft[2] > maxBoundingBox[1] + com.swithun.jsxgraph.core.math.Mat.eps ||
+            lowerRight[1] > maxBoundingBox[2] + com.swithun.jsxgraph.core.math.Mat.eps ||
+            lowerRight[2] < maxBoundingBox[3] - com.swithun.jsxgraph.core.math.Mat.eps
+        ) {
+            origin.scrCoords[1] = oldX
+            origin.scrCoords[2] = oldY
+        }
+        updateBoundingBoxFromViewport()
+        updateCoords()
+        fullUpdate()
+        trigger(
+            events = listOf("boundingbox"),
+            arguments = listOf(this),
+        )
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // clickLeftArrow / clickRightArrow / clickUpArrow / clickDownArrow.
+    internal fun clickLeftArrow(): Board =
+        moveOrigin(
+            origin.scrCoords[1] + canvasWidth * 0.1,
+            origin.scrCoords[2],
+        )
+
+    internal fun clickRightArrow(): Board =
+        moveOrigin(
+            origin.scrCoords[1] - canvasWidth * 0.1,
+            origin.scrCoords[2],
+        )
+
+    internal fun clickUpArrow(): Board =
+        moveOrigin(
+            origin.scrCoords[1],
+            origin.scrCoords[2] - canvasHeight * 0.1,
+        )
+
+    internal fun clickDownArrow(): Board =
+        moveOrigin(
+            origin.scrCoords[1],
+            origin.scrCoords[2] + canvasHeight * 0.1,
+        )
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // getScrCoordsOfMouse / getUsrCoordsOfMouse.
+    internal fun getScrCoordsOfMouse(
+        screenX: Double,
+        screenY: Double,
+    ): DoubleArray = doubleArrayOf(screenX, screenY)
+
+    internal fun getUsrCoordsOfMouse(
+        event: BoardInputEvent,
+    ): DoubleArray {
+        val screen = getMousePosition(event)
+        return Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = screen,
+            board = this,
+            emitter = false,
+        ).usrCoords.copyOfRange(1, 3)
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // getAllObjectsUnderMouse / getAllUnderMouse.
+    internal fun getAllObjectsUnderMouse(
+        event: BoardInputEvent,
+    ): List<GeometryElement> {
+        val screen = getMousePosition(event)
+        return objectsList.filter { element ->
+            element.visualPropertiesCalculated["visible"] == true &&
+                element.hasPoint(screen[0], screen[1])
+        }
+    }
+
+    internal fun getAllUnderMouse(
+        event: BoardInputEvent,
+    ): List<Any> =
+        getAllObjectsUnderMouse(event) + listOf(getUsrCoordsOfMouse(event))
+
+    // JSXGraph 1.13.3: src/base/board.js -> hasPoint.
+    internal fun hasPoint(
+        userX: Double,
+        userY: Double,
+    ): Boolean {
+        val bbox = getBoundingBox()
+        return userX > bbox[0] &&
+            userX < bbox[2] &&
+            userY < bbox[1] &&
+            userY > bbox[3]
+    }
+
+    internal fun hasPoint(coordinates: Coords): Boolean =
+        hasPoint(
+            coordinates.usrCoords[1],
+            coordinates.usrCoords[2],
+        )
+
     // JSXGraph 1.13.3: src/reader/intergeo.js -> read coordinate reset.
     internal fun setCoordinateSystem(
         originX: Double,
@@ -249,6 +1616,554 @@ internal class Board(
         this.unitX = unitX
         this.unitY = unitY
         updateBoundingBoxFromViewport()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> resizeContainer.
+    internal fun resizeContainer(
+        width: Double,
+        height: Double,
+        dontSetHostSize: Boolean = false,
+        dontSetBoundingBox: Boolean = false,
+    ): Board {
+        if (!width.isFinite() || !height.isFinite()) {
+            return this
+        }
+        val oldWidth = canvasWidth
+        val oldHeight = canvasHeight
+        val oldBoundingBox =
+            if (dontSetBoundingBox) null else getBoundingBox()
+        canvasWidth = width
+        canvasHeight = height
+        if (!dontSetHostSize) {
+            hostAdapter.resize(width, height)
+        }
+        if (oldBoundingBox != null) {
+            setBoundingBox(
+                bbox = oldBoundingBox,
+                keepAspectRatio = keepAspectRatio,
+                setZoom = BoardZoomMode.KEEP,
+            )
+        } else {
+            moveOrigin(
+                screenX = origin.scrCoords[1] +
+                    (canvasWidth - oldWidth) * 0.5,
+                screenY = origin.scrCoords[2] +
+                    (canvasHeight - oldHeight) * 0.5,
+            )
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // updateContainerDims / resizeListener / scrollListener.
+    internal fun updateContainerDims(
+        width: Double? = null,
+        height: Double? = null,
+    ): Board {
+        val hostSize = hostAdapter.size()
+        val resolvedWidth = width
+            ?: hostSize?.getOrNull(0)
+            ?: canvasWidth
+        val resolvedHeight = height
+            ?: hostSize?.getOrNull(1)
+            ?: canvasHeight
+        return resizeContainer(
+            width = resolvedWidth,
+            height = resolvedHeight,
+            dontSetHostSize = true,
+        )
+    }
+
+    internal fun resizeListener(): Board = updateContainerDims()
+
+    internal fun scrollListener(
+        event: BoardInputEvent? = null,
+    ): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val platformEvent = event
+        getCoordsTopLeftCorner()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // startResizeObserver / stopResizeObserver /
+    // startIntersectionObserver / stopIntersectionObserver.
+    internal fun startResizeObserver(): Board {
+        hostAdapter.startResizeObserver()
+        resizeObserverStarted = true
+        return this
+    }
+
+    internal fun stopResizeObserver(): Board {
+        hostAdapter.stopResizeObserver()
+        resizeObserverStarted = false
+        return this
+    }
+
+    internal fun startIntersectionObserver(): Board {
+        hostAdapter.startIntersectionObserver()
+        intersectionObserverStarted = true
+        return this
+    }
+
+    internal fun stopIntersectionObserver(): Board {
+        hostAdapter.stopIntersectionObserver()
+        intersectionObserverStarted = false
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // printListener / printListenerMatch.
+    internal fun printListener(): Board = resizeListener()
+
+    internal fun printListenerMatch(matches: Boolean): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val printMediaMatches = matches
+        return resizeListener()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // toFullscreen / fullscreenListener /
+    // startFullscreenResizeObserver / stopFullscreenResizeObserver.
+    internal fun toFullscreen(containerId: String? = null): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val requestedContainer = containerId
+        fullscreen = !fullscreen
+        hostAdapter.setFullscreen(fullscreen)
+        return this
+    }
+
+    internal fun fullscreenListener(enabled: Boolean): Board {
+        fullscreen = enabled
+        return resizeListener()
+    }
+
+    internal fun startFullscreenResizeObserver(
+        node: Any? = null,
+    ): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val platformNode = node
+        return startResizeObserver()
+    }
+
+    internal fun stopFullscreenResizeObserver(
+        node: Any? = null,
+    ): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val platformNode = node
+        return stopResizeObserver()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // initInfobox / updateInfobox / displayInfobox / showInfobox /
+    // highlightInfobox / highlightCustomInfobox.
+    internal fun initInfobox(
+        attributes: Map<String, Any?> = emptyMap(),
+    ): Board {
+        infoboxText =
+            attributes["text"]?.toString().orEmpty()
+        infoboxVisible = false
+        infoboxElement = null
+        return this
+    }
+
+    internal fun updateInfobox(element: GeometryElement): Board {
+        infoboxElement = element
+        infoboxText = element.name
+        return this
+    }
+
+    internal fun displayInfobox(visible: Boolean): Board {
+        infoboxVisible = visible
+        return this
+    }
+
+    internal fun showInfobox(visible: Boolean): Board =
+        displayInfobox(visible)
+
+    internal fun highlightInfobox(
+        userX: Double,
+        userY: Double,
+        element: GeometryElement,
+    ): Board {
+        @Suppress("UNUSED_VARIABLE")
+        val upstreamCoordinates = userX to userY
+        updateInfobox(element)
+        infoboxVisible = true
+        return this
+    }
+
+    internal fun highlightCustomInfobox(
+        text: String,
+        element: GeometryElement,
+    ): Board {
+        infoboxText = text
+        infoboxElement = element
+        infoboxVisible = true
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> updateCSSTransforms.
+    // Compose supplies pointer positions in the board's local coordinate
+    // space, so there is no browser CSS matrix to invert.
+    internal fun updateCSSTransforms(): Board = this
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // initGeonextBoard / showDependencies / showXML.
+    internal fun initGeonextBoard(): Board {
+        geonextCompatibilityMode = true
+        return this
+    }
+
+    internal fun showDependencies(): String =
+        objects.values.joinToString(
+            separator = "\n",
+        ) { element ->
+            "${element.id}: " +
+                element.childElements.values.joinToString { child ->
+                    "${child.id}(${child.name})"
+                }
+        }
+
+    internal fun showXML(): String = xmlString
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // addConditions / updateConditions.
+    internal fun addConditions(
+        expression: String,
+    ): GMResult<Board, BoardError> =
+        GMResult.Err(
+            BoardError.UnsupportedConditionExpression(expression),
+        )
+
+    internal fun updateConditions(): Boolean = false
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // _set / setAttribute.
+    internal fun _set(
+        key: String,
+        value: Any?,
+    ): Board {
+        val normalized = normalizeAttributeKey(key)
+        val existing = attributes[normalized]
+        attributes[normalized] =
+            if (existing is MutableMap<*, *> && value is Map<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                mergeAttributeMaps(
+                    existing as MutableMap<String, Any?>,
+                    value,
+                )
+            } else {
+                copyAttributeValue(value)
+            }
+        return this
+    }
+
+    internal fun setAttribute(
+        changedAttributes: Map<String, Any?>,
+        force: Boolean = false,
+    ): Board {
+        val normalizedChanges = linkedMapOf<String, Any?>()
+        for ((rawKey, rawValue) in changedAttributes) {
+            val key = normalizeAttributeKey(rawKey)
+            val value =
+                if (rawValue == "false") false else rawValue
+            val oldValue = attributes[key]
+            if (!force && oldValue == value) {
+                continue
+            }
+            when (key) {
+                "animationdelay" -> {
+                    (value as? Number)?.toDouble()?.let {
+                        if (it.isFinite() && it > 0.0) {
+                            animationDelay = it
+                        }
+                    }
+                    _set(key, animationDelay)
+                }
+                "boundingbox" -> {
+                    val bbox = numberArray(value)
+                    if (bbox != null) {
+                        setBoundingBox(
+                            bbox,
+                            keepAspectRatio,
+                            BoardZoomMode.RESET,
+                        )
+                        _set(key, bbox)
+                    }
+                }
+                "keepaspectratio" -> {
+                    keepAspectRatio = value == true
+                    _set(key, keepAspectRatio)
+                    setBoundingBox(
+                        getBoundingBox(),
+                        keepAspectRatio,
+                        BoardZoomMode.KEEP,
+                    )
+                }
+                "maxboundingbox" -> {
+                    numberArray(value)?.let {
+                        if (it.size >= BOUNDING_BOX_COORDINATE_COUNT) {
+                            maxBoundingBox = it.copyOf(4)
+                            _set(key, maxBoundingBox)
+                        }
+                    }
+                }
+                "zoomx" -> {
+                    (value as? Number)?.toDouble()?.let {
+                        setZoom(it, zoomY)
+                        _set(key, it)
+                    }
+                }
+                "zoomy" -> {
+                    (value as? Number)?.toDouble()?.let {
+                        setZoom(zoomX, it)
+                        _set(key, it)
+                    }
+                }
+                "registerevents", "renderer" -> Unit
+                else -> _set(key, value)
+            }
+            normalizedChanges[key] = value
+        }
+        trigger(
+            events = listOf("attribute"),
+            arguments = listOf(normalizedChanges, this),
+        )
+        fullUpdate()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> dehighlightAll.
+    internal fun dehighlightAll(): Board {
+        for (element in highlightedObjects.values.toList()) {
+            element.noHighlight()
+        }
+        highlightedObjects.clear()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> emulateColorblindness.
+    internal fun emulateColorblindness(
+        deficiency: String = "none",
+    ): Board {
+        val normalized = deficiency.lowercase()
+        if (normalized == currentColorBlindness) {
+            return this
+        }
+        colorBlindnessErrors.clear()
+        for (element in objects.values) {
+            if (normalized == "none") {
+                val original = element.originalVisualProperties ?: continue
+                element.setAttribute(original)
+                continue
+            }
+            if (currentColorBlindness == "none") {
+                element.originalVisualProperties = listOf(
+                    "strokecolor",
+                    "fillcolor",
+                    "highlightstrokecolor",
+                    "highlightfillcolor",
+                ).associateWith(element::getAttribute)
+            }
+            val original = element.originalVisualProperties ?: continue
+            val converted = linkedMapOf<String, Any?>()
+            for ((property, value) in original) {
+                val color = value as? String ?: continue
+                when (val result = Color.rgb2cb(color, normalized)) {
+                    is GMResult.Ok -> converted[property] = result.value
+                    is GMResult.Err ->
+                        colorBlindnessErrors["${element.id}:$property"] =
+                            result.error
+                }
+            }
+            element.setAttribute(converted)
+        }
+        currentColorBlindness = normalized
+        update()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // on / off / trigger / addEvent / removeEvent.
+    internal fun on(
+        event: String,
+        handler: EventHandler,
+        context: Any = this,
+    ): Board {
+        events.on(event, handler, context)
+        return this
+    }
+
+    internal fun off(
+        event: String,
+        handler: EventHandler? = null,
+    ): Board {
+        events.off(event, handler)
+        return this
+    }
+
+    internal fun trigger(
+        events: List<String>,
+        arguments: List<Any?> = emptyList(),
+    ): Board {
+        this.events.trigger(events, arguments)
+        return this
+    }
+
+    internal fun addEvent(
+        event: String,
+        handler: EventHandler,
+        context: Any = this,
+    ): Board = on(event, handler, context)
+
+    internal fun removeEvent(
+        event: String,
+        handler: EventHandler? = null,
+    ): Board = off(event, handler)
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // addHook / removeHook / updateHooks.
+    internal fun addHook(
+        hook: EventHandler,
+        event: String = "update",
+        context: Any = this,
+    ): Int {
+        hooks += event to hook
+        on(event, hook, context)
+        return hooks.lastIndex
+    }
+
+    internal fun removeHook(id: Int): Board {
+        val hook = hooks.getOrNull(id) ?: return this
+        off(hook.first, hook.second)
+        hooks[id] = null
+        return this
+    }
+
+    internal fun removeHook(handler: EventHandler): Board {
+        for ((index, hook) in hooks.withIndex()) {
+            if (hook?.second === handler) {
+                off(hook.first, handler)
+                hooks[index] = null
+            }
+        }
+        return this
+    }
+
+    internal fun updateHooks(
+        event: String = "update",
+        arguments: List<Any?> = emptyList(),
+    ): Board = trigger(listOf(event), arguments)
+
+    // JSXGraph 1.13.3: src/base/board.js -> addChild / removeChild.
+    internal fun addChild(board: Board): Board {
+        if (board !== this && board !in dependentBoards) {
+            dependentBoards += board
+            update()
+        }
+        return this
+    }
+
+    internal fun removeChild(board: Board): Board {
+        dependentBoards.removeAll { it === board }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> createElement.
+    // The public engine owns type dispatch; this keeps the deprecated alias
+    // available without introducing a second element registry in Board.
+    internal fun createElement(
+        creator: () -> GeometryElement,
+    ): GeometryElement = creator()
+
+    // JSXGraph 1.13.3: src/base/board.js -> migratePoint.
+    internal fun migratePoint(
+        source: Point,
+        destination: Point,
+        copyName: Boolean = false,
+    ): Board {
+        if (
+            select(source) !== source ||
+            select(destination) !== destination ||
+            source === destination
+        ) {
+            return this
+        }
+        source.elementLabel?.let(::removeObject)
+        for (child in source.childElements.values.toList()) {
+            var replaced = false
+            when (child) {
+                is Line -> {
+                    if (child.point1 === source) {
+                        child.point1 = destination
+                        replaced = true
+                    }
+                    if (child.point2 === source) {
+                        child.point2 = destination
+                        replaced = true
+                    }
+                }
+                is Polygon -> {
+                    for (index in child.vertices.indices) {
+                        if (child.vertices[index] === source) {
+                            child.vertices[index] = destination
+                            replaced = true
+                        }
+                    }
+                }
+            }
+            for (index in child.parents.indices) {
+                if (child.parents[index] == source.id) {
+                    child.parents[index] = destination.id
+                    replaced = true
+                }
+            }
+            destination.addChild(child)
+            if (replaced) {
+                source.childElements.remove(child.id)
+            }
+        }
+        if (copyName) {
+            val sourceName = source.name
+            elementsByName.remove(destination.name)
+            destination.setName(sourceName)
+            if (source.hasLabel) {
+                destination.setLabel(sourceName)
+            }
+        }
+        removeObject(source)
+        if (destination.name.isNotEmpty()) {
+            elementsByName[destination.name] = destination
+        }
+        fullUpdate()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> addLogEntry.
+    internal fun addLogEntry(
+        type: String,
+        element: GeometryElement?,
+        timestampMilliseconds: Long,
+    ): Board {
+        val last = userLog.lastOrNull()
+        if (
+            last != null &&
+            last.type == type &&
+            last.elementId == element?.id.orEmpty() &&
+            timestampMilliseconds - last.endMilliseconds <
+            USER_LOG_MERGE_WINDOW_MILLISECONDS
+        ) {
+            last.endMilliseconds = timestampMilliseconds
+        } else {
+            userLog += BoardUserLogEntry(
+                type = type,
+                elementId = element?.id.orEmpty(),
+                startMilliseconds = timestampMilliseconds,
+                endMilliseconds = timestampMilliseconds,
+            )
+        }
         return this
     }
 
@@ -446,6 +2361,313 @@ internal class Board(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/board.js -> addGrid.
+    internal fun addGrid(grid: Curve): Board {
+        if (grid !in grids) {
+            grids += grid
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> clearTraces.
+    internal fun clearTraces(): Board {
+        for (element in objectsList) {
+            element.clearTrace()
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // addAnimation / stopAllAnimation / animate.
+    internal fun addAnimation(element: GeometryElement): Board {
+        animationObjects[element.id] = element
+        if (!animationLoopScheduled) {
+            animationLoopScheduled = true
+            animationScheduler.schedule(animationDelay) {
+                animate()
+                val keepRunning = animationObjects.isNotEmpty()
+                if (!keepRunning) {
+                    animationLoopScheduled = false
+                }
+                keepRunning
+            }
+        }
+        return this
+    }
+
+    internal fun stopAllAnimation(): Board {
+        for (element in animationObjects.values) {
+            element.cancelAnimation()
+        }
+        animationObjects.clear()
+        animationLoopScheduled = false
+        return this
+    }
+
+    internal fun animate(): Board {
+        var updatedElement: GeometryElement? = null
+        for ((id, element) in animationObjects.toMap()) {
+            val keepAnimating = element.advanceAnimationFrame()
+            updatedElement = element
+            if (!keepAnimating) {
+                animationObjects.remove(id)
+            }
+        }
+        if (updatedElement != null) {
+            update(updatedElement)
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> updateCoords.
+    internal fun updateCoords(): Board {
+        for (element in objectsList) {
+            val coordsElement = element as? CoordsElement ?: continue
+            if (coordsElement.evalVisProp("frozen") == true) {
+                coordsElement.coords.screen2usr()
+                coordsElement.actualCoords.screen2usr()
+            } else {
+                coordsElement.coords.usr2screen()
+                coordsElement.actualCoords.usr2screen()
+            }
+        }
+        updateBoundingBoxFromViewport()
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> calculateSnapSizes.
+    internal fun calculateSnapSizes(
+        gridStepX: Any? = "auto",
+        gridStepY: Any? = "auto",
+    ): Board {
+        val bbox = getBoundingBox()
+        val stepX =
+            if (gridStepX == "auto") {
+                1.0
+            } else {
+                com.swithun.jsxgraph.core.utils.Type.parseNumber(
+                    gridStepX,
+                    abs(bbox[1] - bbox[3]),
+                    1.0 / unitX,
+                )
+            }
+        val stepY =
+            if (gridStepY == "auto") {
+                1.0
+            } else {
+                com.swithun.jsxgraph.core.utils.Type.parseNumber(
+                    gridStepY,
+                    abs(bbox[0] - bbox[2]),
+                    1.0 / unitY,
+                )
+            }
+        var screenStepX = abs(stepX * unitX)
+        var screenStepY = abs(stepY * unitY)
+        snapSizeX = stepX
+        while (screenStepX > MAXIMUM_SNAP_PIXEL_DISTANCE) {
+            snapSizeX *= 2.0
+            screenStepX *= 0.5
+        }
+        snapSizeY = stepY
+        while (screenStepY > MAXIMUM_SNAP_PIXEL_DISTANCE) {
+            snapSizeY *= 2.0
+            screenStepY *= 0.5
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> applyZoom.
+    internal fun applyZoom(): Board =
+        updateCoords()
+            .calculateSnapSizes()
+            .clearTraces()
+            .fullUpdate()
+
+    // JSXGraph 1.13.3: src/base/board.js -> zoomIn / zoomOut.
+    internal fun zoomIn(
+        userX: Double? = null,
+        userY: Double? = null,
+    ): Board {
+        if (
+            (zoomX > maximumZoom && zoomFactorX > 1.0) ||
+            (zoomY > maximumZoom && zoomFactorY > 1.0) ||
+            (zoomX < minimumZoom && zoomFactorX < 1.0) ||
+            (zoomY < minimumZoom && zoomFactorY < 1.0)
+        ) {
+            return this
+        }
+        return zoomAround(
+            factorX = zoomFactorX,
+            factorY = zoomFactorY,
+            userX = userX,
+            userY = userY,
+            inverse = true,
+        )
+    }
+
+    internal fun zoomOut(
+        userX: Double? = null,
+        userY: Double? = null,
+    ): Board {
+        if (zoomX < minimumZoom || zoomY < minimumZoom) {
+            return this
+        }
+        return zoomAround(
+            factorX = zoomFactorX,
+            factorY = zoomFactorY,
+            userX = userX,
+            userY = userY,
+            inverse = false,
+        )
+    }
+
+    private fun zoomAround(
+        factorX: Double,
+        factorY: Double,
+        userX: Double?,
+        userY: Double?,
+        inverse: Boolean,
+    ): Board {
+        val bbox = getBoundingBox()
+        val appliedX = if (inverse) 1.0 / factorX else factorX
+        val appliedY = if (inverse) 1.0 / factorY else factorY
+        val deltaX = (bbox[2] - bbox[0]) * (1.0 - appliedX)
+        val deltaY = (bbox[1] - bbox[3]) * (1.0 - appliedY)
+        val horizontalRatio =
+            if (userX != null && userY != null) {
+                (userX - bbox[0]) / (bbox[2] - bbox[0])
+            } else {
+                0.5
+            }
+        val verticalRatio =
+            if (userX != null && userY != null) {
+                (bbox[1] - userY) / (bbox[1] - bbox[3])
+            } else {
+                0.5
+            }
+        setBoundingBox(
+            bbox = doubleArrayOf(
+                bbox[0] + deltaX * horizontalRatio,
+                bbox[1] - deltaY * verticalRatio,
+                bbox[2] - deltaX * (1.0 - horizontalRatio),
+                bbox[3] + deltaY * (1.0 - verticalRatio),
+            ),
+            keepAspectRatio = keepAspectRatio,
+            setZoom = BoardZoomMode.UPDATE,
+        )
+        return applyZoom()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> zoom100.
+    internal fun zoom100(): Board {
+        setBoundingBox(
+            bbox = initialBoundingBox,
+            keepAspectRatio = keepAspectRatio,
+            setZoom = BoardZoomMode.RESET,
+        )
+        return applyZoom()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> zoomAllPoints.
+    internal fun zoomAllPoints(): Board {
+        var minimumX = 0.0
+        var maximumX = 0.0
+        var minimumY = 0.0
+        var maximumY = 0.0
+        for (point in objectsList.filterIsInstance<Point>()) {
+            if (
+                point.visualPropertiesCalculated["visible"] == false ||
+                !point.coords.isReal()
+            ) {
+                continue
+            }
+            minimumX = minOf(minimumX, point.X())
+            maximumX = maxOf(maximumX, point.X())
+            minimumY = minOf(minimumY, point.Y())
+            maximumY = maxOf(maximumY, point.Y())
+        }
+        val borderX = ZOOM_ALL_BORDER_PIXELS / unitX
+        val borderY = ZOOM_ALL_BORDER_PIXELS / unitY
+        setBoundingBox(
+            bbox = doubleArrayOf(
+                minimumX - borderX,
+                maximumY + borderY,
+                maximumX + borderX,
+                minimumY - borderY,
+            ),
+            keepAspectRatio = keepAspectRatio,
+            setZoom = BoardZoomMode.UPDATE,
+        )
+        return applyZoom()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> zoomElements.
+    internal fun zoomElements(
+        elements: Iterable<*>,
+    ): Board {
+        val selected = elements.mapNotNull { element ->
+            when (element) {
+                is GeometryElement -> select(element)
+                is String -> select(element)
+                else -> null
+            }
+        }
+        if (selected.isEmpty()) {
+            return this
+        }
+        val combined = doubleArrayOf(
+            Double.POSITIVE_INFINITY,
+            Double.NEGATIVE_INFINITY,
+            Double.NEGATIVE_INFINITY,
+            Double.POSITIVE_INFINITY,
+        )
+        for (element in selected) {
+            val bounds = element.getBoundingBox()
+            combined[0] = minOf(combined[0], bounds[0])
+            combined[1] = maxOf(combined[1], bounds[1])
+            combined[2] = maxOf(combined[2], bounds[2])
+            combined[3] = minOf(combined[3], bounds[3])
+        }
+        if (combined.any { !it.isFinite() }) {
+            return this
+        }
+        val centerX = 0.5 * (combined[0] + combined[2])
+        val centerY = 0.5 * (combined[1] + combined[3])
+        val radius = max(
+            0.75 * (combined[2] - combined[0]),
+            0.75 * (combined[1] - combined[3]),
+        )
+        if (!radius.isFinite() || radius <= 0.0) {
+            return this
+        }
+        setBoundingBox(
+            bbox = doubleArrayOf(
+                centerX - radius,
+                centerY + radius,
+                centerX + radius,
+                centerY - radius,
+            ),
+            keepAspectRatio = keepAspectRatio,
+            setZoom = BoardZoomMode.UPDATE,
+        )
+        return applyZoom()
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> setZoom.
+    internal fun setZoom(
+        factorX: Double,
+        factorY: Double,
+    ): Board {
+        val previousX = zoomFactorX
+        val previousY = zoomFactorY
+        zoomFactorX = factorX / zoomX
+        zoomFactorY = factorY / zoomY
+        zoomIn()
+        zoomFactorX = previousX
+        zoomFactorY = previousY
+        return this
+    }
+
     // JSXGraph: src/base/board.js -> removeAncestors
     internal fun removeAncestors(element: GeometryElement): Board {
         for (ancestor in element.ancestors.values.toList()) {
@@ -510,6 +2732,13 @@ internal class Board(
             prepareUpdate()
                 .updateElements(draggedElement)
                 .updateRenderer()
+            trigger(listOf("update"))
+            for (dependent in dependentBoards.toList()) {
+                if (dependent !== this) {
+                    dependent.updateQuality = updateQuality
+                    dependent.update()
+                }
+            }
         } finally {
             inUpdate = false
         }
@@ -534,6 +2763,7 @@ internal class Board(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/board.js -> unsuspendUpdate.
     internal fun unsuspendUpdate(): Board {
         if (isSuspendedUpdate) {
             isSuspendedUpdate = false
@@ -541,6 +2771,76 @@ internal class Board(
         }
         return this
     }
+
+    // JSXGraph 1.13.3: src/base/board.js -> createRoulette.
+    internal fun createRoulette(
+        firstCurve: Curve,
+        secondCurve: Curve,
+        startFirstCurve: Double,
+        stepSize: Double,
+        direction: Double,
+        delayMilliseconds: Double,
+        points: List<CoordsElement>,
+    ): BoardRoulette =
+        BoardRoulette(
+            board = this,
+            firstCurve = firstCurve,
+            secondCurve = secondCurve,
+            startFirstCurve = startFirstCurve,
+            stepSize = stepSize,
+            direction = direction,
+            delayMilliseconds = delayMilliseconds,
+            points = points,
+        )
+
+    private fun normalizeAttributeKey(key: String): String =
+        key.filterNot(Char::isWhitespace).lowercase()
+
+    private fun mergeAttributeMaps(
+        target: MutableMap<String, Any?>,
+        source: Map<*, *>,
+    ): MutableMap<String, Any?> {
+        for ((rawKey, rawValue) in source) {
+            val key = normalizeAttributeKey(rawKey.toString())
+            val current = target[key]
+            target[key] =
+                if (
+                    current is MutableMap<*, *> &&
+                    rawValue is Map<*, *>
+                ) {
+                    @Suppress("UNCHECKED_CAST")
+                    mergeAttributeMaps(
+                        current as MutableMap<String, Any?>,
+                        rawValue,
+                    )
+                } else {
+                    copyAttributeValue(rawValue)
+                }
+        }
+        return target
+    }
+
+    private fun copyAttributeValue(value: Any?): Any? =
+        when (value) {
+            is Map<*, *> -> value.entries.associateTo(linkedMapOf()) {
+                (key, nestedValue) ->
+                normalizeAttributeKey(key.toString()) to
+                    copyAttributeValue(nestedValue)
+            }
+            is List<*> -> value.map(::copyAttributeValue)
+            is DoubleArray -> value.copyOf()
+            is IntArray -> value.copyOf()
+            else -> value
+        }
+
+    private fun numberArray(value: Any?): DoubleArray? =
+        when (value) {
+            is DoubleArray -> value.copyOf()
+            is List<*> -> value.map {
+                (it as? Number)?.toDouble() ?: return null
+            }.toDoubleArray()
+            else -> null
+        }
 
     internal companion object {
         // JSXGraph 1.13.3: src/jsxgraph.js -> JSXGraph.initBoard.
@@ -600,6 +2900,22 @@ internal class Board(
         const val DEFAULT_CANVAS_HEIGHT = 500.0
         const val CURVE_DOMAIN_PADDING = 0.1
         const val BOUNDING_BOX_COORDINATE_COUNT = 4
+        const val DEFAULT_ANIMATION_DELAY = 35.0
+        const val DEFAULT_ZOOM_FACTOR = 1.25
+        const val DEFAULT_MINIMUM_ZOOM = 0.001
+        const val DEFAULT_MAXIMUM_ZOOM = 100_000.0
+        const val DEFAULT_MAXIMUM_FRAME_RATE = 40.0
+        const val MAXIMUM_SNAP_PIXEL_DISTANCE = 25.0
+        const val ZOOM_ALL_BORDER_PIXELS = 50.0
+        const val USER_LOG_MERGE_WINDOW_MILLISECONDS = 500L
+        const val KEYBOARD_PAN_FRACTION = 0.1
+        const val BOARD_MODE_NONE = 0
+        const val BOARD_MODE_DRAG = 1
+        const val BOARD_MODE_MOVE_ORIGIN = 2
+        const val BOARD_MODE_ZOOM = 5
+        const val GENERATED_BOARD_ID_PREFIX = "jxgBoard"
+
+        private var nextGeneratedBoardId: Long = 1L
 
         val CAPITAL_NAMES = listOf(
             "",

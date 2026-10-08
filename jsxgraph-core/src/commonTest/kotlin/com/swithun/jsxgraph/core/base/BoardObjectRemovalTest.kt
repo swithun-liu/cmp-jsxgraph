@@ -174,7 +174,9 @@ class BoardObjectRemovalTest {
             return this
         }
 
-        override fun updateVisibility(): GeometryElement {
+        override fun updateVisibility(
+            parentVisible: Boolean?,
+        ): GeometryElement {
             visibilityUpdateCount += 1
             return this
         }

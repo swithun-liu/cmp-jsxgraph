@@ -173,6 +173,14 @@ internal class Transformation private constructor(
         return this
     }
 
+    // JSXGraph: src/base/transformation.js -> Transformation.setProperty.
+    @Suppress("UNUSED_PARAMETER")
+    internal fun setProperty(term: Any?): Transformation = this
+
+    // JSXGraph: src/base/transformation.js -> Transformation.setAttribute.
+    @Suppress("UNUSED_PARAMETER")
+    internal fun setAttribute(term: Any?): Transformation = this
+
     internal fun updateResult(): GMResult<
         Transformation,
         TransformationError,
@@ -376,6 +384,10 @@ internal class Transformation private constructor(
         }
         return GMResult.Ok(this)
     }
+
+    // JSXGraph: src/base/transformation.js -> Transformation.getParents.
+    internal fun parentDefinitions(): List<DoubleArray> =
+        listOf(matrix.flatMap { row -> row.asIterable() }.toDoubleArray())
 
     internal companion object {
         // JSXGraph: src/base/transformation.js -> setMatrix

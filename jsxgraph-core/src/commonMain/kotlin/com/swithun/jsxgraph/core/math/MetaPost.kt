@@ -274,7 +274,7 @@ internal object MetaPost {
                     val target = segment.next
                     deltaX += target.x - segment.x
                     deltaY += target.y - segment.y
-                    delta += Mat.hypot(deltaX[index], deltaY[index])
+                    delta += pythAdd(deltaX[index], deltaY[index])
                     if (index > 0) {
                         val sine = deltaY[index - 1] / delta[index - 1]
                         val cosine = deltaX[index - 1] / delta[index - 1]
@@ -668,6 +668,12 @@ internal object MetaPost {
         point.rtype = MP_EXPLICIT
         endpoint.ltype = MP_EXPLICIT
     }
+
+    // JSXGraph 1.13.3: src/math/metapost.js -> mp_pyth_add.
+    private fun pythAdd(
+        first: Double,
+        second: Double,
+    ): Double = Mat.hypot(first, second)
 
     // JSXGraph 1.13.3: src/math/metapost.js -> mp_curl_ratio.
     private fun curlRatio(

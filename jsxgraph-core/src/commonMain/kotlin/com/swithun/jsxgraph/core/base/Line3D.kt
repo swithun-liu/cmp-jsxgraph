@@ -97,6 +97,11 @@ internal sealed interface Line3DError {
         val error: TransformationError,
     ) : Line3DError
 
+    data class PositionTransformation(
+        val parentIndex: Int,
+        val error: TransformationError,
+    ) : Line3DError
+
     data class Registration(
         val error: BoardError,
     ) : Line3DError
@@ -284,6 +289,38 @@ internal class Line3D private constructor(
         return this
     }
 
+    // JSXGraph: src/3d/linspace3d.js -> Line3D.setPosition2D.
+    internal fun setPosition2D(
+        transformation: Transformation,
+    ): GMResult<Line3D, Line3DError> {
+        for ((index, parentId) in parents.withIndex()) {
+            val definingPoint = view.select(parentId) as? Point3D ?: continue
+            if (
+                definingPoint.isFixed ||
+                !definingPoint.point2D.isDraggable
+            ) {
+                continue
+            }
+            when (
+                val result =
+                    transformation.applyOnce(definingPoint.point2D)
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return GMResult.Err(
+                    Line3DError.PositionTransformation(
+                        parentIndex = index,
+                        error = result.error,
+                    ),
+                )
+            }
+        }
+        for (endpoint in endpoints) {
+            endpoint.update()
+        }
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph: src/3d/linspace3d.js -> Line3D.updateRenderer.
     override fun updateRenderer(): GeometryElement {
         needsUpdate = false
         return this

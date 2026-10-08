@@ -10,7 +10,11 @@
 
 The upstream baseline contains 104 JavaScript source files outside
 `src/unused`. Completion is tracked by source symbol and behavior, not by raw
-line count.
+line count. The final `2026-09-30` audit excludes only the legacy VML backend,
+scans the remaining 103 files, and maps all 2,029 API-surface symbols to
+source-specific Kotlin locations. `Numerics.glomin` is separately excluded by
+the MIT-only license policy. Mapping coverage does not override the behavioral
+and Stable gates below.
 
 ## Current Release Decision
 
@@ -104,7 +108,7 @@ qualification batches pass.
   including its iterative stack, cusp/jump/border classification, one-sided
   limits through `Extrapolate`, FunctionGraph-only 30% bounding-box crop,
   callback suspension, parameter metadata, and bounded point growth. Its
-  official fixture, common/JVM tests, 108-case workbench, and focused
+  official fixture, common/JVM tests, 109-case workbench, and focused
   Desktop/Compact parity gates pass at `0.987021`/`0.976125`. Plot v2 remains
   the default. The separate explicit Plot v4 path now covers difference-table
   critical-point detection, border/singularity refinement, bounded JessieCode
@@ -150,8 +154,8 @@ qualification batches pass.
   commonMain compiler for all upstream construction branches and named macro
   expansion. It delegates execution to the existing native JessieCode/Board
   path, preserving element order and observable geometry without adding a
-  JavaScript runtime. Mutable property assignments and draft styling remain
-  explicit follow-up work.
+  JavaScript runtime. Element property assignments and `draft` styling now
+  flow through the translated mutable visual-property model.
 - JessieCode computer algebra: `src/parser/ca.js` is translated between AST
   parsing and evaluation. It covers every upstream elementary derivative,
   nested and higher-order `D`, map lookup and assignment wrapping, recursive
@@ -275,7 +279,7 @@ qualification batches pass.
   the translated Ticks path with the exact centered fixed-position loop,
   official defaults, parent inheritance, fractional-count behavior, bounded
   creation, and focused Desktop/Compact parity. Function-valued tick
-  distances, runtime attribute mutation, hit testing, complete APIs,
+  distances, Curve-parent hit testing, complete APIs,
   independent production cases, and Stable qualification remain pending.
 - Axis: `src/base/line.js -> createAxis`, `src/base/board.js -> getPointLoc`,
   and the `src/options.js` defaults now cover the official Line wrapper,
@@ -284,8 +288,8 @@ qualification batches pass.
   unit-bearing distances, viewport-resolved `ticksAutoPos`, dynamic parent
   updates, recursive cleanup, JSON/JessieCode resource limits, and atomic
   rollback. Core, creator, document/session, official fixture, and focused
-  Desktop/Compact static parity gates pass. Runtime attribute mutation,
-  complete label/APIs, hit testing, independent production cases, and Stable
+  Desktop/Compact static parity gates pass. Axis-specific mutation,
+  complete label/APIs, independent production cases, and Stable
   qualification remain pending.
 - Grid: `src/element/grid.js -> createGrid` and the `src/options.js` defaults
   and themes now cover linked major/minor Curves, all documented faces,
@@ -295,8 +299,8 @@ qualification batches pass.
   same viewport-dependent definitions; point growth is checked before
   allocation and partial creation rolls back atomically. Core, creator,
   document/session, official fixture, and focused Desktop/Compact static
-  parity gates pass. Default Board-axis fallback, runtime attribute mutation,
-  hit testing, independent production cases, complete APIs, and Stable
+  parity gates pass. Default Board-axis fallback, Grid-specific mutation,
+  independent production cases, complete APIs, and Stable
   qualification remain pending.
 - Image: `src/base/image.js -> Image/createImage`,
   `src/base/element.js -> addRotation`, and the Canvas renderer path now cover
@@ -307,8 +311,8 @@ qualification batches pass.
   affine Compose drawing are translated. The default resolver decodes bounded
   base64 image data URIs without network or filesystem access; applications
   explicitly supply any external-resource resolver. Official fixture, common
-  tests, and focused Desktop/Compact static parity gates pass. Dragging, hit
-  testing, arbitrary transform mutation, non-data-URI loading, complete APIs,
+  tests, and focused Desktop/Compact static parity gates pass. Dragging,
+  arbitrary transform mutation, non-data-URI loading, complete APIs,
   independent production cases, and Stable qualification remain pending.
 - Glider/Slider: the Point, Circle, finite-coordinate Line/Segment,
   Polygon-border, Arc/Sector, ordinary Curve, and transformed-Curve branches
@@ -351,7 +355,7 @@ qualification batches pass.
   function-valued coordinates and Measurement-specific attributes; custom
   coordinate/direction formatters; script markup; translated method aliases;
   dependency updates; structured failures; and atomic rollback. Core,
-  creator, document/session, official fixture, common tests, 108-case
+  creator, document/session, official fixture, common tests, 109-case
   workbench, and focused Desktop/Compact static plus radius-Point-drag parity
   gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
   `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
@@ -365,7 +369,7 @@ qualification batches pass.
   thresholds, Angle rotation and final-viewport 12 CSS-pixel offset, CSS box
   kinds, method-map access, dependency updates, JessieCode HTML sanitization,
   structured failures, and atomic rollback. Core, creator, session, official
-  fixture, common tests, 108-case workbench, and focused Desktop/Compact
+  fixture, common tests, 109-case workbench, and focused Desktop/Compact
   static plus Angle-parent-drag parity gates pass. Static scores are
   `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale,
   MathJax/KaTeX, user-defined CSS, complete Text APIs, an independent
@@ -400,8 +404,9 @@ qualification batches pass.
   and final closing Segment. Border storage order, registered/helper Point
   ownership and removal, `Area`/`Perimeter`/`L`/bounds behavior,
   JSON/JessieCode limits, open Compose rendering, and focused static plus
-  parent-drag parity pass. Nested Polygon styles, mutable vertex APIs,
-  transformed chains, labels, hit testing, independent production cases, and
+  parent-drag parity pass. Nested Polygon styles, mutable vertex APIs, and
+  Polygon hit testing share the translated base implementation. Transformed
+  chains, labels, independent production cases, and
   Stable qualification remain pending.
 - Parallelogram: `src/base/polygon.js -> createParallelogram` now composes the
   translated ParallelPoint and Polygon factories with the official vertex,
@@ -410,7 +415,8 @@ qualification batches pass.
   removal behavior, coordinate-Point ownership, nested `parallelpoint`
   attributes, JSON/JessieCode limits, and atomic rollback. Core, creator,
   document/session, official fixture, and focused static plus parent-drag
-  parity gates pass. Mutable Polygon APIs, labels, hit testing, an independent
+  parity gates pass. Mutable Polygon APIs and hit testing use the shared
+  translated Polygon implementation. Labels, an independent
   production case, and Stable qualification remain pending.
 - RegularPolygon: `src/base/polygon.js -> createRegularPolygon` now covers
   both `[point1, point2, n]` generation and the existing `n`-Point form. The
@@ -420,8 +426,9 @@ qualification batches pass.
   Point/Polygon ownership, removal behavior, and Board creation order.
   JSON/JessieCode vertex limits and atomic rollback prevent unbounded or
   partial construction. Core, creator, document/session, official fixture,
-  and focused static plus parent-drag parity gates pass. Labels, complete
-  nested Polygon styling, an independent production case, and Stable
+  and focused static plus parent-drag parity gates pass. Nested Polygon
+  vertex/border styling and shared Polygon hit testing are translated. Labels,
+  an independent production case, and Stable
   qualification remain pending.
 - RadicalAxis: `src/base/line.js -> createRadicalAxis` now covers two
   registered Circle parents, the exact standard-form coefficient closure,
@@ -643,10 +650,18 @@ qualification batches pass.
   disabled heads, and static Boolean/object head attributes. Compose Canvas
   translates head types `1..7`, per-type endpoint shortening, cubic shapes,
   filled/open behavior, ideal-endpoint clipping, and type 7's fixed effective
-  size. Core geometry tests plus focused same-source static and parent-drag
-  parity pass at both viewports. Dynamic/highlight attributes, Curve/Arc/
-  Sector arrows, non-Canvas renderers, independent production cases, and
+  size. Highlight rendering applies `highlightSize`. Core geometry tests plus
+  focused same-source static and parent-drag parity pass at both viewports.
+  Dynamic arrow-object functions, non-Canvas renderers, independent
+  production cases, and
   Stable qualification remain pending.
+- Curve/Arc/Sector arrows: `firstArrow` and `lastArrow` Boolean/object values
+  now produce the same seven Canvas head types as Line arrows. Curve paths use
+  the first and last drawable subpath tangents; Arc/Sector cubic paths use
+  endpoint control tangents with degenerate fallback. The official fixture,
+  common/Compose tests, and the `curve_arrows` same-source case pass at
+  `0.988830` Desktop and `0.985632` Compact. This focused case remains outside
+  the 30-case Stable corpus.
 - Composition and two-Line angle bisectors: the reusable non-Board
   `JXG.Composition` subset and
   `createAngularBisectorsOfTwoLines` now cover role/ID/name membership,
@@ -705,16 +720,17 @@ qualification batches pass.
   `Options.layer` defaults and explicit non-negative integer overrides with
   creation order as the tie-breaker. Grid, Axis, top-level elements, and
   Polygon fill/borders/implicit vertices participate independently. Nested
-  Polygon styling, dynamic layer mutation, unsupported Axis/Ticks/Grid
-  options, and the remaining renderer objects and Board layer options are
-  still pending.
+  Polygon styling and supported function-valued runtime layer mutation are
+  translated. Unsupported Axis/Ticks/Grid options and the remaining renderer
+  objects and Board layer options are still pending.
 - Canvas dash rendering: supported Point, Line, Circle, Curve, and
   Polygon-border strokes now use all seven
   `src/renderer/abstract.js -> dashArray` patterns. `dashScale` multiplies
   intervals by `strokeWidth / 2` as upstream does; the Compose backend maps
   resolved CSS-pixel intervals to dp and clamps only the zero-length dotted
-  interval to Skia's `0.001` minimum. Dynamic style mutation and unsupported
-  renderer objects remain pending.
+  interval to Skia's `0.001` minimum. Supported visual properties can be
+  mutated statically or supplied as JessieCode functions; unsupported renderer
+  objects remain pending.
 
 ## Implementation Order
 

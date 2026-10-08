@@ -11,9 +11,11 @@ import com.swithun.jsxgraph.core.base.Coords
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Group
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Point3D
 import com.swithun.jsxgraph.core.base.Slider
 import com.swithun.jsxgraph.core.base.SliderAttributes
 import com.swithun.jsxgraph.core.base.Transformation
+import com.swithun.jsxgraph.core.base.View3D
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -54,6 +56,15 @@ class TypeTest {
         assertTrue(Type.isObject(mapOf("value" to 1)))
         assertTrue(Type.isObject(null))
         assertFalse(Type.isObject(DumpUndefined))
+        assertTrue(
+            Type.isDocumentOrFragment(mapOf("nodeType" to 9)),
+        )
+        assertTrue(
+            Type.isDocumentOrFragment(TypeDocumentNode { 11 }),
+        )
+        assertFalse(
+            Type.isDocumentOrFragment(mapOf("nodeType" to 1)),
+        )
 
         assertFalse(Type.exists(null))
         assertFalse(Type.exists(DumpUndefined))
@@ -236,6 +247,102 @@ class TypeTest {
         val cyclic = mutableListOf<Any?>()
         cyclic.add(cyclic)
         assertFalse(Type.isTransformationOrArray(cyclic))
+    }
+
+    @Test
+    fun providePointsCreatesAndSelectsTypedPoints() {
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "board",
+        )
+        val existing = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 2.0),
+                id = "existing",
+            ),
+        ).value
+        var dynamicX = 4.0
+        val points = assertIs<GMResult.Ok<List<Point>>>(
+            Type.providePoints(
+                board = board,
+                parents = listOf<Any?>(
+                    "existing",
+                    listOf(2.0, 3.0),
+                    { listOf(dynamicX, 5.0) },
+                ),
+            ),
+        ).value
+
+        assertEquals(3, points.size)
+        assertSame(existing, points[0])
+        assertFalse(points[0].isNewByProvision)
+        assertTrue(points[1].isNewByProvision)
+        assertEquals(2.0, points[1].X())
+        assertEquals(3.0, points[1].Y())
+        assertTrue(points[2].isNewByProvision)
+        assertEquals(4.0, points[2].X())
+        dynamicX = 7.0
+        points[2].prepareUpdate().update()
+        assertEquals(7.0, points[2].X())
+
+        assertIs<GMResult.Err<TypeError.PointProvisionEvaluationFailed>>(
+            Type.providePoints(
+                board = board,
+                parents = listOf<Any?> {
+                    throw IllegalStateException("coordinate failed")
+                },
+            ),
+        )
+    }
+
+    @Test
+    fun providePoints3DCreatesNestedAndDynamicPoints() {
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            id = "board",
+        )
+        val view = assertIs<GMResult.Ok<View3D>>(
+            View3D.create(
+                board = board,
+                lowerLeftCorner = doubleArrayOf(0.0, 0.0),
+                size = doubleArrayOf(10.0, 10.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-5.0, 5.0),
+                ),
+            ),
+        ).value
+        var dynamicZ = 3.0
+        val points = assertIs<GMResult.Ok<List<Point3D>>>(
+            Type.providePoints3D(
+                view = view,
+                parents = listOf<Any?>(
+                    listOf(
+                        listOf(1.0, 2.0, 3.0),
+                        listOf(4.0, 5.0, 6.0),
+                    ),
+                    { listOf(7.0, 8.0, dynamicZ) },
+                ),
+            ),
+        ).value
+
+        assertEquals(3, points.size)
+        assertContentEquals(
+            doubleArrayOf(1.0, 1.0, 2.0, 3.0),
+            points[0].coords,
+        )
+        assertTrue(points.all { it.isNewByProvision })
+        dynamicZ = 9.0
+        points[2].prepareUpdate().update()
+        assertEquals(9.0, points[2].Z())
     }
 
     @Test
@@ -1889,6 +1996,14 @@ class TypeTest {
 
     @Test
     fun decimalAdjustmentAndFormattingMatchOfficialFixture() {
+        assertEquals(
+            3.14,
+            Type.decimalAdjust(
+                DecimalAdjustment.ROUND,
+                3.14159,
+                -2,
+            ),
+        )
         assertEquals(3.0, Type.round10(3.14159))
         assertEquals(3.14, Type.round10(3.14159, -2))
         assertEquals(0.0, Type.round10(3.14159, 2))

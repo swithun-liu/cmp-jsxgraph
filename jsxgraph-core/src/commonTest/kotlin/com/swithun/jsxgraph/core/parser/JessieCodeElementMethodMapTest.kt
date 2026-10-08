@@ -142,20 +142,32 @@ class JessieCodeElementMethodMapTest {
     }
 
     @Test
-    fun untranslatedAnimationAndInvalidArgumentsAreStructured() {
+    fun animatedMovementAndInvalidArgumentsAreStructured() {
         val animationBoard = board("animation")
-        val animation = evaluateError(
-            source = "A = point(1, 2); A.move([4, 5], 100);",
-            board = animationBoard,
+        val animation = assertIs<JessieCodeRuntimeValue.BoardReference>(
+            evaluate(
+                source =
+                    "A = point(1, 2); " +
+                        "A.move([4, 5], 100, << effect: \"<>\" >>);",
+                board = animationBoard,
+            ),
         )
-        val animationError = assertIs<
-            JessieCodeRuntimeError.ElementMethodUnavailable
-            >(animation)
-        assertEquals("moveTo", animationError.method)
+        assertSame(animationBoard, animation.board)
         assertContentEquals(
-            doubleArrayOf(1.0, 1.0, 2.0),
+            doubleArrayOf(1.0, 4.0, 5.0),
             assertIs<Point>(animationBoard.select("A"))
                 .coords.usrCoords,
+        )
+
+        val invalidDuration = evaluateError(
+            source = "A = point(1, 2); A.move([4, 5], -1);",
+            board = board("invalid-duration"),
+        )
+        assertEquals(
+            "moveTo",
+            assertIs<JessieCodeRuntimeError.ElementMethodUnavailable>(
+                invalidDuration,
+            ).method,
         )
 
         val coordinateCount = evaluateError(

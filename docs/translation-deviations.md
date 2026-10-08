@@ -32,8 +32,8 @@ practical.
   MajorSector, Angle, NonreflexAngle, and ReflexAngle through the translated
   native registry and then snapshots the resulting Board elements into a
   platform-independent scene. Unsupported element types, fields, attributes,
-  point faces, labels, Curve/Arc/Sector arrows, and plotting modes
-  return `JsxGraphDocumentError` instead of being ignored.
+  point faces, labels, and remaining plotting/renderer modes return
+  `JsxGraphDocumentError` instead of being ignored.
 - The translated reader registry and format readers are currently internal
   commonMain previews rather than public `JsxGraphEngine` input formats.
   `ReaderRegistry` preserves case-insensitive, first-registration-wins lookup,
@@ -120,17 +120,19 @@ practical.
   at layer `1`, Axis at layer `2`, ordinary top-level elements, and independent
   Polygon fill, border, and implicit-vertex items. This preserves the observed
   Point-over-Arc and Polygon sub-element order. Nested Polygon
-  `vertices`/`borders` visual attributes, runtime layer mutation, custom
-  Grid/Axis/Ticks layers, traces, and untranslated renderer objects remain
-  pending; this is not a claim of complete renderer-layer parity.
+  `vertices`/`borders` visual attributes and supported function-valued runtime
+  layer mutation use the same ordering path. Custom Grid/Axis/Ticks layers,
+  traces, and untranslated renderer objects remain pending; this is not a
+  claim of complete renderer-layer parity.
 - Supported Point, Line, Circle, Curve, and Polygon-border strokes accept the
   integer `dash` values `0..7` from
   `src/renderer/abstract.js -> dashArray`. `dashScale: true` scales every
   interval by `strokeWidth / 2`; the platform-independent scene stores the
   resolved CSS-pixel lengths. Compose maps those lengths to dp and replaces
   only the zero-length segment in pattern 7 with Skia's minimum positive
-  `0.001` pixel interval. Dynamic dash mutation and untranslated renderer
-  objects remain pending.
+  `0.001` pixel interval. Supported static and function-valued dash mutation
+  is resolved during scene snapshots; untranslated renderer objects remain
+  pending.
 - `JsxGraphEngine.createSession` retains the translated Board for production
   interaction while `parse` remains the immutable one-shot API. The current
   interaction subset moves visible, free, non-fixed top-level Points with
@@ -293,11 +295,11 @@ practical.
   chain and is internally non-runnable in JSXGraph `1.13.3` because it calls
   the absent `_criticalPoints` method; it is intentionally recorded rather
   than exposed as translated runtime behavior. Plot v1 is translated with its
-  legacy recursive update order and callback-suspension semantics. Omitted
-  domains, function-valued and mixed-array terms, transformations, polar
-  curves, cubic Bezier paths, ordinary Curve fills, non-round caps, arrows,
-  labels, and hit testing return structured unsupported or creation errors
-  until their upstream slices are translated.
+  legacy recursive update order and callback-suspension semantics. Remaining
+  omitted domains, mixed-array terms, non-round caps, labels, and specialized
+  mutation return structured unsupported or creation errors. Function-valued
+  terms, transformations, polar/cubic paths, ordinary Curve fills, arrow
+  heads, and Curve hit testing are translated in the native path.
 - The translated Polygon subset accepts registered Point references or
   coordinate arrays, closes the vertex list, creates Segment borders in the
   upstream storage and Board-creation orders, and preserves
@@ -311,10 +313,11 @@ practical.
   matching the official Canvas renderer. Top-level Polygon stroke properties
   are retained on the Polygon scene but do not override its Segment borders,
   matching JSXGraph's separate `polygon.borders` options. Nested
-  `vertices`/`borders` attributes, transformations, mutable vertex lists,
-  labels, and hit testing remain pending. Polygons can be inputs to translated
-  CurveIntersection/CurveUnion/CurveDifference creators. Construction failures
-  roll back materialized helper Points and borders instead of leaving
+  `vertices`/`borders` attributes, mutable vertex insertion/removal,
+  transformations, and fill/border hit testing are translated. Labels and
+  remaining mutation APIs stay pending. Polygons can be inputs to translated
+  CurveIntersection/CurveUnion/CurveDifference creators. Construction
+  failures roll back materialized helper Points and borders instead of leaving
   partially registered elements.
 - `createParallelogram` follows
   `src/base/polygon.js -> JXG.createParallelogram`: three
@@ -637,7 +640,7 @@ practical.
   approximation. Angle supports the three-point form, parent reordering,
   numeric or `auto` radius, and `sector` display. Two-line Sector/Angle forms,
   Sector/Angle `useDirection`, visible/styled sub-elements, labels,
-  transformations, arrows, hit testing, Angle mutation, and
+  transformations, specialized hit testing, Angle mutation, and
   `square`/`sectordot`/`none` display are rejected or remain unavailable. A
   right Angle whose effective `orthoType` is not `sector` is rejected instead
   of silently drawing a sector.
@@ -670,9 +673,8 @@ practical.
   access, generated update lifecycle, parent forwarding, member removal, and
   Board-driven deletion of its registered members. Generic group/filter
   selection and generated forwarding for untranslated element APIs remain
-  pending. In particular, upstream `Composition.setAttribute` forwards a
-  visual mutation to every member; Kotlin returns no such callable property
-  until the mutable visual-property model exists.
+  pending. Upstream `Composition.setAttribute` forwards a visual mutation to
+  every member; Kotlin preserves that forwarding for translated members.
 - Native `bisectorlines` follows
   `src/element/composition.js -> createAngularBisectorsOfTwoLines`: two
   registered output Lines are backed by four hidden constrained Points and
@@ -1202,9 +1204,11 @@ practical.
   `drawArrows`, including per-type endpoint shortening, minimum-length
   behavior, cubic paths for types `4..7`, the four-pixel infinite-line inset,
   filled types `1..6`, and open type `7` with its fixed effective size.
-  Dynamic attribute functions, highlight-state rendering, touch-point
-  adjustment, non-Canvas renderer variants, and Curve/Arc/Sector arrows remain
-  pending. JSXGraph's two-Point `createArrowParallel` dispatch creates a
+  Highlight rendering applies each head's `highlightSize`. Curve, Arc, and
+  Sector paths reuse the same head types and derive their endpoint direction
+  from drawable line/cubic tangents. Dynamic arrow-object functions,
+  touch-point adjustment, and non-Canvas renderer variants remain pending.
+  JSXGraph's two-Point `createArrowParallel` dispatch creates a
   registered object with non-finite geometry; Kotlin returns structured
   `UnsupportedParents` instead of exposing an unusable scene element.
 - `createSegment` reuses the translated two-Point Line construction, assigns
@@ -1716,8 +1720,8 @@ practical.
   non-Line intersections, Greek Angle names, ratio-Point closures, modifiers,
   and macro-local IDs. Statement, macro, expansion-depth, and generated-source
   limits are checked before execution. Runtime `element.property=value`
-  mutation and `draft` styling return explicit unsupported errors until the
-  mutable visual-property model can represent them.
+  mutation and `draft` styling compile into the translated JessieCode
+  `setAttribute`/draft model.
 - `NoRenderer` keeps the upstream metadata and observable null/callback return
   values while replacing browser renderer inheritance and DOM-shaped
   parameters with opaque commonMain values. Every drawing and style operation

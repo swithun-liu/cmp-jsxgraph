@@ -205,7 +205,7 @@ internal class Sector private constructor(
     internal val directionpoint: Point? = point4
     internal val points = mutableListOf<Coords>()
     internal val subs = linkedMapOf<String, GeometryElement>()
-    internal val inherits = mutableListOf<GeometryElement>()
+    internal override val inherits = mutableListOf<GeometryElement>()
     internal var numberPoints: Int = 0
         private set
     internal var bezierDegree: Int = 3

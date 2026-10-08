@@ -10,6 +10,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class EnvTest {
@@ -98,6 +99,208 @@ class EnvTest {
         assertFalse(Env.isAndroid(null))
         assertTrue(Env.isDesktop())
         assertTrue(Env.isMobile())
+    }
+
+    @Test
+    fun runtimeCapabilitiesUseTheInjectedPlatformContract() {
+        val defaults = EnvRuntimeCapabilities()
+        assertTrue(Env.supportsES6(defaults))
+        assertFalse(Env.supportsVML(defaults))
+        assertFalse(Env.supportsSVG(defaults))
+        assertTrue(Env.supportsCanvas(defaults))
+        assertFalse(Env.isNode(defaults))
+        assertFalse(Env.isWebWorker(defaults))
+        assertTrue(Env.supportsPointerEvents(defaults))
+        assertFalse(Env.isTouchDevice(defaults))
+        assertFalse(Env.isWebkitApple(defaults))
+        assertFalse(Env.isMetroApp(defaults))
+
+        val browserHost = EnvRuntimeCapabilities(
+            supportsSvg = true,
+            supportsCanvas = false,
+            isWebWorker = true,
+            isTouchDevice = true,
+            isWebkitApple = true,
+        )
+        assertTrue(Env.supportsSVG(browserHost))
+        assertFalse(Env.supportsCanvas(browserHost))
+        assertTrue(Env.isWebWorker(browserHost))
+        assertTrue(Env.isTouchDevice(browserHost))
+        assertTrue(Env.isWebkitApple(browserHost))
+    }
+
+    @Test
+    fun eventRegistryRetainsOriginAndRemovesInReverseOrder() {
+        val target = RecordingEventTarget()
+        val owner = EnvEventOwner()
+        val observed = mutableListOf<String>()
+        val first = EnvEventHandler {
+            observed += "first:$it"
+            Unit
+        }
+        val second = EnvEventHandler {
+            observed += "second:$it"
+            Unit
+        }
+
+        val firstRegistration = assertIs<GMResult.Ok<EnvEventRegistration>>(
+            Env.addEvent(
+                target = target,
+                type = "pointerdown",
+                handler = first,
+                owner = owner,
+                options = EnvEventOptions(passive = false),
+            ),
+        ).value
+        assertIs<GMResult.Ok<EnvEventRegistration>>(
+            Env.addEvent(target, "pointerdown", second, owner),
+        )
+        assertSame(first, firstRegistration.origin)
+        assertEquals(2, target.listeners.size)
+
+        target.listeners.first().second.invoke("event")
+        assertEquals(listOf("first:event"), observed)
+        assertEquals(
+            true,
+            assertIs<GMResult.Ok<Boolean>>(
+                Env.removeEvent(target, "pointerdown", first, owner),
+            ).value,
+        )
+        assertEquals(1, target.listeners.size)
+        assertEquals(
+            1,
+            assertIs<GMResult.Ok<Int>>(
+                Env.removeAllEvents(target, "pointerdown", owner),
+            ).value,
+        )
+        assertTrue(target.listeners.isEmpty())
+        assertTrue(owner.registrations.isEmpty())
+        assertEquals(
+            false,
+            assertIs<GMResult.Ok<Boolean>>(
+                Env.removeEvent(target, "pointerdown", first, owner),
+            ).value,
+        )
+    }
+
+    @Test
+    fun offsetWalkMatchesOfficialParentAndOffsetParentTraversal() {
+        val root = EnvOffsetNode(
+            offsetLeft = 100.0,
+            offsetTop = 50.0,
+            styles = mapOf("transform" to "translate(2,3)"),
+        )
+        val middle = EnvOffsetNode(
+            clientLeft = 4.0,
+            clientTop = 5.0,
+            scrollLeft = 1.0,
+            scrollTop = 2.0,
+            parentNode = root,
+            styles = mapOf("zoom" to "2"),
+        )
+        val node = EnvOffsetNode(
+            offsetLeft = 10.0,
+            offsetTop = 20.0,
+            scrollLeft = 1.0,
+            scrollTop = 2.0,
+            offsetParent = root,
+            parentNode = middle,
+            styles = mapOf("transform" to "translateX(3)"),
+        )
+
+        assertContentEquals(
+            doubleArrayOf(234.0, 148.0),
+            position(Env.getOffset(node)),
+        )
+        assertIs<GMResult.Err<EnvError.InvalidOffsetHierarchy>>(
+            Env.getOffset(
+                node.copy(
+                    offsetParent = EnvOffsetNode(offsetLeft = 1.0),
+                    parentNode = null,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun timedChunkPreservesOrderAndReportsProcessingFailure() {
+        val scheduler = QueueScheduler()
+        var now = 0L
+        val processed = mutableListOf<Int>()
+        var completion: GMResult<List<Int>, EnvError>? = null
+
+        Env.timedChunk(
+            items = listOf(1, 2, 3),
+            process = {
+                processed += it
+                now += 200L
+            },
+            scheduler = scheduler,
+            clock = EnvClock { now },
+            callback = { completion = it },
+        )
+        assertEquals(1, scheduler.pendingCount)
+        scheduler.runAll()
+        assertEquals(listOf(1, 2, 3), processed)
+        assertEquals(
+            listOf(1, 2, 3),
+            assertIs<GMResult.Ok<List<Int>>>(completion).value,
+        )
+        assertEquals(2, scheduler.executionCount)
+
+        val failedScheduler = QueueScheduler()
+        var failed: GMResult<List<Int>, EnvError>? = null
+        Env.timedChunk(
+            items = listOf(1, 2),
+            process = { error("failure-$it") },
+            scheduler = failedScheduler,
+            clock = EnvClock { 0L },
+            callback = { failed = it },
+        )
+        failedScheduler.runAll()
+        val failure =
+            assertIs<GMResult.Err<EnvError.TimedChunkFailure>>(failed)
+        assertEquals(0, failure.error.processedCount)
+        assertEquals("failure-1", failure.error.message)
+    }
+
+    @Test
+    fun fullscreenLayoutMatchesOfficialScalingGeometry() {
+        val layout = assertIs<GMResult.Ok<EnvFullscreenLayout>>(
+            Env.scaleJSXGraphDiv(
+                wrap = EnvDimensions(width = 1_200.0, height = 800.0),
+                inner = EnvDimensions(width = 600.0, height = 400.0),
+                scale = 0.9,
+                originalTransform = "rotate(10deg)",
+            ),
+        ).value
+        assertEquals(600.0, layout.width)
+        assertEquals(400.0, layout.height)
+        assertEquals(1.8, layout.scale)
+        assertEquals(200.0, layout.verticalShift)
+        assertEquals(
+            "rotate(10deg) matrix(1.8,0,0,1.8,0,200.0)",
+            layout.transform,
+        )
+
+        val constrained = assertIs<GMResult.Ok<EnvFullscreenLayout>>(
+            Env.scaleJSXGraphDiv(
+                wrap = EnvDimensions(width = 500.0, height = 300.0),
+                inner = EnvDimensions(width = 1_000.0, height = 1_000.0),
+                scale = 0.8,
+            ),
+        ).value
+        assertEquals(240.0, constrained.width)
+        assertEquals(240.0, constrained.height)
+        assertEquals(1.0, constrained.scale)
+        assertEquals(30.0, constrained.verticalShift)
+        assertIs<GMResult.Err<EnvError.InvalidFullscreenDimensions>>(
+            Env.scaleJSXGraphDiv(
+                wrap = EnvDimensions(width = 0.0, height = 300.0),
+                inner = EnvDimensions(width = 100.0, height = 100.0),
+                scale = 1.0,
+            ),
+        )
     }
 
     @Test
@@ -217,6 +420,54 @@ class EnvTest {
         assertEquals(expected.size, actual.size)
         for (index in expected.indices) {
             assertContentEquals(expected[index], actual[index])
+        }
+    }
+
+    private class RecordingEventTarget : EnvEventTarget {
+        val listeners =
+            mutableListOf<Pair<String, EnvEventHandler>>()
+
+        override fun addEventListener(
+            type: String,
+            listener: EnvEventHandler,
+            options: EnvEventOptions,
+        ): GMResult<Unit, EnvEventTargetError> {
+            listeners += type to listener
+            return GMResult.Ok(Unit)
+        }
+
+        override fun removeEventListener(
+            type: String,
+            listener: EnvEventHandler,
+            options: EnvEventOptions,
+        ): GMResult<Unit, EnvEventTargetError> {
+            listeners.removeAll { entry ->
+                entry.first == type && entry.second === listener
+            }
+            return GMResult.Ok(Unit)
+        }
+    }
+
+    private class QueueScheduler : EnvTimeoutScheduler {
+        private val tasks = ArrayDeque<() -> Unit>()
+        var executionCount: Int = 0
+            private set
+
+        val pendingCount: Int
+            get() = tasks.size
+
+        override fun schedule(
+            delayMilliseconds: Long,
+            task: () -> Unit,
+        ) {
+            tasks.addLast(task)
+        }
+
+        fun runAll() {
+            while (tasks.isNotEmpty()) {
+                executionCount += 1
+                tasks.removeFirst().invoke()
+            }
         }
     }
 }

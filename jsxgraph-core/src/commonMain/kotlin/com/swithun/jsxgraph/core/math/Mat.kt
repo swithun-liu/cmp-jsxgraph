@@ -28,6 +28,8 @@ import kotlin.math.sinh as kotlinSinh
 object Mat {
     const val eps: Double = 0.000001
 
+    // JSXGraph 1.13.3: src/math/math.js -> memoizer.
+    // Kotlin keeps the two upstream memoized call sites in typed caches.
     private val factorialCache = mutableMapOf<Double, Double>()
     private val binomialCache = mutableMapOf<Pair<Double, Double>, Double>()
 
@@ -689,12 +691,16 @@ object Mat {
 
     fun neq(a: Double, b: Double): Boolean = a != b
 
+    // JSXGraph 1.13.3: src/math/math.js -> and.
     fun and(a: Boolean, b: Boolean): Boolean = a && b
 
+    // JSXGraph 1.13.3: src/math/math.js -> not.
     fun not(value: Boolean): Boolean = !value
 
+    // JSXGraph 1.13.3: src/math/math.js -> or.
     fun or(a: Boolean, b: Boolean): Boolean = a || b
 
+    // JSXGraph 1.13.3: src/math/math.js -> xor.
     fun xor(a: Boolean, b: Boolean): Boolean = (a || b) && !(a && b)
 
     // JSXGraph: src/math/math.js -> decToFraction

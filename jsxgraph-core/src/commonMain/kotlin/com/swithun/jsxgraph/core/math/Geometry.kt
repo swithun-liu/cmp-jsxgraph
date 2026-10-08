@@ -54,6 +54,16 @@ data class ProjectionResult(
     val parameter: Double,
 )
 
+data class LineDelimitingPoints(
+    val first: DoubleArray,
+    val second: DoubleArray,
+)
+
+data class LineBoardIntersections(
+    val first: DoubleArray,
+    val second: DoubleArray,
+)
+
 data class BezierArcResult(
     val xCoordinates: DoubleArray,
     val yCoordinates: DoubleArray,
@@ -190,6 +200,8 @@ sealed interface GeometryError {
     ) : GeometryError
 
     data object PolygonProjectionUnavailable : GeometryError
+
+    data object TurtleProjectionUnavailable : GeometryError
 }
 
 internal sealed interface ParametricProjectionError<out E> {
@@ -198,6 +210,10 @@ internal sealed interface ParametricProjectionError<out E> {
     ) : ParametricProjectionError<Nothing>
 
     data class InvalidCoordinateCount(
+        val count: Int,
+    ) : ParametricProjectionError<Nothing>
+
+    data class InvalidScreenCoordinateCount(
         val count: Int,
     ) : ParametricProjectionError<Nothing>
 
@@ -237,6 +253,10 @@ internal sealed interface ParametricEvaluationError<out E> {
 
 internal fun interface Parametric3DEvaluator<E> {
     fun evaluate(parameters: DoubleArray): GMResult<DoubleArray, E>
+}
+
+internal fun interface ParametricScreenProjector {
+    fun project(coordinates: DoubleArray): DoubleArray
 }
 
 object Geometry {
@@ -507,6 +527,19 @@ object Geometry {
         val secondBisector = crossProduct(direction, midpoint)
         return normalizeHomogeneous(crossProduct(firstBisector, secondBisector))
     }
+
+    // JSXGraph 1.13.3: src/math/geometry.js ->
+    // circumcenterMidpoint. The upstream deprecated wrapper accidentally
+    // discards its return value; Kotlin keeps the intended alias usable.
+    @Deprecated(
+        message = "Use circumcenter",
+        replaceWith = ReplaceWith("circumcenter(first, second, third)"),
+    )
+    fun circumcenterMidpoint(
+        first: DoubleArray,
+        second: DoubleArray,
+        third: DoubleArray,
+    ): DoubleArray = circumcenter(first, second, third)
 
     // JSXGraph: src/math/geometry.js -> distance
     fun distance(
@@ -992,6 +1025,203 @@ object Geometry {
                 (directionY >= 0.0 && visibleY >= 0.0) ||
                     (directionY <= 0.0 && visibleY <= 0.0)
             )
+    }
+
+    // JSXGraph 1.13.3: src/math/geometry.js ->
+    // calcLineDelimitingPoints.
+    fun calcLineDelimitingPoints(
+        lineStandardForm: DoubleArray,
+        firstPoint: DoubleArray,
+        secondPoint: DoubleArray,
+        straightFirst: Boolean,
+        straightLast: Boolean,
+        boundingBox: DoubleArray,
+    ): LineDelimitingPoints {
+        var effectiveStraightFirst = straightFirst
+        var effectiveStraightLast = straightLast
+        if (abs(firstPoint.valueOrNaN(0)) < Mat.eps) {
+            effectiveStraightFirst = true
+        }
+        if (abs(secondPoint.valueOrNaN(0)) < Mat.eps) {
+            effectiveStraightLast = true
+        }
+        if (
+            lineStandardForm.size < 3 ||
+            boundingBox.size < 4 ||
+            (
+                lineStandardForm[0] +
+                    lineStandardForm[1] +
+                    lineStandardForm[2]
+                ).isNaN()
+        ) {
+            return LineDelimitingPoints(
+                first = firstPoint.copyOf(),
+                second = secondPoint.copyOf(),
+            )
+        }
+
+        val slope =
+            if (abs(lineStandardForm[2]) >= Mat.eps) {
+                -lineStandardForm[1] / lineStandardForm[2]
+            } else {
+                Double.POSITIVE_INFINITY
+            }
+        val firstIntersection: DoubleArray
+        val secondIntersection: DoubleArray
+        if (slope >= 0.0) {
+            firstIntersection = projectPointToLine(
+                point = doubleArrayOf(
+                    1.0,
+                    boundingBox[2],
+                    boundingBox[1],
+                ),
+                line = lineStandardForm,
+            )
+            secondIntersection = projectPointToLine(
+                point = doubleArrayOf(
+                    1.0,
+                    boundingBox[0],
+                    boundingBox[3],
+                ),
+                line = lineStandardForm,
+            )
+        } else {
+            firstIntersection = projectPointToLine(
+                point = doubleArrayOf(
+                    1.0,
+                    boundingBox[0],
+                    boundingBox[1],
+                ),
+                line = lineStandardForm,
+            )
+            secondIntersection = projectPointToLine(
+                point = doubleArrayOf(
+                    1.0,
+                    boundingBox[2],
+                    boundingBox[3],
+                ),
+                line = lineStandardForm,
+            )
+        }
+
+        val takeFirst = !effectiveStraightFirst
+        val takeSecond = !effectiveStraightLast
+        if (!takeFirst && !takeSecond) {
+            if (
+                !effectiveStraightFirst &&
+                !effectiveStraightLast
+            ) {
+                val sourceDistance = distance(firstPoint, secondPoint)
+                if (
+                    abs(
+                        distance(firstPoint, firstIntersection) +
+                            distance(firstIntersection, secondPoint) -
+                            sourceDistance,
+                    ) > Mat.eps ||
+                    abs(
+                        distance(firstPoint, secondIntersection) +
+                            distance(secondIntersection, secondPoint) -
+                            sourceDistance,
+                    ) > Mat.eps
+                ) {
+                    return LineDelimitingPoints(
+                        first = firstPoint.copyOf(),
+                        second = secondPoint.copyOf(),
+                    )
+                }
+            }
+            if (
+                !effectiveStraightFirst &&
+                effectiveStraightLast &&
+                !isSameDirection(
+                    firstPoint,
+                    secondPoint,
+                    firstIntersection,
+                ) &&
+                !isSameDirection(
+                    firstPoint,
+                    secondPoint,
+                    secondIntersection,
+                )
+            ) {
+                return LineDelimitingPoints(
+                    first = firstPoint.copyOf(),
+                    second = secondPoint.copyOf(),
+                )
+            }
+            if (
+                effectiveStraightFirst &&
+                !effectiveStraightLast &&
+                !isSameDirection(
+                    secondPoint,
+                    firstPoint,
+                    firstIntersection,
+                ) &&
+                !isSameDirection(
+                    secondPoint,
+                    firstPoint,
+                    secondIntersection,
+                )
+            ) {
+                return LineDelimitingPoints(
+                    first = firstPoint.copyOf(),
+                    second = secondPoint.copyOf(),
+                )
+            }
+        }
+
+        var resultFirst = firstPoint
+        var resultSecond = secondPoint
+        if (!takeFirst) {
+            if (!takeSecond) {
+                if (
+                    isSameDir(
+                        firstPoint,
+                        secondPoint,
+                        firstIntersection,
+                        secondIntersection,
+                    )
+                ) {
+                    resultFirst = firstIntersection
+                    resultSecond = secondIntersection
+                } else {
+                    resultFirst = secondIntersection
+                    resultSecond = firstIntersection
+                }
+            } else {
+                resultFirst =
+                    if (
+                        isSameDir(
+                            firstPoint,
+                            secondPoint,
+                            firstIntersection,
+                            secondIntersection,
+                        )
+                    ) {
+                        firstIntersection
+                    } else {
+                        secondIntersection
+                    }
+            }
+        } else if (!takeSecond) {
+            resultSecond =
+                if (
+                    isSameDir(
+                        firstPoint,
+                        secondPoint,
+                        firstIntersection,
+                        secondIntersection,
+                    )
+                ) {
+                    secondIntersection
+                } else {
+                    firstIntersection
+                }
+        }
+        return LineDelimitingPoints(
+            first = resultFirst.copyOf(),
+            second = resultSecond.copyOf(),
+        )
     }
 
     // JSXGraph: src/math/geometry.js -> det3p
@@ -1749,6 +1979,57 @@ object Geometry {
         return projection
     }
 
+    // JSXGraph 1.13.3: src/math/geometry.js -> projectPointToPoint.
+    @Suppress("UNUSED_PARAMETER")
+    fun projectPointToPoint(
+        point: DoubleArray,
+        destination: DoubleArray,
+    ): DoubleArray = destination
+
+    // JSXGraph 1.13.3: src/math/geometry.js -> projectPointToBoard.
+    fun projectPointToBoard(
+        point: DoubleArray,
+        boundingBox: DoubleArray,
+    ): DoubleArray {
+        if (boundingBox.size < 4) {
+            return point.copyOf()
+        }
+        val configurations = arrayOf(
+            intArrayOf(1, 1, 0, 0, 3, 0, 1),
+            intArrayOf(-1, 2, 1, 0, 1, 2, 1),
+            intArrayOf(-1, 1, 2, 2, 1, 2, 3),
+            intArrayOf(1, 2, 3, 0, 3, 2, 3),
+        )
+        var coordinates = point.copyOf()
+        for (configuration in configurations) {
+            val comparison = configuration[0]
+            val coordinateIndex = configuration[1]
+            val boundingBoxIndex = configuration[2]
+            if (
+                comparison * coordinates.valueOrNaN(coordinateIndex) <
+                comparison * boundingBox[boundingBoxIndex]
+            ) {
+                val border = normalizedLine(
+                    first = doubleArrayOf(
+                        1.0,
+                        boundingBox[configuration[3]],
+                        boundingBox[configuration[4]],
+                    ),
+                    second = doubleArrayOf(
+                        1.0,
+                        boundingBox[configuration[5]],
+                        boundingBox[configuration[6]],
+                    ),
+                )
+                coordinates = projectPointToLine(
+                    point = coordinates,
+                    line = border,
+                )
+            }
+        }
+        return coordinates
+    }
+
     // JSXGraph: src/math/geometry.js -> meetCurveRedBlueSegments
     internal fun meetCurveRedBlueSegments(
         red: List<DoubleArray>,
@@ -1946,6 +2227,43 @@ object Geometry {
             },
         )
     }
+
+    // JSXGraph 1.13.3: src/math/geometry.js -> meetCurveLine.
+    internal fun meetCurveLine(
+        discreteCurve: DiscreteCurve2D,
+        continuousCurve: ContinuousCurve2D?,
+        lineFirst: DoubleArray,
+        lineSecond: DoubleArray,
+        lineStandardForm: DoubleArray,
+        straightFirst: Boolean,
+        straightLast: Boolean,
+        intersectionIndex: Double,
+        alwaysIntersect: Boolean,
+    ): GMResult<DoubleArray, GeometryError> =
+        if (continuousCurve == null) {
+            meetCurveLineDiscrete(
+                curve = discreteCurve,
+                lineFirst = lineFirst,
+                lineSecond = lineSecond,
+                lineStandardForm = lineStandardForm,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                intersectionIndex = intersectionIndex,
+                testSegment = !alwaysIntersect,
+            )
+        } else {
+            meetCurveLineContinuous(
+                curve = continuousCurve,
+                discreteCurve = discreteCurve,
+                lineFirst = lineFirst,
+                lineSecond = lineSecond,
+                lineStandardForm = lineStandardForm,
+                straightFirst = straightFirst,
+                straightLast = straightLast,
+                intersectionIndex = intersectionIndex,
+                testSegment = !alwaysIntersect,
+            )
+        }
 
     // JSXGraph: src/math/geometry.js -> meetCurveLineDiscrete
     internal fun meetCurveLineDiscrete(
@@ -2666,6 +2984,77 @@ object Geometry {
         }
     }
 
+    // JSXGraph 1.13.3: src/math/geometry.js -> meetLineBoard.
+    fun meetLineBoard(
+        line: DoubleArray,
+        canvasWidth: Double,
+        canvasHeight: Double,
+        margin: Double = 0.0,
+    ): LineBoardIntersections {
+        val intersections = arrayOf(
+            crossProduct(line, doubleArrayOf(margin, 0.0, 1.0)),
+            crossProduct(line, doubleArrayOf(margin, 1.0, 0.0)),
+            crossProduct(
+                line,
+                doubleArrayOf(-margin - canvasHeight, 0.0, 1.0),
+            ),
+            crossProduct(
+                line,
+                doubleArrayOf(-margin - canvasWidth, 1.0, 0.0),
+            ),
+        )
+        for (intersection in intersections) {
+            if (abs(intersection[0]) > Mat.eps) {
+                intersection[2] /= intersection[0]
+                intersection[1] /= intersection[0]
+                intersection[0] = 1.0
+            }
+        }
+
+        val first: DoubleArray
+        val second: DoubleArray
+        when {
+            abs(intersections[1][0]) < Mat.eps -> {
+                first = intersections[0]
+                second = intersections[2]
+            }
+            abs(intersections[0][0]) < Mat.eps -> {
+                first = intersections[1]
+                second = intersections[3]
+            }
+            intersections[1][2] < 0.0 -> {
+                first = intersections[0]
+                second =
+                    if (intersections[3][2] > canvasHeight) {
+                        intersections[2]
+                    } else {
+                        intersections[3]
+                    }
+            }
+            intersections[1][2] > canvasHeight -> {
+                first = intersections[2]
+                second =
+                    if (intersections[3][2] < 0.0) {
+                        intersections[0]
+                    } else {
+                        intersections[3]
+                    }
+            }
+            else -> {
+                first = intersections[1]
+                second = when {
+                    intersections[3][2] < 0.0 -> intersections[0]
+                    intersections[3][2] > canvasHeight -> intersections[2]
+                    else -> intersections[3]
+                }
+            }
+        }
+        return LineBoardIntersections(
+            first = first.copyOf(),
+            second = second.copyOf(),
+        )
+    }
+
     // JSXGraph: src/math/geometry.js -> meetLineLine
     fun meetLineLine(
         firstLine: DoubleArray,
@@ -3240,6 +3629,168 @@ object Geometry {
             }
         }
 
+        for (index in 0 until dimension) {
+            parameters[index] = workingParameters[index]
+        }
+        return when (val result = evaluator.evaluate(workingParameters)) {
+            is GMResult.Ok -> when (result.value.size) {
+                3 -> GMResult.Ok(
+                    doubleArrayOf(
+                        1.0,
+                        result.value[0],
+                        result.value[1],
+                        result.value[2],
+                    ),
+                )
+                4 -> GMResult.Ok(result.value.copyOf())
+                else -> GMResult.Err(
+                    ParametricProjectionError.InvalidTargetCoordinateCount(
+                        result.value.size,
+                    ),
+                )
+            }
+            is GMResult.Err -> GMResult.Err(
+                ParametricProjectionError.Evaluation(result.error),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/math/geometry.js ->
+    // projectScreenCoordsToParametric.
+    internal fun <E> projectScreenCoordsToParametric(
+        screenCoordinates: DoubleArray,
+        evaluator: Parametric3DEvaluator<E>,
+        projector: ParametricScreenProjector,
+        parameters: MutableList<Double>,
+        rangeU: DoubleArray,
+        rangeV: DoubleArray? = null,
+        cyclic: Boolean = false,
+    ): GMResult<DoubleArray, ParametricProjectionError<E>> {
+        if (screenCoordinates.size != 2) {
+            return GMResult.Err(
+                ParametricProjectionError.InvalidScreenCoordinateCount(
+                    screenCoordinates.size,
+                ),
+            )
+        }
+        val dimension = parameters.size
+        if (dimension !in 1..2) {
+            return GMResult.Err(
+                ParametricProjectionError.InvalidDimension(dimension),
+            )
+        }
+        val checkedRangeU = when (
+            val result = validateParametricRange(rangeU, 0)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val checkedRangeV =
+            if (dimension == 2) {
+                when (
+                    val result = validateParametricRange(rangeV, 1)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            } else {
+                DoubleArray(0)
+            }
+        val initialTrustRegion =
+            if (dimension == 1) {
+                0.1 * (checkedRangeU[1] - checkedRangeU[0])
+            } else {
+                0.1 * minOf(
+                    checkedRangeU[1] - checkedRangeU[0],
+                    checkedRangeV[1] - checkedRangeV[0],
+                )
+            }
+        val workingParameters = parameters.toDoubleArray()
+        val calculation =
+            NlpCalculation<ParametricEvaluationError<E>> {
+                    _,
+                    constraintCount,
+                    values,
+                    constraints,
+                ->
+                val targetCoordinates = when (
+                    val result = evaluator.evaluate(values)
+                ) {
+                    is GMResult.Ok -> when (result.value.size) {
+                        3 -> doubleArrayOf(
+                            1.0,
+                            result.value[0],
+                            result.value[1],
+                            result.value[2],
+                        )
+                        4 -> result.value
+                        else -> return@NlpCalculation GMResult.Err(
+                            ParametricEvaluationError.InvalidCoordinateCount(
+                                result.value.size,
+                            ),
+                        )
+                    }
+                    is GMResult.Err -> return@NlpCalculation GMResult.Err(
+                        ParametricEvaluationError.Target(result.error),
+                    )
+                }
+                val projected = projector.project(targetCoordinates)
+                if (projected.size < 3) {
+                    return@NlpCalculation GMResult.Err(
+                        ParametricEvaluationError.InvalidCoordinateCount(
+                            projected.size,
+                        ),
+                    )
+                }
+                if (constraintCount >= 2) {
+                    constraints[0] = values[0] - checkedRangeU[0]
+                    constraints[1] = -values[0] + checkedRangeU[1]
+                }
+                if (constraintCount >= 4) {
+                    constraints[2] = values[1] - checkedRangeV[0]
+                    constraints[3] = -values[1] + checkedRangeV[1]
+                }
+                val horizontal =
+                    screenCoordinates[0] - projected[1]
+                val vertical =
+                    screenCoordinates[1] - projected[2]
+                GMResult.Ok(
+                    horizontal * horizontal + vertical * vertical,
+                )
+            }
+        val constraintCount = if (cyclic) 0 else 2 * dimension
+        when (
+            val result = Nlp.findMinimum(
+                calculation = calculation,
+                variableCount = dimension,
+                constraintCount = constraintCount,
+                variables = workingParameters,
+                initialTrustRegion = initialTrustRegion,
+                finalTrustRegion = initialTrustRegion / 5.0e6,
+                printLevel = 0,
+                maximumEvaluations = 200,
+            )
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return GMResult.Err(
+                ParametricProjectionError.Optimization(result.error),
+            )
+        }
+
+        if (cyclic) {
+            workingParameters[0] =
+                (
+                    workingParameters[0] +
+                        20.0 * checkedRangeU[1]
+                    ) % (checkedRangeU[1] - checkedRangeU[0])
+            if (dimension == 2) {
+                workingParameters[1] =
+                    (
+                        workingParameters[1] +
+                            20.0 * checkedRangeV[1]
+                        ) % (checkedRangeV[1] - checkedRangeV[0])
+            }
+        }
         for (index in 0 until dimension) {
             parameters[index] = workingParameters[index]
         }
