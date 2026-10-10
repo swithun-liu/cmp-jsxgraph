@@ -31,6 +31,8 @@ Use JDK 17 or newer.
 
 ```bash
 node tools/stability/generate-production-corpus.mjs
+node tools/audit-upstream-symbols.mjs
+node tools/audit-portable-behavior.mjs
 ./gradlew :jsxgraph-core:allTests
 ./gradlew :jsxgraph-compose:allTests :jsxgraph-compose:assemble
 ./gradlew :jsxgraph-debug-ui:allTests :jsxgraph-debug-ui:assemble
@@ -46,6 +48,118 @@ bash tools/verify-publication-archives.sh
   :sample:webApp:wasmJsBrowserDistribution
 ```
 
+The portable behavior audit reads
+[`portable-behavior-compatibility.json`](portable-behavior-compatibility.json)
+and writes its derived report to
+`build/reports/portable-behavior-compatibility.json`. As of `2026-10-09`, the
+manifest records all 249 portable behavior slices as verified, with one
+host-specific exclusion among 250 assessed behaviors and a weighted score of
+`100.00%`. This metric is separate from source-symbol coverage and the Stable
+production corpus.
+
+The source-symbol audit classifies all 2,591 symbols from the 103 included
+upstream files: 2,540 translated, 16 explicit pure-KMP adaptations, 35
+platform/CAS/license exclusions, and 0 pending. All 2,556 in-scope symbols and
+all 2,029 API-surface symbols have source-specific Kotlin mappings.
+
+`JessieCodeEvaluatorTest` and `JsxGraphJessieCodeTest` verify the four
+case-insensitive, identity-preserving built-in module imports and the
+translated `eps`, `clamp`, geometry `distance`, statistics `mean`, and
+numerics `det` members across evaluator and public scene-session boundaries.
+Unknown modules match the upstream `undefined` result. Non-string module
+names, malformed numeric arrays, and malformed determinant matrices return
+structured failures. The official reference values and lookup failures are
+captured by:
+
+```bash
+node tools/upstream-fixtures/jessiecode-import.mjs
+```
+
+The portable upstream module members and all 204 active element method-map
+aliases are covered by their dedicated audits; the eight upstream-empty 3D
+maps remain intentionally empty.
+
+`JsxGraphReaderApiTest` verifies the public pure-commonMain text-to-scene
+boundary, registered aliases, case-insensitive dispatch, final reader viewport,
+portable scene output including reader-created labels, and structured
+configuration, source, domain, object, and snapshot failures. GeoGebra focused
+tests additionally verify official `setDefaultOptions`, per-output XML visual
+properties, point-style fallback, and Scene propagation against:
+
+```bash
+node tools/upstream-fixtures/reader-geogebra-properties.mjs
+node tools/upstream-fixtures/reader-geogebra-text-command.mjs
+```
+
+Hosts remain responsible for loading and decoding text; custom reader
+registration and unsupported input outside the audited Reader source branches
+remain outside this verified slice.
+
+Capture the official geometry-kernel values for intersection Newton
+objectives, Bezier and continuous projection, world/screen COBYLA projection,
+and Reuleaux interpolation:
+
+```bash
+node tools/upstream-fixtures/geometry-viewport-projection.mjs
+```
+
+Capture the official Board pan, zoom, content-fit, maximum-bounds, and
+keyboard-navigation behavior used by `BoardViewportTest`:
+
+```bash
+node tools/upstream-fixtures/board-navigation.mjs
+```
+
+Capture the official Board hover enter/move/out, pointer-leave cleanup, and
+keyboard-focus preservation lifecycle used by `BoardViewportTest` and the
+public session tests:
+
+```bash
+node tools/upstream-fixtures/board-hover.mjs
+```
+
+Capture the official Board pointer-ID ownership, pinch/two-finger pan, and
+Line/Polygon/Circle transform behavior used by the Core, production-session,
+and Compose routing tests:
+
+```bash
+node tools/upstream-fixtures/board-multi-pointer.mjs
+```
+
+Capture the official navigation DOM order, symbols, portable style values,
+viewport commands, clear-traces dispatch, and pointer-event consumption used
+by `JsxGraphNavigationTest` and the Compose control tests:
+
+```bash
+node tools/upstream-fixtures/board-navigation-ui.mjs
+```
+
+Fullscreen, screenshot, and reload are verified as present in the official
+control order but execute through explicit host callbacks in production
+because commonMain does not own those platform operations.
+
+Capture the official real/complex polynomial-root cases used to verify the
+translated Horner and Ehrlich-Aberth path:
+
+```bash
+node tools/upstream-fixtures/polynomial-roots.mjs
+```
+
+Capture the official direct Numerics behavior for Neville/Lagrange
+interpolation, Cardinal/Catmull-Rom/Bezier/B-splines, dynamic cache timing,
+degenerate inputs, and polynomial regression:
+
+```bash
+node tools/upstream-fixtures/numerics-interpolation.mjs
+```
+
+`NumericsInterpolationTest`, `NumericsCardinalSplineTest`,
+`NumericsBezierTest`, `NumericsBSplineTest`, and `NumericsRegressionTest`
+compare these values and update semantics in common code. The fixture also
+records the upstream `TypeError` for an uninitialized suspended Bezier
+endpoint; Kotlin deliberately contains the missing-point access as `NaN`, as
+documented in `translation-deviations.md`.
+
 Capture the JSXGraph `1.13.3` dynamic 2D transformation lifecycle used by the
 core assertions:
 
@@ -56,12 +170,16 @@ node tools/upstream-fixtures/transformation-lifecycle.mjs
 The fixture covers number, JessieCode, and function-valued parameters; dynamic
 matrices; Point/Line-backed rotation and reflection; transformed Points;
 `bindTo`; transformed drag preimages; independent static `meltTo` clones; and
-first-match transform removal. It also records the upstream nonnumeric
-classification of array-centered rotations and array-backed matrices. Native
-JessieCode and construction documents expose `transform` and transformed Point
-creation from one transform or a chain. The focused `transformed_points`
-same-source fixture remains outside the 30-case Stable evidence count pending
-independent production qualification.
+first-match transform removal. It also records that dynamic `meltTo` clones to
+`null`, appends that value, and raises a `TypeError` on the prepared target's
+next update. Kotlin contains that upstream defect as an atomic
+`TransformationError.DynamicMeltUnsupported`; the same dynamic transform
+remains usable through `bindTo`. The fixture also records the upstream
+nonnumeric classification of array-centered rotations and array-backed
+matrices. Native JessieCode and construction documents expose `transform` and
+transformed Point creation from one transform or a chain. The focused
+`transformed_points` same-source fixture remains outside the 30-case Stable
+evidence count pending independent production qualification.
 
 Capture every JSXGraph `1.13.3` 4x4 transformation form:
 
@@ -135,9 +253,9 @@ radius parents, absolute-value radius behavior, dynamic frame
 recalculation, the owned Curve3D parent, and `NaN` proxy coordinates after an
 invalid dynamic radius.
 
-Capture the official VectorField3D component/array-function forms, dynamic
-scale and arrow settings, inclusive X/Y/Z meshes, zero-field suppression, and
-default style:
+Capture the official VectorField3D component/array-function forms, runtime
+`setF` replacement, dynamic scale and arrow settings, inclusive X/Y/Z meshes,
+zero-field suppression, and default style:
 
 ```bash
 node tools/upstream-fixtures/vectorfield3d.mjs
@@ -259,7 +377,8 @@ through their native adaptive defaults. Desktop `1200 x 900` and Compact
 `390 x 844` captures scored `0.987022` and `0.976101`; both contact sheets
 passed nonblank/browser checks and manual review for continuous geometry,
 Hyperbola breaks, the Parabola singularity, clipping, overlap, and
-Native/Official agreement. Plot v1 and Stable qualification remain pending.
+Native/Official agreement. Plot v1 is fixture-backed; independent Stable
+qualification remains outside the current corpus.
 
 Capture the experimental JSXGraph `1.13.3` adaptive Plot v3 point sequence:
 
@@ -274,9 +393,9 @@ FunctionGraph-only 30% bounding-box domain crop, callback suspension order,
 one-sided finite/infinite limits, `NaN` separators, and structured
 evaluation, extrapolation, Numerics, interval, and point-limit failures.
 `NativeJessieCodeCreatorsTest` locks all six continuous wrapper point counts
-and explicit Plot v1 rejection. Plot v2 remains the default; Plot v3 is
-enabled only by `plotVersion: 3`. Plot v1 and Stable qualification remain
-pending.
+and explicit Plot v1 execution. Plot v2 remains the default; Plot v3 is
+enabled only by `plotVersion: 3`. Independent Stable qualification remains
+outside the current corpus.
 
 Capture the JSXGraph `1.13.3` adaptive Plot v4 point sequence:
 
@@ -302,7 +421,8 @@ by the official callback fixture and Kotlin tests because JSXGraph `1.13.3`
 itself fails the same-source
 `derivative(functiongraph("expression"))` Plot v4 path with
 `Operation - not defined on operands string and number` during interval
-probing. Plot v1 and Stable qualification remain pending.
+probing. Plot v1 is fixture-backed; independent Stable qualification remains
+outside the current corpus.
 
 Capture the JSXGraph `1.13.3` post-sampling Ramer-Douglas-Peucker behavior:
 
@@ -328,10 +448,51 @@ colormap, and Axes3D rear-plane defaults:
 node tools/upstream-fixtures/plane3d-surfaces.mjs
 ```
 
+Capture the official View3D stored-view, pointer, keyboard, bank, trackball,
+global depth-order, and Canvas layer behavior:
+
+```bash
+node tools/upstream-fixtures/view3d-navigation-depth.mjs
+```
+
+Capture the official Line3D-hosted Point3D glider initialization, position,
+host-update, proxy-drag, and finite-range behavior:
+
+```bash
+node tools/upstream-fixtures/point3d-line-glider.mjs
+```
+
+Capture Point/Line/Circle/Curve/Arc/Sector/Polygon attractor conversion,
+2D array- and function-path movement, property-animation frames, callback
+timing, and bounded Glider stepping:
+
+```bash
+node tools/upstream-fixtures/coords-attractor-animation.mjs
+```
+
+Capture Point3D movement easing, path replacement, interval, and callback
+semantics:
+
+```bash
+node tools/upstream-fixtures/point3d-animation.mjs
+```
+
 These fixtures are the official source of truth for this bounded Kotlin
-translation. Global View3D `depthOrder`/layer configuration, camera controls,
-gliders, animations, Stable qualification, and the complete 3D API remain
-outside this slice.
+translation. View3D global Canvas depth ordering, immutable view metadata,
+construction/JessieCode session input, and Compose pointer drag, wheel, and
+hardware-key routing are covered against the host-neutral camera kernel.
+Board hover is covered by the official enter/move/out and focus fixture,
+construction/JessieCode session snapshots, structured invalid-input tests,
+and Compose unpressed Move/Exit routing tests.
+Board multi-pointer behavior is covered by the official matrix, viewport
+gesture, Line/Polygon/Circle, and snap-cancellation fixture; focused Core and
+session tests; and Compose Down/Move/Up pointer-identity routing tests.
+Line3D-hosted Point3D gliders are covered through direct,
+construction-document, and JessieCode tests. Point3D movement animation has
+direct numerical parity plus public typed-session and host-driven scene-frame
+coverage. Compose supplies the production frame clock for both session
+families. Point3D gliders on other 3D host families, Stable qualification,
+and the complete 3D API remain outside this slice.
 
 Capture the official direct-function Point lifecycle and the observed
 Midpoint function-parent rejection:
@@ -353,6 +514,20 @@ unsupported/non-finite parent behavior:
 
 ```bash
 node tools/upstream-fixtures/line-arrows.mjs
+```
+
+Capture the official Curve/Arc/Sector Boolean and object arrow attributes,
+head types and sizes, and drawable-path tangent directions:
+
+```bash
+node tools/upstream-fixtures/curve-arrows.mjs
+```
+
+Capture whole function-valued Segment/Curve arrow objects and nested
+`type`/`size`/`highlightSize` functions before and after a dependency update:
+
+```bash
+node tools/upstream-fixtures/dynamic-arrow-functions.mjs
 ```
 
 Capture the official Bisector/Incenter/Incircle coordinates, parent ordering,
@@ -411,8 +586,8 @@ node tools/upstream-fixtures/axis.mjs
 ```
 
 Capture the official two-dimensional Grid major/minor Curve relationship,
-themes, faces, units, Axis-parent spacing, identity, lifecycle, and invalid
-construction behavior:
+non-interactive hit testing, themes, faces, units, Axis-parent spacing,
+identity, lifecycle, and invalid construction behavior:
 
 ```bash
 node tools/upstream-fixtures/grid.mjs
@@ -581,12 +756,20 @@ node tools/upstream-fixtures/tangent-to.mjs
 ```
 
 Capture the official Ellipse Point/numeric/function major-axis forms,
-parameter domains, center/foci/quadratic-form metadata, updates,
+parameter domains, center/foci/quadratic-form metadata, exact focus-distance
+interior hit testing, updates,
 ownership/removal, duplicate IDs, partial-construction leakage, degenerate
 arithmetic, and Conic-interoperation boundaries:
 
 ```bash
 node tools/upstream-fixtures/ellipse.mjs
+```
+
+Capture the focused Ellipse Tangent, Polar, Normal, PolePoint, TangentTo,
+Intersection, OtherIntersection, and Glider update/removal lifecycle:
+
+```bash
+node tools/upstream-fixtures/conic-interoperation.mjs
 ```
 
 Capture the official Hyperbola Point/numeric/function major-axis forms,
@@ -2209,10 +2392,16 @@ baseline/highline geometry, point styling, tick placement, complete labels,
 helper visibility, clipping, overlap, and blank output. The official fixture
 and common tests additionally cover parent movement, endpoint clamping,
 `snapValues`, value mutation, helper identity/order, removal, object limits,
-structured failures, and atomic rollback. Circle, Polygon, Ticks, Turtle,
-Point, transformed-slide, attractor, animation, baseline-click, and locale
-behavior remain unsupported. This is a focused preview outside the 30-case
-Stable corpus.
+structured failures, and atomic rollback. Point, Circle, Line/Segment,
+ordinary Curve, Arc/Sector, and Polygon attractor conversion and detaching
+have separate official fixture coverage. Bounded Glider animation,
+function-valued movement, host-driven session frames, and Compose frame-clock
+scheduling are also implemented and fixture-backed. Ticks and Turtle preserve
+their upstream-invalid creation behavior as structured failures; locale-aware
+behavior is translated. Hyperbola/Parabola projection,
+dragging, parent updates, and removal plus Slider baseline pointer-up,
+`moveOnUp`, and fixed gating have official fixture and focused common-test
+coverage. This is a focused preview outside the 30-case Stable corpus.
 The focused `curve_glider` capture uses one JessieCode source for a
 FunctionGraph Glider and a degree-one data-Plot Glider. Static captures scored
 `0.986233` on Desktop and `0.977524` on Compact. After dragging the Plot
@@ -2236,7 +2425,7 @@ callback suspension, smoothness/cusp/jump/undefined decisions, parameter
 metadata, canonical screen projection, the repeated `_borderCase` midpoint
 probe observed in JSXGraph `1.13.3`, evaluator failures, point limits, and each
 wrapper's point count. This remains a focused preview outside the 30-case
-Stable corpus; Plot v1 remains pending.
+Stable corpus; Plot v1 is fixture-backed.
 The focused `adaptive_plot_v3` capture uses the same six continuous wrappers
 with explicit `plotVersion: 3`. Static captures scored `0.987021` on Desktop
 and `0.976125` on Compact. Both contact sheets passed nonblank/browser checks
@@ -2246,7 +2435,7 @@ fixture and common tests additionally lock smooth/cusp/jump/border/isolated
 `NaN` behavior, one-sided limits through `Extrapolate`, FunctionGraph domain
 cropping, callback suspension, evaluator failures, point limits, and wrapper
 point counts. This remains a focused preview outside the 30-case Stable
-corpus; Plot v1 remains pending.
+corpus; Plot v1 is fixture-backed.
 The focused `adaptive_plot_v4` capture uses five continuous wrappers with
 explicit `plotVersion: 4`. Static captures scored `0.987222` on Desktop and
 `0.976707` on Compact. Both contact sheets passed nonblank/browser checks and
@@ -2257,7 +2446,7 @@ paths, FunctionGraph domain cropping, callback suspension, evaluator failures,
 point limits, and wrapper point counts. The visual source excludes only the
 upstream-broken JessieCode string-FunctionGraph Derivative combination
 described above. This remains a focused preview outside the 30-case Stable
-corpus; Plot v1 remains pending.
+corpus; Plot v1 is fixture-backed.
 The focused `functiongraph_rdp` capture overlays the default-smoothed and
 explicitly unsmoothed quadratic, renders both reciprocal branches around the
 preserved non-finite separator, and compares ordinary parametric Curves with
@@ -2277,9 +2466,9 @@ position, tick direction, label content and placement, clipping, and overlap.
 The official fixture and common tests additionally cover default and disabled
 helpers, nested identity and digits, `subs`/`inherits`, `Value()`/`V`,
 dependency updates, removal behavior, resource limits, structured failures,
-and atomic rollback. Automatic/none digits, locale and `formatValue`,
-function-valued visual attributes, hit testing, complete APIs, and Stable
-qualification remain pending.
+and atomic rollback. Automatic/none digits, locale-aware `formatValue`,
+function-valued visual attributes, and hit testing are translated. Stable
+qualification remains outside the current corpus.
 The focused `measurements` capture uses one JessieCode source for Circle
 Radius and Area, Point coordinates, and Segment direction. Static captures
 scored `0.982740` on Desktop and `0.970961` on Compact. After dragging the
@@ -2295,8 +2484,9 @@ cover arithmetic, bounded Math/JXG.Math `exec`, dimensions, units,
 fixed/`auto`/`none` digits, dynamic prefix/suffix/dimension/unit attributes,
 custom coordinate/direction formatters, constrained coordinates,
 `parse:false`, method aliases, dependency updates, resource limits,
-structured failures, and atomic rollback. Locale formatting, the complete
-`exec` surface, complete Text APIs, and Stable qualification remain pending.
+structured failures, and atomic rollback. Locale formatting, the portable
+`exec` surface, and Text APIs are translated. Stable qualification remains
+outside the current corpus.
 The focused `smartlabels` capture uses one JessieCode source for Point, Line,
 Circle, Polygon, and Angle parents with solid, outline, and pure box styles.
 Static captures scored `0.984719` on Desktop and `0.974114` on Compact. After
@@ -2311,9 +2501,9 @@ and common tests additionally cover dynamic Point/Angle measures, static
 Line/Circle/Polygon measure validation, units, prefix/suffix visibility,
 custom formatting, row/column directions, Line visibility thresholds,
 method-map access, dependency updates, JessieCode HTML sanitization,
-structured failures, and atomic rollback. Locale, MathJax/KaTeX,
-user-defined CSS, complete Text APIs, and Stable qualification remain
-pending.
+structured failures, and atomic rollback. Locale and portable Text APIs are
+translated; MathJax/KaTeX and arbitrary browser CSS are renderer-owned. Stable
+qualification remains outside the current corpus.
 The focused `integrals` capture uses one JessieCode source for a FunctionGraph
 and an Integral whose left bound follows a draggable Point. Static captures
 scored `0.984526` on Desktop and `0.974454` on Compact. After moving the
@@ -2327,8 +2517,8 @@ and overlap. The official fixture and common tests additionally cover both
 parent orders, fixed and function bounds, reverse signed values, y-axis
 closure, helper identity/order and removal behavior, method-map access,
 resource limits, structured failures, and atomic rollback. Adaptive plotting,
-locale and automatic/none digits, complete attributes/APIs, and Stable
-qualification remain pending.
+locale-aware formatting, and automatic/none digits are translated. Stable
+qualification remains outside the current corpus.
 The focused `slope_triangle` capture uses one JessieCode source for the
 Tangent parent form. It scored `0.982474` on Desktop and `0.966707` on
 Compact. Both contact sheets passed nonblank/browser checks and manual review
@@ -2337,9 +2527,9 @@ parallel edge, `m=0.500!` label content, 10 CSS-pixel label offset, clipping,
 overlap, and Native/Official agreement. The official fixture and common tests
 additionally cover all three parent forms, helper order and identity, dynamic
 updates, the method map, cleanup, resource accounting, structured failures,
-and atomic rollback. Automatic/none digits, locale and `formatValue`,
-function-valued visual attributes, hit testing, and complete APIs remain
-pending. This is a focused preview outside the 30-case Stable corpus.
+and atomic rollback. Automatic/none digits, locale-aware `formatValue`,
+function-valued visual attributes, and hit testing are translated. This is a
+focused preview outside the 30-case Stable corpus.
 Together with the two-dimensional
 Ticks/Axis/Grid/Hatch/Image/Glider/Slider/Curve-Glider/Tapemeasure/Measurement/
 SmartLabel/Integral/SlopeTriangle,
@@ -2559,6 +2749,7 @@ numeric or JessieCode-string fixed length/Circle/Midpoint/
 OrthogonalProjection/PerpendicularPoint/Perpendicular/PerpendicularSegment/
 Curve/Polygon/Text/Arc/Sector/Angle construction, rendering, and
 Point-interaction scope.
-That scope is rated **Stable**. Unsupported JSXGraph APIs and element families
-remain outside the rating and fail explicitly where they cross the production
+That scope is rated **Stable**. Explicit platform/CAS/license exclusions plus
+translated preview capabilities without independent production qualification
+remain outside the rating and fail explicitly where required at the production
 document boundary.

@@ -8,6 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class VectorField3DTest {
@@ -101,6 +102,67 @@ class VectorField3DTest {
             assertIs<Curve3DVectorFieldSnapshot>(
                 field.vectorField3DSnapshot(),
             ).arrowEnabled.not(),
+        )
+    }
+
+    @Test
+    fun setFReplacesTheRuntimeFieldWithoutRecreatingTheCurve() {
+        val board = createBoard()
+        val view = createView(board)
+        val field = curve(
+            Curve3D.createVectorField(
+                view = view,
+                field = constantField(),
+                xData = mesh(0.0, 1.0, 1.0),
+                yData = mesh(0.0, 0.0, 0.0),
+                zData = mesh(0.0, 1.0, 1.0),
+                scaleTerm = MutableNumericCoordinateFunction(1.0),
+                arrowEnabledTerm = booleanTerm(false),
+                arrowSizeTerm = MutableNumericCoordinateFunction(5.0),
+                arrowAngleTerm = MutableNumericCoordinateFunction(0.0),
+                id = "field",
+                name = "",
+            ),
+        )
+        val proxy = field.curve2D
+
+        assertContentEquals(
+            doubleArrayOf(1.0, 1.0, 0.0, 0.0),
+            field.points[1],
+        )
+        val result = assertIs<GMResult.Ok<Curve3D>>(
+            field.setF(
+                Curve3DVectorFieldComponentFunction(
+                    xTerm = MutableNumericCoordinateFunction(0.0),
+                    yTerm = MutableNumericCoordinateFunction(2.0),
+                    zTerm = MutableNumericCoordinateFunction(0.0),
+                ),
+            ),
+        )
+        assertSame(field, result.value)
+
+        board.update()
+
+        assertSame(proxy, field.curve2D)
+        assertContentEquals(
+            doubleArrayOf(1.0, 0.0, 2.0, 0.0),
+            field.points[1],
+        )
+
+        val ordinaryCurve = curve(
+            Curve3D.create(
+                view = view,
+                source = Curve3DSource.Arrays(
+                    x = doubleArrayOf(0.0, 1.0),
+                    y = doubleArrayOf(0.0, 1.0),
+                    z = doubleArrayOf(0.0, 1.0),
+                ),
+                id = "ordinary",
+                name = "",
+            ),
+        )
+        assertIs<GMResult.Err<Curve3DError.NotVectorField>>(
+            ordinaryCurve.setF(constantField()),
         )
     }
 

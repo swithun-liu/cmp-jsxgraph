@@ -9,8 +9,11 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.BoardZoomMode
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Composition
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.GeometryElement
@@ -18,9 +21,13 @@ import com.swithun.jsxgraph.core.base.Group
 import com.swithun.jsxgraph.core.base.GroupCenter
 import com.swithun.jsxgraph.core.base.GroupError
 import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Point3D
 import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.utils.EventHandler
 import com.swithun.jsxgraph.core.utils.JsMath
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.E
@@ -161,6 +168,17 @@ private class EvaluationState(
     private val limits: JessieCodeEvaluatorLimits,
     private val environment: JessieCodeRuntimeEnvironment,
 ) {
+    private data class BoardEventHandlerKey(
+        val board: Board,
+        val event: String,
+        val function: JessieCodeRuntimeValue.FunctionValue,
+    )
+
+    private class BoardEventHandlerState(
+        val handler: EventHandler,
+        var error: JessieCodeRuntimeError? = null,
+    )
+
     private var evaluationSteps = 0
     private var functionCallDepth = 0
     private var currentBoard = environment.board
@@ -175,6 +193,9 @@ private class EvaluationState(
         linkedMapOf<String, JessieCodeCallable>()
     private val logEntries =
         mutableListOf<List<JessieCodeRuntimeValue>>()
+    private val importModules = JessieCodeImportModules()
+    private val boardEventHandlers =
+        mutableMapOf<BoardEventHandlerKey, BoardEventHandlerState>()
 
     internal val log: List<List<JessieCodeRuntimeValue>>
         get() = logEntries
@@ -384,7 +405,8 @@ private class EvaluationState(
         evaluateBuiltInValue(value, location)
     }
 
-    // JSXGraph 1.13.3: src/parser/jessiecode.js -> getPossibleOperands.
+    // JSXGraph 1.13.3: src/parser/jessiecode.js -> getPossibleOperands
+    // closures sort / pack.
     internal fun possibleOperands(): JessieCodePossibleOperands {
         val entries = mutableListOf<JessieCodeOperand>()
         for (name in BUILT_IN_CALLABLE_NAMES.sortedWith(NAME_COMPARATOR)) {
@@ -877,6 +899,21 @@ private class EvaluationState(
                 )
             }
         }
+        val sourceExpression = when (
+            val result = JessieCodeCompiler.compile(node)
+        ) {
+            is GMResult.Ok -> result.value.trim()
+            is GMResult.Err -> null
+        }
+        val javaScriptSourceExpression = when (
+            val result = JessieCodeCompiler.compile(
+                node,
+                JessieCodeFormatOptions(javaScript = true),
+            )
+        ) {
+            is GMResult.Ok -> result.value.trim()
+            is GMResult.Err -> null
+        }
         return GMResult.Ok(
             JessieCodeRuntimeValue.FunctionValue(
                 name = if (isMap) "map" else "function",
@@ -885,6 +922,9 @@ private class EvaluationState(
                 parameterNames = parameters.toList(),
                 isMap = isMap,
                 dependencies = dependencies.toMap(),
+                sourceExpression = sourceExpression,
+                javaScriptSourceExpression =
+                    javaScriptSourceExpression,
             ),
         )
     }
@@ -2297,6 +2337,18 @@ private class EvaluationState(
                     property = property,
                     location = location,
                 )
+            is JessieCodeRuntimeValue.BoardReference ->
+                resolveBoardProperty(
+                    receiver = receiver,
+                    property = property,
+                    location = location,
+                )
+            is JessieCodeRuntimeValue.TransformationReference ->
+                resolveTransformationProperty(
+                    receiver = receiver,
+                    property = property,
+                    location = location,
+                )
             is JessieCodeRuntimeValue.CompositionReference ->
                 resolveCompositionProperty(
                     receiver = receiver,
@@ -2310,6 +2362,1031 @@ private class EvaluationState(
                 ),
             )
             else -> unknownProperty(receiver, property, location)
+        }
+
+    // JSXGraph 1.13.3: src/base/board.js -> methodMap.
+    private fun resolveBoardProperty(
+        receiver: JessieCodeRuntimeValue.BoardReference,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val board = receiver.board
+        return when (property) {
+            "update" -> boardFunction("update") { arguments, callLocation ->
+                val draggedElement = when (
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue,
+                    JessieCodeRuntimeValue.NullValue,
+                    -> null
+                    is JessieCodeRuntimeValue.ElementReference ->
+                        value.element
+                    else -> return@boardFunction invalidArgumentType(
+                        functionName = "update",
+                        argumentIndex = 0,
+                        expected = "element or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                boardReference(board.update(draggedElement))
+            }
+            "fullUpdate" -> boardFunction("fullUpdate") { _, _ ->
+                boardReference(board.fullUpdate())
+            }
+            "on" -> boardFunction("on") { arguments, callLocation ->
+                boardOn(
+                    board = board,
+                    arguments = arguments,
+                    location = callLocation,
+                )
+            }
+            "off" -> boardFunction("off") { arguments, callLocation ->
+                boardOff(
+                    board = board,
+                    arguments = arguments,
+                    location = callLocation,
+                )
+            }
+            "trigger" -> boardFunction("trigger") {
+                    arguments,
+                    callLocation,
+                ->
+                boardTrigger(
+                    board = board,
+                    arguments = arguments,
+                    location = callLocation,
+                )
+            }
+            "setAttribute" -> boardFunction("setAttribute") {
+                    arguments,
+                    callLocation,
+                ->
+                val attributes = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ObjectValue
+                    ) ?: return@boardFunction invalidArgumentType(
+                    functionName = "setAttribute",
+                    argumentIndex = 0,
+                    expected = "object",
+                    actual = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                val converted = when (
+                    val result = boardAttributeMap(
+                        value = attributes,
+                        functionName = "setAttribute",
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@boardFunction result
+                }
+                val force = when (
+                    val value = arguments.getOrNull(1)
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> false
+                    is JessieCodeRuntimeValue.BooleanValue -> value.value
+                    else -> return@boardFunction invalidArgumentType(
+                        functionName = "setAttribute",
+                        argumentIndex = 1,
+                        expected = "boolean or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                boardReference(board.setAttribute(converted, force))
+            }
+            "setBoundingBox", "setView" ->
+                boardFunction("setBoundingBox") {
+                        arguments,
+                        callLocation,
+                    ->
+                    boardSetBoundingBox(
+                        board = board,
+                        arguments = arguments,
+                        location = callLocation,
+                    )
+                }
+            "getBoundingBox", "BoundingBox", "getView", "View" ->
+                boardFunction("getBoundingBox") { _, _ ->
+                    GMResult.Ok(numberArray(board.getBoundingBox()))
+                }
+            "migratePoint" -> boardFunction("migratePoint") {
+                    arguments,
+                    callLocation,
+                ->
+                val source = boardPointArgument(
+                    functionName = "migratePoint",
+                    arguments = arguments,
+                    index = 0,
+                    location = callLocation,
+                )
+                val destination = boardPointArgument(
+                    functionName = "migratePoint",
+                    arguments = arguments,
+                    index = 1,
+                    location = callLocation,
+                )
+                val sourcePoint = when (source) {
+                    is GMResult.Ok -> source.value
+                    is GMResult.Err -> return@boardFunction source
+                }
+                val destinationPoint = when (destination) {
+                    is GMResult.Ok -> destination.value
+                    is GMResult.Err -> return@boardFunction destination
+                }
+                val copyName = when (
+                    val value = arguments.getOrNull(2)
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> false
+                    is JessieCodeRuntimeValue.BooleanValue -> value.value
+                    else -> return@boardFunction invalidArgumentType(
+                        functionName = "migratePoint",
+                        argumentIndex = 2,
+                        expected = "boolean or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                boardReference(
+                    board.migratePoint(
+                        source = sourcePoint,
+                        destination = destinationPoint,
+                        copyName = copyName,
+                    ),
+                )
+            }
+            "colorblind" -> boardFunction("colorblind") {
+                    arguments,
+                    callLocation,
+                ->
+                val deficiency = when (
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> "none"
+                    is JessieCodeRuntimeValue.StringValue -> value.value
+                    else -> return@boardFunction invalidArgumentType(
+                        functionName = "colorblind",
+                        argumentIndex = 0,
+                        expected = "string or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                boardReference(board.emulateColorblindness(deficiency))
+            }
+            "suspendUpdate" -> boardFunction("suspendUpdate") { _, _ ->
+                boardReference(board.suspendUpdate())
+            }
+            "unsuspendUpdate" ->
+                boardFunction("unsuspendUpdate") { _, _ ->
+                    boardReference(board.unsuspendUpdate())
+                }
+            "clearTraces" -> boardFunction("clearTraces") { _, _ ->
+                boardReference(board.clearTraces())
+            }
+            "left" -> boardFunction("left") { _, _ ->
+                boardReference(board.clickLeftArrow())
+            }
+            "right" -> boardFunction("right") { _, _ ->
+                boardReference(board.clickRightArrow())
+            }
+            "up" -> boardFunction("up") { _, _ ->
+                boardReference(board.clickUpArrow())
+            }
+            "down" -> boardFunction("down") { _, _ ->
+                boardReference(board.clickDownArrow())
+            }
+            "zoomIn" -> boardFunction("zoomIn") {
+                    arguments,
+                    callLocation,
+                ->
+                when (
+                    val center = boardOptionalCoordinatePair(
+                        functionName = "zoomIn",
+                        arguments = arguments,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> boardReference(
+                        board.zoomIn(
+                            userX = center.value?.first,
+                            userY = center.value?.second,
+                        ),
+                    )
+                    is GMResult.Err -> center
+                }
+            }
+            "zoomOut" -> boardFunction("zoomOut") {
+                    arguments,
+                    callLocation,
+                ->
+                when (
+                    val center = boardOptionalCoordinatePair(
+                        functionName = "zoomOut",
+                        arguments = arguments,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> boardReference(
+                        board.zoomOut(
+                            userX = center.value?.first,
+                            userY = center.value?.second,
+                        ),
+                    )
+                    is GMResult.Err -> center
+                }
+            }
+            "zoom100" -> boardFunction("zoom100") { _, _ ->
+                boardReference(board.zoom100())
+            }
+            "zoomElements" -> boardFunction("zoomElements") {
+                    arguments,
+                    callLocation,
+                ->
+                val values = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values ?: return@boardFunction invalidArgumentType(
+                    functionName = "zoomElements",
+                    argumentIndex = 0,
+                    expected = "array",
+                    actual = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                val elements = mutableListOf<Any>()
+                for ((index, value) in values.withIndex()) {
+                    when (value) {
+                        is JessieCodeRuntimeValue.ElementReference ->
+                            elements += value.element
+                        is JessieCodeRuntimeValue.StringValue ->
+                            elements += value.value
+                        else -> return@boardFunction invalidArgumentType(
+                            functionName = "zoomElements",
+                            argumentIndex = index,
+                            expected = "element or string reference",
+                            actual = value,
+                            location = callLocation,
+                        )
+                    }
+                }
+                boardReference(board.zoomElements(elements))
+            }
+            "remove", "removeObject" ->
+                boardFunction("removeObject") {
+                        arguments,
+                        callLocation,
+                    ->
+                    boardRemoveObject(
+                        board = board,
+                        arguments = arguments,
+                        location = callLocation,
+                    )
+                }
+            else -> unknownProperty(receiver, property, location)
+        }
+    }
+
+    private fun boardOn(
+        board: Board,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val event = (
+            arguments.firstOrNull() as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: return invalidArgumentType(
+            functionName = "on",
+            argumentIndex = 0,
+            expected = "string",
+            actual = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue,
+            location = location,
+        )
+        val function = arguments.getOrNull(1) as?
+            JessieCodeRuntimeValue.FunctionValue
+            ?: return invalidArgumentType(
+                functionName = "on",
+                argumentIndex = 1,
+                expected = "function",
+                actual = arguments.getOrNull(1)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        val key = BoardEventHandlerKey(board, event, function)
+        val state = boardEventHandlers.getOrPut(key) {
+            lateinit var handlerState: BoardEventHandlerState
+            val handler = EventHandler { _, nativeArguments ->
+                val callbackResult = function.externalCallable.call(
+                    arguments = nativeArguments.map(::runtimeValue),
+                    location = location,
+                )
+                handlerState.error = when (callbackResult) {
+                    is GMResult.Ok -> null
+                    is GMResult.Err -> callbackResult.error
+                }
+            }
+            BoardEventHandlerState(handler).also {
+                handlerState = it
+            }
+        }
+        board.on(event, state.handler)
+        return boardReference(board)
+    }
+
+    private fun boardOff(
+        board: Board,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val event = (
+            arguments.firstOrNull() as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: return invalidArgumentType(
+            functionName = "off",
+            argumentIndex = 0,
+            expected = "string",
+            actual = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue,
+            location = location,
+        )
+        val function = when (
+            val value = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> null
+            is JessieCodeRuntimeValue.FunctionValue -> value
+            else -> return invalidArgumentType(
+                functionName = "off",
+                argumentIndex = 1,
+                expected = "function or undefined",
+                actual = value,
+                location = location,
+            )
+        }
+        if (function == null) {
+            board.off(event)
+            boardEventHandlers.keys.removeAll {
+                it.board === board && it.event == event
+            }
+        } else {
+            val key = BoardEventHandlerKey(board, event, function)
+            boardEventHandlers.remove(key)?.let {
+                board.off(event, it.handler)
+            }
+        }
+        return boardReference(board)
+    }
+
+    private fun boardTrigger(
+        board: Board,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val events = when (
+            val value = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            is JessieCodeRuntimeValue.StringValue -> listOf(value.value)
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val result = mutableListOf<String>()
+                for ((index, event) in value.values.withIndex()) {
+                    val name = (
+                        event as? JessieCodeRuntimeValue.StringValue
+                        )?.value ?: return invalidArgumentType(
+                        functionName = "trigger",
+                        argumentIndex = index,
+                        expected = "string event name",
+                        actual = event,
+                        location = location,
+                    )
+                    result += name
+                }
+                result
+            }
+            else -> return invalidArgumentType(
+                functionName = "trigger",
+                argumentIndex = 0,
+                expected = "string or string array",
+                actual = value,
+                location = location,
+            )
+        }
+        val states = boardEventHandlers
+            .filterKeys { it.board === board && it.event in events }
+            .values
+        states.forEach { it.error = null }
+        board.trigger(
+            events = events,
+            arguments = arguments.drop(1),
+        )
+        states.firstNotNullOfOrNull { it.error }?.let {
+            return GMResult.Err(it)
+        }
+        return boardReference(board)
+    }
+
+    private fun boardSetBoundingBox(
+        board: Board,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val bbox = when (
+            val result = boardNumberArray(
+                functionName = "setBoundingBox",
+                value = arguments.firstOrNull()
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val keepAspectRatio = when (
+            val value = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> false
+            is JessieCodeRuntimeValue.BooleanValue -> value.value
+            else -> return invalidArgumentType(
+                functionName = "setBoundingBox",
+                argumentIndex = 1,
+                expected = "boolean or undefined",
+                actual = value,
+                location = location,
+            )
+        }
+        val zoomMode = when (
+            val value = arguments.getOrNull(2)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> BoardZoomMode.RESET
+            is JessieCodeRuntimeValue.StringValue -> when (
+                value.value.lowercase()
+            ) {
+                "reset" -> BoardZoomMode.RESET
+                "keep" -> BoardZoomMode.KEEP
+                "update" -> BoardZoomMode.UPDATE
+                else -> return invalidArgumentType(
+                    functionName = "setBoundingBox",
+                    argumentIndex = 2,
+                    expected = "reset, keep, or update",
+                    actual = value,
+                    location = location,
+                )
+            }
+            else -> return invalidArgumentType(
+                functionName = "setBoundingBox",
+                argumentIndex = 2,
+                expected = "string or undefined",
+                actual = value,
+                location = location,
+            )
+        }
+        return when (
+            val result = board.setBoundingBox(
+                bbox = bbox,
+                keepAspectRatio = keepAspectRatio,
+                setZoom = zoomMode,
+            )
+        ) {
+            is GMResult.Ok -> boardReference(result.value)
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.BuiltInInvocationFailure(
+                    functionName = "setBoundingBox",
+                    reason = result.error.toString(),
+                    location = location,
+                ),
+            )
+        }
+    }
+
+    private fun boardRemoveObject(
+        board: Board,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val value = arguments.firstOrNull()
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val saveMethod = when (
+            val raw = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> false
+            is JessieCodeRuntimeValue.BooleanValue -> raw.value
+            else -> return invalidArgumentType(
+                functionName = "removeObject",
+                argumentIndex = 1,
+                expected = "boolean or undefined",
+                actual = raw,
+                location = location,
+            )
+        }
+        when (value) {
+            is JessieCodeRuntimeValue.ElementReference ->
+                board.removeObject(value.element, saveMethod)
+            is JessieCodeRuntimeValue.StringValue ->
+                board.removeObject(value.value, saveMethod)
+            is JessieCodeRuntimeValue.CompositionReference ->
+                board.removeObject(value.composition, saveMethod)
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val elements = mutableListOf<GeometryElement>()
+                for ((index, child) in value.values.withIndex()) {
+                    val element = when (child) {
+                        is JessieCodeRuntimeValue.ElementReference ->
+                            child.element
+                        is JessieCodeRuntimeValue.StringValue ->
+                            board.select(child.value)
+                                ?: return invalidArgumentType(
+                                    functionName = "removeObject",
+                                    argumentIndex = index,
+                                    expected =
+                                        "registered element reference",
+                                    actual = child,
+                                    location = location,
+                                )
+                        else -> return invalidArgumentType(
+                            functionName = "removeObject",
+                            argumentIndex = index,
+                            expected = "element or string reference",
+                            actual = child,
+                            location = location,
+                        )
+                    }
+                    elements += element
+                }
+                board.removeObjects(elements, saveMethod)
+            }
+            else -> return invalidArgumentType(
+                functionName = "removeObject",
+                argumentIndex = 0,
+                expected =
+                    "element, composition, string reference, or array",
+                actual = value,
+                location = location,
+            )
+        }
+        return boardReference(board)
+    }
+
+    private fun boardPointArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        index: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<Point, JessieCodeRuntimeError> {
+        val value = arguments.getOrNull(index)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val point = (
+            value as? JessieCodeRuntimeValue.ElementReference
+            )?.element as? Point
+            ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "point",
+                actual = value,
+                location = location,
+            )
+        return GMResult.Ok(point)
+    }
+
+    private fun boardOptionalCoordinatePair(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): GMResult<Pair<Double, Double>?, JessieCodeRuntimeError> {
+        if (arguments.isEmpty()) {
+            return GMResult.Ok(null)
+        }
+        if (arguments.size < 2) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.InvalidArgumentCount(
+                    functionName = functionName,
+                    expected = "0 or 2",
+                    actual = arguments.size,
+                    location = location,
+                ),
+            )
+        }
+        val x = (
+            arguments[0] as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return invalidArgumentType(
+            functionName = functionName,
+            argumentIndex = 0,
+            expected = "number",
+            actual = arguments[0],
+            location = location,
+        )
+        val y = (
+            arguments[1] as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return invalidArgumentType(
+            functionName = functionName,
+            argumentIndex = 1,
+            expected = "number",
+            actual = arguments[1],
+            location = location,
+        )
+        return GMResult.Ok(x to y)
+    }
+
+    private fun boardNumberArray(
+        functionName: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<DoubleArray, JessieCodeRuntimeError> {
+        val values = (
+            value as? JessieCodeRuntimeValue.ArrayValue
+            )?.values ?: return invalidArgumentType(
+            functionName = functionName,
+            argumentIndex = 0,
+            expected = "numeric array",
+            actual = value,
+            location = location,
+        )
+        val result = DoubleArray(values.size)
+        for ((index, child) in values.withIndex()) {
+            result[index] = (
+                child as? JessieCodeRuntimeValue.NumberValue
+                )?.value ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "number",
+                actual = child,
+                location = location,
+            )
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun boardAttributeMap(
+        value: JessieCodeRuntimeValue.ObjectValue,
+        functionName: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<Map<String, Any?>, JessieCodeRuntimeError> {
+        val result = linkedMapOf<String, Any?>()
+        for ((property, child) in value.properties) {
+            when (
+                val converted = boardAttributeValue(
+                    value = child,
+                    functionName = functionName,
+                    location = location,
+                    depth = 0,
+                )
+            ) {
+                is GMResult.Ok -> result[property] = converted.value
+                is GMResult.Err -> return converted
+            }
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun boardAttributeValue(
+        value: JessieCodeRuntimeValue,
+        functionName: String,
+        location: JessieCodeAstLocation,
+        depth: Int,
+    ): GMResult<Any?, JessieCodeRuntimeError> {
+        if (depth > MAX_RUNTIME_VALUE_DEPTH) {
+            return GMResult.Err(
+                JessieCodeRuntimeError.ResourceLimitExceeded(
+                    resource = "$functionName attribute depth",
+                    limit = MAX_RUNTIME_VALUE_DEPTH,
+                    requestedSize = depth.toLong(),
+                    location = location,
+                ),
+            )
+        }
+        return when (value) {
+            JessieCodeRuntimeValue.UndefinedValue,
+            JessieCodeRuntimeValue.NullValue,
+            -> GMResult.Ok(null)
+            is JessieCodeRuntimeValue.NumberValue -> GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.BooleanValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.StringValue ->
+                GMResult.Ok(value.value)
+            is JessieCodeRuntimeValue.BoardReference ->
+                GMResult.Ok(value.board)
+            is JessieCodeRuntimeValue.TransformationReference ->
+                GMResult.Ok(value.transformation)
+            is JessieCodeRuntimeValue.CompositionReference ->
+                GMResult.Ok(value.composition)
+            is JessieCodeRuntimeValue.ElementReference ->
+                GMResult.Ok(value.element)
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(value)
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val result = mutableListOf<Any?>()
+                for (child in value.values) {
+                    when (
+                        val converted = boardAttributeValue(
+                            value = child,
+                            functionName = functionName,
+                            location = location,
+                            depth = depth + 1,
+                        )
+                    ) {
+                        is GMResult.Ok -> result += converted.value
+                        is GMResult.Err -> return converted
+                    }
+                }
+                GMResult.Ok(result)
+            }
+            is JessieCodeRuntimeValue.ObjectValue -> {
+                val result = linkedMapOf<String, Any?>()
+                for ((property, child) in value.properties) {
+                    when (
+                        val converted = boardAttributeValue(
+                            value = child,
+                            functionName = functionName,
+                            location = location,
+                            depth = depth + 1,
+                        )
+                    ) {
+                        is GMResult.Ok -> result[property] = converted.value
+                        is GMResult.Err -> return converted
+                    }
+                }
+                GMResult.Ok(result)
+            }
+        }
+    }
+
+    private fun boardFunction(
+        name: String,
+        callable: JessieCodeCallable,
+    ): EvaluationResult =
+        GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(name, callable),
+        )
+
+    private fun boardReference(board: Board): EvaluationResult =
+        GMResult.Ok(JessieCodeRuntimeValue.BoardReference(board))
+
+    private fun numberArray(values: DoubleArray): JessieCodeRuntimeValue =
+        JessieCodeRuntimeValue.ArrayValue(
+            values.map(JessieCodeRuntimeValue::NumberValue),
+        )
+
+    // JSXGraph 1.13.3: src/base/transformation.js -> methodMap.
+    private fun resolveTransformationProperty(
+        receiver: JessieCodeRuntimeValue.TransformationReference,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val transformation = receiver.transformation
+        return when (property) {
+            "apply" -> transformationFunction("apply") {
+                    arguments,
+                    callLocation,
+                ->
+                val element = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element ?: return@transformationFunction invalidArgumentType(
+                        functionName = "apply",
+                        argumentIndex = 0,
+                        expected = "coordinate element",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                val self = when (
+                    val value = arguments.getOrNull(1)
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> false
+                    is JessieCodeRuntimeValue.StringValue ->
+                        value.value == "self"
+                    is JessieCodeRuntimeValue.BooleanValue -> value.value
+                    else -> return@transformationFunction invalidArgumentType(
+                        functionName = "apply",
+                        argumentIndex = 1,
+                        expected = "self, boolean, or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                val result = when (element) {
+                    is CoordsElement ->
+                        transformation.applyResult(element, self)
+                    is Point3D ->
+                        transformation.applyResult(
+                            if (self) {
+                                element.initialCoords
+                            } else {
+                                element.coords
+                            },
+                        )
+                    else -> return@transformationFunction invalidArgumentType(
+                        functionName = "apply",
+                        argumentIndex = 0,
+                        expected = "2D or 3D point",
+                        actual = arguments.first(),
+                        location = callLocation,
+                    )
+                }
+                when (result) {
+                    is GMResult.Ok ->
+                        GMResult.Ok(numberArray(result.value))
+                    is GMResult.Err -> transformationFailure(
+                        method = "apply",
+                        reason = result.error.toString(),
+                        location = callLocation,
+                    )
+                }
+            }
+            "applyOnce" -> transformationFunction("applyOnce") {
+                    arguments,
+                    callLocation,
+                ->
+                val elements = when (
+                    val result = transformationElements(
+                        functionName = "applyOnce",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@transformationFunction result
+                }
+                for (element in elements) {
+                    val result = when (element) {
+                        is CoordsElement ->
+                            transformation.applyOnce(element)
+                        is Point3D ->
+                            transformation.applyOnce(element)
+                        else -> return@transformationFunction invalidArgumentType(
+                            functionName = "applyOnce",
+                            argumentIndex = 0,
+                            expected = "2D or 3D point",
+                            actual =
+                                JessieCodeRuntimeValue.ElementReference(
+                                    element,
+                                ),
+                            location = callLocation,
+                        )
+                    }
+                    if (result is GMResult.Err) {
+                        return@transformationFunction transformationFailure(
+                            method = "applyOnce",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        )
+                    }
+                }
+                GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+            }
+            "bindTo", "bind" ->
+                transformationFunction("bindTo") {
+                        arguments,
+                        callLocation,
+                    ->
+                    val elements = when (
+                        val result = transformationElements(
+                            functionName = "bindTo",
+                            value = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err ->
+                            return@transformationFunction result
+                    }
+                    transformation.bindTo(elements)
+                    GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+                }
+            "meltTo" -> transformationFunction("meltTo") {
+                    arguments,
+                    callLocation,
+                ->
+                val elements = when (
+                    val result = transformationElements(
+                        functionName = "meltTo",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err ->
+                        return@transformationFunction result
+                }
+                when (val result = transformation.meltTo(elements)) {
+                    is GMResult.Ok ->
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.UndefinedValue,
+                        )
+                    is GMResult.Err -> transformationFailure(
+                        method = "meltTo",
+                        reason = result.error.toString(),
+                        location = callLocation,
+                    )
+                }
+            }
+            "melt" -> transformationFunction("melt") {
+                    arguments,
+                    callLocation,
+                ->
+                val other = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.TransformationReference
+                    )?.transformation
+                    ?: return@transformationFunction invalidArgumentType(
+                        functionName = "melt",
+                        argumentIndex = 0,
+                        expected = "transformation",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                when (val result = transformation.melt(other)) {
+                    is GMResult.Ok -> GMResult.Ok(receiver)
+                    is GMResult.Err -> transformationFailure(
+                        method = "melt",
+                        reason = result.error.toString(),
+                        location = callLocation,
+                    )
+                }
+            }
+            else -> unknownProperty(receiver, property, location)
+        }
+    }
+
+    private fun transformationElements(
+        functionName: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<GeometryElement>, JessieCodeRuntimeError> {
+        val values = if (value is JessieCodeRuntimeValue.ArrayValue) {
+            value.values
+        } else {
+            listOf(value)
+        }
+        val result = mutableListOf<GeometryElement>()
+        for ((index, child) in values.withIndex()) {
+            val element = (
+                child as? JessieCodeRuntimeValue.ElementReference
+                )?.element ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "element",
+                actual = child,
+                location = location,
+            )
+            result += element
+        }
+        return GMResult.Ok(result)
+    }
+
+    private fun transformationFunction(
+        name: String,
+        callable: JessieCodeCallable,
+    ): EvaluationResult =
+        GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(name, callable),
+        )
+
+    private fun transformationFailure(
+        method: String,
+        reason: String,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult =
+        GMResult.Err(
+            JessieCodeRuntimeError.BuiltInInvocationFailure(
+                functionName = method,
+                reason = reason,
+                location = location,
+            ),
+        )
+
+    private fun runtimeValue(value: Any?): JessieCodeRuntimeValue =
+        when (value) {
+            null -> JessieCodeRuntimeValue.NullValue
+            is JessieCodeRuntimeValue -> value
+            is Boolean -> JessieCodeRuntimeValue.BooleanValue(value)
+            is Number ->
+                JessieCodeRuntimeValue.NumberValue(value.toDouble())
+            is String -> JessieCodeRuntimeValue.StringValue(value)
+            is Board -> JessieCodeRuntimeValue.BoardReference(value)
+            is GeometryElement ->
+                JessieCodeRuntimeValue.ElementReference(value)
+            is List<*> ->
+                JessieCodeRuntimeValue.ArrayValue(value.map(::runtimeValue))
+            is DoubleArray ->
+                JessieCodeRuntimeValue.ArrayValue(
+                    value.map(JessieCodeRuntimeValue::NumberValue),
+                )
+            else -> JessieCodeRuntimeValue.UndefinedValue
         }
 
     // JSXGraph: src/base/composition.js -> member properties and methodMap
@@ -2386,6 +3463,164 @@ private class EvaluationState(
                     },
                 ),
             )
+            "getAttributes" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "getAttributes",
+                    callable = JessieCodeCallable { _, _ ->
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.ObjectValue(
+                                composition.getAttributes().mapValues {
+                                        (_, value) -> runtimeValue(value)
+                                },
+                            ),
+                        )
+                    },
+                ),
+            )
+            "setAttribute", "setProperty" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "setAttribute",
+                    callable = JessieCodeCallable {
+                            arguments,
+                            callLocation,
+                        ->
+                        val attributes = (
+                            arguments.firstOrNull() as?
+                                JessieCodeRuntimeValue.ObjectValue
+                            ) ?: return@JessieCodeCallable invalidArgumentType(
+                            functionName = "setAttribute",
+                            argumentIndex = 0,
+                            expected = "object",
+                            actual = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
+                        )
+                        val converted = when (
+                            val result = boardAttributeMap(
+                                value = attributes,
+                                functionName = "setAttribute",
+                                location = callLocation,
+                            )
+                        ) {
+                            is GMResult.Ok -> result.value
+                            is GMResult.Err ->
+                                return@JessieCodeCallable result
+                        }
+                        composition.setAttribute(converted)
+                        GMResult.Ok(receiver)
+                    },
+                ),
+            )
+            "setParents" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "setParents",
+                    callable = JessieCodeCallable {
+                            arguments,
+                            callLocation,
+                        ->
+                        val values = (
+                            arguments.firstOrNull() as?
+                                JessieCodeRuntimeValue.ArrayValue
+                            )?.values ?: arguments
+                        val parents = mutableListOf<GeometryElement>()
+                        for ((index, value) in values.withIndex()) {
+                            val parent = (
+                                value as?
+                                    JessieCodeRuntimeValue.ElementReference
+                                )?.element
+                                ?: return@JessieCodeCallable invalidArgumentType(
+                                    functionName = "setParents",
+                                    argumentIndex = index,
+                                    expected = "element",
+                                    actual = value,
+                                    location = callLocation,
+                                )
+                            parents += parent
+                        }
+                        composition.setParents(parents)
+                        GMResult.Ok(receiver)
+                    },
+                ),
+            )
+            "prepareUpdate" -> compositionFunction("prepareUpdate") { _, _ ->
+                composition.prepareUpdate()
+                GMResult.Ok(receiver)
+            }
+            "update" -> compositionFunction("update") { _, _ ->
+                composition.update()
+                GMResult.Ok(receiver)
+            }
+            "fullUpdate" -> compositionFunction("fullUpdate") { _, _ ->
+                composition.fullUpdate()
+                GMResult.Ok(receiver)
+            }
+            "updateRenderer" ->
+                compositionFunction("updateRenderer") { _, _ ->
+                    composition.updateRenderer()
+                    GMResult.Ok(receiver)
+                }
+            "highlight" -> compositionFunction("highlight") {
+                    arguments,
+                    callLocation,
+                ->
+                val force = when (
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> false
+                    is JessieCodeRuntimeValue.BooleanValue -> value.value
+                    else -> return@compositionFunction invalidArgumentType(
+                        functionName = "highlight",
+                        argumentIndex = 0,
+                        expected = "boolean or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                composition.highlight(force)
+                GMResult.Ok(receiver)
+            }
+            "noHighlight" -> compositionFunction("noHighlight") { _, _ ->
+                composition.noHighlight()
+                GMResult.Ok(receiver)
+            }
+            "add" -> GMResult.Ok(
+                JessieCodeRuntimeValue.FunctionValue(
+                    name = "add",
+                    callable = JessieCodeCallable {
+                            arguments,
+                            callLocation,
+                        ->
+                        val role = (
+                            arguments.firstOrNull() as?
+                                JessieCodeRuntimeValue.StringValue
+                            )?.value ?: return@JessieCodeCallable invalidArgumentType(
+                                functionName = "add",
+                                argumentIndex = 0,
+                                expected = "string",
+                                actual = arguments.firstOrNull()
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                                location = callLocation,
+                            )
+                        val element = (
+                            arguments.getOrNull(1) as?
+                                JessieCodeRuntimeValue.ElementReference
+                            )?.element ?: return@JessieCodeCallable invalidArgumentType(
+                                functionName = "add",
+                                argumentIndex = 1,
+                                expected = "element",
+                                actual = arguments.getOrNull(1)
+                                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                                location = callLocation,
+                            )
+                        GMResult.Ok(
+                            JessieCodeRuntimeValue.BooleanValue(
+                                composition.add(role, element),
+                            ),
+                        )
+                    },
+                ),
+            )
             "remove" -> GMResult.Ok(
                 JessieCodeRuntimeValue.FunctionValue(
                     name = "remove",
@@ -2419,27 +3654,192 @@ private class EvaluationState(
                             arguments,
                             callLocation,
                         ->
-                        val reference = (
-                            arguments.firstOrNull() as?
-                                JessieCodeRuntimeValue.StringValue
-                            )?.value ?: return@JessieCodeCallable invalidArgumentType(
-                                functionName = "select",
-                                argumentIndex = 0,
-                                expected = "string",
-                                actual = arguments.firstOrNull()
-                                    ?: JessieCodeRuntimeValue.UndefinedValue,
-                                location = callLocation,
-                            )
-                        GMResult.Ok(
-                            composition.select(reference)?.let {
-                                JessieCodeRuntimeValue.ElementReference(it)
-                            } ?: JessieCodeRuntimeValue.UndefinedValue,
+                        selectComposition(
+                            composition = composition,
+                            filter = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
                         )
                     },
                 ),
             )
             else -> unknownProperty(receiver, property, location)
         }
+    }
+
+    private fun compositionFunction(
+        name: String,
+        callable: JessieCodeCallable,
+    ): EvaluationResult =
+        GMResult.Ok(
+            JessieCodeRuntimeValue.FunctionValue(
+                name = name,
+                callable = callable,
+            ),
+        )
+
+    private fun selectComposition(
+        composition: Composition,
+        filter: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult =
+        when (filter) {
+            is JessieCodeRuntimeValue.StringValue ->
+                GMResult.Ok(
+                    when (val selected = composition.select(filter.value)) {
+                        is GeometryElement ->
+                            JessieCodeRuntimeValue.ElementReference(selected)
+                        is Composition ->
+                            JessieCodeRuntimeValue.CompositionReference(selected)
+                        is String ->
+                            JessieCodeRuntimeValue.StringValue(selected)
+                        else -> JessieCodeRuntimeValue.UndefinedValue
+                    },
+                )
+            is JessieCodeRuntimeValue.ElementReference ->
+                GMResult.Ok(
+                    composition.select(filter.element)?.let {
+                        JessieCodeRuntimeValue.ElementReference(it)
+                    } ?: JessieCodeRuntimeValue.NullValue,
+                )
+            is JessieCodeRuntimeValue.FunctionValue,
+            is JessieCodeRuntimeValue.ObjectValue,
+            -> filterComposition(
+                composition = composition,
+                filter = filter,
+                location = location,
+            )
+            else -> invalidArgumentType(
+                functionName = "select",
+                argumentIndex = 0,
+                expected = "string, element, object, or function",
+                actual = filter,
+                location = location,
+            )
+        }
+
+    private fun filterComposition(
+        composition: Composition,
+        filter: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): EvaluationResult {
+        val selected = linkedMapOf<String, GeometryElement>()
+        for (element in composition.objectsList) {
+            val matches = when (filter) {
+                is JessieCodeRuntimeValue.FunctionValue -> {
+                    when (
+                        val result = filter.callable.call(
+                            listOf(
+                                JessieCodeRuntimeValue.ElementReference(element),
+                            ),
+                            location,
+                        )
+                    ) {
+                        is GMResult.Ok -> isTruthy(result.value)
+                        is GMResult.Err -> return result
+                    }
+                }
+                is JessieCodeRuntimeValue.ObjectValue -> {
+                    when (
+                        val result = compositionMatchesFilter(
+                            element = element,
+                            filter = filter,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                else -> false
+            }
+            if (matches) {
+                selected[element.id] = element
+            }
+        }
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.CompositionReference(
+                Composition(selected),
+            ),
+        )
+    }
+
+    private fun compositionMatchesFilter(
+        element: GeometryElement,
+        filter: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Boolean, JessieCodeRuntimeError> {
+        for ((property, criterion) in filter.properties) {
+            val direct = when (
+                val result = environment.elementRuntime.resolveProperty(
+                    element = element,
+                    property = property,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> when (val value = result.value) {
+                    is JessieCodeRuntimeValue.FunctionValue ->
+                        when (
+                            val invoked = value.callable.call(
+                                emptyList(),
+                                location,
+                            )
+                        ) {
+                            is GMResult.Ok -> invoked.value
+                            is GMResult.Err -> return invoked
+                        }
+                    else -> value
+                }
+                is GMResult.Err ->
+                    if (
+                        result.error is
+                            JessieCodeRuntimeError.UnknownProperty
+                    ) {
+                        JessieCodeRuntimeValue.UndefinedValue
+                    } else {
+                        return result
+                    }
+            }
+            val visual =
+                if (property.lowercase() in element.visualProperties) {
+                    runtimeValue(element.evalVisProp(property.lowercase()))
+                } else {
+                    JessieCodeRuntimeValue.UndefinedValue
+                }
+            val matches = if (
+                criterion is JessieCodeRuntimeValue.FunctionValue
+            ) {
+                val directMatch = when (
+                    val result = criterion.callable.call(
+                        listOf(direct),
+                        location,
+                    )
+                ) {
+                    is GMResult.Ok -> isTruthy(result.value)
+                    is GMResult.Err -> return result
+                }
+                if (directMatch) {
+                    true
+                } else {
+                    when (
+                        val result = criterion.callable.call(
+                            listOf(visual),
+                            location,
+                        )
+                    ) {
+                        is GMResult.Ok -> isTruthy(result.value)
+                        is GMResult.Err -> return result
+                    }
+                }
+            } else {
+                sameRuntimeValue(direct, criterion) ||
+                    sameRuntimeValue(visual, criterion)
+            }
+            if (!matches) {
+                return GMResult.Ok(false)
+            }
+        }
+        return GMResult.Ok(true)
     }
 
     // JSXGraph 1.13.3: src/base/group.js -> Group properties and methodMap.
@@ -2780,6 +4180,35 @@ private class EvaluationState(
                 group.addScalePoint(point, direction)
                 GMResult.Ok(receiver)
             }
+            "setAttribute", "setProperty" ->
+                groupFunction("setAttribute") {
+                        arguments,
+                        callLocation,
+                    ->
+                    val attributes = (
+                        arguments.firstOrNull() as?
+                            JessieCodeRuntimeValue.ObjectValue
+                        ) ?: return@groupFunction invalidArgumentType(
+                        functionName = "setAttribute",
+                        argumentIndex = 0,
+                        expected = "object",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                    val converted = when (
+                        val result = boardAttributeMap(
+                            value = attributes,
+                            functionName = "setAttribute",
+                            location = callLocation,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return@groupFunction result
+                    }
+                    group.setAttribute(converted)
+                    GMResult.Ok(receiver)
+                }
             "update" -> groupFunction("update") { _, _ ->
                 when (val result = group.updateResult()) {
                     is GMResult.Ok -> GMResult.Ok(receiver)
@@ -3113,7 +4542,7 @@ private class EvaluationState(
                 }
                 environment.elementRuntime.valueOf(element, location)
             }
-            "L", "Length" -> lineNumberCallable(name) { it.L() }
+            "L", "Length" -> lengthNumberCallable(name)
             "A", "area", "Area" ->
                 areaNumberCallable(name)
             "perimeter", "Perimeter" ->
@@ -3144,7 +4573,7 @@ private class EvaluationState(
                 number(first.Dist(second))
             }
             "R", "radius", "Radius" ->
-                circleNumberCallable(name) { it.Radius() }
+                radiusNumberCallable(name)
             "slope", "Slope" ->
                 lineNumberCallable(name) { it.Slope() }
             "getName", "name" -> JessieCodeCallable {
@@ -3169,6 +4598,9 @@ private class EvaluationState(
                         JessieCodeRuntimeValue.StringValue(element.name),
                     )
                 }
+            }
+            "import" -> JessieCodeCallable { arguments, location ->
+                importModules.importModule(arguments, location)
             }
             "deg" -> angleCallable("deg", Geometry::trueAngle)
             "rad" -> angleCallable("rad", Geometry::rad)
@@ -3369,6 +4801,35 @@ private class EvaluationState(
             number(value(line))
         }
 
+    private fun lengthNumberCallable(
+        functionName: String,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val element = when (
+                val result = elementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@JessieCodeCallable result
+            }
+            when (element) {
+                is Line -> number(element.L())
+                is Arc -> number(element.L())
+                is Sector -> number(element.L())
+                else -> invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = 0,
+                    expected = "line, arc, or sector",
+                    actual = arguments.first(),
+                    location = location,
+                )
+            }
+        }
+
     private fun circleNumberCallable(
         functionName: String,
         value: (Circle) -> Double,
@@ -3396,6 +4857,35 @@ private class EvaluationState(
             number(value(circle))
         }
 
+    private fun radiusNumberCallable(
+        functionName: String,
+    ): JessieCodeCallable =
+        JessieCodeCallable { arguments, location ->
+            val element = when (
+                val result = elementArgument(
+                    functionName = functionName,
+                    arguments = arguments,
+                    argumentIndex = 0,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return@JessieCodeCallable result
+            }
+            when (element) {
+                is Circle -> number(element.Radius())
+                is Arc -> number(element.Radius())
+                is Sector -> number(element.Radius())
+                else -> invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = 0,
+                    expected = "circle, arc, or sector",
+                    actual = arguments.first(),
+                    location = location,
+                )
+            }
+        }
+
     private fun areaNumberCallable(
         functionName: String,
     ): JessieCodeCallable =
@@ -3414,10 +4904,11 @@ private class EvaluationState(
             when (element) {
                 is Circle -> number(element.Area())
                 is Polygon -> number(element.Area())
+                is Sector -> number(element.Area())
                 else -> invalidArgumentType(
                     functionName = functionName,
                     argumentIndex = 0,
-                    expected = "circle or polygon",
+                    expected = "circle, polygon, or sector",
                     actual = arguments.first(),
                     location = location,
                 )
@@ -3442,10 +4933,11 @@ private class EvaluationState(
             when (element) {
                 is Circle -> number(element.Perimeter())
                 is Polygon -> number(element.Perimeter())
+                is Sector -> number(element.Perimeter())
                 else -> invalidArgumentType(
                     functionName = functionName,
                     argumentIndex = 0,
-                    expected = "circle or polygon",
+                    expected = "circle, polygon, or sector",
                     actual = arguments.first(),
                     location = location,
                 )
@@ -4145,6 +5637,7 @@ private class EvaluationState(
         const val MAX_JAVASCRIPT_ARRAY_LENGTH = 4_294_967_295L
         const val CALL_ARGUMENT_CHILD_COUNT = 2
         const val CALL_WITH_ATTRIBUTES_CHILD_COUNT = 4
+        const val MAX_RUNTIME_VALUE_DEPTH = 32
         val NEGATIVE_ZERO_BITS = (-0.0).toBits()
         val ARRAY_INDEX = Regex("""^(0|[1-9][0-9]*)$""")
         val NAME_COMPARATOR = Comparator<String> { left, right ->
@@ -4213,6 +5706,7 @@ private class EvaluationState(
             "factorial",
             "gcd",
             "getName",
+            "import",
             "lb",
             "lcm",
             "ld",

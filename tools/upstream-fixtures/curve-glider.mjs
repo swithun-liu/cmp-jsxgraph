@@ -136,6 +136,91 @@ try {
         const plotPositioned = pointSnapshot(plotGlider);
         plotBoard.removeObject(plot);
 
+        const hyperbolaBoard = createBoard();
+        const hyperbolaFocus1 = hyperbolaBoard.create(
+            "point",
+            [-3, 0],
+            {id: "hyperbolaFocus1", name: ""}
+        );
+        const hyperbolaFocus2 = hyperbolaBoard.create(
+            "point",
+            [3, 0],
+            {id: "hyperbolaFocus2", name: ""}
+        );
+        const hyperbolaPoint = hyperbolaBoard.create(
+            "point",
+            [5, 2],
+            {id: "hyperbolaPoint", name: ""}
+        );
+        const hyperbola = hyperbolaBoard.create(
+            "hyperbola",
+            [hyperbolaFocus1, hyperbolaFocus2, hyperbolaPoint],
+            {id: "hyperbola", name: ""}
+        );
+        const hyperbolaGlider = hyperbolaBoard.create(
+            "glider",
+            [4, 3, hyperbola],
+            {id: "hyperbolaGlider", name: ""}
+        );
+        const hyperbolaInitial = pointSnapshot(hyperbolaGlider);
+        hyperbolaGlider.setPosition(
+            JXG.COORDS_BY_USER,
+            [6, -1]
+        );
+        hyperbolaBoard.update(hyperbolaGlider);
+        const hyperbolaDragged = pointSnapshot(hyperbolaGlider);
+        hyperbolaPoint.setPosition(JXG.COORDS_BY_USER, [6, 3]);
+        hyperbolaBoard.update();
+        const hyperbolaParentMoved = pointSnapshot(hyperbolaGlider);
+        hyperbolaBoard.update();
+        const hyperbolaParentSettled = pointSnapshot(hyperbolaGlider);
+        hyperbolaBoard.removeObject(hyperbola);
+
+        const parabolaBoard = createBoard();
+        const directrixPoint1 = parabolaBoard.create(
+            "point",
+            [-1, 4],
+            {id: "directrixPoint1", name: ""}
+        );
+        const directrixPoint2 = parabolaBoard.create(
+            "point",
+            [-1, -4],
+            {id: "directrixPoint2", name: ""}
+        );
+        const directrix = parabolaBoard.create(
+            "line",
+            [directrixPoint1, directrixPoint2],
+            {id: "directrix", name: ""}
+        );
+        const parabolaFocus = parabolaBoard.create(
+            "point",
+            [1, 1],
+            {id: "parabolaFocus", name: ""}
+        );
+        const parabola = parabolaBoard.create(
+            "parabola",
+            [parabolaFocus, directrix],
+            {id: "parabola", name: ""}
+        );
+        const parabolaGlider = parabolaBoard.create(
+            "glider",
+            [3, 3, parabola],
+            {id: "parabolaGlider", name: ""}
+        );
+        const parabolaInitial = pointSnapshot(parabolaGlider);
+        parabolaGlider.setPosition(
+            JXG.COORDS_BY_USER,
+            [4, -2]
+        );
+        parabolaBoard.update(parabolaGlider);
+        const parabolaDragged = pointSnapshot(parabolaGlider);
+        parabolaFocus.setPosition(JXG.COORDS_BY_USER, [2, 2]);
+        parabolaBoard.update();
+        const parabolaParentMoved = pointSnapshot(parabolaGlider);
+        parabolaBoard.update();
+        const parabolaParentSettled = pointSnapshot(parabolaGlider);
+        parabolaBoard.removeObject(parabola);
+
         return {
             version: JXG.version,
             functionGraph: {
@@ -157,6 +242,26 @@ try {
                 plotPresent: plotBoard.objects.plot !== undefined,
                 gliderPresent:
                     plotBoard.objects.plotGlider !== undefined
+            },
+            hyperbola: {
+                initial: hyperbolaInitial,
+                dragged: hyperbolaDragged,
+                parentMoved: hyperbolaParentMoved,
+                parentSettled: hyperbolaParentSettled,
+                hostPresent:
+                    hyperbolaBoard.objects.hyperbola !== undefined,
+                gliderPresent:
+                    hyperbolaBoard.objects.hyperbolaGlider !== undefined
+            },
+            parabola: {
+                initial: parabolaInitial,
+                dragged: parabolaDragged,
+                parentMoved: parabolaParentMoved,
+                parentSettled: parabolaParentSettled,
+                hostPresent:
+                    parabolaBoard.objects.parabola !== undefined,
+                gliderPresent:
+                    parabolaBoard.objects.parabolaGlider !== undefined
             }
         };
     });

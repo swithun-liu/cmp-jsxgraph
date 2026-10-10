@@ -406,7 +406,7 @@ internal class Transformation private constructor(
             )
 
         // JSXGraph: src/base/transformation.js -> setMatrix;
-        // src/utils/type.js -> createEvalFunction
+        // src/utils/type.js -> createEvalFunction closure func.
         internal fun create(
             board: Board,
             type: String,

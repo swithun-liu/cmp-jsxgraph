@@ -60,6 +60,10 @@ internal sealed interface JessieCodeParserError {
 /**
  * JessieCode parser for an empty program or expression statements.
  *
+ * JSXGraph 1.13.3: src/parser/jessiecode.js -> generated helpers o / Parser.
+ * The generated Jison state machine is represented by this bounded native
+ * recursive-descent parser.
+ *
  * This slice implements `StatementList`, blocks, `if` statements, expression
  * statements, `while`/`do`/`for` loops, assignment, array and object literals.
  * Return/delete statements, function/map expressions, and creator attribute

@@ -43,13 +43,12 @@ internal data class PolygonTraceSnapshot(
 )
 
 /**
- * Initial translated slice of JXG.Polygon.
+ * Translated JXG.Polygon lifecycle.
  *
  * The polygon keeps the upstream closed vertex list and creates Segment
  * children when withLines is enabled. It supports transforms, mutable vertex
- * insertion/removal, nested vertex/border styles, traces, movement, and
- * fill/border hit testing. Remaining label and specialized mutation APIs stay
- * outside this slice.
+ * insertion/removal, nested vertex/border styles, labels, traces, movement,
+ * and fill/border hit testing.
  */
 internal class Polygon private constructor(
     board: Board,
@@ -358,11 +357,15 @@ internal class Polygon private constructor(
         removePoints(points.map(::findPoint))
 
     // JSXGraph 1.13.3: src/base/polygon.js -> getParents.
-    // GeometryElement.parents already owns the JVM getParents signature.
-    internal fun parentData(): List<String> {
-        setParents(openVertices())
-        return parents.toList()
-    }
+    internal fun parentData(): List<String> =
+        openVertices().map(GeometryElement::id)
+
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(parentData())
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     // JSXGraph 1.13.3: src/base/polygon.js -> getAttributes.
     override fun getAttributes(): Map<String, Any?> {
@@ -444,6 +447,8 @@ internal class Polygon private constructor(
             return emptyList()
         }
 
+        // JSXGraph 1.13.3: src/base/polygon.js ->
+        // sutherlandHodgman closure isInside.
         fun isInside(
             first: DoubleArray,
             second: DoubleArray,

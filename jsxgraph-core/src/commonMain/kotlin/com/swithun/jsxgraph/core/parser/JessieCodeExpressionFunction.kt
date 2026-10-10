@@ -72,7 +72,8 @@ internal class JessieCodeExpressionFunction private constructor(
         ).evaluate(ast)
 
     internal companion object {
-        // JSXGraph: src/utils/type.js -> createFunction string branch
+        // JSXGraph 1.13.3: src/utils/type.js ->
+        // createFunction closure f and string branch.
         internal fun compile(
             source: String,
             board: Board,

@@ -625,7 +625,12 @@ internal class Group private constructor(
             )
             for (parent in parents) {
                 val coordinates = parent as? CoordsElement ?: continue
-                if (!(coordinates is Point && coordinates.isFixed)) {
+                val fixed = when (coordinates) {
+                    is Point -> coordinates.isFixed
+                    is Text -> coordinates.isFixed
+                    else -> coordinates.evalVisProp("fixed") == true
+                }
+                if (!fixed) {
                     group.addPoint(coordinates)
                 }
             }

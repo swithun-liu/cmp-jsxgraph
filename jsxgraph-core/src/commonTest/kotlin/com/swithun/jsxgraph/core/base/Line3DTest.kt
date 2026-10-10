@@ -6,11 +6,94 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class Line3DTest {
+    @Test
+    fun proxyAndEndpointAttributesMatchOfficialOwnership() {
+        val board = createBoard()
+        val view = createView(board)
+        val anchor = point(
+            view,
+            doubleArrayOf(0.0, 0.0, 0.0),
+            "anchor",
+        )
+        val line = line(
+            Line3D.create(
+                view = view,
+                point = anchor,
+                directionSource = Line3DDirectionSource.Values(
+                    listOf(
+                        Line3DCoordinateValue.Numeric(1.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                    ),
+                ),
+                rangeSource = listOf(
+                    Line3DCoordinateValue.Numeric(-1.0),
+                    Line3DCoordinateValue.Numeric(2.0),
+                ),
+                id = "line",
+                name = "L",
+                fixed = true,
+                attributes = linkedMapOf(
+                    "id" to "line",
+                    "name" to "L",
+                    "strokeColor" to "#654321",
+                    "strokeWidth" to 4.0,
+                    "withLabel" to true,
+                    "point1" to mapOf(
+                        "id" to "nested-a",
+                        "name" to "A",
+                        "visible" to true,
+                        "size" to 8.0,
+                        "withLabel" to true,
+                    ),
+                    "point2" to mapOf(
+                        "id" to "nested-b",
+                        "name" to "",
+                        "visible" to false,
+                        "size" to 9.0,
+                    ),
+                ),
+            ),
+        )
+
+        val label = assertNotNull(line.line2D.elementLabel)
+        assertNull(line.elementLabel)
+        assertEquals("L", line.line2D.name)
+        assertEquals("#654321", line.getAttribute("strokeColor"))
+        assertEquals(4.0, line.getAttribute("strokeWidth"))
+        assertSame(line.line2D, label.anchor)
+        assertEquals(
+            listOf<GeometryElement>(line.line2D),
+            line.inherits,
+        )
+        assertEquals(
+            listOf("nested-a", "nested-b"),
+            line.endpoints.map(Point3D::id),
+        )
+        assertEquals(8.0, line.endpoints[0].point2D.getAttribute("size"))
+        assertEquals(9.0, line.endpoints[1].point2D.getAttribute("size"))
+        assertNotNull(line.endpoints[0].point2D.elementLabel)
+        assertNotNull(line.endpoints[1].point2D.elementLabel)
+
+        line.setAttribute(
+            mapOf(
+                "strokeWidth" to 6.0,
+                "withLabel" to false,
+            ),
+        )
+
+        assertEquals(6.0, line.line2D.getAttribute("strokeWidth"))
+        assertFalse(line.line2D.hasLabel)
+        assertSame(label, line.line2D.elementLabel)
+        assertNull(line.elementLabel)
+    }
+
     @Test
     fun twoPointAndDirectionFormsMatchOfficialFixture() {
         val board = createBoard()

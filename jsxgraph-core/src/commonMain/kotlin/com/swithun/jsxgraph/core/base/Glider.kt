@@ -58,8 +58,8 @@ internal sealed interface GliderError {
  * The Point, Line/Segment/Polygon-border, Circle, Curve-class, Arc, and
  * Sector-backed subset of JXG.Glider.
  *
- * Turtle, attractor, and animation branches remain explicit unsupported
- * creator inputs.
+ * The nominal Turtle branch is explicitly unsupported because JSXGraph
+ * 1.13.3 cannot select Turtle through its public Board registry.
  */
 internal open class Glider internal constructor(
     board: Board,
@@ -69,7 +69,7 @@ internal open class Glider internal constructor(
     needsRegularUpdate: Boolean,
     fixed: Boolean,
     internal var slideElement: GeometryElement,
-    private val polygonHost: Polygon? = null,
+    internal var polygonHost: Polygon? = null,
     coordinateConstraint: JessieCodeCoordinateFunction? = null,
     internal var snapWidth: Double = -1.0,
     internal var snapValues: DoubleArray = doubleArrayOf(),
@@ -98,6 +98,11 @@ internal open class Glider internal constructor(
     // src/base/coordselement.js -> updateCoords.
     override fun update(fromParent: Boolean): Glider {
         if (!needsUpdate) {
+            return this
+        }
+        if (type != Const.OBJECT_TYPE_GLIDER || slideObject == null) {
+            updateConstraint()
+            updateTransform(fromParent)
             return this
         }
         val result = if (coordinateFunctions.isNotEmpty()) {
@@ -645,10 +650,10 @@ internal open class Glider internal constructor(
 
     private fun curveTransformationChain(curve: Curve): List<Curve> {
         val chain = mutableListOf(curve)
-        var source = curve.transformationSource
+        var source = curve.transformationSource as? Curve
         while (source != null) {
             chain += source
-            source = source.transformationSource
+            source = source.transformationSource as? Curve
         }
         return chain
     }

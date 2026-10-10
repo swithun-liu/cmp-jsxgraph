@@ -81,6 +81,78 @@ class JsxGraphSliderTest {
     }
 
     @Test
+    fun sliderTickLabelsUseValueRangeInDocumentAndJessieCodeScenes() {
+        val documentScene = documentScene(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-5, 5, 5, -5],
+                  "objects": [{
+                    "id": "slider",
+                    "type": "slider",
+                    "parents": [[-4, 0], [4, 0], [-10, 0, 10]],
+                    "attributes": {
+                      "name": "",
+                      "withLabel": false,
+                      "ticks": {
+                        "id": "sliderTicks",
+                        "drawLabels": true,
+                        "insertTicks": false,
+                        "ticksDistance": 2
+                      }
+                    }
+                  }]
+                }
+                """.trimIndent(),
+            ),
+        )
+        val jessieScene = jessieScene(
+            JsxGraphJessieCode.parse(
+                """
+                slider(
+                    [-4, 0],
+                    [4, 0],
+                    [-10, 0, 10]
+                ) <<
+                    id: "slider", name: "", withLabel: false,
+                    ticks: <<
+                        id: "sliderTicks",
+                        drawLabels: true,
+                        insertTicks: false,
+                        ticksDistance: 2
+                    >>
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        for (scene in listOf(documentScene, jessieScene)) {
+            val definition = assertIs<JsxGraphSceneElement.Ticks>(
+                scene.elements.single { it.id == "sliderTicks" },
+            ).definition
+            assertEquals(
+                JsxGraphSliderTicksValueRange(
+                    minimum = -10.0,
+                    maximum = 10.0,
+                ),
+                definition.sliderValueRange,
+            )
+            val resolved = definition.resolve(
+                visibleLeft = -5.0,
+                visibleTop = 5.0,
+                visibleRight = 5.0,
+                visibleBottom = -5.0,
+                cssPixelsPerUnitX = 50.0,
+                cssPixelsPerUnitY = 50.0,
+            )
+            assertEquals(
+                listOf("−10", "−5", "0", "5", "10"),
+                resolved.labels.map(JsxGraphTickLabel::content),
+            )
+        }
+    }
+
+    @Test
     fun sliderInteractionProjectsOntoBaselineAndUpdatesDependents() {
         val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
             JsxGraphJessieCode.createSession(),
@@ -195,6 +267,103 @@ class JsxGraphSliderTest {
         assertEquals(5, limited.actual)
     }
 
+    @Test
+    fun constructionSessionRoutesBaselinePointerUpToSlider() {
+        val movable = sliderSession()
+
+        clickBaseline(movable, x = 2.0, y = 0.0)
+
+        assertPointCoordinates(
+            JsxGraphPoint2D(2.0, 0.0),
+            point(movable.scene, "slider").coordinates,
+        )
+
+        val disabled = sliderSession(
+            additionalAttributes = "\"moveOnUp\": false,",
+        )
+
+        clickBaseline(disabled, x = 2.0, y = 0.0)
+
+        assertPointCoordinates(
+            JsxGraphPoint2D(-1.8, 0.0),
+            point(disabled.scene, "slider").coordinates,
+        )
+
+        val fixed = sliderSession(
+            additionalAttributes = "\"fixed\": true,",
+        )
+
+        clickBaseline(fixed, x = 2.0, y = 0.0)
+
+        assertPointCoordinates(
+            JsxGraphPoint2D(-1.8, 0.0),
+            point(fixed.scene, "slider").coordinates,
+        )
+    }
+
+    private fun sliderSession(
+        additionalAttributes: String = "",
+    ): JsxGraphSession {
+        val result = JsxGraphEngine.createSession(
+            """
+            {
+              "boundingBox": [-5, 5, 5, -5],
+              "objects": [{
+                "id": "slider",
+                "type": "slider",
+                "parents": [[-3, 0], [3, 0], [0, 2, 10]],
+                "attributes": {
+                  $additionalAttributes
+                  "name": "",
+                  "withLabel": false,
+                  "withTicks": false,
+                  "baseline": {"id": "baseline"},
+                  "highline": {"id": "highline"}
+                }
+              }]
+            }
+            """.trimIndent(),
+        )
+        return assertIs<GMResult.Ok<JsxGraphSession>>(
+            result,
+            result.toString(),
+        ).value
+    }
+
+    private fun clickBaseline(
+        session: JsxGraphSession,
+        x: Double,
+        y: Double,
+    ) {
+        val viewport = JsxGraphViewportSize(500.0, 500.0)
+        val screen = JsxGraphPoint2D(
+            x = 250.0 + x * 50.0,
+            y = 250.0 - y * 50.0,
+        )
+        interactionScene(
+            session.interactPointer(
+                JsxGraphBoardPointerInteraction.Down(
+                    pointerId = 1L,
+                    position = screen,
+                    viewportSize = viewport,
+                    timestampMilliseconds = 100L,
+                    device = JsxGraphPointerDevice.MOUSE,
+                ),
+            ),
+        )
+        interactionScene(
+            session.interactPointer(
+                JsxGraphBoardPointerInteraction.Up(
+                    pointerId = 1L,
+                    position = screen,
+                    viewportSize = viewport,
+                    timestampMilliseconds = 120L,
+                    device = JsxGraphPointerDevice.MOUSE,
+                ),
+            ),
+        )
+    }
+
     private fun point(
         scene: JsxGraphScene,
         id: String,
@@ -210,12 +379,18 @@ class JsxGraphSliderTest {
     private fun jessieScene(
         result: GMResult<JsxGraphScene, JsxGraphJessieCodeError>,
     ): JsxGraphScene =
-        assertIs<GMResult.Ok<JsxGraphScene>>(result).value
+        assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
 
     private fun documentScene(
         result: GMResult<JsxGraphScene, JsxGraphDocumentError>,
     ): JsxGraphScene =
-        assertIs<GMResult.Ok<JsxGraphScene>>(result).value
+        assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
 
     private fun interactionScene(
         result: GMResult<JsxGraphScene, JsxGraphInteractionError>,

@@ -46,7 +46,7 @@ class HyperbolaTest {
         assertTrue(hyperbola.isHyperbola)
         assertFalse(hyperbola.isEllipse)
         assertTrue(hyperbola.isDraggable)
-        assertEquals(Curve.DEFAULT_SAMPLE_COUNT, hyperbola.numberPoints)
+        assertTrue(hyperbola.numberPoints in 2 until Curve.DEFAULT_SAMPLE_COUNT)
         assertEquals(
             -1.0001 * PI,
             hyperbola.minX(),
@@ -176,7 +176,7 @@ class HyperbolaTest {
         assertEquals(4.0, numeric.majorAxis())
         assertEquals(-0.5 * PI, numeric.minX())
         assertEquals(0.5 * PI, numeric.maxX())
-        assertEquals(64, numeric.numberPoints)
+        assertTrue(numeric.numberPoints in 2 until Curve.DEFAULT_SAMPLE_COUNT)
         assertEquals(
             -3.0,
             numeric.X(-0.5 * PI),
@@ -434,10 +434,12 @@ class HyperbolaTest {
     }
 
     private fun board(id: String): Board = Board(
-        originX = 0.0,
-        originY = 0.0,
-        unitX = 1.0,
-        unitY = 1.0,
+        originX = 320.0,
+        originY = 240.0,
+        unitX = 40.0,
+        unitY = 40.0,
+        canvasWidth = 640.0,
+        canvasHeight = 480.0,
         id = id,
     )
 

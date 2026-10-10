@@ -52,6 +52,8 @@ internal fun lineRenderGeometry(
     strokeWidth: Float,
     firstArrow: JsxGraphArrowHead?,
     lastArrow: JsxGraphArrowHead?,
+    touchFirstPointDistance: Float? = null,
+    touchLastPointDistance: Float? = null,
 ): LineRenderGeometry? {
     val delta = point2 - point1
     val sourceLength = hypot(delta.x, delta.y)
@@ -72,7 +74,29 @@ internal fun lineRenderGeometry(
         viewportSize = viewportSize,
         inset = if (hasArrow) ARROW_VIEWPORT_INSET else null,
     )
-    val displayDelta = displayEnd - displayStart
+    val initialDelta = displayEnd - displayStart
+    val initialLength = hypot(initialDelta.x, initialDelta.y)
+    if (initialLength == 0.0f || !initialLength.isFinite()) {
+        return null
+    }
+    val initialDirection = initialDelta / initialLength
+    // JSXGraph 1.13.3:
+    // src/renderer/abstract.js -> handleTouchpoints.
+    // Touch offsets are applied before arrow-head stroke shortening, and the
+    // shifted endpoints also become the arrow-head anchors.
+    val touchedStart =
+        if (firstArrow != null && touchFirstPointDistance != null) {
+            displayStart + initialDirection * touchFirstPointDistance
+        } else {
+            displayStart
+        }
+    val touchedEnd =
+        if (lastArrow != null && touchLastPointDistance != null) {
+            displayEnd - initialDirection * touchLastPointDistance
+        } else {
+            displayEnd
+        }
+    val displayDelta = touchedEnd - touchedStart
     val displayLength = hypot(displayDelta.x, displayDelta.y)
     if (displayLength == 0.0f || !displayLength.isFinite()) {
         return null
@@ -87,15 +111,15 @@ internal fun lineRenderGeometry(
     val shorten = displayLength >= minimumLength
     val strokeStart =
         if (shorten && firstData != null) {
-            displayStart + direction * firstData.offset
+            touchedStart + direction * firstData.offset
         } else {
-            displayStart
+            touchedStart
         }
     val strokeEnd =
         if (shorten && lastData != null) {
-            displayEnd - direction * lastData.offset
+            touchedEnd - direction * lastData.offset
         } else {
-            displayEnd
+            touchedEnd
         }
     return LineRenderGeometry(
         strokeStart = strokeStart,
@@ -103,7 +127,7 @@ internal fun lineRenderGeometry(
         firstArrow = firstArrow?.let {
             arrowHeadGeometry(
                 arrow = it,
-                anchor = displayStart,
+                anchor = touchedStart,
                 direction = direction,
                 strokeWidth = strokeWidth,
                 isFirst = true,
@@ -112,7 +136,7 @@ internal fun lineRenderGeometry(
         lastArrow = lastArrow?.let {
             arrowHeadGeometry(
                 arrow = it,
-                anchor = displayEnd,
+                anchor = touchedEnd,
                 direction = direction,
                 strokeWidth = strokeWidth,
                 isFirst = false,

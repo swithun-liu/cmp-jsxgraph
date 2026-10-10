@@ -766,6 +766,7 @@ object Color {
         )
     }
 
+    // JSXGraph 1.13.3: src/utils/color.js -> LMS2rgb closure lut_lookup.
     private fun lmsLookup(value: Double): Int {
         var offset = 127
         var step = 64

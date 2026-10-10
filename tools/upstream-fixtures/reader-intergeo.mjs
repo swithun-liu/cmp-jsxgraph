@@ -4,7 +4,9 @@
  * Run after installing tools/visual-parity dependencies:
  *   node tools/upstream-fixtures/reader-intergeo.mjs
  */
+import {mkdtempSync, rmSync} from "node:fs";
 import {createRequire} from "node:module";
+import {tmpdir} from "node:os";
 import {dirname, resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -17,11 +19,18 @@ const puppeteer = require("puppeteer");
 const executablePath =
     process.env.CHROME_BIN ??
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const userDataDir = mkdtempSync(resolve(tmpdir(), "cmp-jsxgraph-intergeo-"));
 
 const browser = await puppeteer.launch({
     headless: true,
     executablePath,
-    args: ["--disable-dev-shm-usage", "--no-sandbox"]
+    userDataDir,
+    args: [
+        "--disable-breakpad",
+        "--disable-crash-reporter",
+        "--disable-dev-shm-usage",
+        "--no-sandbox"
+    ]
 });
 
 try {
@@ -156,6 +165,9 @@ try {
                 "    <point id=\"N\"><euclidean_coordinates>",
                 "      <double>0</double><double>0</double>",
                 "    </euclidean_coordinates></point>",
+                "    <point id=\"KC\"><euclidean_coordinates>",
+                "      <double>0</double><double>0</double>",
+                "    </euclidean_coordinates></point>",
                 "    <point id=\"G\"><homogeneous_coordinates>",
                 "      <double>2</double><double>0</double><double>1</double>",
                 "    </homogeneous_coordinates></point>",
@@ -197,6 +209,9 @@ try {
                 "    <circle_by_center_and_point>",
                 "      <circle>K</circle><point>A</point><point>C</point>",
                 "    </circle_by_center_and_point>",
+                "    <center_of_circle>",
+                "      <point>KC</point><circle>K</circle>",
+                "    </center_of_circle>",
                 "    <point_on_line><point>U</point><line>L</line>",
                 "    </point_on_line>",
                 "    <point_on_circle><point>G</point><circle>K</circle>",
@@ -204,6 +219,9 @@ try {
                 "    <vector_from_point_to_point>",
                 "      <vector>V</vector><point>A</point><point>C</point>",
                 "    </vector_from_point_to_point>",
+                "    <locus_defined_by_point>",
+                "      <locus>traceM</locus><point>M</point>",
+                "    </locus_defined_by_point>",
                 "  </constraints>",
                 "  <display/>",
                 "</construction>"
@@ -234,7 +252,10 @@ try {
                     straightFirst:
                         value.visProp?.straightfirst ?? null,
                     straightLast:
-                        value.visProp?.straightlast ?? null
+                        value.visProp?.straightlast ?? null,
+                    trace: value.visProp?.trace ?? null,
+                    strokeColor: value.visProp?.strokecolor ?? null,
+                    fillColor: value.visProp?.fillcolor ?? null
                 };
             };
             const drawn = {
@@ -251,10 +272,27 @@ try {
                 N: element("N"),
                 X: element("X"),
                 K: element("K"),
+                KC: element("KC"),
                 Q: element("Q"),
                 U: element("U"),
                 G: element("G"),
                 V: element("V")
+            };
+            const centerInitial = [
+                board.select("KC").X(),
+                board.select("KC").Y()
+            ];
+            board
+                .select("A")
+                .setPositionDirectly(JXG.COORDS_BY_USER, [1, -1]);
+            board.update();
+            const centerAfterMove = [
+                board.select("KC").X(),
+                board.select("KC").Y()
+            ];
+            const centerOfCircle = {
+                initial: centerInitial,
+                afterMove: centerAfterMove
             };
             JXG.JSXGraph.freeBoard(board);
 
@@ -434,12 +472,222 @@ try {
             );
             JXG.JSXGraph.freeBoard(advancedBoard);
             advancedHost.remove();
+
+            const remainingHost = document.createElement("div");
+            remainingHost.id = "remaining-board";
+            remainingHost.style.width = "800px";
+            remainingHost.style.height = "600px";
+            document.body.appendChild(remainingHost);
+            const remainingBoard = JXG.JSXGraph.initBoard(
+                remainingHost.id,
+                {
+                    boundingbox: [-5, 5, 5, -5],
+                    axis: false,
+                    showNavigation: false,
+                    showCopyright: false
+                }
+            );
+            const storedLine = (id, a, b, c) =>
+                `<line id="${id}"><homogeneous_coordinates>` +
+                `<double>${a}</double><double>${b}</double>` +
+                `<double>${c}</double></homogeneous_coordinates></line>`;
+            const remainingSource = [
+                "<construction><elements>",
+                "<point id=\"A\"><euclidean_coordinates><double>0</double><double>0</double></euclidean_coordinates></point>",
+                "<point id=\"B\"><euclidean_coordinates><double>2</double><double>0</double></euclidean_coordinates></point>",
+                "<point id=\"C\"><euclidean_coordinates><double>0</double><double>2</double></euclidean_coordinates></point>",
+                "<point id=\"P\"><euclidean_coordinates><double>3</double><double>0</double></euclidean_coordinates></point>",
+                "<point id=\"E1\"><euclidean_coordinates><double>8</double><double>8</double></euclidean_coordinates></point>",
+                "<point id=\"E2\"><euclidean_coordinates><double>9</double><double>9</double></euclidean_coordinates></point>",
+                storedLine("Base", 0, 1, 0),
+                storedLine("Through", 0, 1, 0),
+                storedLine("Parallel", 0, 1, -2),
+                storedLine("Ray", 0, 1, -2),
+                storedLine("Perpendicular", 1, 0, 0),
+                storedLine("Segment", 0, 1, 0),
+                storedLine("T1", 1, 1, -3),
+                storedLine("T2", 1, -1, 3),
+                "<circle id=\"Circle\"><matrix><double>1</double><double>0</double><double>0</double><double>0</double><double>1</double><double>0</double><double>0</double><double>0</double><double>-4</double></matrix></circle>",
+                "</elements><constraints>",
+                "<line_through_two_points><line>Base</line><point>A</point><point>B</point></line_through_two_points>",
+                "<line_through_point><line>Through</line><point>C</point></line_through_point>",
+                "<line_parallel_to_line_through_point><line>Parallel</line><point>C</point><line>Base</line></line_parallel_to_line_through_point>",
+                "<ray_from_point_and_vector><ray>Ray</ray><point>C</point><vector>Base</vector></ray_from_point_and_vector>",
+                "<line_perpendicular_to_line_through_point><line>Perpendicular</line><point>C</point><line>Base</line></line_perpendicular_to_line_through_point>",
+                "<line_segment_by_points><line_segment>Segment</line_segment><point>A</point><point>B</point></line_segment_by_points>",
+                "<endpoints_of_line_segment><point>E1</point><point>E2</point><line_segment>Segment</line_segment></endpoints_of_line_segment>",
+                "<circle_by_center_and_point><circle>Circle</circle><point>A</point><point>B</point></circle_by_center_and_point>",
+                "<circle_tangent_lines_by_point><line>T1</line><line>T2</line><circle>Circle</circle><point>P</point></circle_tangent_lines_by_point>",
+                "</constraints><display>",
+                "<background-color>#fefefe</background-color>",
+                "<style ref=\"A\"><stroke>#123456</stroke><stroke-width>4.5</stroke-width><fill>#abcdef</fill><fill-opacity>0.4</fill-opacity><border-opacity>0.7</border-opacity><point-size>6</point-size><label>Alpha</label><point-style>square</point-style></style>",
+                "<style ref=\"Parallel\"><stroke>green</stroke><label>ParallelLabel</label></style>",
+                "</display></construction>"
+            ].join("");
+            const remainingReader = new JXG.IntergeoReader(
+                remainingBoard,
+                remainingSource
+            );
+            remainingReader.objects = {};
+            remainingReader.read();
+            const remainingObject = (id) => {
+                const stored = remainingReader.objects[id];
+                if (typeof stored?.setAttribute === "function") {
+                    return stored;
+                }
+                return remainingBoard.select(id) ??
+                    (id === "A" ? remainingBoard.select("Alpha") : null);
+            };
+            const remainingInitial = Object.fromEntries(
+                [
+                    "A",
+                    "B",
+                    "C",
+                    "P",
+                    "Through",
+                    "Parallel",
+                    "Ray",
+                    "Perpendicular",
+                    "E1",
+                    "E2",
+                    "T1",
+                    "T2"
+                ].map((id) => {
+                    const value = remainingObject(id);
+                    return [
+                        id,
+                        {
+                            id: value.id,
+                            name: value.name,
+                            elType: value.elType,
+                            coords:
+                                typeof value.X === "function"
+                                    ? [value.X(), value.Y()]
+                                    : null,
+                            stdform: value.stdform?.slice(0, 3) ?? null,
+                            slope:
+                                typeof value.Slope === "function"
+                                    ? value.Slope()
+                                    : null,
+                            straightFirst:
+                                value.visProp?.straightfirst ?? null,
+                            straightLast:
+                                value.visProp?.straightlast ?? null,
+                            strokeColor:
+                                value.visProp?.strokecolor ?? null,
+                            fillColor: value.visProp?.fillcolor ?? null,
+                            strokeWidth:
+                                value.visProp?.strokewidth ?? null,
+                            fillOpacity:
+                                value.visProp?.fillopacity ?? null,
+                            strokeOpacity:
+                                value.visProp?.strokeopacity ?? null,
+                            size: value.visProp?.size ?? null,
+                            face: value.visProp?.face ?? null
+                        }
+                    ];
+                })
+            );
+            remainingObject("B").setPositionDirectly(
+                JXG.COORDS_BY_USER,
+                [2, 1]
+            );
+            remainingBoard.update();
+            const remainingAfterEndpointMove = Object.fromEntries(
+                ["Through", "Parallel", "Perpendicular", "E1", "E2"].map(
+                    (id) => {
+                        const value = remainingObject(id);
+                        return [
+                            id,
+                            {
+                                coords:
+                                    typeof value.X === "function"
+                                        ? [value.X(), value.Y()]
+                                        : null,
+                                slope:
+                                    typeof value.Slope === "function"
+                                        ? value.Slope()
+                                        : null
+                            }
+                        ];
+                    }
+                )
+            );
+            const tangentBeforeMove =
+                remainingObject("T1").stdform.slice(0, 3);
+            remainingObject("P").setPositionDirectly(
+                JXG.COORDS_BY_USER,
+                [4, 0]
+            );
+            remainingBoard.update();
+            const remaining = {
+                backgroundColor: remainingHost.style.backgroundColor,
+                initial: remainingInitial,
+                afterEndpointMove: remainingAfterEndpointMove,
+                tangentBeforeMove,
+                tangentAfterMove:
+                    remainingObject("T1").stdform.slice(0, 3)
+            };
+            JXG.JSXGraph.freeBoard(remainingBoard);
+            remainingHost.remove();
+
+            const polygonHost = document.createElement("div");
+            polygonHost.id = "polygon-board";
+            polygonHost.style.width = "800px";
+            polygonHost.style.height = "600px";
+            document.body.appendChild(polygonHost);
+            const polygonBoard = JXG.JSXGraph.initBoard(polygonHost.id, {
+                boundingbox: [-5, 5, 5, -5],
+                axis: false,
+                showNavigation: false,
+                showCopyright: false
+            });
+            const polygonSource = [
+                "<construction><elements>",
+                "<point id=\"A\"><euclidean_coordinates><double>0</double><double>0</double></euclidean_coordinates></point>",
+                "<point id=\"B\"><euclidean_coordinates><double>2</double><double>0</double></euclidean_coordinates></point>",
+                "<point id=\"C\"><euclidean_coordinates><double>0</double><double>2</double></euclidean_coordinates></point>",
+                "<polygon id=\"Poly\"/>",
+                "</elements><constraints><polygon_by_vertices>",
+                "<polygon>Poly</polygon><list_of_vertices>",
+                "<point>A</point><point>B</point><point>C</point>",
+                "</list_of_vertices></polygon_by_vertices>",
+                "</constraints><display/></construction>"
+            ].join("");
+            const polygonReader = new JXG.IntergeoReader(
+                polygonBoard,
+                polygonSource
+            );
+            polygonReader.objects = {};
+            let polygonByVertices;
+            try {
+                polygonReader.read();
+                const polygon = polygonBoard.select("Poly");
+                polygonByVertices = {
+                    error: null,
+                    id: polygon?.id ?? null,
+                    name: polygon?.name ?? null,
+                    vertexCount: polygon?.vertices?.length ?? null
+                };
+            } catch (error) {
+                polygonByVertices = {
+                    error: String(error),
+                    id: null,
+                    name: null,
+                    vertexCount: null
+                };
+            }
+            JXG.JSXGraph.freeBoard(polygonBoard);
+            polygonHost.remove();
             return {
                 parseOnly,
                 drawn,
+                centerOfCircle,
                 circleByThreePoints,
                 angleBisector,
-                advanced
+                advanced,
+                remaining,
+                polygonByVertices
             };
         } finally {
             JXG.debug = originalDebug;
@@ -448,4 +696,5 @@ try {
     console.log(JSON.stringify(evidence, null, 2));
 } finally {
     await browser.close();
+    rmSync(userDataDir, {force: true, recursive: true});
 }

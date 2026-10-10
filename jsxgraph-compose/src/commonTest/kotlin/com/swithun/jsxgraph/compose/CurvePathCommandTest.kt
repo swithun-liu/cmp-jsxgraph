@@ -77,6 +77,55 @@ class CurvePathCommandTest {
     }
 
     @Test
+    fun handDrawingUsesTwoDeterministicCubicPasses() {
+        val randomValues = listOf(
+            0.0f,
+            0.25f,
+            0.5f,
+            0.75f,
+            0.0f,
+            0.25f,
+            0.5f,
+            0.75f,
+        )
+        var randomIndex = 0
+
+        val commands = handDrawingCurvePathCommands(
+            points = listOf(
+                Offset(0.0f, 0.0f),
+                Offset(10.0f, 20.0f),
+            ),
+            strokeWidth = 2.0f,
+            random = { randomValues[randomIndex++] },
+        )
+
+        assertEquals(4, commands.size)
+        assertEquals(
+            Offset.Zero,
+            assertIs<CurvePathCommand.MoveTo>(commands[0]).point,
+        )
+        val firstPass =
+            assertIs<CurvePathCommand.CubicTo>(commands[1])
+        assertEquals(1.33f, firstPass.control1.x, 1.0e-4f)
+        assertEquals(5.66f, firstPass.control1.y, 1.0e-4f)
+        assertEquals(6.66f, firstPass.control2.x, 1.0e-4f)
+        assertEquals(14.32f, firstPass.control2.y, 1.0e-4f)
+        assertEquals(Offset(10.0f, 20.0f), firstPass.end)
+        assertEquals(
+            Offset.Zero,
+            assertIs<CurvePathCommand.MoveTo>(commands[2]).point,
+        )
+        val secondPass =
+            assertIs<CurvePathCommand.CubicTo>(commands[3])
+        assertEquals(-0.67f, secondPass.control1.x, 1.0e-4f)
+        assertEquals(4.66f, secondPass.control1.y, 1.0e-4f)
+        assertEquals(6.66f, secondPass.control2.x, 1.0e-4f)
+        assertEquals(15.32f, secondPass.control2.y, 1.0e-4f)
+        assertEquals(Offset(10.0f, 20.0f), secondPass.end)
+        assertEquals(8, randomIndex)
+    }
+
+    @Test
     fun automaticAngleUsesCssPixelScaleAtEachViewportWidth() {
         val curve = JsxGraphSceneElement.Curve(
             id = "angle",

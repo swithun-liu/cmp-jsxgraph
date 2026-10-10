@@ -1317,9 +1317,9 @@ export const cases = [
             "thresholdVertex",
             "thresholdThird",
             "thresholdAngle",
-            "jxgBoardP4"
+            "jxgBoardP12"
         ],
-        generatedElementIds: ["jxgBoardP4"],
+        generatedElementIds: ["jxgBoardP12"],
         features: [
             "angle",
             "fixed-angle-radius",
@@ -1354,9 +1354,9 @@ export const cases = [
             "autoVertex",
             "autoThird",
             "autoAngle",
-            "jxgBoardP4"
+            "jxgBoardP12"
         ],
-        generatedElementIds: ["jxgBoardP4"],
+        generatedElementIds: ["jxgBoardP12"],
         features: [
             "angle",
             "auto-angle-radius",

@@ -162,6 +162,13 @@ internal object TracenpocheParser {
         }
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/tracenpoche.js -> parse scope.define,
+     * scope.find, scope.pop, original_symbol.nud, original_symbol.led,
+     * constant.nud, predefined.nud, and variable.nud. Kotlin keeps the same
+     * Pratt decisions in typed prefix/infix dispatch instead of mutable
+     * prototype-based symbol and scope tables.
+     */
     private class Parser(
         private val tokens: List<TracenpocheToken>,
         private val limits: TracenpocheParserLimits,

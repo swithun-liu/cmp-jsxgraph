@@ -198,6 +198,7 @@ internal data class ParametricCurve2D(
     val y: (Double) -> Double,
 )
 
+// JSXGraph 1.13.3: src/math/numerics.js -> Neville.makeFct.
 internal class NevilleInterpolation internal constructor(
     private val points: List<CoordsElement>,
 ) {
@@ -249,6 +250,7 @@ internal class NevilleInterpolation internal constructor(
     }
 }
 
+// JSXGraph 1.13.3: src/math/numerics.js -> lagrangePolynomial.fct.
 internal class LagrangePolynomial internal constructor(
     private val points: List<CoordsElement>,
 ) {
@@ -288,6 +290,7 @@ internal class LagrangePolynomial internal constructor(
         return numerator / denominator
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> lagrangePolynomial.fct.getTerm.
     internal fun getTerm(
         digits: Int? = null,
         parameter: String? = null,
@@ -299,6 +302,8 @@ internal class LagrangePolynomial internal constructor(
         multiplicationSymbol = multiplicationSymbol,
     )()
 
+    // JSXGraph 1.13.3:
+    // src/math/numerics.js -> lagrangePolynomial.fct.getCoefficients.
     internal fun getCoefficients(): DoubleArray =
         Numerics.lagrangePolynomialCoefficients(points)()
 }
@@ -308,6 +313,8 @@ private enum class SplineCoordinate {
     Y,
 }
 
+// JSXGraph 1.13.3:
+// src/math/numerics.js -> CardinalSpline._tau and CardinalSpline.makeFct.
 internal class CardinalSplineInterpolation internal constructor(
     private val points: List<NumericsPoint2D>,
     private val tension: () -> Double,
@@ -462,6 +469,8 @@ internal class CardinalSplineInterpolation internal constructor(
         SplineCoordinate.Y -> point.Y()
     }
 
+    // JSXGraph 1.13.3:
+    // src/math/numerics.js -> CardinalSpline.makeFct first/last Dist.
     private fun distance(
         firstExtendedIndex: Int,
         secondExtendedIndex: Int,
@@ -490,6 +499,7 @@ internal class CardinalSplineInterpolation internal constructor(
     }
 }
 
+// JSXGraph 1.13.3: src/math/numerics.js -> bezier.makeFct.
 internal class BezierInterpolation internal constructor(
     private val points: List<CoordsElement>,
 ) {
@@ -552,6 +562,7 @@ internal class BezierInterpolation internal constructor(
     }
 }
 
+// JSXGraph 1.13.3: src/math/numerics.js -> bspline.makeFct.
 internal class BSplineInterpolation internal constructor(
     private val points: List<CoordsElement>,
     private val order: Int,
@@ -612,6 +623,7 @@ internal class BSplineInterpolation internal constructor(
         return result
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> bspline._knotVector.
     private fun knotVector(
         lastPointIndex: Int,
         order: Int,
@@ -623,6 +635,7 @@ internal class BSplineInterpolation internal constructor(
         }
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> bspline._evalBasisFuncs.
     private fun evaluateBasisFunctions(
         parameter: Double,
         knots: DoubleArray,
@@ -669,6 +682,8 @@ internal class BSplineInterpolation internal constructor(
     }
 }
 
+// JSXGraph 1.13.3:
+// src/math/numerics.js -> regressionPolynomial.deg and regressionPolynomial.fct.
 internal class RegressionPolynomial internal constructor(
     private val degreeProvider: () -> Double,
     private val xProviders: List<() -> Double>,
@@ -711,6 +726,7 @@ internal class RegressionPolynomial internal constructor(
         return GMResult.Ok(result)
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> regressionPolynomial.fct.getTerm.
     internal fun getTerm(): String = term
 
     private fun updateCoefficients(
@@ -3649,6 +3665,8 @@ object Numerics {
         return bestPoint
     }
 
+    // JSXGraph 1.13.3:
+    // src/math/numerics.js -> polzeros.hornerComplex.
     private fun hornerComplex(
         coefficients: List<Complex>,
         value: Complex,
@@ -3674,6 +3692,7 @@ object Numerics {
         return result
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> polzeros.hornerRec.
     private fun hornerReciprocal(
         coefficients: List<Complex>,
         value: Complex,
@@ -3699,6 +3718,7 @@ object Numerics {
         return result
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> polzeros.horner.
     private fun hornerReal(
         coefficients: DoubleArray,
         value: Double,
@@ -3710,6 +3730,7 @@ object Numerics {
         return result
     }
 
+    // JSXGraph 1.13.3: src/math/numerics.js -> polzeros.initial_guess.
     private fun initialPolynomialRoots(
         coefficients: List<Complex>,
     ): Array<Complex> {
@@ -3738,6 +3759,8 @@ object Numerics {
         }
     }
 
+    // JSXGraph 1.13.3:
+    // src/math/numerics.js -> polzeros.aberthIteration.
     private fun aberthIteration(
         coefficients: List<Complex>,
         tolerance: Double,

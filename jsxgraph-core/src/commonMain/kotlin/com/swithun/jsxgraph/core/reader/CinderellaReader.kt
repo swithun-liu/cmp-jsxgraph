@@ -1404,7 +1404,8 @@ internal class CinderellaReader(
             is GMResult.Ok -> Unit
             is GMResult.Err -> return result
         }
-        // JSXGraph 1.13.3 passes `b.select[1]` into Point.Dist here.
+        // JSXGraph 1.13.3: src/reader/cinderella.js -> makeRadiusFun.
+        // Upstream passes `b.select[1]` into Point.Dist here.
         // Preserve that observable failure without throwing from Kotlin.
         return creationFailure(
             definition.name,

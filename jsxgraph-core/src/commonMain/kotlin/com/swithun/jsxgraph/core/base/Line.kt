@@ -76,9 +76,9 @@ internal data class LineTraceSnapshot(
 )
 
 /**
- * Initial translated slice of JXG.Line.
+ * Translated JXG.Line lifecycle.
  *
- * This slice covers two-Point lines, dependency links, standard form,
+ * This implementation covers two-Point lines, dependency links, standard form,
  * coordinate-derived numeric queries, parametric coordinates, and the dynamic
  * fixed-length Segment lifecycle. The native creator registry supplies
  * coordinate, coefficient, Arrow, and construction wrappers around this
@@ -151,6 +151,33 @@ internal open class Line internal constructor(
         elType = LINE_ELEMENT_TYPE
     }
 
+    // JSXGraph 1.13.3: src/base/element.js -> setAttribute nested
+    // sub-elements; src/base/line.js -> createAxis.update.
+    override fun setAttribute(
+        attributes: Map<String, Any?>,
+    ): Line {
+        super.setAttribute(attributes)
+        val nestedTicks = attributes.entries.firstNotNullOfOrNull {
+            (key, value) ->
+            if (
+                key.filterNot(Char::isWhitespace).lowercase() == "ticks"
+            ) {
+                value as? Map<*, *>
+            } else {
+                null
+            }
+        }
+        if (nestedTicks != null) {
+            val values = nestedTicks.entries.associate {
+                (key, value) -> key.toString() to value
+            }
+            ticks.toList().forEach {
+                it.setAttribute(values)
+            }
+        }
+        return this
+    }
+
     // JSXGraph: src/base/line.js -> update
     override fun update(fromParent: Boolean): Line {
         if (!needsUpdate) {
@@ -175,12 +202,35 @@ internal open class Line internal constructor(
     // JSXGraph 1.13.3: src/base/line.js -> createAxis.update.
     internal fun updateAxisPosition(): Line {
         val definition = axisDefinition ?: return this
+        val defaults = definition.attributes
+        val liveAttributes = defaults.copy(
+            position =
+                (evalVisProp("position") as? String)
+                    ?.lowercase() ?: defaults.position,
+            anchor =
+                (evalVisProp("anchor") as? String)
+                    ?.lowercase() ?: defaults.anchor,
+            anchorDist =
+                axisDistance(
+                    value = evalVisProp("anchordist"),
+                    fallback = defaults.anchorDist,
+                ),
+            ticksAutoPos =
+                evalVisProp("ticksautopos") as? Boolean
+                    ?: defaults.ticksAutoPos,
+            ticksAutoPosThreshold =
+                axisDistance(
+                    value = evalVisProp("ticksautoposthreshold"),
+                    fallback = defaults.ticksAutoPosThreshold,
+                ),
+        )
         val resolved = definition.resolve(
             currentPoint1 = point1.coords.usrCoords,
             currentPoint2 = point2.coords.usrCoords,
             boundingBox = board.getBoundingBox(),
             pixelsPerUnitX = board.unitX,
             pixelsPerUnitY = board.unitY,
+            liveAttributes = liveAttributes,
         )
         point1.setPositionDirectly(
             Const.COORDS_BY_USER,
@@ -190,7 +240,17 @@ internal open class Line internal constructor(
             Const.COORDS_BY_USER,
             resolved.point2,
         )
-        defaultTicks?.needsUpdate = true
+        defaultTicks?.let { ticks ->
+            ticks.updateAxisLabelPosition(
+                horizontal = isHorizontal(),
+                vertical = isVertical(),
+                enabled = liveAttributes.ticksAutoPos,
+                threshold = liveAttributes.ticksAutoPosThreshold,
+                axisScreenX = point1.coords.scrCoords[1],
+                axisScreenY = point1.coords.scrCoords[2],
+            )
+            ticks.needsUpdate = true
+        }
         return this
     }
 
@@ -408,9 +468,13 @@ internal open class Line internal constructor(
         fixedLengthEvaluationError = null
     }
 
-    private fun fixedLengthResult(): GMResult<Double, LineError> {
+    private fun fixedLengthResult(
+        consumePending: Boolean = true,
+    ): GMResult<Double, LineError> {
         pendingFixedLengthValue?.let {
-            pendingFixedLengthValue = null
+            if (consumePending) {
+                pendingFixedLengthValue = null
+            }
             return GMResult.Ok(it)
         }
         updateFixedLength?.let {
@@ -424,6 +488,29 @@ internal open class Line internal constructor(
         }
         return GMResult.Ok(fixedLengthValue ?: Double.NaN)
     }
+
+    // JSXGraph 1.13.3: src/base/line.js ->
+    // createSegment.getParents.
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> {
+        if (!hasFixedLength) {
+            return GMResult.Ok(parents.toList())
+        }
+        return when (
+            val result = fixedLengthResult(consumePending = false)
+        ) {
+            is GMResult.Ok -> GMResult.Ok(parents + result.value)
+            is GMResult.Err -> GMResult.Err(
+                GeometryElementDumpError.ParentEvaluation(
+                    elementId = id,
+                    reason = result.error.toString(),
+                ),
+            )
+        }
+    }
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     private fun normalizeFixedLength(value: Double): Double =
         if (nonnegativeOnly) {

@@ -5,7 +5,9 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
+import kotlin.math.PI
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -298,6 +300,254 @@ class TextTest {
         assertEquals("\u03C0", text.utf8Decode("&#x03C0;"))
     }
 
+    @Test
+    fun labelAutoPositionUsesOfficialConflictScoreAndSearchOrder() {
+        val board = Board(
+            originX = 100.0,
+            originY = 100.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            canvasWidth = 200.0,
+            canvasHeight = 200.0,
+            id = "auto-position",
+        )
+        val anchor = point(board, 0.0, 0.0, name = "A")
+        val blocker = point(board, 25.0, 5.4, name = "B")
+        val label = text(
+            Text.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 0.0),
+                content = "label",
+                name = "",
+                anchor = anchor,
+                isLabel = true,
+            ),
+        )
+        anchor.setAttribute(mapOf("visible" to true))
+        blocker.setAttribute(mapOf("visible" to true))
+        label.setAttribute(
+            mapOf(
+                "visible" to true,
+                "islabel" to true,
+                "anchorx" to "left",
+                "anchory" to "bottom",
+                "offset" to doubleArrayOf(12.0, 0.0),
+                "autopositionmindistance" to 12.0,
+                "autopositionmaxdistance" to 28.0,
+            ),
+        )
+        label.screenOffset = doubleArrayOf(12.0, 0.0)
+        board.update()
+
+        assertEquals(
+            -1.0,
+            label.calculateAutoPositionScore(
+                radius = 12.0,
+                angle = 0.0,
+            ),
+            absoluteTolerance = 1.0e-12,
+        )
+        label.setAttribute(
+            mapOf("autopositionwhitelist" to listOf(blocker.id)),
+        )
+        assertEquals(
+            0.0,
+            label.calculateAutoPositionScore(
+                radius = 12.0,
+                angle = 0.0,
+            ),
+            absoluteTolerance = 1.0e-12,
+        )
+
+        label.setAttribute(mapOf("autopositionwhitelist" to emptyList<String>()))
+        assertEquals(
+            -1.0,
+            label.calculateAutoPositionScore(
+                radius = 12.0,
+                angle = 0.0,
+            ),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            -1.0 - kotlin.math.PI / 300.0,
+            label.calculateAutoPositionScore(
+                radius = 12.0,
+                angle = kotlin.math.PI / 30.0,
+            ),
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            -kotlin.math.PI / 60.0,
+            label.calculateAutoPositionScore(
+                radius = 12.0,
+                angle = kotlin.math.PI / 6.0,
+            ),
+            absoluteTolerance = 1.0e-12,
+        )
+        val best = buildList {
+            for (radiusIndex in 0 until 4) {
+                val radius = 12.0 + radiusIndex * (16.0 / 3.0)
+                for (angleIndex in 0 until 60) {
+                    val angle =
+                        angleIndex.toDouble() / 60.0 *
+                            2.0 *
+                            kotlin.math.PI
+                    add(
+                        Triple(
+                            label.calculateAutoPositionScore(radius, angle),
+                            radius,
+                            angle,
+                        ),
+                    )
+                }
+            }
+        }.maxBy { it.first }
+        assertEquals(
+            59.0 * kotlin.math.PI / 30.0,
+            best.third,
+            absoluteTolerance = 1.0e-12,
+        )
+        assertSame(label, label.setAutoPosition())
+        assertEquals(
+            best.second * kotlin.math.cos(best.third),
+            label.screenOffset[0],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            best.second * kotlin.math.sin(best.third),
+            label.screenOffset[1],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals("left", label.getAttribute("anchorx"))
+        assertEquals("top", label.getAttribute("anchory"))
+    }
+
+    @Test
+    fun affineTransformsMatchOfficialScreenMatrixAndHitInverse() {
+        val board = Board(
+            originX = 320.0,
+            originY = 240.0,
+            unitX = 40.0,
+            unitY = 40.0,
+            canvasWidth = 640.0,
+            canvasHeight = 480.0,
+            id = "board",
+        )
+        val text = text(
+            Text.create(
+                board = board,
+                coordinates = doubleArrayOf(2.0, 1.0),
+                content = "internal",
+                name = "",
+            ),
+        )
+        val transformations = listOf(
+            transformation("translate", 1.5, -0.5),
+            transformation("shear", 0.2, -0.1),
+            transformation("scale", 1.25, 0.75),
+            transformation("rotate", PI / 6.0),
+        )
+        text.addTransform(text, transformations)
+        board.update()
+
+        val joined = assertIs<GMResult.Ok<Array<DoubleArray>>>(
+            joinScreenTransformations(board, transformations),
+        ).value
+        assertContentEquals(
+            doubleArrayOf(
+                -6.076859021798441,
+                1.1200317547305485,
+                0.15849364905389024,
+            ),
+            joined[1],
+        )
+        assertContentEquals(
+            doubleArrayOf(
+                215.218313001771,
+                -0.560048094716167,
+                0.774519052838329,
+            ),
+            joined[2],
+        )
+        assertEquals(
+            3.840864317029974,
+            text.actualCoords.usrCoords[1],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            2.347427857925749,
+            text.actualCoords.usrCoords[2],
+            absoluteTolerance = 1.0e-12,
+        )
+        val transformedAnchor = Mat.matVecMult(
+            joined,
+            text.coords.scrCoords,
+        )
+        assertTrue(
+            text.hasPoint(
+                transformedAnchor[1],
+                transformedAnchor[2],
+            ),
+        )
+        val transformedOutside = Mat.matVecMult(
+            joined,
+            doubleArrayOf(
+                1.0,
+                text.coords.scrCoords[1] + 100.0,
+                text.coords.scrCoords[2] + 100.0,
+            ),
+        )
+        assertFalse(
+            text.hasPoint(
+                transformedOutside[1],
+                transformedOutside[2],
+            ),
+        )
+    }
+
+    @Test
+    fun rotateAttributeBuildsOfficialFiveTransformSequence() {
+        val board = Board(
+            originX = 320.0,
+            originY = 240.0,
+            unitX = 40.0,
+            unitY = 40.0,
+            canvasWidth = 640.0,
+            canvasHeight = 480.0,
+            id = "board",
+        )
+        val text = text(
+            Text.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 3.0),
+                content = "rotated",
+                name = "",
+                rotationDegrees = 35.0,
+            ),
+        )
+        board.update()
+
+        assertEquals(
+            listOf("translate", "scale", "rotate", "scale", "translate"),
+            text.transformations.map {
+                it.transformationType.upstreamName
+            },
+        )
+        val joined = assertIs<GMResult.Ok<Array<DoubleArray>>>(
+            joinScreenTransformations(board, text.transformations),
+        ).value
+        assertEquals(
+            -10.957826534602873,
+            joined[1][0],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(
+            205.24621431765573,
+            joined[2][0],
+            absoluteTolerance = 1.0e-12,
+        )
+    }
+
     private fun board(): Board =
         Board(
             originX = 0.0,
@@ -324,4 +574,12 @@ class TextTest {
     private fun text(
         result: GMResult<Text, TextError>,
     ): Text = assertIs<GMResult.Ok<Text>>(result).value
+
+    private fun transformation(
+        type: String,
+        vararg parameters: Double,
+    ): Transformation =
+        assertIs<GMResult.Ok<Transformation>>(
+            Transformation.create(type, parameters),
+        ).value
 }

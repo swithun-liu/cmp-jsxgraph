@@ -15,6 +15,7 @@ internal data class JessieCodeFormatOptions(
     val minParentheses: Boolean = false,
     val constToFixed: Int? = null,
     val printable: Boolean = false,
+    val javaScript: Boolean = false,
 )
 
 internal sealed interface JessieCodeCompileError {
@@ -198,7 +199,9 @@ private class Compiler(
                 GMResult.Ok("$left, $right")
             }
             "op_prop" -> compilePropertyEntry(node)
-            "op_emptyobject" -> GMResult.Ok("<< >>")
+            "op_emptyobject" -> GMResult.Ok(
+                if (format.javaScript) "{}" else "<< >>",
+            )
             "op_proplst_val" -> unaryNode(node) {
                 GMResult.Ok(it)
             }
@@ -220,7 +223,16 @@ private class Compiler(
             } ?: invalid(node, "Missing delete target.")
             "op_eq" -> binaryOperator(node, " === ")
             "op_neq" -> binaryOperator(node, " !== ")
-            "op_approx" -> binaryOperator(node, " ~= ")
+            "op_approx" ->
+                if (format.javaScript) {
+                    binaryNodes(node) { left, right ->
+                        GMResult.Ok(
+                            "(Math.abs($left - $right) < 0.000000000001)",
+                        )
+                    }
+                } else {
+                    binaryOperator(node, " ~= ")
+                }
             "op_gt" -> binaryOperator(node, " > ")
             "op_lt" -> binaryOperator(node, " < ")
             "op_geq" -> binaryOperator(node, " >= ")
@@ -233,7 +245,14 @@ private class Compiler(
             "op_div" -> arithmetic(node, " / ")
             "op_mod" -> arithmetic(node, " % ")
             "op_mul" -> arithmetic(node, " * ")
-            "op_exp" -> arithmetic(node, "^")
+            "op_exp" ->
+                if (format.javaScript) {
+                    binaryNodes(node) { left, right ->
+                        GMResult.Ok("Math.pow($left, $right)")
+                    }
+                } else {
+                    arithmetic(node, "^")
+                }
             "op_neg" -> compileNegation(node)
             else -> invalid(node, "Unsupported operator $operator.")
         }
@@ -344,7 +363,12 @@ private class Compiler(
         }
         return GMResult.Ok(
             if (isMap) {
-                "map (${parameters.joinToString(", ")}) -> $body"
+                if (format.javaScript) {
+                    "function (${parameters.joinToString(", ")}) " +
+                        "{ return $body; }"
+                } else {
+                    "map (${parameters.joinToString(", ")}) -> $body"
+                }
             } else {
                 " function (${parameters.joinToString(", ")}) $body"
             },

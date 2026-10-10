@@ -53,6 +53,140 @@ class JsxGraphJessieCodeTest {
     }
 
     @Test
+    fun functionValuedArrowObjectsUpdateLineAndCurveSceneSnapshots() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initial = scene(
+            session.execute(
+                """
+                driver = point(1, -3) <<
+                    id: "driver", name: "", withLabel: false
+                >>;
+                first = point(-3, 1) <<
+                    id: "first", name: "", withLabel: false, visible: false
+                >>;
+                last = point(3, 1) <<
+                    id: "last", name: "", withLabel: false, visible: false
+                >>;
+                segment = segment(first, last) <<
+                    id: "segment", name: "", withLabel: false,
+                    firstArrow: function () {
+                        return driver.X() < 2
+                            ? << type: 2, size: 4, highlightSize: 5 >>
+                            : false;
+                    },
+                    lastArrow: <<
+                        type: function () {
+                            return driver.X() < 2 ? 3 : 6;
+                        },
+                        size: function () { return driver.X() + 5; },
+                        highlightSize: function () {
+                            return driver.X() + 6;
+                        }
+                    >>
+                >>;
+                curve = curve(
+                    [-3, 0, 3],
+                    [-1, 2, -1]
+                ) <<
+                    id: "curve", name: "", withLabel: false,
+                    firstArrow: function () { return driver.X() >= 2; },
+                    lastArrow: <<
+                        type: function () {
+                            return driver.X() < 2 ? 4 : 7;
+                        },
+                        size: function () { return driver.X() + 2; },
+                        highlightSize: function () {
+                            return driver.X() + 3;
+                        }
+                    >>
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(
+            JsxGraphArrowHead(type = 2, size = 4.0, highlightSize = 5.0),
+            sceneLine(initial, "segment").firstArrow,
+        )
+        assertEquals(
+            JsxGraphArrowHead(type = 3, size = 6.0, highlightSize = 7.0),
+            sceneLine(initial, "segment").lastArrow,
+        )
+        assertEquals(null, sceneCurve(initial, "curve").firstArrow)
+        assertEquals(
+            JsxGraphArrowHead(type = 4, size = 3.0, highlightSize = 4.0),
+            sceneCurve(initial, "curve").lastArrow,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "driver",
+                coordinates = JsxGraphPoint2D(3.0, -3.0),
+            ),
+        ).value
+        assertEquals(null, sceneLine(moved, "segment").firstArrow)
+        assertEquals(
+            JsxGraphArrowHead(type = 6, size = 8.0, highlightSize = 9.0),
+            sceneLine(moved, "segment").lastArrow,
+        )
+        assertEquals(
+            JsxGraphArrowHead(type = 7, size = 6.0, highlightSize = null),
+            sceneCurve(moved, "curve").firstArrow,
+        )
+        assertEquals(
+            JsxGraphArrowHead(type = 7, size = 5.0, highlightSize = 6.0),
+            sceneCurve(moved, "curve").lastArrow,
+        )
+    }
+
+    @Test
+    fun dynamicArrowCallbackFailuresReturnStructuredSceneErrors() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initial = scene(
+            session.execute(
+                """
+                driver = point(1, -3) <<
+                    id: "driver", name: "", withLabel: false
+                >>;
+                first = point(-3, 1) <<
+                    id: "first", name: "", withLabel: false, visible: false
+                >>;
+                last = point(3, 1) <<
+                    id: "last", name: "", withLabel: false, visible: false
+                >>;
+                segment(first, last) <<
+                    id: "segment", name: "", withLabel: false,
+                    firstArrow: function () {
+                        return driver.X() < 2
+                            ? true
+                            : driver.missingArrowValue();
+                    }
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        val error = assertIs<GMResult.Err<JsxGraphInteractionError>>(
+            session.movePoint(
+                id = "driver",
+                coordinates = JsxGraphPoint2D(3.0, -3.0),
+            ),
+        ).error
+        val sceneUpdate =
+            assertIs<JsxGraphInteractionError.SceneUpdate>(error)
+        val creation = assertIs<JsxGraphDocumentError.ElementCreation>(
+            sceneUpdate.error,
+        )
+        assertEquals("segment", creation.id)
+        assertTrue("CallbackFailed" in creation.reason)
+        assertEquals(initial, session.scene)
+    }
+
+    @Test
     fun dynamicFunctionGraphResamplesEveryPointFromMovedDependency() {
         val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
             JsxGraphJessieCode.createSession(
@@ -94,6 +228,55 @@ class JsxGraphJessieCodeTest {
         )
 
         assertEquals(47, smoothed.points.size)
+    }
+
+    @Test
+    fun importedMathModulesDrivePublicSessionScenes() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val first = scene(
+            session.execute(
+                """
+                A = point(
+                    import("MaTh").clamp(9, 1, 4),
+                    import("math/geometry").distance([0, 0], [3, 4])
+                ) << id: "A", name: "", withLabel: false >>;
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(
+            JsxGraphPoint2D(4.0, 5.0),
+            scenePoint(first, "A").coordinates,
+        )
+
+        val second = scene(
+            session.execute(
+                """
+                B = point(
+                    import("math/statistics").mean([1, 3, 5]),
+                    import("math/numerics").det([[1, 2], [3, 4]])
+                ) << id: "B", name: "", withLabel: false >>;
+                """.trimIndent(),
+            ),
+        )
+        assertEquals(
+            JsxGraphPoint2D(3.0, -2.0),
+            scenePoint(second, "B").coordinates,
+        )
+
+        val malformed = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+            session.execute(
+                """
+                bad = point(import(1), 0) <<
+                    id: "bad", name: "", withLabel: false
+                >>;
+                """.trimIndent(),
+            ),
+        ).error
+        val runtime = assertIs<JsxGraphJessieCodeError.Runtime>(malformed)
+        assertTrue(runtime.reason.contains("functionName=import"))
+        assertTrue(session.scene.elements.none { it.id == "bad" })
     }
 
     @Test
@@ -153,6 +336,57 @@ class JsxGraphJessieCodeTest {
         val circle = assertIs<JsxGraphSceneElement.Circle>(scene.elements[3])
         assertEquals(2.5, circle.radius)
         assertEquals(JsxGraphColor(22, 135, 122), circle.style.strokeColor)
+    }
+
+    @Test
+    fun boardAxisAttributesCreateDefaultAxesUsedByParentlessGrid() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(
+                boardOptions = JsxGraphJessieCodeBoardOptions(
+                    axis = true,
+                    axisAttributes = mapOf(
+                        "ticks" to mapOf(
+                            "ticksDistance" to 2.0,
+                            "minorTicks" to 1,
+                        ),
+                    ),
+                    defaultAxesAttributes = mapOf(
+                        "y" to mapOf(
+                            "ticks" to mapOf(
+                                "ticksDistance" to 2.5,
+                                "minorTicks" to 3,
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ).value
+        val scene = scene(
+            session.execute(
+                """
+                grid() <<
+                    id: "grid", name: "", withLabel: false,
+                    majorStep: ["auto", "auto"],
+                    minorElements: ["auto", "auto"]
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        val major = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements.single { it.id == "grid" },
+        )
+        val minor = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements.single { it.id == "grid_minor" },
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(2.0, 2.5),
+            assertIs<JsxGraphGrid2D>(major.grid).parentMajorStep,
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(1.0, 3.0),
+            assertIs<JsxGraphGrid2D>(minor.grid).parentMinorElements,
+        )
     }
 
     @Test
@@ -1232,6 +1466,56 @@ class JsxGraphJessieCodeTest {
         assertNotEquals(
             initialCurveNormal.point1,
             sceneLine(movedCurve, "curveNormal").point1,
+        )
+    }
+
+    @Test
+    fun normalCoordinateParentDefectIsStructuredAndAtomic() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        scene(
+            session.execute(
+                """
+                A = point(-2, 0) <<
+                    id: "A", name: "", withLabel: false
+                >>;
+                B = point(2, 1) <<
+                    id: "B", name: "", withLabel: false
+                >>;
+                driver = point(1, 2) <<
+                    id: "driver", name: "", withLabel: false
+                >>;
+                source = line(A, B) <<
+                    id: "source", name: "", withLabel: false
+                >>;
+                """.trimIndent(),
+            ),
+        )
+        val error = assertIs<GMResult.Err<JsxGraphJessieCodeError>>(
+            session.execute(
+                """
+                output = normal(
+                    [
+                        function () { return driver.X(); },
+                        "driver.Y() + 2"
+                    ],
+                    source
+                ) <<
+                    id: "output", name: "", withLabel: false,
+                    point: << name: "", withLabel: false >>
+                >>;
+                """.trimIndent(),
+            ),
+        ).error
+        val runtime = assertIs<JsxGraphJessieCodeError.Runtime>(error)
+        assertTrue("UpstreamCoordinateParentDefect" in runtime.reason)
+        assertEquals(
+            setOf("A", "B", "driver", "source"),
+            scene(session.execute("0;"))
+                .elements
+                .map(JsxGraphSceneElement::id)
+                .toSet(),
         )
     }
 

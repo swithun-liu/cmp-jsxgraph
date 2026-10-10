@@ -61,6 +61,23 @@ class NumericsRegressionTest {
     }
 
     @Test
+    fun fractionalDegreeIsFlooredLikeOfficial() {
+        val polynomial = polynomial(
+            Numerics.regressionPolynomial(
+                degree = 2.9,
+                dataX = doubleArrayOf(-2.0, -1.0, 0.0, 1.0, 2.0),
+                dataY = doubleArrayOf(5.0, 2.0, 1.0, 2.0, 5.0),
+            ),
+        )
+
+        assertEquals(1.25, value(polynomial(0.5)), absoluteTolerance = 1.0e-14)
+        assertEquals(
+            "(1.00)*x<sup>2</sup> + (0.00)*x + (1.00)",
+            polynomial.getTerm(),
+        )
+    }
+
+    @Test
     fun dynamicDegreeAndPointsPreserveOfficialCacheTiming() {
         var degree = 1.0
         var degreeEvaluationCount = 0

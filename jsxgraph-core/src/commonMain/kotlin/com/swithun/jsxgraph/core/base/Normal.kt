@@ -30,6 +30,13 @@ internal sealed interface NormalError {
         val parentIndex: Int,
     ) : NormalError
 
+    data class UpstreamCoordinateParentDefect(
+        val upstreamVersion: String = "1.13.3",
+        val reason: String =
+            "Type.providePoints creates a cyclic Normal/Point dependency " +
+                "and overflows the JavaScript call stack.",
+    ) : NormalError
+
     data class ParentBoardMismatch(
         val parentIndex: Int,
     ) : NormalError

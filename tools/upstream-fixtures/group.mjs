@@ -118,9 +118,38 @@ try {
             [4, 4],
             {id: "fixed", name: "", fixed: true}
         );
+        const freeText = creationBoard.create(
+            "text",
+            [1, 1, "free"],
+            {id: "freeText", name: "", fixed: false}
+        );
+        const fixedText = creationBoard.create(
+            "text",
+            [2, 2, "fixed"],
+            {id: "fixedText", name: "", fixed: true}
+        );
+        const freeImage = creationBoard.create(
+            "image",
+            ["", [3, 3], [1, 1]],
+            {id: "freeImage", name: "", fixed: false}
+        );
+        const fixedImage = creationBoard.create(
+            "image",
+            ["", [4, 4], [1, 1]],
+            {id: "fixedImage", name: "", fixed: true}
+        );
         const group = creationBoard.create(
             "group",
-            [creationPoints.a, creationPoints.b, creationPoints.c, fixed],
+            [
+                creationPoints.a,
+                creationPoints.b,
+                creationPoints.c,
+                fixed,
+                freeText,
+                fixedText,
+                freeImage,
+                fixedImage
+            ],
             {id: "group", name: "named", needsRegularUpdate: false}
         );
         const generated = creationBoard.create(
@@ -144,7 +173,11 @@ try {
                 a: [...creationPoints.a.groups],
                 b: [...creationPoints.b.groups],
                 c: [...creationPoints.c.groups],
-                fixed: [...fixed.groups]
+                fixed: [...fixed.groups],
+                freeText: [...freeText.groups],
+                fixedText: [...fixedText.groups],
+                freeImage: [...freeImage.groups],
+                fixedImage: [...fixedImage.groups]
             },
             numObjects: creationBoard.numObjects
         };

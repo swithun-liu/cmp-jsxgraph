@@ -197,7 +197,8 @@ internal class ParallelDirectionPoint private constructor(
         isDraggable = true
     }
 
-    // JSXGraph: src/element/composition.js -> createParallel ideal point
+    // JSXGraph 1.13.3: src/element/composition.js ->
+    // createParallel closure li and ideal point.
     override fun update(fromParent: Boolean): GeometryElement {
         if (!needsUpdate) {
             return this

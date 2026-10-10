@@ -124,7 +124,28 @@ try {
         const defaultGrid = withBoard((board) => {
             const major = board.create("grid", [], {});
             board.fullUpdate();
-            return snapshotGrid(board, major);
+            const minor = major.minorGrid;
+            const majorPoint = major.points.find((point) =>
+                Number.isFinite(point.scrCoords[1]) &&
+                    Number.isFinite(point.scrCoords[2])
+            );
+            const minorPoint = minor.points.find((point) =>
+                Number.isFinite(point.scrCoords[1]) &&
+                    Number.isFinite(point.scrCoords[2])
+            );
+            return {
+                ...snapshotGrid(board, major),
+                hitTesting: {
+                    major: major.hasPoint(
+                        majorPoint.scrCoords[1],
+                        majorPoint.scrCoords[2]
+                    ),
+                    minor: minor.hasPoint(
+                        minorPoint.scrCoords[1],
+                        minorPoint.scrCoords[2]
+                    )
+                }
+            };
         });
 
         const themes = Array.from({length: 7}, (_, theme) => (
@@ -246,6 +267,127 @@ try {
             return snapshotGrid(board, major);
         });
 
+        const runtimeMutation = withBoard((board) => {
+            const xAxis = board.create(
+                "axis",
+                [[0, 0], [1, 0]],
+                {
+                    id: "runtimeXAxis",
+                    ticks: {
+                        ticksDistance: 2,
+                        minorTicks: 1,
+                        insertTicks: false
+                    }
+                }
+            );
+            const yAxis = board.create(
+                "axis",
+                [[0, 0], [0, 1]],
+                {
+                    id: "runtimeYAxis",
+                    ticks: {
+                        ticksDistance: 2.5,
+                        minorTicks: 3,
+                        insertTicks: false
+                    }
+                }
+            );
+            const major = board.create(
+                "grid",
+                [xAxis, yAxis],
+                {
+                    id: "runtimeGrid",
+                    majorStep: "auto",
+                    minorElements: "auto",
+                    major: {face: "line"},
+                    minor: {face: "point"}
+                }
+            );
+            const minor = major.minorGrid;
+            board.fullUpdate();
+            const before = snapshotGrid(board, major);
+
+            major.setAttribute({
+                majorStep: [2, 1],
+                forceSquare: "max",
+                includeBoundaries: true,
+                face: "circle",
+                size: 10,
+                margin: 4,
+                drawZero: {origin: false, x: true, y: false},
+                polygonVertices: 7
+            });
+            minor.setAttribute({
+                minorElements: [1, 2],
+                includeBoundaries: true,
+                face: "plus",
+                size: 6,
+                margin: 2,
+                drawZero: {origin: false, x: false, y: true},
+                polygonVertices: 5
+            });
+            board.fullUpdate();
+            const structural = snapshotGrid(board, major);
+
+            xAxis.setAttribute({
+                position: "fixed",
+                anchor: "right",
+                anchorDist: "20%",
+                ticks: {
+                    ticksDistance: 1.5,
+                    minorTicks: 2,
+                    labels: ["zero", "one"],
+                    label: {
+                        offset: [8, -3],
+                        anchorX: "middle",
+                        anchorY: "top"
+                    }
+                }
+            });
+            yAxis.setAttribute({
+                ticks: {ticksDistance: 3, minorTicks: 4}
+            });
+            major.setAttribute({
+                majorStep: ["auto", "auto"],
+                forceSquare: false
+            });
+            minor.setAttribute({
+                minorElements: ["auto", "auto"]
+            });
+            board.fullUpdate();
+            const inheritedAxisTicks = snapshotGrid(board, major);
+
+            return {
+                before,
+                structural,
+                inheritedAxisTicks,
+                axisTicks: {
+                    x: {
+                        point1: xAxis.point1.coords.usrCoords.map(round),
+                        ticksDistance:
+                            xAxis.ticks[0].evalVisProp("ticksdistance"),
+                        minorTicks:
+                            xAxis.ticks[0].evalVisProp("minorticks"),
+                        labels: xAxis.ticks[0].evalVisProp("labels"),
+                        label: {
+                            offset:
+                                xAxis.ticks[0].evalVisProp("label.offset"),
+                            anchorX:
+                                xAxis.ticks[0].evalVisProp("label.anchorx"),
+                            anchorY:
+                                xAxis.ticks[0].evalVisProp("label.anchory")
+                        }
+                    },
+                    y: {
+                        ticksDistance:
+                            yAxis.ticks[0].evalVisProp("ticksdistance"),
+                        minorTicks:
+                            yAxis.ticks[0].evalVisProp("minorticks")
+                    }
+                }
+            };
+        });
+
         const nestedIdentity = withBoard((board) => {
             const major = board.create(
                 "grid",
@@ -365,6 +507,7 @@ try {
             unitAndSquareCases,
             boundaryAndZeroCases,
             parentAxes,
+            runtimeMutation,
             nestedIdentity,
             lifecycle,
             removeGrids,

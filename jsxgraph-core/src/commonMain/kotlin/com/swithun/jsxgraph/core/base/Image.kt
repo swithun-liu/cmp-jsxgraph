@@ -64,6 +64,10 @@ internal sealed interface ImageError {
         val error: TransformationError,
     ) : ImageError
 
+    data class Anchor(
+        val error: CoordsElementAnchorError,
+    ) : ImageError
+
     data class Registration(
         val error: BoardError,
     ) : ImageError
@@ -290,7 +294,7 @@ internal class Image private constructor(
      * The implementations are shared by CoordsElement.
      */
 
-    // JSXGraph: src/base/image.js -> Image.getParents.
+    // JSXGraph 1.13.3: src/base/image.js -> Image.getParents.
     internal fun parentDefinitions(): List<Any?> =
         if (parents.isNotEmpty()) {
             parents.toList()
@@ -301,6 +305,10 @@ internal class Image private constructor(
                 usrSize.copyOf(),
             )
         }
+
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(parentDefinitions())
 
     private fun transformedSpan(
         width: Double,
@@ -365,6 +373,7 @@ internal class Image private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             rotationDegrees: Double = 0.0,
+            anchor: GeometryElement? = null,
         ): GMResult<Image, ImageError> =
             createResolved(
                 board = board,
@@ -376,6 +385,7 @@ internal class Image private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 rotationDegrees = rotationDegrees,
+                anchor = anchor,
             )
 
         internal fun createConstrained(
@@ -387,6 +397,7 @@ internal class Image private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             rotationDegrees: Double = 0.0,
+            anchor: GeometryElement? = null,
         ): GMResult<Image, ImageError> {
             if (
                 coordinateFunctions.size !in 1..3 ||
@@ -417,6 +428,7 @@ internal class Image private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 rotationDegrees = rotationDegrees,
+                anchor = anchor,
             )
         }
 
@@ -430,6 +442,7 @@ internal class Image private constructor(
             name: String?,
             needsRegularUpdate: Boolean,
             rotationDegrees: Double,
+            anchor: GeometryElement?,
         ): GMResult<Image, ImageError> {
             if (coordinates.size !in 2..3) {
                 return GMResult.Err(
@@ -490,6 +503,28 @@ internal class Image private constructor(
             image.addParentsFromJCFunctions(
                 coordinateFunctions + sizeTerms + urlTerm,
             )
+            image.addParents(
+                coordinateFunctions.flatMap {
+                    it.coordinateParents
+                },
+            )
+            if (anchor != null) {
+                when (
+                    val anchored = image.addAnchor(
+                        anchor = anchor,
+                        coordinates = coordinates,
+                        isLabel = false,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> {
+                        board.removeObject(image)
+                        return GMResult.Err(
+                            ImageError.Anchor(anchored.error),
+                        )
+                    }
+                }
+            }
             when (val rotation = image.addRotation(rotationDegrees)) {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> {

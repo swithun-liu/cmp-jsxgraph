@@ -18,9 +18,23 @@ data class JsxGraphJessieCodeBoardOptions(
             bottom = -5.0,
         ),
     val axis: Boolean = false,
+    val axisAttributes: Map<String, Any?> = emptyMap(),
+    val defaultAxesAttributes: Map<String, Any?> = emptyMap(),
     val grid: Boolean = false,
     val keepAspectRatio: Boolean = false,
     val theme: String = "default",
+    val showNavigation: Boolean = false,
+    val showZoom: Boolean = true,
+    val showClearTraces: Boolean = false,
+    val showFullscreen: Boolean = false,
+    val showScreenshot: Boolean = false,
+    val showReload: Boolean = false,
+    val fullscreenSymbol: String = "\u26f6",
+    val screenshotSymbol: String = "\u2318",
+    val navbar: JsxGraphNavigationBarStyle =
+        JsxGraphNavigationBarStyle(),
+    val runtimeOptions: JsxGraphRuntimeOptions =
+        JsxGraphRuntimeOptions(),
 )
 
 /**
@@ -112,10 +126,10 @@ sealed interface JsxGraphJessieCodeError {
 /**
  * Stateful native JessieCode interpreter backed by one translated Board.
  *
- * Globals, functions, closures, Board selection, created elements, and Point
- * interaction state persist across calls. This class interprets JessieCode
- * only; it does not execute arbitrary JavaScript or expose a browser/DOM
- * environment.
+ * Globals, functions, closures, Board selection, created elements, Point
+ * interaction state, and scheduled animations persist across calls. Hosts
+ * advance animation time explicitly; this class does not execute arbitrary
+ * JavaScript or expose a browser/DOM environment.
  */
 class JsxGraphJessieCodeSession internal constructor(
     initialScene: JsxGraphScene,
@@ -123,20 +137,68 @@ class JsxGraphJessieCodeSession internal constructor(
         source: String,
         storeSource: Boolean,
     ) -> GMResult<JsxGraphScene, JsxGraphJessieCodeError>,
+    private val exportBoardSource: (
+        format: JsxGraphBoardExportFormat,
+        noAttributes: Boolean,
+        limits: JsxGraphBoardExportLimits,
+    ) -> GMResult<String, JsxGraphBoardExportError>,
     private val movePointSource: (
         id: String,
         coordinates: JsxGraphPoint2D,
     ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val movePoint3DSource: (
+        id: String,
+        coordinates: JsxGraphPoint3DCoordinates,
+        timeMilliseconds: Double,
+        effect: String?,
+        callback: (() -> Unit)?,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val movePoint3DAlongSource: (
+        id: String,
+        path: List<JsxGraphPoint3DCoordinates>,
+        timeMilliseconds: Double,
+        callback: (() -> Unit)?,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
     private val interactControlSource: (
         interaction: JsxGraphControlInteraction,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val interactNavigationSource: (
+        action: JsxGraphNavigationAction,
+    ) -> GMResult<
+        JsxGraphNavigationInteractionResult,
+        JsxGraphInteractionError,
+        >,
+    private val interactPointerSource: (
+        interaction: JsxGraphBoardPointerInteraction,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val interactView3DSource: (
+        interaction: JsxGraphView3DInteraction,
+    ) -> GMResult<
+        JsxGraphView3DInteractionResult,
+        JsxGraphInteractionError,
+        >,
+    private val hasActiveAnimationsSource: () -> Boolean,
+    private val advanceAnimationsSource: (
+        elapsedMilliseconds: Double,
     ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
     private val storedSource: () -> String,
 ) {
     var scene: JsxGraphScene = initialScene
         private set
 
+    val hasActiveAnimations: Boolean
+        get() = hasActiveAnimationsSource()
+
     val code: String
         get() = storedSource()
+
+    fun exportBoard(
+        format: JsxGraphBoardExportFormat,
+        noAttributes: Boolean = false,
+        limits: JsxGraphBoardExportLimits =
+            JsxGraphBoardExportLimits(),
+    ): GMResult<String, JsxGraphBoardExportError> =
+        exportBoardSource(format, noAttributes, limits)
 
     fun execute(
         source: String,
@@ -162,6 +224,68 @@ class JsxGraphJessieCodeSession internal constructor(
             is GMResult.Err -> result
         }
 
+    fun movePoint3D(
+        id: String,
+        coordinates: JsxGraphPoint3DCoordinates,
+        timeMilliseconds: Double,
+        effect: String? = null,
+        callback: (() -> Unit)? = null,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        if (!coordinates.isFinite()) {
+            return GMResult.Err(
+                JsxGraphInteractionError.NonFinitePoint3DCoordinates(
+                    id = id,
+                    coordinates = coordinates,
+                ),
+            )
+        }
+        return when (
+            val result = movePoint3DSource(
+                id,
+                coordinates,
+                timeMilliseconds,
+                effect,
+                callback,
+            )
+        ) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+    }
+
+    fun movePoint3DAlong(
+        id: String,
+        path: List<JsxGraphPoint3DCoordinates>,
+        timeMilliseconds: Double,
+        callback: (() -> Unit)? = null,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        path.firstOrNull { !it.isFinite() }?.let { coordinates ->
+            return GMResult.Err(
+                JsxGraphInteractionError.NonFinitePoint3DCoordinates(
+                    id = id,
+                    coordinates = coordinates,
+                ),
+            )
+        }
+        return when (
+            val result = movePoint3DAlongSource(
+                id,
+                path,
+                timeMilliseconds,
+                callback,
+            )
+        ) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+    }
+
     fun interactControl(
         interaction: JsxGraphControlInteraction,
     ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
@@ -172,6 +296,67 @@ class JsxGraphJessieCodeSession internal constructor(
             }
             is GMResult.Err -> result
         }
+
+    fun interactNavigation(
+        action: JsxGraphNavigationAction,
+    ): GMResult<
+        JsxGraphNavigationInteractionResult,
+        JsxGraphInteractionError,
+        > = when (val result = interactNavigationSource(action)) {
+        is GMResult.Ok -> {
+            scene = result.value.scene
+            result
+        }
+        is GMResult.Err -> result
+    }
+
+    fun interactPointer(
+        interaction: JsxGraphBoardPointerInteraction,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        when (val result = interactPointerSource(interaction)) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+
+    fun interactView3D(
+        interaction: JsxGraphView3DInteraction,
+    ): GMResult<
+        JsxGraphView3DInteractionResult,
+        JsxGraphInteractionError,
+        > = when (val result = interactView3DSource(interaction)) {
+        is GMResult.Ok -> {
+            scene = result.value.scene
+            result
+        }
+        is GMResult.Err -> result
+    }
+
+    fun advanceAnimations(
+        elapsedMilliseconds: Double,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        if (
+            !elapsedMilliseconds.isFinite() ||
+            elapsedMilliseconds < 0.0
+        ) {
+            return GMResult.Err(
+                JsxGraphInteractionError.InvalidAnimationElapsedTime(
+                    elapsedMilliseconds,
+                ),
+            )
+        }
+        return when (
+            val result = advanceAnimationsSource(elapsedMilliseconds)
+        ) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+    }
 
     fun clickButton(
         id: String,

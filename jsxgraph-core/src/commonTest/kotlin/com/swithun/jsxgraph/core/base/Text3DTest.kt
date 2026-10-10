@@ -43,6 +43,9 @@ class Text3DTest {
             doubleArrayOf(1.0, -2.0, 1.519615242270663, -1.0),
             text.coords,
         )
+        assertEquals(-2.0, text.X())
+        assertEquals(1.519615242270663, text.Y())
+        assertEquals(-1.0, text.Z())
         assertCoordinates(
             expectedX = 0.22641937518774236,
             expectedY = -2.233304675143941,
@@ -54,6 +57,9 @@ class Text3DTest {
         x = 0.0
         board.fullUpdate()
 
+        assertEquals(0.0, text.X())
+        assertEquals(1.519615242270663, text.Y())
+        assertEquals(-1.0, text.Z())
         assertCoordinates(
             expectedX = -0.6467091510951717,
             expectedY = -2.584926429716491,
@@ -194,15 +200,37 @@ class Text3DTest {
         assertEquals(3.0, text.getAttribute("strokeWidth"))
         assertNull(text.text2D.getAttribute("fillColor"))
         assertEquals(3.0, text.text2D.getAttribute("strokeWidth"))
+        val attributes = text.getAttributes()
+        assertContentEquals(
+            doubleArrayOf(0.0, 0.0),
+            assertIs<DoubleArray>(attributes["offset"]),
+        )
         assertEquals(
             mapOf(
+                "formatnumber" to false,
+                "digits" to 2,
+                "islabel" to false,
+                "intl" to mapOf(
+                    "enabled" to "inherit",
+                    "options" to mapOf(
+                        "minimumfractiondigits" to 0,
+                        "maximumfractiondigits" to 2,
+                    ),
+                ),
+                "withlabel" to false,
+                "element3d" to text,
                 "strokewidth" to 3.0,
                 "highlightstrokewidth" to 3.0,
                 "fillcolor" to "#123456",
                 "stepsu" to 12,
             ),
-            text.getAttributes(),
+            attributes - "offset",
         )
+        assertEquals(
+            listOf<GeometryElement>(text.text2D),
+            text.inherits,
+        )
+        assertNull(text.elementLabel)
 
         val proxyAttributes = linkedMapOf<String, Any?>("visible" to true)
         assertSame(proxyAttributes, text.setAttr2D(proxyAttributes))

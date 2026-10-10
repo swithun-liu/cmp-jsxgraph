@@ -112,6 +112,7 @@ class CurveTransformationTest {
                 minimumSource = "-2",
                 maximumSource = "2",
                 sampleCount = 5,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "continuousSource",
                 name = "",
             ),

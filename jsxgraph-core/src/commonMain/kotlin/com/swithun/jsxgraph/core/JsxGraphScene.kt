@@ -12,6 +12,7 @@
 package com.swithun.jsxgraph.core
 
 import com.swithun.jsxgraph.core.base.createBoxPlotGeometry
+import com.swithun.jsxgraph.core.base.formatSliderTicksLabel
 import com.swithun.jsxgraph.core.base.formatTicksLabel
 import com.swithun.jsxgraph.core.math.Geometry
 import kotlin.math.abs
@@ -40,8 +41,10 @@ data class JsxGraphScene(
     val grid: Boolean,
     val keepAspectRatio: Boolean,
     val elements: List<JsxGraphSceneElement>,
+    val navigationBar: JsxGraphNavigationBar? = null,
     val unsupportedRenderFeatures: List<JsxGraphUnsupportedRenderFeature> =
         emptyList(),
+    val views3D: List<JsxGraphView3D> = emptyList(),
 )
 
 data class JsxGraphBoundingBox(
@@ -54,6 +57,44 @@ data class JsxGraphBoundingBox(
 data class JsxGraphPoint2D(
     val x: Double,
     val y: Double,
+)
+
+/**
+ * Absolute screen-space affine transform in Canvas/CSS six-value order.
+ *
+ * JSXGraph 1.13.3: src/renderer/abstract.js -> joinTransforms;
+ * src/renderer/canvas.js and src/renderer/svg.js -> transformRect.
+ *
+ * `x' = a*x + c*y + e`, `y' = b*x + d*y + f`.
+ */
+data class JsxGraphAffineTransform(
+    val a: Double,
+    val b: Double,
+    val c: Double,
+    val d: Double,
+    val e: Double,
+    val f: Double,
+    val sourceViewportWidth: Double,
+    val sourceViewportHeight: Double,
+)
+
+/**
+ * Immutable host metadata for one translated View3D.
+ *
+ * JSXGraph 1.13.3: src/3d/view3d.js -> View3D constructor,
+ * pointerDownHandler, and the container keydown listener.
+ */
+data class JsxGraphView3D(
+    val id: String,
+    val lowerLeftCorner: JsxGraphPoint2D,
+    val size: JsxGraphPoint2D,
+    val azimuth: Double,
+    val elevation: Double,
+    val bank: Double,
+    val cameraDistance: Double,
+    val trackballEnabled: Boolean,
+    val pointerNavigationEnabled: Boolean,
+    val keyboardNavigationEnabled: Boolean,
 )
 
 enum class JsxGraphSmartLabelBoxKind {
@@ -875,6 +916,11 @@ data class JsxGraphResolvedTicks(
     val labelStyle: JsxGraphTicksLabelStyle? = null,
 )
 
+data class JsxGraphSliderTicksValueRange(
+    val minimum: Double,
+    val maximum: Double,
+)
+
 /**
  * Viewport-dependent geometry for two-dimensional JXG.Ticks.
  *
@@ -911,6 +957,7 @@ data class JsxGraphTicks2D(
     val drawLabels: Boolean,
     val clip: Boolean,
     val labelStyle: JsxGraphTicksLabelStyle,
+    val sliderValueRange: JsxGraphSliderTicksValueRange? = null,
 ) {
     // JSXGraph 1.13.3: src/base/ticks.js ->
     // calculateTicksCoordinates / updateRenderer / createTickPath /
@@ -1226,7 +1273,15 @@ data class JsxGraphTicks2D(
                     fixedLabels.getOrNull(sourceIndex)
                         ?: formatLabel(position)
                 isLabelPosition(position, minorDistance) ->
-                    formatLabel(position / scale)
+                    sliderValueRange?.let { range ->
+                        formatSliderTicksLabel(
+                            minimum = range.minimum,
+                            maximum = range.maximum,
+                            signedDistanceFromZero = position,
+                            fullDistance = length,
+                            formatLabel = ::formatLabel,
+                        )
+                    } ?: formatLabel(position / scale)
                 else -> null
             }
             JsxGraphCurveTickLocation(
@@ -1604,9 +1659,45 @@ sealed interface JsxGraphSceneElement {
         val coordinates: JsxGraphPoint2D,
         val size: Double,
         val face: String,
+        val sizeUnit: String = "screen",
+        val zoomScale: Double = 1.0,
         val draggable: Boolean = false,
         val isReal: Boolean = true,
-    ) : JsxGraphSceneElement
+    ) : JsxGraphSceneElement {
+        // JSXGraph 1.13.3:
+        // src/renderer/abstract.js -> updatePoint.
+        fun resolveSize(
+            cssPixelsPerUnitX: Double,
+            cssPixelsPerUnitY: Double,
+        ): Double =
+            resolveUnitSize(
+                cssPixelsPerUnitX = cssPixelsPerUnitX,
+                cssPixelsPerUnitY = cssPixelsPerUnitY,
+            ) * zoomScale
+
+        // JSXGraph 1.13.3: src/base/point.js -> hasPoint.
+        // The upstream hit test intentionally omits the extra zoom factor.
+        fun resolveHitSize(
+            cssPixelsPerUnitX: Double,
+            cssPixelsPerUnitY: Double,
+        ): Double =
+            resolveUnitSize(
+                cssPixelsPerUnitX = cssPixelsPerUnitX,
+                cssPixelsPerUnitY = cssPixelsPerUnitY,
+            )
+
+        private fun resolveUnitSize(
+            cssPixelsPerUnitX: Double,
+            cssPixelsPerUnitY: Double,
+        ): Double =
+            if (sizeUnit == "user") {
+                size * sqrt(
+                    abs(cssPixelsPerUnitX * cssPixelsPerUnitY),
+                )
+            } else {
+                size
+            }
+    }
 
     data class Line(
         override val id: String,
@@ -1618,6 +1709,11 @@ sealed interface JsxGraphSceneElement {
         val straightLast: Boolean,
         val firstArrow: JsxGraphArrowHead?,
         val lastArrow: JsxGraphArrowHead?,
+        // JSXGraph 1.13.3:
+        // src/renderer/abstract.js -> handleTouchpoints.
+        // Values are CSS-pixel endpoint offsets (point size + stroke width).
+        val touchFirstPointDistance: Double? = null,
+        val touchLastPointDistance: Double? = null,
         val axis: JsxGraphAxis2D? = null,
     ) : JsxGraphSceneElement
 
@@ -1643,6 +1739,9 @@ sealed interface JsxGraphSceneElement {
         val points: List<JsxGraphPoint2D?>,
         val bezierDegree: Int,
         val lineCap: String,
+        // JSXGraph 1.13.3:
+        // src/renderer/canvas.js -> updatePathStringBezierPrim.
+        val handDrawing: Boolean = false,
         val firstArrow: JsxGraphArrowHead? = null,
         val lastArrow: JsxGraphArrowHead? = null,
         val autoRadiusAngle: JsxGraphAutoRadiusAngle? = null,
@@ -1723,6 +1822,11 @@ sealed interface JsxGraphSceneElement {
         val fontSize: Double,
         val anchorX: String,
         val anchorY: String,
+        // JSXGraph 1.13.3:
+        // src/base/element.js -> addRotation;
+        // src/renderer/canvas.js -> transformRect.
+        val rotationDegrees: Double = 0.0,
+        val affineTransform: JsxGraphAffineTransform? = null,
         val screenOffset: JsxGraphPoint2D = JsxGraphPoint2D(0.0, 0.0),
         val ticks3DLabel: JsxGraphTicks3DLabel? = null,
         val smartLabel: JsxGraphSmartLabel? = null,

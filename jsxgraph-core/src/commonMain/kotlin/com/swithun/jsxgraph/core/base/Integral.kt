@@ -11,7 +11,6 @@ import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
-import com.swithun.jsxgraph.core.utils.JsNumberFormat
 
 internal sealed interface IntegralBoundary {
     data class Fixed(
@@ -203,6 +202,8 @@ internal object Integral {
         }
         created += baseRight
 
+        // JSXGraph 1.13.3: src/element/composition.js ->
+        // createIntegral closures starty / endy and Value.
         val definition = CurveIntegralDefinition(
             source = source,
             curveLeft = curveLeft,
@@ -342,6 +343,8 @@ internal object Integral {
             )
         }
 
+    // JSXGraph 1.13.3: src/element/composition.js ->
+    // createIntegral closure txt_fun.
     private fun createLabel(
         board: Board,
         integral: Curve,
@@ -362,7 +365,7 @@ internal object Integral {
             val result = Text.create(
                 board = board,
                 coordinates = doubleArrayOf(position.first, position.second),
-                content = integralLabel(integral.Value(), attributes.digits),
+                content = "",
                 id = attributes.id,
                 name = attributes.name,
                 needsRegularUpdate = attributes.needsRegularUpdate,
@@ -401,11 +404,6 @@ internal object Integral {
         }
         return x to y
     }
-
-    private fun integralLabel(
-        value: Double,
-        digits: Int,
-    ): String = "\u222b = ${JsNumberFormat.fixed(value, digits)}"
 
     private fun evaluateBoundary(
         role: String,

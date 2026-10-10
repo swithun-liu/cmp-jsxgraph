@@ -110,6 +110,9 @@ internal class Turtle private constructor(
         elType = TURTLE_ELEMENT_TYPE
     }
 
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
+
     // JSXGraph 1.13.3: src/base/turtle.js -> init.
     private fun initialize(
         x: Double,

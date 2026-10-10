@@ -7,12 +7,19 @@
  */
 package com.swithun.jsxgraph.core
 
+import com.swithun.jsxgraph.core.base.Axis
+import com.swithun.jsxgraph.core.base.AxisError
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.BoardDefaultAxes
+import com.swithun.jsxgraph.core.base.BoardDefaultAxesError
 import com.swithun.jsxgraph.core.base.BoardHostAdapter
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Grid
 import com.swithun.jsxgraph.core.base.GridError
+import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.PointError
+import com.swithun.jsxgraph.core.base.createDefaultAxes
 import com.swithun.jsxgraph.core.parser.JessieCodeCreator
 import com.swithun.jsxgraph.core.parser.NativeJessieCodeCreators
 import com.swithun.jsxgraph.core.reader.FileContentLoader
@@ -94,6 +101,17 @@ internal sealed interface JxgApiError {
 
     data class GridFailure(
         val cause: GridError,
+    ) : JxgApiError
+
+    data class DefaultAxisPointFailure(
+        val axis: String,
+        val pointIndex: Int,
+        val cause: PointError,
+    ) : JxgApiError
+
+    data class DefaultAxisFailure(
+        val axis: String,
+        val cause: AxisError,
     ) : JxgApiError
 }
 
@@ -461,7 +479,8 @@ internal object JXG {
         debugInt(*values)
     }
 
-    // JSXGraph 1.13.3: src/options.js -> useStandardOptions.
+    // JSXGraph 1.13.3: src/options.js ->
+    // useStandardOptions closure copyProps.
     internal fun useStandardOptions(
         board: Board,
     ): GMResult<Board, JxgApiError> {
@@ -1200,15 +1219,49 @@ internal object JSXGraph {
                     (boundingBox[2] - boundingBox[0]) *
                     Board.CURVE_DOMAIN_PADDING,
         )
-        return GMResult.Ok(
-            _fillBoard(
-                board = board,
-                containerId = containerId,
-                attributes = attr,
-                dimensions = dimensions,
-                renderer = renderer,
-            ),
+        val initialized = _fillBoard(
+            board = board,
+            containerId = containerId,
+            attributes = attr,
+            dimensions = dimensions,
+            renderer = renderer,
         )
+        val hasDefaultAxes = when (val axis = attr["axis"]) {
+            true -> true
+            is Map<*, *> -> true
+            else -> false
+        }
+        if (hasDefaultAxes) {
+            when (
+                val result = createDefaultAxes(
+                    board = initialized,
+                    axisAttributes = mapValue(attr["axis"]),
+                    defaultAxesAttributes =
+                        mapValue(attr["defaultaxes"]),
+                )
+            ) {
+                is GMResult.Ok -> initialized.defaultAxes = result.value
+                is GMResult.Err -> {
+                    freeBoard(initialized, ariaAdapter)
+                    return GMResult.Err(
+                        when (val error = result.error) {
+                            is BoardDefaultAxesError.PointFactory ->
+                                JxgApiError.DefaultAxisPointFailure(
+                                    axis = error.axis,
+                                    pointIndex = error.pointIndex,
+                                    cause = error.cause,
+                                )
+                            is BoardDefaultAxesError.AxisFactory ->
+                                JxgApiError.DefaultAxisFailure(
+                                    axis = error.axis,
+                                    cause = error.cause,
+                                )
+                        },
+                    )
+                }
+            }
+        }
+        return GMResult.Ok(initialized)
     }
 
     // JSXGraph 1.13.3: src/jsxgraph.js -> loadBoardFromFile.

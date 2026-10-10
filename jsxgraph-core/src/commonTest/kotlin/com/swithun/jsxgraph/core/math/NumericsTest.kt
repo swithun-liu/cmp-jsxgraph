@@ -344,6 +344,18 @@ class NumericsTest {
             ),
             tolerance = 1e-15,
         )
+        assertComplexArrayEquals(
+            expected = arrayOf(
+                Complex(2.0, -1.6543612251060553e-24),
+                Complex(3.0, -3.470802204669221e-17),
+            ),
+            actual = rootsValueOf(
+                Numerics.polzeros(
+                    doubleArrayOf(6.0, -5.0, 1.0),
+                ),
+            ),
+            tolerance = 1e-15,
+        )
     }
 
     @Test

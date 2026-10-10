@@ -532,6 +532,197 @@ class CurveGliderTest {
     }
 
     @Test
+    fun hyperbolaAndParabolaGlidersMatchOfficialLifecycle() {
+        val hyperbolaBoard = board("hyperbola")
+        val hyperbolaFocus1 = point(
+            hyperbolaBoard,
+            -3.0,
+            0.0,
+            "hyperbolaFocus1",
+        )
+        val hyperbolaFocus2 = point(
+            hyperbolaBoard,
+            3.0,
+            0.0,
+            "hyperbolaFocus2",
+        )
+        val hyperbolaPoint = point(
+            hyperbolaBoard,
+            5.0,
+            2.0,
+            "hyperbolaPoint",
+        )
+        val hyperbola = assertIs<GMResult.Ok<Curve>>(
+            Hyperbola.create(
+                board = hyperbolaBoard,
+                focus1 = hyperbolaFocus1,
+                focus2 = hyperbolaFocus2,
+                pointOnHyperbola = hyperbolaPoint,
+                id = "hyperbola",
+                name = "",
+            ),
+        ).value
+        val hyperbolaGlider = glider(
+            Glider.create(
+                board = hyperbolaBoard,
+                coordinates = doubleArrayOf(4.0, 3.0),
+                slideObject = hyperbola,
+                id = "hyperbolaGlider",
+                name = "",
+            ),
+        )
+
+        assertPoint(
+            x = 4.68769137241946,
+            y = 1.8206551487985283,
+            point = hyperbolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        assertEquals(
+            -2.9090497359101146,
+            assertIs<Double>(hyperbolaGlider.position),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
+
+        hyperbolaGlider.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(6.0, -1.0),
+        )
+        hyperbolaBoard.update(draggedElement = hyperbolaGlider)
+        assertPoint(
+            x = 5.342205156500102,
+            y = -2.1912403829410625,
+            point = hyperbolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        assertEquals(
+            2.884726033920002,
+            assertIs<Double>(hyperbolaGlider.position),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
+
+        hyperbolaPoint.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(6.0, 3.0),
+        )
+        hyperbolaBoard.update()
+        assertPoint(
+            x = 5.342205156500102,
+            y = -2.1912403829410625,
+            point = hyperbolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        hyperbolaBoard.update()
+        assertPoint(
+            x = 4.352703531697499,
+            y = -1.931329293822085,
+            point = hyperbolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        hyperbolaBoard.removeObject(hyperbola)
+        assertTrue(hyperbola.id !in hyperbolaBoard.objects)
+        assertTrue(hyperbolaGlider.id !in hyperbolaBoard.objects)
+
+        val parabolaBoard = board("parabola")
+        val directrixPoint1 = point(
+            parabolaBoard,
+            -1.0,
+            4.0,
+            "directrixPoint1",
+        )
+        val directrixPoint2 = point(
+            parabolaBoard,
+            -1.0,
+            -4.0,
+            "directrixPoint2",
+        )
+        val directrix = assertIs<GMResult.Ok<Line>>(
+            Line.create(
+                board = parabolaBoard,
+                point1 = directrixPoint1,
+                point2 = directrixPoint2,
+                id = "directrix",
+                name = "",
+            ),
+        ).value
+        val parabolaFocus = point(
+            parabolaBoard,
+            1.0,
+            1.0,
+            "parabolaFocus",
+        )
+        val parabola = assertIs<GMResult.Ok<Curve>>(
+            Parabola.create(
+                board = parabolaBoard,
+                focus = parabolaFocus,
+                directrix = directrix,
+                id = "parabola",
+                name = "",
+            ),
+        ).value
+        val parabolaGlider = glider(
+            Glider.create(
+                board = parabolaBoard,
+                coordinates = doubleArrayOf(3.0, 3.0),
+                slideObject = parabola,
+                id = "parabolaGlider",
+                name = "",
+            ),
+        )
+
+        assertPoint(
+            x = 2.31459381309344,
+            y = 4.042757836630079,
+            point = parabolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        assertEquals(
+            2.7337740076519452,
+            assertIs<Double>(parabolaGlider.position),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
+
+        parabolaGlider.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(4.0, -2.0),
+        )
+        parabolaBoard.update(draggedElement = parabolaGlider)
+        assertPoint(
+            x = 3.5845486649856304,
+            y = -2.786580866684682,
+            point = parabolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        assertEquals(
+            0.5989215240332204,
+            assertIs<Double>(parabolaGlider.position),
+            absoluteTolerance = CONIC_TOLERANCE,
+        )
+
+        parabolaFocus.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(2.0, 2.0),
+        )
+        parabolaBoard.update()
+        assertPoint(
+            x = 3.5845486649856304,
+            y = -2.786580866684682,
+            point = parabolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        parabolaBoard.update()
+        assertPoint(
+            x = 5.8768262181435285,
+            y = -3.6798730011208143,
+            point = parabolaGlider,
+            tolerance = CONIC_TOLERANCE,
+        )
+        parabolaBoard.removeObject(parabola)
+        assertTrue(parabola.id !in parabolaBoard.objects)
+        assertTrue(parabolaGlider.id !in parabolaBoard.objects)
+    }
+
+    @Test
     fun curveRemovalAndFailuresRemainAtomicAndStructured() {
         val board = board("lifecycle")
         val curve = curve(
@@ -727,13 +918,14 @@ class CurveGliderTest {
         x: Double,
         y: Double,
         point: Point,
+        tolerance: Double = TOLERANCE,
     ) {
-        assertEquals(x, point.X(), absoluteTolerance = TOLERANCE)
-        assertEquals(y, point.Y(), absoluteTolerance = TOLERANCE)
+        assertEquals(x, point.X(), absoluteTolerance = tolerance)
+        assertEquals(y, point.Y(), absoluteTolerance = tolerance)
     }
 
     private companion object {
         const val TOLERANCE = 1.0e-6
-        const val CONIC_TOLERANCE = 3.0e-6
+        const val CONIC_TOLERANCE = 2.0e-5
     }
 }

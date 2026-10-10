@@ -29,7 +29,8 @@ object Mat {
     const val eps: Double = 0.000001
 
     // JSXGraph 1.13.3: src/math/math.js -> memoizer.
-    // Kotlin keeps the two upstream memoized call sites in typed caches.
+    // JSXGraph 1.13.3: src/math/math.js -> memo.
+    // Kotlin keeps the upstream memo closure's two call sites in typed caches.
     private val factorialCache = mutableMapOf<Double, Double>()
     private val binomialCache = mutableMapOf<Pair<Double, Double>, Double>()
 

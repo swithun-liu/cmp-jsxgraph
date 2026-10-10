@@ -185,6 +185,8 @@ internal object Mesh3D {
         return GMResult.Ok(curve)
     }
 
+    // JSXGraph 1.13.3: src/3d/box3d.js ->
+    // createMesh3D element2D.updateDataArray.
     private fun updateData(
         view: View3D,
         pointSource: Mesh3DPointSource,

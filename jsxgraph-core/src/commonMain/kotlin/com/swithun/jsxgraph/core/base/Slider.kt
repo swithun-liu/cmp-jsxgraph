@@ -9,6 +9,7 @@ package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.utils.EventHandler
 import com.swithun.jsxgraph.core.utils.JsMath
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
@@ -31,6 +32,7 @@ internal data class SliderAttributes(
     val name: String? = "",
     val needsRegularUpdate: Boolean = true,
     val fixed: Boolean = false,
+    val moveOnUp: Boolean = true,
     val snapWidth: Double = -1.0,
     val snapValues: DoubleArray = doubleArrayOf(),
     val snapValueDistance: Double = 0.0,
@@ -106,8 +108,7 @@ internal sealed interface SliderError {
 /**
  * JXG.Slider's Point/Segment/Ticks/Text composition.
  *
- * Baseline pointer events, locale formatting, function-valued visual
- * properties, and browser-only label backends remain outside this slice.
+ * Browser-only label backends remain renderer-owned.
  */
 internal class Slider private constructor(
     board: Board,
@@ -117,6 +118,7 @@ internal class Slider private constructor(
     name: String?,
     needsRegularUpdate: Boolean,
     fixed: Boolean,
+    moveOnUp: Boolean,
     minimum: Double,
     maximum: Double,
     snapWidth: Double,
@@ -147,11 +149,23 @@ internal class Slider private constructor(
     internal var label: Text? = null
     internal val subs = linkedMapOf<String, GeometryElement>()
     internal override val inherits = mutableListOf<GeometryElement>()
+    internal var baselineMoveError: CoordsElementAnimationError? = null
+        private set
 
     init {
         sliderMinimum = minimum
         sliderMaximum = maximum
         elType = SLIDER_ELEMENT_TYPE
+        _set("fixed", fixed)
+        _set("moveonup", moveOnUp)
+        _set("digits", digits)
+        _set(
+            "intl",
+            linkedMapOf(
+                "enabled" to "inherit",
+                "options" to linkedMapOf<String, Any?>(),
+            ),
+        )
     }
 
     // JSXGraph: src/element/slider.js -> Value.
@@ -168,6 +182,26 @@ internal class Slider private constructor(
                 minimum
         }
     }
+
+    // JSXGraph 1.13.3: src/element/slider.js -> p3.getParents.
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> {
+        val minimum = sliderMinimum ?: Double.NaN
+        val maximum = sliderMaximum ?: Double.NaN
+        val value =
+            minimum +
+                (position ?: Double.NaN) * (maximum - minimum)
+        return GMResult.Ok(
+            listOf(
+                listOf(point1.X(), point1.Y()),
+                listOf(point2.X(), point2.Y()),
+                listOf(minimum, value, maximum),
+            ),
+        )
+    }
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     // JSXGraph: src/element/slider.js -> setValue.
     internal fun setValue(value: Double): Slider {
@@ -201,6 +235,41 @@ internal class Slider private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/element/slider.js ->
+    // p3.baseline.on("up", ...).
+    private fun handleBaselineUp(event: BoardInputEvent) {
+        if (
+            evalVisProp("moveonup") != true ||
+            evalVisProp("fixed") == true
+        ) {
+            return
+        }
+        val screen = board.getMousePosition(event, touchIndex = 0)
+        val coordinates = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = screen,
+            board = board,
+            emitter = false,
+        )
+        when (
+            val result = moveTo(
+                doubleArrayOf(
+                    coordinates.usrCoords[1],
+                    coordinates.usrCoords[2],
+                ),
+            )
+        ) {
+            is GMResult.Ok -> {
+                baselineMoveError = null
+                trigger(
+                    events = listOf("drag"),
+                    arguments = listOf(event),
+                )
+            }
+            is GMResult.Err -> baselineMoveError = result.error
+        }
+    }
+
     // JSXGraph: src/element/slider.js -> generated label functions.
     private fun updateLabel() {
         val text = label ?: return
@@ -220,8 +289,19 @@ internal class Slider private constructor(
             ?: ""
         val effectiveDigits =
             if (digits == 2 && precision != 2) precision else digits
+        val formatted = if (useLocale()) {
+            when (
+                val value = formatNumberLocale(Value(), effectiveDigits)
+            ) {
+                is String -> value
+                is Number -> JsNumberFormat.compact(value.toDouble())
+                else -> value.toString()
+            }
+        } else {
+            JsNumberFormat.fixed(Value(), effectiveDigits)
+        }
         return prefix +
-            JsNumberFormat.fixed(Value(), effectiveDigits) +
+            formatted +
             (unitLabel ?: "") +
             (postLabel ?: "")
     }
@@ -347,6 +427,7 @@ internal class Slider private constructor(
                 name = attributes.name,
                 needsRegularUpdate = attributes.needsRegularUpdate,
                 fixed = attributes.fixed,
+                moveOnUp = attributes.moveOnUp,
                 minimum = minimum,
                 maximum = maximum,
                 snapWidth = attributes.snapWidth,
@@ -444,6 +525,7 @@ internal class Slider private constructor(
                         )
                     }
                 }
+                ticks.bindSliderLabelRange(slider)
                 slider.sliderTicks = ticks
             }
 
@@ -461,6 +543,15 @@ internal class Slider private constructor(
             slider.sliderTicks?.let { slider.subs["ticks"] = it }
             slider.inherits += listOf(point1, point2, baseline, highline)
             slider.sliderTicks?.let(slider.inherits::add)
+            baseline.on(
+                event = "up",
+                handler = EventHandler { _, arguments ->
+                    val event = arguments.firstOrNull() as? BoardInputEvent
+                    if (event != null) {
+                        slider.handleBaselineUp(event)
+                    }
+                },
+            )
             slider.prepareUpdate().update()
             return GMResult.Ok(slider)
         }

@@ -146,6 +146,70 @@ class AxisTest {
     }
 
     @Test
+    fun livePositionTicksAndAutoLabelStateMatchAxisUpdate() {
+        val board = board()
+        val axis = axis(
+            Axis.create(
+                board = board,
+                point1 = point(board, 0.0, 0.0),
+                point2 = point(board, 1.0, 0.0),
+                attributes = AxisAttributes(ticksAutoPos = true),
+                id = "liveAxis",
+            ),
+        )
+        val ticks = assertIs<Ticks>(axis.defaultTicks)
+        board.fullUpdate()
+        assertContentEquals(
+            doubleArrayOf(4.0, -9.0),
+            ticks.attributes.labelOffset,
+        )
+
+        axis.setAttribute(
+            mapOf(
+                "position" to "fixed",
+                "anchor" to "left",
+                "anchorDist" to "10%",
+                "ticks" to mapOf(
+                    "ticksDistance" to 1.5,
+                    "minorTicks" to 2,
+                    "labels" to listOf("zero", "one"),
+                    "label" to mapOf(
+                        "anchorX" to "middle",
+                        "anchorY" to "top",
+                    ),
+                ),
+            ),
+        )
+        board.fullUpdate()
+
+        assertEquals(4.0, axis.point1.Y())
+        assertEquals(4.0, axis.point2.Y())
+        assertEquals(1.5, ticks.attributes.ticksDistance)
+        assertEquals(2, ticks.attributes.minorTicks)
+        assertEquals(listOf("zero", "one"), ticks.attributes.labels)
+        assertEquals("middle", ticks.attributes.labelAnchorX)
+        assertEquals("bottom", ticks.attributes.labelAnchorY)
+        assertContentEquals(
+            doubleArrayOf(4.0, 9.0),
+            ticks.attributes.labelOffset,
+        )
+
+        axis.setAttribute(mapOf("ticksAutoPos" to false))
+        board.fullUpdate()
+        assertContentEquals(
+            doubleArrayOf(4.0, 9.0),
+            ticks.attributes.labelOffset,
+        )
+
+        axis.setAttribute(mapOf("ticksAutoPos" to true))
+        board.fullUpdate()
+        assertContentEquals(
+            doubleArrayOf(4.0, 9.0),
+            ticks.attributes.labelOffset,
+        )
+    }
+
+    @Test
     fun ticksRegistrationFailureRollsBackAxisAndRestoresPoints() {
         val board = board()
         val point1 = point(board, 0.0, 0.0)

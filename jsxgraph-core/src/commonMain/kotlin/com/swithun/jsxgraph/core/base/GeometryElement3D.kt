@@ -43,12 +43,52 @@ internal open class GeometryElement3D(
         return attributes3D
     }
 
+    // JSXGraph 1.13.3: src/base/element.js -> GeometryElement constructor.
+    internal fun setCreationAttributes(
+        attributes: Map<String, Any?>,
+    ): GeometryElement3D {
+        for ((key, value) in resolveShortcuts(attributes)) {
+            _set(key, value)
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/3d/* -> setAttr2D + view.create(proxy).
+    internal fun configureElement2D(
+        proxy: GeometryElement,
+        attributes: Map<String, Any?>,
+        defaultWithLabel: Boolean,
+        createLabel: Boolean = true,
+    ) {
+        val proxyAttributes = linkedMapOf<String, Any?>(
+            "withlabel" to defaultWithLabel,
+        )
+        proxyAttributes.putAll(attributes)
+        setAttr2D(proxyAttributes)
+        val withLabel = proxyAttributes.entries.last {
+            normalize3DAttributeKey(it.key) == "withlabel"
+        }.value
+        proxy.setAttribute(
+            proxyAttributes.filterKeys {
+                normalize3DAttributeKey(it) != "withlabel"
+            },
+        )
+        if (createLabel) {
+            proxy.setAttribute(mapOf("withlabel" to withLabel))
+        } else {
+            proxy._set("withlabel", withLabel)
+        }
+    }
+
     // JSXGraph: src/3d/element3d.js -> setAttribute.
     override fun setAttribute(
         attributes: Map<String, Any?>,
     ): GeometryElement3D {
-        super.setAttribute(attributes)
-        val delegated = attributes.filterKeys { rawKey ->
+        val resolved = resolveShortcuts(attributes)
+        for ((key, value) in resolved) {
+            _set(key, value)
+        }
+        val delegated = resolved.filterKeys { rawKey ->
             normalize3DAttributeKey(rawKey) !in LOCAL_3D_ATTRIBUTES
         }
         if (delegated.isNotEmpty()) {

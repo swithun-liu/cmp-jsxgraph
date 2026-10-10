@@ -96,6 +96,8 @@ internal class ReaderRegistry<B> {
     internal fun readerFor(
         format: String,
     ): JsxGraphReaderFactory<B>? = readers[format.lowercase()]
+
+    internal fun formats(): Set<String> = readers.keys.toSet()
 }
 
 internal object FileReader {

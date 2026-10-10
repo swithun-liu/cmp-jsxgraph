@@ -21,6 +21,7 @@ class AngleBehaviorTest {
         assertEquals("sector", sector.activeAngleDisplayType)
         assertEquals(3, sector.bezierDegree)
         assertEquals(19, sector.numberPoints)
+        assertEquals(6.0, sector.maxX())
         assertFalse(sector.dotVisible)
         assertPoint(requireNotNull(sector.dot), 0.0, 0.0)
 
@@ -28,6 +29,7 @@ class AngleBehaviorTest {
         assertEquals("square", square.activeAngleDisplayType)
         assertEquals(1, square.bezierDegree)
         assertEquals(5, square.numberPoints)
+        assertEquals(4.0, square.maxX())
         assertPoint(square.points[0], 0.0, 0.0)
         assertPoint(square.points[1], 2.0, 0.0)
         assertPoint(square.points[2], 2.0, 2.0)
@@ -38,10 +40,12 @@ class AngleBehaviorTest {
         assertEquals("none", none.activeAngleDisplayType)
         assertEquals(1, none.bezierDegree)
         assertEquals(1, none.numberPoints)
+        assertEquals(0.0, none.maxX())
         assertTrue(none.points.single().usrCoords[1].isNaN())
 
         val dot = angle(type = "sectordot")
         assertEquals("sectordot", dot.activeAngleDisplayType)
+        assertEquals(6.0, dot.maxX())
         assertTrue(dot.dotVisible)
         assertPoint(
             requireNotNull(dot.dot),

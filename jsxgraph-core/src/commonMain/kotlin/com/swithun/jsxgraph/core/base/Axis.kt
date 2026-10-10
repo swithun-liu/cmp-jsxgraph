@@ -50,6 +50,33 @@ internal sealed interface AxisDistance {
     }
 }
 
+// JSXGraph 1.13.3: src/utils/type.js -> parseNumber;
+// src/base/line.js -> createAxis.update.
+internal fun axisDistance(
+    value: Any?,
+    fallback: AxisDistance,
+): AxisDistance =
+    when (value) {
+        is Number -> value.toDouble()
+            .takeIf(Double::isFinite)
+            ?.let(AxisDistance::User)
+            ?: fallback
+        is String -> {
+            val match = AXIS_DISTANCE_PATTERN.matchEntire(value.trim())
+                ?: return fallback
+            val number = match.groupValues[1].toDoubleOrNull()
+                ?.takeIf(Double::isFinite)
+                ?: return fallback
+            when (match.groupValues[2].lowercase()) {
+                "%" -> AxisDistance.Percent(number)
+                "fr" -> AxisDistance.Fraction(number)
+                "px" -> AxisDistance.Pixels(number)
+                else -> AxisDistance.User(number)
+            }
+        }
+        else -> fallback
+    }
+
 internal data class AxisAttributes(
     val position: String = "static",
     val anchor: String = "",
@@ -92,13 +119,14 @@ internal data class AxisDefinition(
         boundingBox: DoubleArray,
         pixelsPerUnitX: Double,
         pixelsPerUnitY: Double,
+        liveAttributes: AxisAttributes = attributes,
     ): AxisResolvedPoints {
         val directionX = currentPoint2[1] - currentPoint1[1]
         val directionY = currentPoint2[2] - currentPoint1[2]
         val horizontal = directionY == 0.0 && directionX != 0.0
         val vertical = directionX == 0.0 && directionY != 0.0
         if (
-            attributes.position == "static" ||
+            liveAttributes.position == "static" ||
             (!horizontal && !vertical)
         ) {
             return AxisResolvedPoints(
@@ -107,18 +135,18 @@ internal data class AxisDefinition(
             )
         }
 
-        val anchor = attributes.anchor
+        val anchor = liveAttributes.anchor
         val left = "left" in anchor
         val right = "right" in anchor
         val distance = when {
-            horizontal -> attributes.anchorDist.resolve(
+            horizontal -> liveAttributes.anchorDist.resolve(
                 relativeTo = kotlin.math.abs(
                     boundingBox[1] - boundingBox[3],
                 ),
                 // Preserve createAxis' horizontal unitX conversion.
                 pixelsToUser = 1.0 / pixelsPerUnitX,
             )
-            vertical -> attributes.anchorDist.resolve(
+            vertical -> liveAttributes.anchorDist.resolve(
                 relativeTo = kotlin.math.abs(
                     boundingBox[0] - boundingBox[2],
                 ),
@@ -140,7 +168,7 @@ internal data class AxisDefinition(
             point2 = originalPoint2.copyOf()
         }
 
-        when (attributes.position) {
+        when (liveAttributes.position) {
             "fixed" -> {
                 when {
                     horizontal &&
@@ -332,3 +360,6 @@ internal object Axis {
         return GMResult.Ok(line)
     }
 }
+
+private val AXIS_DISTANCE_PATTERN =
+    Regex("""^([+-]?(?:\d+(?:\.\d*)?|\.\d+))(?:\s*)(%|fr|px)?$""")

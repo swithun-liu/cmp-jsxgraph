@@ -13,6 +13,9 @@ evidence layers and are not counted as substitutes for each other.
 | JSXGraph compatibility baseline | `1.13.3` |
 | Independent production scenarios | 30 |
 | Declared capability coverage | 55/55 |
+| Portable behavior compatibility | 249/249 portable slices; 100.00% weighted (1 excluded of 250 assessed) |
+| Upstream source-symbol classification | 2,540 translated; 16 KMP-adapted; 35 excluded; 0 pending |
+| API-surface source mapping | 2,029/2,029 |
 | Native core results | 30 production cases plus 512 generated stress inputs passed |
 | Web Native/Official captures | 60: 30 Desktop plus 30 Compact |
 | Automated visual parity | 60/60 passed SSIM `0.93` |
@@ -33,8 +36,19 @@ Circle including the three-Point circumcircle form, Midpoint,
 OrthogonalProjection, PerpendicularPoint, Perpendicular,
 PerpendicularSegment, Curve, FunctionGraph, Plot, Polygon, Text, Arc, Sector,
 Angle, and Point-interaction contract. This scope is rated **Stable**.
-Untranslated JSXGraph APIs and element families remain explicitly outside the
-rating.
+Translated preview APIs without independent production qualification, plus
+explicit platform/CAS/license exclusions, remain outside the rating.
+
+The portable behavior figure comes from
+[`portable-behavior-compatibility.json`](portable-behavior-compatibility.json).
+It is an independent translation-progress measure and does not expand the
+bounded Stable contract or replace its visual and runtime gates.
+The final portable slices close Axis/Ticks/Grid runtime mutation, rich-element
+locale/table/dynamic Chart APIs, all 204 active JessieCode method-map aliases,
+and the final Point/Line/Text/Curve Canvas options. Focused official,
+Core, Compose, JVM, and Wasm evidence covers these routes. The separately
+excluded browser/CSS host behavior and the narrower 30-case Stable production
+corpus are unchanged.
 
 ## What This Report Proves
 
@@ -81,6 +95,11 @@ The added `curve_arrows` fixture covers Curve, Arc, and Sector first/last
 heads, Boolean and object-valued attributes, head types and sizes, and path
 tangent orientation. It scored `0.988830` on Desktop and `0.985632` on
 Compact; both contact sheets passed manual review.
+The separate official dynamic-arrow fixture and common JVM/Wasm tests cover
+whole function-valued Segment/Curve arrows, nested `type`, `size`, and
+`highlightSize` functions, dependency updates, and structured callback
+failures that retain the prior scene. This evidence does not expand the
+30-case Stable contract.
 
 The canonical production corpus is
 [`tools/stability/production-corpus.mjs`](../tools/stability/production-corpus.mjs).
@@ -196,10 +215,22 @@ Both contact sheets passed manual review for projection, baseline/highline
 geometry, point styling, ticks, complete labels, helper visibility, clipping,
 overlap, and blank output. Official fixtures and common tests additionally
 cover parent movement, endpoint clamping, `snapValues`, value mutation, helper
-identity/order, cleanup, resource accounting, and atomic rollback. Circle,
-Polygon, Ticks, Turtle, Point, transformed-slide, attractor, animation,
-baseline-click, and locale behavior remain pending. This evidence remains
-outside the 30-case Stable production corpus.
+identity/order, cleanup, resource accounting, and atomic rollback. Point,
+Circle, Line/Segment, ordinary Curve, Arc/Sector, and Polygon attractor
+conversion and detaching now have official fixture and common-test coverage.
+Bounded Glider stepping, function-valued movement, host-driven session
+frames, and Compose frame-clock scheduling are covered by official and
+focused session evidence. Board pointer hover/leave, event ordering,
+focus-preserving dehighlighting, session snapshots, and Compose Move/Exit
+routing have separate official and focused tests. Pointer-ID ownership,
+one- and two-finger Board pan, pinch zoom, Line/Polygon/Circle transforms,
+snap/fixed cancellation, session snapshots, and Compose touch routing also
+have official and focused tests. Hyperbola/Parabola Glider projection,
+dragging, parent updates, and removal plus Slider baseline pointer-up,
+`moveOnUp`, and fixed gating now have official and focused coverage. Ticks and
+Turtle preserve upstream-invalid creation behavior as structured failures;
+locale-aware behavior is translated.
+This evidence remains outside the 30-case Stable production corpus.
 The focused `curve_glider` fixture verifies FunctionGraph and degree-one
 data-Plot Gliders from one JessieCode source. Static captures scored
 `0.986233` on Desktop and `0.977524` on Compact. After dragging the Plot
@@ -210,10 +241,13 @@ shape, projected Point position, movement, styling, clipping, and overlap.
 The official fixture and common tests additionally cover true parametric
 Curves, the two-stage drag-versus-parent update state, `setGliderPosition`,
 dynamic evaluation failures, cleanup, cross-Board and Conic rejection,
-resource accounting, and atomic duplicate-ID rollback. Circle, Conic,
-Polygon, Ticks, Turtle, Point, transformed-slide, attractor, animation, and
-the remaining Glider APIs remain pending. This evidence remains outside the
-30-case Stable production corpus.
+resource accounting, and atomic duplicate-ID rollback. Attractor conversion
+and bounded animation now have separate official evidence, including
+function-valued movement and host-driven session frames. Hyperbola/Parabola
+projection and lifecycle plus Slider baseline pointer-up gating are also
+fixture-backed. Ticks and Turtle preserve upstream-invalid creation behavior;
+locale behavior and portable Glider APIs are translated. This evidence remains
+outside the 30-case Stable production corpus.
 The focused `tapemeasures` fixture verifies one horizontal tape with default
 Ticks and one label-only diagonal tape from a single JessieCode source. Static
 captures scored `0.984781` on Desktop and `0.969197` on Compact. After
@@ -225,10 +259,10 @@ endpoint geometry, tick direction, label content and placement, clipping, and
 overlap. The official fixture and common tests additionally cover default and
 disabled helpers, nested identity and digits, `subs`/`inherits`,
 `Value()`/`V`, dependency updates, removal behavior, resource limits,
-structured failures, and atomic rollback. Automatic/none digits, locale and
-`formatValue`, function-valued visual attributes, hit testing, complete APIs,
-and Stable qualification remain pending. This evidence remains outside the
-30-case Stable production corpus.
+structured failures, and atomic rollback. Automatic/none digits, locale-aware
+`formatValue`, function-valued visual attributes, and hit testing are
+translated. This evidence remains outside the 30-case Stable production
+corpus.
 The focused `measurements` fixture verifies Circle Radius and Area, Point
 coordinates, and Segment direction from one JessieCode source. Static captures
 scored `0.982740` on Desktop and `0.970961` on Compact. After dragging the
@@ -242,9 +276,9 @@ additionally cover prefix arithmetic and bounded `exec`, dimensions, units,
 fixed/`auto`/`none` digits, function-valued Measurement attributes and
 formatters, constrained coordinates, `parse:false`, method aliases,
 dependencies, resource limits, structured failures, and atomic rollback.
-Locale formatting, the complete Math/JXG.Math `exec` surface, complete Text
-APIs, and Stable qualification remain pending. This evidence remains outside
-the 30-case Stable production corpus.
+Locale formatting, the portable Math/JXG.Math `exec` surface, and Text APIs are
+translated. This evidence remains outside the 30-case Stable production
+corpus.
 The focused `smartlabels` fixture verifies Point, Line, Circle, Polygon, and
 Angle parents with solid, outline, and pure CSS box variants. Static captures
 scored `0.984719` on Desktop and `0.974114` on Compact. After dragging the
@@ -258,9 +292,9 @@ additionally cover dynamic Point/Angle measures, static Line/Circle/Polygon
 measure validation, units, prefix/suffix visibility, custom formatting,
 row/column directions, Line visibility thresholds, method-map access,
 dependency updates, JessieCode HTML sanitization, structured failures, and
-atomic rollback. Locale, MathJax/KaTeX, user-defined CSS, complete Text APIs,
-and Stable qualification remain pending. This evidence remains outside the
-30-case Stable production corpus.
+atomic rollback. Locale and portable Text APIs are translated; MathJax/KaTeX
+and arbitrary browser CSS are renderer-owned. This evidence remains outside
+the 30-case Stable production corpus.
 The focused `integrals` fixture verifies a FunctionGraph Integral with a
 function-valued hidden left bound, a visible fixed right bound, closed fill,
 and a fixed-digit value label. Static captures scored `0.984526` on Desktop
@@ -272,10 +306,9 @@ direction. All four contact sheets passed nonblank/browser checks and manual
 review. The official fixture and common tests additionally cover parent-order
 selection, fixed/function bounds, reverse signed values, y-axis closure,
 helper identity/order and removal behavior, method-map access, resource
-limits, structured failures, and atomic rollback. Adaptive plotting, locale,
-automatic/none digits, complete attributes/APIs, and Stable qualification
-remain pending. This evidence remains outside the 30-case Stable production
-corpus.
+limits, structured failures, and atomic rollback. Adaptive plotting,
+locale-aware formatting, and automatic/none digits are translated. This
+evidence remains outside the 30-case Stable production corpus.
 The focused `slope_triangle` fixture verifies a Segment Tangent parent,
 official default red fill, horizontal and vertical arrowheads, the arrowless
 parallel edge, and a fixed-digit prefix/suffix label with its 10 CSS-pixel
@@ -285,9 +318,9 @@ arrow direction, label placement, clipping, overlap, and Native/Official
 agreement. The official fixture and common tests additionally cover all three
 parent forms, helper order and ownership, dynamic updates, method-map values,
 cleanup, resource accounting, structured failures, and atomic rollback.
-Automatic/none digits, locale and `formatValue`, function-valued visual
-attributes, hit testing, and complete APIs remain pending. This evidence
-remains outside the 30-case Stable production corpus.
+Automatic/none digits, locale-aware `formatValue`, function-valued visual
+attributes, and hit testing are translated. This evidence remains outside the
+30-case Stable production corpus.
 The focused `adaptive_plot_v2` fixture verifies the native adaptive defaults
 for Ellipse, Hyperbola, Parabola, Derivative, Spline, and CardinalSpline from
 one JessieCode source. Static captures scored `0.987022` on Desktop and
@@ -297,8 +330,8 @@ singularity, clipping, overlap, and Native/Official agreement. Raw kernel and
 creator tests additionally lock official point counts, callback suspension,
 smoothness/cusp/jump/undefined decisions, parameter metadata, canonical
 screen projection, the repeated `_borderCase` midpoint probe observed in
-JSXGraph `1.13.3`, evaluator failures, and point limits. Plot v1 and Stable
-qualification remain pending.
+JSXGraph `1.13.3`, evaluator failures, and point limits. Plot v1 is
+fixture-backed; independent Stable qualification remains outside this corpus.
 This evidence remains outside the 30-case Stable production corpus.
 The focused `adaptive_plot_v3` fixture explicitly enables the experimental
 sampler for the same six continuous wrappers. Static captures scored
@@ -309,8 +342,8 @@ agreement. Raw kernel and creator tests additionally lock official point
 counts, FunctionGraph-only domain cropping, callback suspension,
 smooth/cusp/jump/border/isolated-`NaN` decisions, one-sided limits through
 `Extrapolate`, evaluator failures, and point limits. Plot v2 remains the
-native default; Plot v3 requires explicit `plotVersion: 3`. Plot v1 and Stable
-qualification remain pending.
+native default; Plot v3 requires explicit `plotVersion: 3`. Plot v1 is
+fixture-backed; independent Stable qualification remains outside this corpus.
 This evidence remains outside the 30-case Stable production corpus.
 The focused `adaptive_plot_v4` fixture explicitly enables the
 difference-based sampler for Ellipse, Hyperbola, Parabola, Spline, and
@@ -325,9 +358,8 @@ structured failures, and point limits. The visual source excludes
 `derivative(functiongraph("expression"))` because JSXGraph `1.13.3` itself
 throws `Operation - not defined on operands string and number` while probing
 that JessieCode combination with an interval. Plot v2 remains the native
-default; Plot v4 requires explicit `plotVersion: 4`. Plot v1 and Stable
-qualification remain pending. This evidence remains outside the 30-case
-Stable production corpus.
+default; Plot v4 requires explicit `plotVersion: 4`. Plot v1 is fixture-backed.
+This evidence remains outside the 30-case Stable production corpus.
 The focused `functiongraph_rdp` fixture verifies the post-sampling
 Ramer-Douglas-Peucker branch shared by adaptive and naive Curve updates.
 Static captures scored `0.986736` on Desktop and `0.977750` on Compact.
@@ -743,7 +775,7 @@ Desktop/Compact corpus and all documented interaction traces were recaptured
 after this shared renderer change. Automated audits passed and all contact
 sheets were manually reviewed without a new blank, clipping, overlap, or
 geometry regression. This validation does not add Arc compositions or the
-remaining layer APIs to the Stable scope.
+translated layer APIs to the Stable scope.
 
 ## Determinism And Performance
 

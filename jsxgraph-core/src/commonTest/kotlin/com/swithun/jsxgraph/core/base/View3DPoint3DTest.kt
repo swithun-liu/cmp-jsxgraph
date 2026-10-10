@@ -6,11 +6,56 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class View3DPoint3DTest {
+    @Test
+    fun creationAttributesBelongToProxyAndDynamicValuesReceivePoint3D() {
+        val point = point3D(
+            Point3D.create(
+                view = createView(projection = "parallel"),
+                coordinates = doubleArrayOf(1.0, 2.0, 3.0),
+                id = "point",
+                name = "P",
+                fixed = true,
+                attributes = linkedMapOf(
+                    "strokeColor" to "#123456",
+                    "size" to GeometryElementPropertyEvaluator {
+                        if (it is Point3D && it.name == "P") 7.0 else 1.0
+                    },
+                    "withLabel" to true,
+                    "label" to mapOf("offset" to listOf(4.0, 5.0)),
+                ),
+            ),
+        )
+
+        val label = assertNotNull(point.point2D.elementLabel)
+        assertNull(point.elementLabel)
+        assertEquals("#123456", point.getAttribute("strokeColor"))
+        assertEquals(7.0, point.point2D.evalVisProp("size"))
+        assertSame(point.point2D, label.anchor)
+        assertEquals(listOf(4.0, 5.0), label.screenOffset.toList())
+        assertEquals(
+            listOf<GeometryElement>(point.point2D),
+            point.inherits,
+        )
+
+        point.setAttribute(
+            mapOf(
+                "size" to 11.0,
+                "withLabel" to false,
+            ),
+        )
+
+        assertEquals(11.0, point.point2D.getAttribute("size"))
+        assertFalse(point.point2D.hasLabel)
+        assertSame(label, point.point2D.elementLabel)
+        assertNull(point.elementLabel)
+    }
+
     @Test
     fun parallelProjectionMatchesOfficialFixture() {
         val view = createView(projection = "parallel")
@@ -322,6 +367,386 @@ class View3DPoint3DTest {
     }
 
     @Test
+    fun lineGliderProjectionAndDependenciesMatchOfficialFixture() {
+        val board = createBoard()
+        val view = createView(board = board, projection = "parallel")
+        val anchor = point3D(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(0.0, 0.0, 0.0),
+                id = "anchor",
+                name = "",
+            ),
+        )
+        val host = assertIs<GMResult.Ok<Line3D>>(
+            Line3D.create(
+                view = view,
+                point = anchor,
+                directionSource = Line3DDirectionSource.Values(
+                    listOf(
+                        Line3DCoordinateValue.Numeric(2.0),
+                        Line3DCoordinateValue.Numeric(1.0),
+                        Line3DCoordinateValue.Numeric(-1.0),
+                    ),
+                ),
+                rangeSource = listOf(
+                    Line3DCoordinateValue.Numeric(-1.0),
+                    Line3DCoordinateValue.Numeric(2.0),
+                ),
+                id = "host",
+                name = "",
+            ),
+        ).value
+        val glider = point3D(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(4.0, 5.0, 2.0),
+                id = "glider",
+                name = "",
+                slide = host,
+            ),
+        )
+        val clamped = point3D(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(20.0, 20.0, -20.0),
+                id = "clamped",
+                name = "",
+                slide = host,
+            ),
+        )
+
+        board.fullUpdate()
+
+        assertSame(host, glider.slide)
+        assertVectorMatches(
+            doubleArrayOf(1.0, 4.0, 2.0, -2.0),
+            glider.coords,
+        )
+        assertVectorMatches(doubleArrayOf(2.0), glider.position)
+        assertVectorMatches(
+            doubleArrayOf(
+                1.0,
+                -2.066348496841048,
+                -4.017821966498767,
+            ),
+            glider.point2D.coords.usrCoords,
+        )
+        assertVectorMatches(glider.coords, clamped.coords)
+        assertVectorMatches(glider.position, clamped.position)
+        assertEquals(listOf("host"), glider.parents)
+        assertSame(glider, host.childElements["glider"])
+        assertSame(host, glider.ancestors["host"])
+        assertSame(anchor, glider.ancestors["anchor"])
+
+        assertIs<GMResult.Ok<Point3D>>(
+            anchor.setPosition(doubleArrayOf(1.0, -2.0, 3.0)),
+        )
+        board.fullUpdate()
+
+        assertVectorMatches(
+            doubleArrayOf(1.0, 5.0, 0.0, 1.0),
+            glider.coords,
+        )
+        assertVectorMatches(doubleArrayOf(2.0), glider.position)
+
+        glider.point2D.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(-0.25, 0.75),
+        )
+        glider.update()
+
+        assertVectorMatches(
+            doubleArrayOf(
+                1.0,
+                -0.634863542226534,
+                -2.817431771113267,
+                3.817431771113267,
+            ),
+            glider.coords,
+        )
+        assertVectorMatches(doubleArrayOf(2.0), glider.position)
+        assertVectorMatches(
+            doubleArrayOf(
+                1.0,
+                -3.3183457875680102,
+                1.2700888589526664,
+            ),
+            glider.point2D.coords.usrCoords,
+        )
+
+        glider.update()
+
+        assertVectorMatches(
+            doubleArrayOf(
+                1.0,
+                -0.6348635422265339,
+                -2.817431771113267,
+                3.817431771113267,
+            ),
+            glider.coords,
+        )
+        assertVectorMatches(
+            doubleArrayOf(-0.8174317711132669),
+            glider.position,
+        )
+    }
+
+    @Test
+    fun allProjectable3DHostsConstrainPointAndProxyDrag() {
+        val board = createBoard()
+        val view = createView(board = board, projection = "parallel")
+        val center = point3D(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(0.0, 0.0, 0.0),
+                id = "center",
+                name = "",
+                attributes = mapOf("withLabel" to false),
+            ),
+        )
+        val range = listOf(
+            Line3DCoordinateValue.Numeric(-2.0),
+            Line3DCoordinateValue.Numeric(2.0),
+        )
+        val circle = assertIs<GMResult.Ok<Circle3D>>(
+            Circle3D.create(
+                view = view,
+                center = center,
+                normalSource = Circle3DNormalSource.Values(
+                    listOf(
+                        Line3DCoordinateValue.Numeric(0.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                        Line3DCoordinateValue.Numeric(1.0),
+                    ),
+                ),
+                radiusSource = Line3DCoordinateValue.Numeric(2.0),
+                sampleCount = 9,
+                id = "circle",
+                name = "",
+            ),
+        ).value
+        val curve = assertIs<GMResult.Ok<Curve3D>>(
+            Curve3D.create(
+                view = view,
+                source = Curve3DSource.Components(
+                    x = Curve3DScalarEvaluator { GMResult.Ok(it) },
+                    y = Curve3DScalarEvaluator { GMResult.Ok(it * it) },
+                    z = Curve3DScalarEvaluator { GMResult.Ok(-it) },
+                ),
+                rangeSource = range,
+                sampleCount = 9,
+                id = "curve",
+                name = "",
+            ),
+        ).value
+        val plane = assertIs<GMResult.Ok<Plane3D>>(
+            Plane3D.create(
+                view = view,
+                point = center,
+                direction1Source = Plane3DDirectionSource.Values(
+                    listOf(
+                        Line3DCoordinateValue.Numeric(1.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                    ),
+                ),
+                direction2Source = Plane3DDirectionSource.Values(
+                    listOf(
+                        Line3DCoordinateValue.Numeric(0.0),
+                        Line3DCoordinateValue.Numeric(1.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                    ),
+                ),
+                rangeUSource = range,
+                rangeVSource = range,
+                id = "plane",
+                name = "",
+            ),
+        ).value
+        val sphere = assertIs<GMResult.Ok<Sphere3D>>(
+            Sphere3D.create(
+                view = view,
+                center = center,
+                radiusSource = Line3DCoordinateValue.Numeric(2.0),
+                sampleCount = 17,
+                id = "sphere",
+                name = "",
+            ),
+        ).value
+        val surface = assertIs<GMResult.Ok<Surface3D>>(
+            Surface3D.create(
+                view = view,
+                source = Surface3DSource.Components(
+                    x = Surface3DScalarEvaluator { u, _ ->
+                        GMResult.Ok(u)
+                    },
+                    y = Surface3DScalarEvaluator { _, v ->
+                        GMResult.Ok(v)
+                    },
+                    z = Surface3DScalarEvaluator { u, v ->
+                        GMResult.Ok(u + v)
+                    },
+                ),
+                rangeUSource = range,
+                rangeVSource = range,
+                attributes = Surface3DAttributes(
+                    stepsU = 2,
+                    stepsV = 2,
+                ),
+                id = "surface",
+                name = "",
+            ),
+        ).value
+        val hosted = listOf(
+            circle to doubleArrayOf(1.4, 1.4, 0.7),
+            curve to doubleArrayOf(0.7, 0.8, -0.9),
+            plane to doubleArrayOf(1.5, -0.5, 2.0),
+            sphere to doubleArrayOf(1.4, 1.4, 0.2),
+            surface to doubleArrayOf(0.8, -0.4, 1.1),
+        ).mapIndexed { index, (host, coordinates) ->
+            point3D(
+                Point3D.create(
+                    view = view,
+                    coordinates = coordinates,
+                    id = "hosted$index",
+                    name = "",
+                    slide = host,
+                    attributes = mapOf("withLabel" to false),
+                ),
+            )
+        }
+
+        board.fullUpdate()
+
+        assertEquals(listOf(1, 1, 2, 2, 2), hosted.map {
+            it.position.size
+        })
+        assertVectorMatches(
+            doubleArrayOf(
+                1.0,
+                1.0836163267851853,
+                0.977063937492063,
+                1.3678895124888881,
+            ),
+            hosted[3].coords,
+        )
+        for ((index, point) in hosted.withIndex()) {
+            assertNull(point.coordinateEvaluationError)
+            assertTrue(point.coords.all(Double::isFinite))
+            assertSame(point.slide, point.ancestors[point.slide?.id])
+            assertSame(point, point.slide?.childElements?.get(point.id))
+            assertIs<GMResult.Ok<Point3D>>(
+                point.setPositionFrom2D(doubleArrayOf(-0.25, 0.75)),
+                "host index $index",
+            )
+            assertTrue(point.coords.all(Double::isFinite))
+            assertNull(point.coordinateEvaluationError)
+        }
+
+        val circlePoint = hosted[0]
+        assertEquals(0.0, circlePoint.Z(), 1.0e-6)
+        assertEquals(
+            2.0,
+            kotlin.math.hypot(circlePoint.X(), circlePoint.Y()),
+            1.0e-5,
+        )
+        val curvePoint = hosted[1]
+        assertEquals(
+            curvePoint.X() * curvePoint.X(),
+            curvePoint.Y(),
+            1.0e-5,
+        )
+        assertEquals(-curvePoint.X(), curvePoint.Z(), 1.0e-5)
+        assertEquals(0.0, hosted[2].Z(), 1.0e-6)
+        val spherePoint = hosted[3]
+        assertEquals(
+            2.0,
+            kotlin.math.sqrt(
+                spherePoint.X() * spherePoint.X() +
+                    spherePoint.Y() * spherePoint.Y() +
+                    spherePoint.Z() * spherePoint.Z(),
+            ),
+            1.0e-5,
+        )
+        val surfacePoint = hosted[4]
+        assertEquals(
+            surfacePoint.X() + surfacePoint.Y(),
+            surfacePoint.Z(),
+            1.0e-5,
+        )
+    }
+
+    @Test
+    fun lineGliderRejectsInvalidHostLifecycle() {
+        val board = createBoard()
+        val view = createView(board = board, projection = "parallel")
+        val otherView = assertIs<GMResult.Ok<View3D>>(
+            View3D.create(
+                board = board,
+                lowerLeftCorner = doubleArrayOf(-4.0, -3.0),
+                size = doubleArrayOf(2.0, 2.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-2.0, 2.0),
+                    doubleArrayOf(-2.0, 2.0),
+                    doubleArrayOf(-2.0, 2.0),
+                ),
+                id = "otherView",
+                name = "",
+            ),
+        ).value
+        val anchor = point3D(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(0.0, 0.0, 0.0),
+                id = "anchor",
+                name = "",
+            ),
+        )
+        val host = assertIs<GMResult.Ok<Line3D>>(
+            Line3D.create(
+                view = view,
+                point = anchor,
+                directionSource = Line3DDirectionSource.Values(
+                    listOf(
+                        Line3DCoordinateValue.Numeric(1.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                        Line3DCoordinateValue.Numeric(0.0),
+                    ),
+                ),
+                id = "host",
+                name = "",
+            ),
+        ).value
+
+        assertIs<GMResult.Err<Point3DError.SlideViewMismatch>>(
+            Point3D.create(
+                view = otherView,
+                coordinates = doubleArrayOf(1.0, 2.0, 3.0),
+                slide = host,
+            ),
+        )
+
+        board.removeObject(host)
+
+        assertIs<GMResult.Err<Point3DError.SlideNotRegistered>>(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(1.0, 2.0, 3.0),
+                slide = host,
+            ),
+        )
+
+        assertIs<GMResult.Err<Point3DError.UnsupportedSlide>>(
+            Point3D.create(
+                view = view,
+                coordinates = doubleArrayOf(1.0, 2.0, 3.0),
+                slide = anchor,
+            ),
+        )
+    }
+
+    @Test
     fun pointRemovalCleansProxyAndViewRegistry() {
         val board = createBoard()
         val view = createView(board = board, projection = "parallel")
@@ -465,6 +890,188 @@ class View3DPoint3DTest {
     }
 
     @Test
+    fun cameraNavigationMatchesOfficialFixture() {
+        val board = Board.fromBoundingBox(
+            boundingBox = doubleArrayOf(-5.0, 4.0, 5.0, -4.0),
+            keepAspectRatio = false,
+            canvasWidth = 500.0,
+            canvasHeight = 400.0,
+            defaultCurveMinimum = -6.0,
+            defaultCurveMaximum = 6.0,
+        )
+        val view = assertIs<GMResult.Ok<View3D>>(
+            View3D.create(
+                board = board,
+                lowerLeftCorner = doubleArrayOf(-4.0, -3.0),
+                size = doubleArrayOf(8.0, 6.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-5.0, 5.0),
+                ),
+                storedViews = listOf(
+                    doubleArrayOf(0.2, 0.3, 2.0),
+                    doubleArrayOf(1.2, 0.7, 3.0),
+                ),
+                id = "view",
+                name = "",
+            ),
+        ).value
+
+        view.setCurrentView(-1)
+        assertAngles(view, azimuth = 1.2, elevation = 0.7, bank = 0.0)
+        assertEquals(1.0 / 3.0, view.getCameraDistance(), TOLERANCE)
+        view.nextView()
+        assertAngles(view, azimuth = 0.2, elevation = 0.3, bank = 0.0)
+        assertEquals(0.5, view.getCameraDistance(), TOLERANCE)
+        view.previousView()
+        view.freeR()
+        assertAngles(view, azimuth = 1.2, elevation = 0.7, bank = 0.0)
+        assertEquals(1.01, view.getCameraDistance(), TOLERANCE)
+
+        view.azimuthEventHandler(
+            View3DNavigationEvent(key = "ArrowRight"),
+        )
+        assertAngles(
+            view,
+            azimuth = 1.374532925199433,
+            elevation = 0.7,
+            bank = 0.0,
+        )
+        view.elevationEventHandler(
+            View3DNavigationEvent(key = "ArrowUp"),
+        )
+        assertAngles(
+            view,
+            azimuth = 1.374532925199433,
+            elevation = 0.525467074800567,
+            bank = 0.0,
+        )
+        view.bankEventHandler(View3DNavigationEvent(key = ">"))
+        assertAngles(
+            view,
+            azimuth = 1.374532925199433,
+            elevation = 0.525467074800567,
+            bank = 0.1745329251994332,
+        )
+
+        view.pointerDownHandler(
+            View3DNavigationEvent(
+                screenX = 100.0,
+                screenY = 100.0,
+                button = 0,
+            ),
+        )
+        view.azimuthElevationEventHandler(
+            View3DNavigationEvent(
+                screenX = 150.0,
+                screenY = 120.0,
+                button = 0,
+            ),
+        )
+        view.pointerUpHandler()
+        assertAngles(
+            view,
+            azimuth = 2.0028514559173916,
+            elevation = 0.7767944870877505,
+            bank = 0.1745329251994332,
+        )
+
+        view.pointerDownHandler(
+            View3DNavigationEvent(
+                screenX = 150.0,
+                screenY = 120.0,
+                button = 0,
+            ),
+        )
+        view.bankEventHandler(View3DNavigationEvent(deltaY = 25.0))
+        view.pointerUpHandler()
+        assertAngles(
+            view,
+            azimuth = 2.0028514559173916,
+            elevation = 0.7767944870877505,
+            bank = 0.20594885173533095,
+        )
+    }
+
+    @Test
+    fun trackballNavigationMatchesOfficialFixture() {
+        val board = Board.fromBoundingBox(
+            boundingBox = doubleArrayOf(-5.0, 4.0, 5.0, -4.0),
+            keepAspectRatio = false,
+            canvasWidth = 500.0,
+            canvasHeight = 400.0,
+            defaultCurveMinimum = -6.0,
+            defaultCurveMaximum = 6.0,
+        )
+        val view = assertIs<GMResult.Ok<View3D>>(
+            View3D.create(
+                board = board,
+                lowerLeftCorner = doubleArrayOf(-4.0, -3.0),
+                size = doubleArrayOf(8.0, 6.0),
+                boundingBox = arrayOf(
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-5.0, 5.0),
+                    doubleArrayOf(-5.0, 5.0),
+                ),
+                trackballAttributes =
+                    View3DTrackballAttributes(enabled = true),
+                id = "view",
+                name = "",
+            ),
+        ).value
+
+        view.pointerDownHandler(
+            View3DNavigationEvent(
+                screenX = 100.0,
+                screenY = 100.0,
+                button = 0,
+            ),
+        )
+        view.trackballHandler(
+            View3DNavigationEvent(
+                screenX = 130.0,
+                screenY = 115.0,
+                boardX = 130.0,
+                boardY = 115.0,
+                button = 0,
+            ),
+        )
+        view.pointerUpHandler()
+
+        assertAngles(
+            view,
+            azimuth = 1.2071850704924463,
+            elevation = 0.4024113197793909,
+            bank = 0.09787457829086581,
+        )
+        assertMatrixMatches(
+            expected = arrayOf(
+                doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+                doubleArrayOf(
+                    0.0,
+                    -0.3897176692613368,
+                    0.9165347057602141,
+                    0.08991257644261447,
+                ),
+                doubleArrayOf(
+                    0.0,
+                    -0.32952681439092557,
+                    -0.2299495912578235,
+                    0.9157157113852139,
+                ),
+                doubleArrayOf(
+                    0.0,
+                    0.8599605902963693,
+                    0.3272419878582172,
+                    0.39163818062048367,
+                ),
+            ),
+            actual = view.matrix3DRot,
+        )
+    }
+
+    @Test
     fun storedViewsAndAzimuthAnimationFollowPortableScheduler() {
         var scheduledDelay = -1L
         var scheduledAction: (() -> Unit)? = null
@@ -572,6 +1179,151 @@ class View3DPoint3DTest {
         )
     }
 
+    @Test
+    fun pointMovementEasingAndPathReplacementMatchOfficialFixture() {
+        val expectedFrames = mapOf(
+            "<>" to doubleArrayOf(
+                0.0,
+                0.5857864376269051,
+                2.0000000000000004,
+                3.414213562373095,
+                4.0,
+            ),
+            "<" to doubleArrayOf(
+                0.0,
+                2.3125,
+                3.5,
+                3.9375,
+                4.0,
+            ),
+            ">" to doubleArrayOf(
+                0.0,
+                0.0625,
+                0.5,
+                1.6875,
+                4.0,
+            ),
+        )
+        for ((effect, expectedX) in expectedFrames) {
+            var scheduledInterval = Double.NaN
+            var advance: (() -> Boolean)? = null
+            val board = Board(
+                originX = 0.0,
+                originY = 0.0,
+                unitX = 1.0,
+                unitY = 1.0,
+                animationDelay = 25.0,
+                animationScheduler =
+                    BoardAnimationScheduler { interval, step ->
+                        scheduledInterval = interval
+                        advance = step
+                    },
+            )
+            val point = point3D(
+                Point3D.create(
+                    view = createView(
+                        board = board,
+                        projection = "parallel",
+                    ),
+                    coordinates = doubleArrayOf(0.0, 0.0, 0.0),
+                ),
+            )
+            var callbackCount = 0
+
+            assertIs<GMResult.Ok<Point3D>>(
+                point.moveTo(
+                    where = doubleArrayOf(4.0, 8.0, -4.0),
+                    timeMilliseconds = 100.0,
+                    options = Point3DMoveOptions(
+                        callback = { callbackCount += 1 },
+                        effect = effect,
+                    ),
+                ),
+            )
+
+            assertEquals(20.0, scheduledInterval)
+            val step = advance ?: error("$effect animation was not scheduled")
+            val actualX = buildList {
+                do {
+                    val keepRunning = step()
+                    add(point.X())
+                } while (keepRunning)
+            }
+            assertVectorMatches(expectedX, actualX.toDoubleArray())
+            assertEquals(1, callbackCount)
+        }
+
+        var scheduledInterval = Double.NaN
+        var advance: (() -> Boolean)? = null
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            animationDelay = 25.0,
+            animationScheduler = BoardAnimationScheduler { interval, step ->
+                scheduledInterval = interval
+                advance = step
+            },
+        )
+        val replacingPoint = point3D(
+            Point3D.create(
+                view = createView(board = board, projection = "parallel"),
+                coordinates = doubleArrayOf(0.0, 0.0, 0.0),
+            ),
+        )
+        val callbacks = mutableListOf<String>()
+        assertIs<GMResult.Ok<Point3D>>(
+            replacingPoint.moveAlong(
+                traversePath = listOf(
+                    doubleArrayOf(1.0, 1.0, 1.0),
+                    doubleArrayOf(2.0, 2.0, 2.0),
+                    doubleArrayOf(3.0, 3.0, 3.0),
+                ),
+                timeMilliseconds = 90.0,
+                options = Point3DMoveOptions(
+                    callback = { callbacks += "first" },
+                ),
+            ),
+        )
+        assertIs<GMResult.Ok<Point3D>>(
+            replacingPoint.moveAlong(
+                traversePath = listOf(
+                    doubleArrayOf(-1.0, -2.0, -3.0),
+                    doubleArrayOf(-4.0, -5.0, -6.0),
+                ),
+                timeMilliseconds = 20.0,
+                options = Point3DMoveOptions(
+                    callback = { callbacks += "replacement" },
+                ),
+            ),
+        )
+
+        assertEquals(30.0, scheduledInterval)
+        val replacementStep =
+            advance ?: error("replacement animation was not scheduled")
+        while (replacementStep()) {
+            Unit
+        }
+        assertVectorMatches(
+            doubleArrayOf(1.0, -4.0, -5.0, -6.0),
+            replacingPoint.coords,
+        )
+        assertEquals(listOf("replacement"), callbacks)
+
+        var immediateCallbackCount = 0
+        assertIs<GMResult.Ok<Point3D>>(
+            replacingPoint.moveTo(
+                where = doubleArrayOf(1.0, 2.0, 3.0),
+                timeMilliseconds = 0.0,
+                options = Point3DMoveOptions(
+                    callback = { immediateCallbackCount += 1 },
+                ),
+            ),
+        )
+        assertEquals(0, immediateCallbackCount)
+    }
+
     private fun createBoard(): Board =
         Board(
             originX = 0.0,
@@ -631,6 +1383,17 @@ class View3DPoint3DTest {
                 absoluteTolerance = TOLERANCE,
             )
         }
+    }
+
+    private fun assertAngles(
+        view: View3D,
+        azimuth: Double,
+        elevation: Double,
+        bank: Double,
+    ) {
+        assertEquals(azimuth, view.angles.az, TOLERANCE)
+        assertEquals(elevation, view.angles.el, TOLERANCE)
+        assertEquals(bank, view.angles.bank, TOLERANCE)
     }
 
     private companion object {

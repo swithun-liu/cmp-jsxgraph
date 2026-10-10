@@ -172,6 +172,7 @@ class CurveTest {
                 minimumSource = "-2",
                 maximumSource = "2",
                 sampleCount = 4,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 name = "",
             ),
         )
@@ -385,6 +386,7 @@ class CurveTest {
                 maximumSource = "8",
                 sampleCount = 128,
                 plotOptions = CurvePlotOptions(
+                    doAdvancedPlot = false,
                     rdpSmoothing = true,
                 ),
                 name = "",
@@ -620,6 +622,7 @@ class CurveTest {
                 minimumSource = "0",
                 maximumSource = "2",
                 sampleCount = 2,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 name = "",
             ),
         )
@@ -686,6 +689,7 @@ class CurveTest {
                 minimumSource = "A.Y() - 3",
                 maximumSource = "4",
                 sampleCount = 8,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "source",
                 name = "",
             ),
@@ -695,6 +699,7 @@ class CurveTest {
                 board = board,
                 source = source,
                 sampleCount = 8,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "derivative",
                 name = "",
             ),
@@ -842,6 +847,7 @@ class CurveTest {
                     ::CurveElementSplinePoint,
                 ),
                 sampleCount = 8,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "spline",
                 name = "",
             ),
@@ -1572,6 +1578,7 @@ class CurveTest {
                 minimumSource = "-3",
                 maximumSource = "3",
                 sampleCount = 8,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "sourceFunction",
                 name = "",
             ),
@@ -1812,6 +1819,82 @@ class CurveTest {
         assertContentEquals(
             doubleArrayOf(-1.0, 0.0, Double.NaN),
             field.dataY?.copyOfRange(0, 3),
+        )
+    }
+
+    @Test
+    fun setFReplacesTheVectorFieldWithoutRecreatingTheCurve() {
+        val board = board()
+        val field = curve(
+            Curve.createVectorField(
+                board = board,
+                field = CurveVectorFieldComponentFunction(
+                    xTerm = MutableNumericCoordinateFunction(1.0),
+                    yTerm = MutableNumericCoordinateFunction(0.0),
+                ),
+                xData = listOf(
+                    MutableNumericCoordinateFunction(2.0),
+                    MutableNumericCoordinateFunction(0.0),
+                    MutableNumericCoordinateFunction(2.0),
+                ),
+                yData = listOf(
+                    MutableNumericCoordinateFunction(3.0),
+                    MutableNumericCoordinateFunction(0.0),
+                    MutableNumericCoordinateFunction(3.0),
+                ),
+                scaleTerm = MutableNumericCoordinateFunction(1.0),
+                arrowEnabledTerm = MutableRuntimeCoordinateFunction {
+                    JessieCodeRuntimeValue.BooleanValue(false)
+                },
+                arrowSizeTerm = MutableNumericCoordinateFunction(5.0),
+                arrowAngleTerm = MutableNumericCoordinateFunction(0.0),
+                id = "field",
+                name = "",
+            ),
+        )
+
+        assertContentEquals(
+            doubleArrayOf(2.0, 3.0, Double.NaN),
+            field.dataX,
+        )
+        val result = assertIs<GMResult.Ok<Curve>>(
+            field.setF(
+                CurveVectorFieldComponentFunction(
+                    xTerm = MutableNumericCoordinateFunction(3.0),
+                    yTerm = MutableNumericCoordinateFunction(2.0),
+                ),
+            ),
+        )
+        assertSame(field, result.value)
+
+        board.update()
+
+        assertSame(field, board.select("field"))
+        assertContentEquals(
+            doubleArrayOf(2.0, 5.0, Double.NaN),
+            field.dataX,
+        )
+        assertContentEquals(
+            doubleArrayOf(3.0, 5.0, Double.NaN),
+            field.dataY,
+        )
+
+        val ordinary = curve(
+            Curve.createData(
+                board = board,
+                dataX = doubleArrayOf(0.0, 1.0),
+                dataY = doubleArrayOf(0.0, 1.0),
+                id = "ordinary",
+                name = "",
+            ),
+        )
+        assertIs<GMResult.Err<CurveError.NotVectorField>>(
+            ordinary.setF(
+                CurveVectorFieldComponentFunction(
+                    xTerm = MutableNumericCoordinateFunction(0.0),
+                    yTerm = MutableNumericCoordinateFunction(0.0),
+                ),
+            ),
         )
     }
 

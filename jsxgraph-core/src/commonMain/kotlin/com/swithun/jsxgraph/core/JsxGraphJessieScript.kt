@@ -107,6 +107,14 @@ class JsxGraphJessieScriptSession internal constructor(
     val scene: JsxGraphScene
         get() = delegate.scene
 
+    fun exportBoard(
+        format: JsxGraphBoardExportFormat,
+        noAttributes: Boolean = false,
+        limits: JsxGraphBoardExportLimits =
+            JsxGraphBoardExportLimits(),
+    ): GMResult<String, JsxGraphBoardExportError> =
+        delegate.exportBoard(format, noAttributes, limits)
+
     fun movePoint(
         id: String,
         coordinates: JsxGraphPoint2D,
@@ -117,6 +125,18 @@ class JsxGraphJessieScriptSession internal constructor(
         interaction: JsxGraphControlInteraction,
     ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
         delegate.interactControl(interaction)
+
+    fun interactPointer(
+        interaction: JsxGraphBoardPointerInteraction,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        delegate.interactPointer(interaction)
+
+    fun interactView3D(
+        interaction: JsxGraphView3DInteraction,
+    ): GMResult<
+        JsxGraphView3DInteractionResult,
+        JsxGraphInteractionError,
+        > = delegate.interactView3D(interaction)
 }
 
 /**

@@ -146,10 +146,58 @@ try {
             boardPropertiesIdentity:
                 reader.boardProperties(null, null, attributes) === attributes
         };
+        reader.setDefaultOptions();
+        const defaultOptions = {
+            elements: {
+                strokeWidth: board.options.elements.strokeWidth,
+                withLabel: board.options.elements.withLabel
+            },
+            point: {
+                face: board.options.point.face,
+                size: board.options.point.size,
+                fillColor: board.options.point.fillColor,
+                fillOpacity: board.options.point.fillOpacity,
+                highlightFillOpacity:
+                    board.options.point.highlightFillOpacity,
+                strokeColor: board.options.point.strokeColor,
+                highlightStrokeColor:
+                    board.options.point.highlightStrokeColor,
+                strokeWidth: board.options.point.strokeWidth
+            },
+            line: {
+                strokeWidth: board.options.line.strokeWidth,
+                highlightStrokeColor:
+                    board.options.line.highlightStrokeColor,
+                strokeColor: board.options.line.strokeColor
+            },
+            polygon: {
+                fillColor: board.options.polygon.fillColor,
+                fillOpacity: board.options.polygon.fillOpacity,
+                highlightFillColor:
+                    board.options.polygon.highlightFillColor,
+                highlightFillOpacity:
+                    board.options.polygon.highlightFillOpacity
+            },
+            sector: {
+                fillColor: board.options.sector.fillColor,
+                fillOpacity: board.options.sector.fillOpacity,
+                highlightFillColor:
+                    board.options.sector.highlightFillColor,
+                highlightFillOpacity:
+                    board.options.sector.highlightFillOpacity
+            },
+            angle: {
+                fillColor: board.options.angle.fillColor,
+                fillOpacity: board.options.angle.fillOpacity,
+                highlightFillOpacity:
+                    board.options.angle.highlightFillOpacity
+            }
+        };
         JXG.JSXGraph.freeBoard(board);
 
         return {
             version: JXG.version,
+            defaultOptions,
             rich,
             styleZero,
             noColor,

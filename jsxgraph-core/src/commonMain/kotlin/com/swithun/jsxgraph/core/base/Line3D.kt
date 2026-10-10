@@ -550,6 +550,7 @@ internal class Line3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Line3D, Line3DError> =
             createInternal(
                 view = view,
@@ -577,6 +578,7 @@ internal class Line3D private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                attributes = attributes,
             )
 
         // JSXGraph: src/3d/linspace3d.js -> createLine3D,
@@ -592,6 +594,7 @@ internal class Line3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Line3D, Line3DError> =
             createInternal(
                 view = view,
@@ -613,6 +616,7 @@ internal class Line3D private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                attributes = attributes,
             )
 
         // JSXGraph: src/3d/linspace3d.js -> createLine3D,
@@ -626,6 +630,7 @@ internal class Line3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Line3D, Line3DError> {
             if (baseLine.view !== view) {
                 return GMResult.Err(
@@ -637,12 +642,16 @@ internal class Line3D private constructor(
                     Line3DError.InvalidTransformationCount(0),
                 )
             }
+            val pointAttributes = nestedAttributes(attributes, "point")
             val point = when (
                 val result = Point3D.create(
                     view = view,
                     coordinates = doubleArrayOf(0.0, 0.0, 0.0),
-                    name = "",
+                    id = stringAttribute(pointAttributes, "id").orEmpty(),
+                    name =
+                        stringAttribute(pointAttributes, "name") ?: "",
                     fixed = true,
+                    attributes = pointAttributes,
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -671,6 +680,7 @@ internal class Line3D private constructor(
                     name = name,
                     needsRegularUpdate = needsRegularUpdate,
                     fixed = fixed,
+                    attributes = attributes,
                 )
             ) {
                 is GMResult.Ok -> result.value
@@ -705,6 +715,7 @@ internal class Line3D private constructor(
             name: String?,
             needsRegularUpdate: Boolean,
             fixed: Boolean,
+            attributes: Map<String, Any?>,
         ): GMResult<Line3D, Line3DError> {
             for ((index, definingPoint) in definingPoints.withIndex()) {
                 validatePoint(view, definingPoint, index)?.let {
@@ -732,6 +743,7 @@ internal class Line3D private constructor(
                             view = view,
                             needsRegularUpdate = needsRegularUpdate,
                             line = { lineReference },
+                            attributes = endpointAttributes(attributes),
                         )
                     ) {
                         is GMResult.Ok -> result.value
@@ -754,6 +766,7 @@ internal class Line3D private constructor(
                 needsRegularUpdate = needsRegularUpdate,
                 isFixed = fixed,
             )
+            line.setCreationAttributes(attributes)
             lineReference = line
             line.updateCoords()
             line.directionEvaluationError?.let {
@@ -803,6 +816,15 @@ internal class Line3D private constructor(
                         view = view,
                         needsRegularUpdate = needsRegularUpdate,
                         line = { line },
+                        attributes =
+                            if (twoPointForm) {
+                                listOf(
+                                    mapOf("visible" to true),
+                                    mapOf("visible" to true),
+                                )
+                            } else {
+                                endpointAttributes(attributes)
+                            },
                     )
                 ) {
                     is GMResult.Ok -> result.value
@@ -834,7 +856,7 @@ internal class Line3D private constructor(
                     board = view.board,
                     point1 = firstEndpoint.point2D,
                     point2 = secondEndpoint.point2D,
-                    name = "",
+                    name = line.name,
                     needsRegularUpdate = needsRegularUpdate,
                 )
             ) {
@@ -846,11 +868,17 @@ internal class Line3D private constructor(
                     )
                 }
             }
+            line.configureElement2D(
+                proxy = proxy,
+                attributes = attributes,
+                defaultWithLabel = false,
+            )
             proxy.dump = false
             proxy.isDraggable = false
             proxy.addParents(listOf(line))
             line.line2D = proxy
             line.element2D = proxy
+            line.inherits += proxy
             line.addChild(proxy)
             line.isDraggable = !fixed
             line.prepareUpdate().update()
@@ -865,9 +893,11 @@ internal class Line3D private constructor(
             view: View3D,
             needsRegularUpdate: Boolean,
             line: () -> Line3D?,
+            attributes: List<Map<String, Any?>>,
         ): GMResult<Array<Point3D>, Line3DError> {
             val endpoints = mutableListOf<Point3D>()
             for (index in 0..1) {
+                val endpointAttributes = attributes[index]
                 val endpoint = when (
                     val result = Point3D.create(
                         view = view,
@@ -886,9 +916,19 @@ internal class Line3D private constructor(
                                     )
                                 },
                             ),
-                        name = "",
+                        id =
+                            stringAttribute(
+                                endpointAttributes,
+                                "id",
+                            ).orEmpty(),
+                        name =
+                            stringAttribute(
+                                endpointAttributes,
+                                "name",
+                            ) ?: "",
                         needsRegularUpdate = needsRegularUpdate,
                         fixed = true,
+                        attributes = endpointAttributes,
                     )
                 ) {
                     is GMResult.Ok -> result.value
@@ -906,6 +946,43 @@ internal class Line3D private constructor(
             }
             return GMResult.Ok(endpoints.toTypedArray())
         }
+
+        private fun endpointAttributes(
+            attributes: Map<String, Any?>,
+        ): List<Map<String, Any?>> =
+            listOf(
+                nestedAttributes(attributes, "point1"),
+                nestedAttributes(attributes, "point2"),
+            )
+
+        private fun nestedAttributes(
+            attributes: Map<String, Any?>,
+            name: String,
+        ): Map<String, Any?> =
+            attributes.entries.firstNotNullOfOrNull { (key, value) ->
+                if (
+                    key.filterNot(Char::isWhitespace).lowercase() == name
+                ) {
+                    @Suppress("UNCHECKED_CAST")
+                    value as? Map<String, Any?>
+                } else {
+                    null
+                }
+            }.orEmpty()
+
+        private fun stringAttribute(
+            attributes: Map<String, Any?>,
+            name: String,
+        ): String? =
+            attributes.entries.firstNotNullOfOrNull { (key, value) ->
+                if (
+                    key.filterNot(Char::isWhitespace).lowercase() == name
+                ) {
+                    value as? String
+                } else {
+                    null
+                }
+            }
 
         private fun validatePoint(
             view: View3D,

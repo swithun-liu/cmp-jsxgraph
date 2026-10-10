@@ -52,6 +52,53 @@ class GridTest {
     }
 
     @Test
+    fun majorAndMinorGridCurvesNeverParticipateInHitTesting() {
+        val board = board()
+        val major = grid(
+            Grid.create(
+                board = board,
+                parentAxes = emptyList(),
+                definition = definition(
+                    minorElements = JsxGraphGridPair(
+                        JsxGraphGridMinorElements.Fixed(1.0),
+                        JsxGraphGridMinorElements.Fixed(1.0),
+                    ),
+                ),
+                id = "grid",
+                name = "",
+            ),
+        )
+        val minor = requireNotNull(major.minorGrid)
+        val majorPoint = major.points.first {
+            it.scrCoords[1].isFinite() && it.scrCoords[2].isFinite()
+        }
+        val minorPoint = minor.points.first {
+            it.scrCoords[1].isFinite() && it.scrCoords[2].isFinite()
+        }
+
+        assertFalse(
+            major.hasPoint(
+                majorPoint.scrCoords[1],
+                majorPoint.scrCoords[2],
+                precision = 0.0,
+            ),
+        )
+        assertFalse(
+            minor.hasPoint(
+                minorPoint.scrCoords[1],
+                minorPoint.scrCoords[2],
+                precision = 0.0,
+            ),
+        )
+        assertFalse(
+            (major as GeometryElement).hasPoint(
+                majorPoint.scrCoords[1],
+                majorPoint.scrCoords[2],
+            ),
+        )
+    }
+
+    @Test
     fun parentAxesSupplyAutomaticMajorAndMinorDistances() {
         val board = board()
         val xAxis = axis(board, horizontal = true, id = "xAxis", 2.0, 1)
@@ -235,6 +282,224 @@ class GridTest {
         assertTrue(limit.requestedSize > limit.limit)
         assertTrue(board.objects.isEmpty())
         assertTrue(board.grids.isEmpty())
+    }
+
+    @Test
+    fun runtimeAttributesAndParentTicksRebuildBothGridCurves() {
+        val board = board()
+        val xAxis = axis(board, horizontal = true, id = "xAxis", 2.0, 1)
+        val yAxis = axis(board, horizontal = false, id = "yAxis", 2.5, 3)
+        val major = grid(
+            Grid.create(
+                board = board,
+                parentAxes = listOf(xAxis, yAxis),
+                definition = definition(
+                    minorElements = JsxGraphGridPair(
+                        JsxGraphGridMinorElements.Auto,
+                        JsxGraphGridMinorElements.Auto,
+                    ),
+                    parentMajorStep = JsxGraphGridPair(2.0, 2.5),
+                    parentMinorElements = JsxGraphGridPair(1.0, 3.0),
+                ),
+                id = "grid",
+            ),
+        )
+        val minor = requireNotNull(major.minorGrid)
+        val initialMajorPointCount = major.numberPoints
+
+        major.setAttribute(
+            mapOf(
+                "majorStep" to listOf(2.0, 1.0),
+                "forceSquare" to "max",
+                "includeBoundaries" to true,
+                "face" to "circle",
+                "size" to 10.0,
+                "margin" to 4.0,
+                "drawZero" to mapOf(
+                    "origin" to false,
+                    "x" to true,
+                    "y" to false,
+                ),
+                "polygonVertices" to 7,
+            ),
+        )
+        minor.setAttribute(
+            mapOf(
+                "minorElements" to listOf(1.0, 2.0),
+                "includeBoundaries" to true,
+                "face" to "plus",
+                "size" to 6.0,
+                "margin" to 2.0,
+                "drawZero" to mapOf(
+                    "origin" to false,
+                    "x" to false,
+                    "y" to true,
+                ),
+                "polygonVertices" to 5,
+            ),
+        )
+        board.fullUpdate()
+
+        val liveMajor = requireNotNull(major.gridDefinition)
+        val liveMinor = requireNotNull(minor.gridDefinition)
+        assertEquals(JsxGraphGridForceSquare.Max, liveMajor.forceSquare)
+        assertTrue(liveMajor.includeBoundaries)
+        assertEquals("line", liveMajor.major.face)
+        assertEquals(
+            JsxGraphGridPair<JsxGraphGridLength>(
+                JsxGraphGridLength.Pixels(10.0),
+                JsxGraphGridLength.Pixels(10.0),
+            ),
+            liveMajor.major.size,
+        )
+        assertEquals(4.0, liveMajor.major.margin)
+        assertEquals(
+            JsxGraphGridDrawZero(
+                origin = false,
+                x = true,
+                y = false,
+            ),
+            liveMajor.major.drawZero,
+        )
+        assertEquals(7, liveMajor.major.polygonVertices)
+        assertEquals(1, major.bezierDegree)
+        assertTrue(major.numberPoints != initialMajorPointCount)
+        assertEquals(
+            JsxGraphGridPair<JsxGraphGridMinorElements>(
+                JsxGraphGridMinorElements.Fixed(1.0),
+                JsxGraphGridMinorElements.Fixed(2.0),
+            ),
+            liveMinor.minorElements,
+        )
+        assertEquals("point", liveMinor.minor.face)
+        assertEquals(2.0, liveMinor.minor.margin)
+        assertEquals(
+            JsxGraphGridDrawZero(
+                origin = false,
+                x = false,
+                y = true,
+            ),
+            liveMinor.minor.drawZero,
+        )
+
+        xAxis.setAttribute(
+            mapOf(
+                "ticks" to mapOf(
+                    "ticksDistance" to 1.5,
+                    "minorTicks" to 2,
+                ),
+            ),
+        )
+        yAxis.setAttribute(
+            mapOf(
+                "ticks" to mapOf(
+                    "ticksDistance" to 3.0,
+                    "minorTicks" to 4,
+                ),
+            ),
+        )
+        major.setAttribute(
+            mapOf(
+                "majorStep" to listOf("auto", "auto"),
+                "forceSquare" to false,
+            ),
+        )
+        minor.setAttribute(
+            mapOf("minorElements" to listOf("auto", "auto")),
+        )
+        board.fullUpdate()
+
+        assertEquals(
+            JsxGraphGridPair<Double?>(1.5, 3.0),
+            requireNotNull(major.gridDefinition).parentMajorStep,
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(2.0, 4.0),
+            requireNotNull(minor.gridDefinition).parentMinorElements,
+        )
+    }
+
+    @Test
+    fun emptyGridParentsUseBoardDefaultAxesAndTheirTicks() {
+        val board = board()
+        val xAxis = axis(
+            board = board,
+            horizontal = true,
+            id = "defaultXAxis",
+            ticksDistance = 2.0,
+            minorTicks = 1,
+        )
+        val yAxis = axis(
+            board = board,
+            horizontal = false,
+            id = "defaultYAxis",
+            ticksDistance = 2.5,
+            minorTicks = 3,
+        )
+        board.defaultAxes = BoardDefaultAxes(x = xAxis, y = yAxis)
+
+        val major = grid(
+            Grid.create(
+                board = board,
+                parentAxes = emptyList(),
+                definition = definition(
+                    minorElements = JsxGraphGridPair(
+                        JsxGraphGridMinorElements.Auto,
+                        JsxGraphGridMinorElements.Auto,
+                    ),
+                ),
+                id = "grid",
+            ),
+        )
+        val minor = requireNotNull(major.minorGrid)
+
+        assertEquals(
+            listOf("defaultXAxis", "defaultYAxis"),
+            major.parents,
+        )
+        assertEquals(
+            listOf("defaultXAxis", "defaultYAxis"),
+            minor.parents,
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(2.0, 2.5),
+            requireNotNull(major.gridDefinition).parentMajorStep,
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(1.0, 3.0),
+            requireNotNull(minor.gridDefinition).parentMinorElements,
+        )
+    }
+
+    @Test
+    fun invalidRuntimeGridCandidateKeepsTheLastValidDefinition() {
+        val board = board()
+        val major = grid(
+            Grid.create(
+                board = board,
+                parentAxes = emptyList(),
+                definition = definition(),
+                id = "grid",
+            ),
+        )
+        major.setAttribute(
+            mapOf(
+                "majorStep" to listOf(2.0, 1.0),
+                "face" to "plus",
+            ),
+        )
+        board.fullUpdate()
+        val valid = requireNotNull(major.gridDefinition)
+
+        major.setAttribute(
+            mapOf(
+                "majorStep" to listOf(-1.0, 2.0),
+                "face" to "circle",
+            ),
+        )
+        board.fullUpdate()
+
+        assertEquals(valid, major.gridDefinition)
     }
 
     private fun board(): Board = Board(

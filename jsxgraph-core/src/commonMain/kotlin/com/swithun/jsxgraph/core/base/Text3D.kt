@@ -73,10 +73,13 @@ internal class Text3D private constructor(
         elType = TEXT_3D_ELEMENT_TYPE
     }
 
+    // JSXGraph 1.13.3: src/3d/text3d.js -> Text3D.X.
     internal fun X(): Double = coords[1]
 
+    // JSXGraph 1.13.3: src/3d/text3d.js -> Text3D.Y.
     internal fun Y(): Double = coords[2]
 
+    // JSXGraph 1.13.3: src/3d/text3d.js -> Text3D.Z.
     internal fun Z(): Double = coords[3]
 
     private fun evaluateCoordinates(
@@ -405,6 +408,7 @@ internal class Text3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Text3D, Text3DError> {
             if (slide != null) {
                 if (slide.view !== view) {
@@ -426,6 +430,7 @@ internal class Text3D private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
             )
+            text.setCreationAttributes(attributes)
             when (val result = text.initCoords()) {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
@@ -445,7 +450,7 @@ internal class Text3D private constructor(
                     board = view.board,
                     coordinates = view.project3DTo2D(text.coords),
                     content = content,
-                    name = "",
+                    name = text.name,
                     needsRegularUpdate = needsRegularUpdate,
                     fixed = fixed,
                 )
@@ -458,10 +463,17 @@ internal class Text3D private constructor(
                     )
                 }
             }
+            text.configureElement2D(
+                proxy = proxy,
+                attributes = attributes,
+                defaultWithLabel = false,
+                createLabel = false,
+            )
             proxy.dump = false
             proxy.setParents(listOf(text))
             text.text2D = proxy
             text.element2D = proxy
+            text.inherits += proxy
             text.isDraggable = proxy.isDraggable
             text.addChild(proxy)
             for (dependency in (dependencies + listOfNotNull(slide)).distinct()) {

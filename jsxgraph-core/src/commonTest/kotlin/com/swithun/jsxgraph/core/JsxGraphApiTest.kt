@@ -127,6 +127,32 @@ class JsxGraphApiTest {
     }
 
     @Test
+    fun initBoardCreatesRegisteredDefaultAxesForAxisOption() {
+        val board = assertIs<GMResult.Ok<Board>>(
+            JSXGraph.initBoard(
+                containerId = "axis-container",
+                attributes = mapOf(
+                    "axis" to true,
+                    "boundingBox" to listOf(-4.0, 4.0, 4.0, -4.0),
+                ),
+                hostAdapter = FixedHostAdapter(500.0, 500.0),
+            ),
+        ).value
+        val axes = requireNotNull(board.defaultAxes)
+
+        assertSame(axes.x, board.elementById(axes.x.id))
+        assertSame(axes.y, board.elementById(axes.y.id))
+        assertEquals("axis", axes.x.elType)
+        assertEquals("axis", axes.y.elType)
+        assertFalse(axes.x.isDraggable)
+        assertFalse(axes.y.isDraggable)
+        assertEquals(listOf(0.0, 0.0), axes.x.point1.Coords().toList())
+        assertEquals(listOf(1.0, 0.0), axes.x.point2.Coords().toList())
+        assertEquals(listOf(0.0, 0.0), axes.y.point1.Coords().toList())
+        assertEquals(listOf(0.0, 1.0), axes.y.point2.Coords().toList())
+    }
+
+    @Test
     fun rendererSelectionAndAriaUseInjectedPlatformAdapters() {
         val renderer = assertIs<GMResult.Ok<JsxGraphRendererAdapter>>(
             JSXGraph.initRenderer(

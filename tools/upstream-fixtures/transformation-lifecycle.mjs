@@ -17,6 +17,7 @@ const visualParityPackage = resolve(
 const require = createRequire(visualParityPackage);
 const puppeteer = require("puppeteer");
 const executablePath =
+    process.env.CHROME_BIN ??
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const browser = await puppeteer.launch({
@@ -267,12 +268,46 @@ try {
         board.update();
         const boundAfterUpdate = pointState(bound);
 
+        const dynamicMeltTarget = point([4, -3], "dynamicMeltTarget");
+        const dynamicMelt = board.create(
+            "transform",
+            [
+                function () {
+                    return driver.X();
+                },
+                2
+            ],
+            {type: "translate"}
+        );
+        const dynamicMeltCloneIsNull = dynamicMelt.clone() === null;
+        dynamicMelt.meltTo(dynamicMeltTarget);
+        const dynamicMeltTransformations =
+            dynamicMeltTarget.transformations.map((transform) =>
+                transform === null
+                    ? null
+                    : transform.transformationType
+            );
+        let dynamicMeltUpdateError = null;
+        try {
+            dynamicMeltTarget.prepareUpdate().update();
+        } catch (error) {
+            dynamicMeltUpdateError = {
+                name: error?.name ?? null,
+                message: error?.message ?? String(error)
+            };
+        }
+
         return {
             version: JXG.version,
             initial,
             moved,
             boundAfterDirectMove,
             boundAfterUpdate,
+            dynamicMeltTo: {
+                cloneIsNull: dynamicMeltCloneIsNull,
+                transformations: dynamicMeltTransformations,
+                updateError: dynamicMeltUpdateError
+            },
             removal: {
                 initial: removeInitial,
                 afterOneRemoval: removeOne,

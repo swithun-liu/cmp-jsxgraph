@@ -47,6 +47,135 @@ ordered["10"] = 2;
 ordered["2"] = 3;
 ordered.alpha = 4;
 
+function element({
+    id,
+    name,
+    type,
+    parents,
+    attributes,
+    draggable = false,
+    visible = true,
+    defaultTicks = undefined
+}) {
+    return {
+        id,
+        name,
+        elType: type,
+        dump: true,
+        subs: {},
+        childElements: {},
+        ancestors: {},
+        isDraggable: draggable,
+        visPropCalc: {visible},
+        defaultTicks,
+        getType() {
+            return type;
+        },
+        getParents() {
+            return parents.slice();
+        },
+        getAttributes() {
+            return {...attributes};
+        }
+    };
+}
+
+const point = element({
+    id: "A",
+    name: "A",
+    type: "point",
+    parents: [1, 2, 3],
+    attributes: {
+        id: "A",
+        name: "A",
+        customflag: true
+    },
+    draggable: true
+});
+const axis = element({
+    id: "axis",
+    name: "",
+    type: "axis",
+    parents: ["A", "B"],
+    attributes: {
+        id: "axis",
+        name: "",
+        customflag: "axis"
+    },
+    defaultTicks: null
+});
+const glider = element({
+    id: "G",
+    name: "",
+    type: "glider",
+    parents: [4, 5, "A"],
+    attributes: {
+        id: "G",
+        name: "",
+        customflag: "glider"
+    }
+});
+glider.onPolygon = true;
+point.childElements.axis = axis;
+axis.ancestors.A = point;
+
+const board = {
+    objects: {
+        A: point,
+        axis,
+        G: glider
+    },
+    objectsList: [point, axis, glider],
+    keepaspectratio: false,
+    userLog: [
+        {
+            type: "drag",
+            id: "A",
+            start: 10,
+            end: 20
+        }
+    ],
+    getBoundingBox() {
+        return [-5, 5, 5, -5];
+    }
+};
+const boardExports = {
+    jessie: JXG.Dump.toJessie(board),
+    jessieNoAttributes: JXG.Dump.toJessie(board, true),
+    json: JXG.Dump.toJSON(board),
+    javaScript: JXG.Dump.toJavaScript(board)
+};
+const functionParent = function (x) {
+    return x * x;
+};
+const functionElement = element({
+    id: "f",
+    name: "",
+    type: "functiongraph",
+    parents: [functionParent, -2, 2],
+    attributes: {
+        id: "f",
+        name: ""
+    }
+});
+const functionBoard = {
+    objects: {f: functionElement},
+    objectsList: [functionElement],
+    keepaspectratio: false,
+    userLog: [],
+    getBoundingBox() {
+        return [-5, 5, 5, -5];
+    }
+};
+const functionParentExports = {
+    jessie: JXG.Dump.toJessie(functionBoard),
+    json: JXG.Dump.toJSON(functionBoard),
+    javaScript: JXG.Dump.toJavaScript(functionBoard)
+};
+const markersCleaned = board.objectsList.every(
+    (item) => !Object.prototype.hasOwnProperty.call(item, "dumped")
+);
+
 console.log(
     JSON.stringify(
         {
@@ -72,7 +201,10 @@ console.log(
             parameters: JXG.Dump.arrayToParamStr(
                 [1, "x", null, [true, 2]],
                 JXG.Dump.toJCAN
-            )
+            ),
+            boardExports,
+            functionParentExports,
+            markersCleaned
         },
         null,
         2

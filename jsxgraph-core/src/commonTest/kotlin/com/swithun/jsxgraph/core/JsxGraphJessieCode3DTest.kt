@@ -5,8 +5,142 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class JsxGraphJessieCode3DTest {
+    @Test
+    fun native3DProxyAttributesAndLabelsMatchOfficialOwnership() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initialResult =
+            session.execute(
+                """
+                view = view3d(
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                ) <<
+                    id: "view",
+                    name: "",
+                    projection: "parallel",
+                    $HIDDEN_DEFAULT_AXES_ATTRIBUTES
+                >>;
+                point = point3d(view, [1, 2, 3]) <<
+                    id: "point",
+                    name: "P",
+                    strokeColor: "#123456",
+                    size: function(element) {
+                        return IfThen(element.name == "P", 7, 1);
+                    },
+                    fixed: true,
+                    withLabel: true,
+                    label: << offset: [4, 5] >>
+                >>;
+                line = line3d(view, [-2, 0, 0], [2, 1, 0]) <<
+                    id: "line",
+                    name: "L",
+                    strokeColor: "#654321",
+                    strokeWidth: 4,
+                    withLabel: true,
+                    point1: <<
+                        id: "nested-a",
+                        name: "A",
+                        visible: true,
+                        size: 8,
+                        withLabel: true
+                    >>,
+                    point2: <<
+                        id: "nested-b",
+                        name: "",
+                        visible: false,
+                        size: 9
+                    >>
+                >>;
+                text = text3d(view, [0, 1, 2], "hello") <<
+                    id: "text",
+                    name: "T",
+                    strokeColor: "#abcdef",
+                    fontSize: 19,
+                    fixed: true,
+                    withLabel: true
+                >>;
+                """.trimIndent(),
+            )
+        val initial = when (initialResult) {
+            is GMResult.Ok -> initialResult.value
+            is GMResult.Err -> fail(initialResult.error.message)
+        }
+
+        val point = assertIs<JsxGraphSceneElement.Point>(
+            initial.elements.single { it.id == "point" },
+        )
+        assertEquals(7.0, point.size)
+        assertEquals(JsxGraphColor(18, 52, 86), point.style.strokeColor)
+        val line = assertIs<JsxGraphSceneElement.Line>(
+            initial.elements.single { it.id == "line" },
+        )
+        assertEquals(4.0, line.style.strokeWidth)
+        assertEquals(JsxGraphColor(101, 67, 33), line.style.strokeColor)
+        val text = assertIs<JsxGraphSceneElement.Text>(
+            initial.elements.single { it.id == "text" },
+        )
+        assertEquals("hello", text.content)
+        assertEquals(19.0, text.fontSize)
+        assertEquals(JsxGraphColor(171, 205, 239), text.style.strokeColor)
+        assertEquals(
+            listOf("A", "L", "P"),
+            initial.elements
+                .filterIsInstance<JsxGraphSceneElement.Text>()
+                .map(JsxGraphSceneElement.Text::content)
+                .filter { it != "hello" }
+                .sorted(),
+        )
+
+        val updatedResult =
+            session.execute(
+                """
+                point.setAttribute(<<
+                    strokeColor: "#fedcba",
+                    size: 11,
+                    withLabel: false
+                >>);
+                line.setAttribute(<<
+                    strokeWidth: 6,
+                    withLabel: false
+                >>);
+                text.setAttribute(<< fontSize: 23 >>);
+                """.trimIndent(),
+            )
+        val updated = when (updatedResult) {
+            is GMResult.Ok -> updatedResult.value
+            is GMResult.Err -> fail(updatedResult.error.message)
+        }
+
+        val updatedPoint = assertIs<JsxGraphSceneElement.Point>(
+            updated.elements.single { it.id == "point" },
+        )
+        assertEquals(11.0, updatedPoint.size)
+        assertEquals(
+            JsxGraphColor(254, 220, 186),
+            updatedPoint.style.strokeColor,
+        )
+        val updatedLine = assertIs<JsxGraphSceneElement.Line>(
+            updated.elements.single { it.id == "line" },
+        )
+        assertEquals(6.0, updatedLine.style.strokeWidth)
+        val updatedText = assertIs<JsxGraphSceneElement.Text>(
+            updated.elements.single { it.id == "text" },
+        )
+        assertEquals(23.0, updatedText.fontSize)
+        assertTrue(
+            updated.elements
+                .filterIsInstance<JsxGraphSceneElement.Text>()
+                .filter { it.content in setOf("P", "L") }
+                .all { !it.style.visible },
+        )
+    }
+
     @Test
     fun nativeView3DAutomaticallyExpandsBorderAxes() {
         val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
@@ -46,6 +180,55 @@ class JsxGraphJessieCode3DTest {
             3,
             scene.elements.filterIsInstance<JsxGraphSceneElement.Curve>()
                 .count { it.style.strokeColor == JsxGraphColor(154, 154, 154) },
+        )
+    }
+
+    @Test
+    fun nativeSessionRoutesView3DKeyboardInteraction() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(
+                boardOptions = JsxGraphJessieCodeBoardOptions(
+                    boundingBox =
+                        JsxGraphBoundingBox(-5.0, 4.0, 5.0, -4.0),
+                ),
+            ),
+        ).value
+        assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.execute(
+                """
+                view = view3d(
+                    [-4, -3],
+                    [8, 6],
+                    [[-5, 5], [-5, 5], [-5, 5]]
+                ) <<
+                    id: "view",
+                    name: "",
+                    az: << slider: << start: 1.2 >> >>,
+                    el: << slider: << start: 0.7 >> >>,
+                    bank: << slider: << start: 0 >> >>,
+                    $HIDDEN_DEFAULT_AXES_ATTRIBUTES
+                >>;
+                """.trimIndent(),
+            ),
+        )
+
+        val interaction = assertIs<
+            GMResult.Ok<JsxGraphView3DInteractionResult>,
+            >(
+            session.interactView3D(
+                JsxGraphView3DInteraction.KeyDown(
+                    viewId = "view",
+                    key = JsxGraphView3DKey.ARROW_RIGHT,
+                    controlKey = true,
+                ),
+            ),
+        ).value
+
+        assertTrue(interaction.consumed)
+        assertEquals(
+            1.374532925199433,
+            interaction.scene.views3D.single().azimuth,
+            1.0e-12,
         )
     }
 
@@ -736,6 +919,129 @@ class JsxGraphJessieCode3DTest {
         kotlin.test.assertNotEquals(
             original.coordinates,
             updated.coordinates,
+        )
+    }
+
+    @Test
+    fun lineHostedPoint3DUsesNativeCreatorAndSessionDrag() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initial = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.execute(
+                """
+                view = view3d(
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                ) <<
+                    id: "view",
+                    name: "",
+                    projection: "parallel",
+                    az: << slider: << start: 1 >> >>,
+                    el: << slider: << start: 0.3 >> >>,
+                    bank: << slider: << start: 0 >> >>,
+                    $HIDDEN_DEFAULT_AXES_ATTRIBUTES
+                >>;
+                anchor = point3d(view, 0, 0, 0) <<
+                    id: "anchor", name: "", withLabel: false
+                >>;
+                host = line3d(
+                    view,
+                    anchor,
+                    [2, 1, -1],
+                    [-1, 2]
+                ) << id: "host", name: "", withLabel: false >>;
+                glider = point3d(view, 4, 5, 2, host) <<
+                    id: "glider", name: "", withLabel: false
+                >>;
+                """.trimIndent(),
+            ),
+        ).value
+
+        assertCoordinates(
+            expectedX = -2.066348496841048,
+            expectedY = -4.017821966498767,
+            point = assertIs<JsxGraphSceneElement.Point>(
+                initial.elements.single { it.id == "glider" },
+            ),
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "glider",
+                coordinates = JsxGraphPoint2D(-0.25, 0.75),
+            ),
+        ).value
+        assertCoordinates(
+            expectedX = -1.4866885851666471,
+            expectedY = -0.5980274110263457,
+            point = assertIs<JsxGraphSceneElement.Point>(
+                moved.elements.single { it.id == "glider" },
+            ),
+        )
+    }
+
+    @Test
+    fun sphereHostedPoint3DUsesNativeCreatorAndSessionDrag() {
+        val session = assertIs<GMResult.Ok<JsxGraphJessieCodeSession>>(
+            JsxGraphJessieCode.createSession(),
+        ).value
+        val initial = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.execute(
+                """
+                view = view3d(
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                ) <<
+                    id: "view",
+                    name: "",
+                    projection: "parallel",
+                    az: << slider: << start: 1 >> >>,
+                    el: << slider: << start: 0.3 >> >>,
+                    bank: << slider: << start: 0 >> >>,
+                    $HIDDEN_DEFAULT_AXES_ATTRIBUTES
+                >>;
+                center = point3d(view, 0, 0, 0) <<
+                    id: "center", name: "", withLabel: false
+                >>;
+                sphere = sphere3d(view, center, 2) <<
+                    id: "sphere", name: ""
+                >>;
+                glider = point3d(view, 1.4, 1.4, 0.2, sphere) <<
+                    id: "glider", name: "", withLabel: false
+                >>;
+                """.trimIndent(),
+            ),
+        ).value
+
+        assertCoordinates(
+            expectedX = -1.4886625883648112,
+            expectedY = -1.1148642540484788,
+            point = assertIs<JsxGraphSceneElement.Point>(
+                initial.elements.single { it.id == "glider" },
+            ),
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "glider",
+                coordinates = JsxGraphPoint2D(-0.25, 0.75),
+            ),
+        ).value
+        val movedPoint = assertIs<JsxGraphSceneElement.Point>(
+            moved.elements.single { it.id == "glider" },
+        )
+        assertEquals(
+            -0.8790135817071122,
+            movedPoint.coordinates.x,
+            2.0e-7,
+        )
+        assertEquals(
+            -0.509830661143204,
+            movedPoint.coordinates.y,
+            2.0e-7,
         )
     }
 

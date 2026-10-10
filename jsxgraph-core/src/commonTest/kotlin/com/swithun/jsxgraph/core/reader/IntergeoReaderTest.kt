@@ -13,7 +13,11 @@ import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.MidpointPoint
+import com.swithun.jsxgraph.core.base.ParallelLine
+import com.swithun.jsxgraph.core.base.PerpendicularLine
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Const
+import com.swithun.jsxgraph.core.base.Polygon
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -121,10 +125,6 @@ class IntergeoReaderTest {
                     elementId = "U",
                     coordinateType = "cartesian_coordinates",
                 ),
-                IntergeoReaderDiagnostic.UnsupportedElement(
-                    elementType = "polygon",
-                    elementId = "PG",
-                ),
                 IntergeoReaderDiagnostic.UnsupportedConstraint(
                     constraintType = "free_point",
                     firstParameter = "H",
@@ -218,6 +218,7 @@ class IntergeoReaderTest {
         val vector = assertIs<Line>(drawn.objects["V"])
         val circumcircle = assertIs<Circle>(drawn.objects["R"])
         val bisector = assertIs<BisectorLine>(drawn.objects["D"])
+        val center = assertIs<Point>(drawn.objects["KC"])
 
         assertEquals(400.0, board.origin.scrCoords[1])
         assertEquals(300.0, board.origin.scrCoords[2])
@@ -254,41 +255,112 @@ class IntergeoReaderTest {
         assertEquals(1.0, circumcircle.center.Y())
         assertFalse(bisector.straightFirst)
         assertTrue(bisector.straightLast)
+        assertEquals(0.0, center.X())
+        assertEquals(0.0, center.Y())
+        assertEquals("blue", center.getAttribute("strokecolor"))
+        assertEquals("blue", center.getAttribute("fillcolor"))
+        assertEquals(true, midpoint.getAttribute("trace"))
+        assertEquals("blue", midpoint.getAttribute("strokecolor"))
+        assertEquals("blue", midpoint.getAttribute("fillcolor"))
+
+        pointA.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(1.0, -1.0),
+        )
+        board.update()
+
+        assertEquals(1.0, center.X())
+        assertEquals(-1.0, center.Y())
         assertFalse(board.isSuspendedUpdate)
         assertTrue(drawn.diagnostics.isEmpty())
     }
 
     @Test
-    fun untranslatedBoardConstraintRemainsAnExplicitDiagnostic() {
+    fun remainingOfficialConstraintsAndDisplayStayDynamic() {
+        val board = board()
         val drawn = assertIs<GMResult.Ok<DrawnIntergeo>>(
-            IntergeoReader(
-                listOf(
-                    "<construction><elements>",
-                    "<point id=\"P\"><euclidean_coordinates>",
-                    "<double>1</double><double>2</double>",
-                    "</euclidean_coordinates></point>",
-                    "</elements><constraints>",
-                    "<locus_defined_by_point><point>P</point>",
-                    "</locus_defined_by_point>",
-                    "</constraints></construction>",
-                ).joinToString(""),
-            ).read(board()),
+            IntergeoReader(REMAINING_CONSTRAINTS_SOURCE).read(board),
         ).value
 
+        val pointA = assertIs<Point>(drawn.objects["A"])
+        val pointB = assertIs<Point>(drawn.objects["B"])
+        val pointP = assertIs<Point>(drawn.objects["P"])
+        val through = assertIs<Line>(drawn.objects["Through"])
+        val parallel = assertIs<ParallelLine>(drawn.objects["Parallel"])
+        val ray = assertIs<ParallelLine>(drawn.objects["Ray"])
+        val perpendicular =
+            assertIs<PerpendicularLine>(drawn.objects["Perpendicular"])
+        val endpoint1 = assertIs<Point>(drawn.objects["E1"])
+        val endpoint2 = assertIs<Point>(drawn.objects["E2"])
+        val tangent1 = assertIs<Line>(drawn.objects["T1"])
+        val tangent2 = assertIs<Line>(drawn.objects["T2"])
+        val polygon = assertIs<Polygon>(drawn.objects["Poly"])
+
+        assertEquals(0.0, through.Slope(), absoluteTolerance = 1.0e-12)
+        assertEquals(0.0, parallel.Slope(), absoluteTolerance = 1.0e-12)
+        assertTrue(perpendicular.Slope().isInfinite())
+        assertFalse(ray.straightFirst)
+        assertTrue(ray.straightLast)
+        assertEquals(0.0, endpoint1.X())
+        assertEquals(0.0, endpoint1.Y())
+        assertEquals(2.0, endpoint2.X())
+        assertEquals(0.0, endpoint2.Y())
+        assertEquals("tangent", tangent1.elType)
+        assertEquals("tangent", tangent2.elType)
+        val tangentSlopes = listOf(
+            tangent1.Slope(),
+            tangent2.Slope(),
+        ).sorted()
         assertEquals(
-            listOf(
-                IntergeoReaderDiagnostic.UnsupportedBoardConstraint(
-                    constraintType = "locus_defined_by_point",
-                    firstParameter = "P",
-                ),
-            ),
-            drawn.diagnostics,
+            -0.8944271909999159,
+            tangentSlopes[0],
+            absoluteTolerance = 1.0e-12,
         )
-        assertIs<Point>(drawn.objects["P"])
+        assertEquals(
+            0.8944271909999159,
+            tangentSlopes[1],
+            absoluteTolerance = 1.0e-12,
+        )
+        assertEquals(4, polygon.vertices.size)
+        assertSame(pointA, polygon.vertices[0])
+        assertSame(pointA, polygon.vertices[3])
+
+        assertEquals(null, board.attributes["containerbackgroundcolor"])
+        assertEquals("A", pointA.name)
+        assertEquals("red", pointA.getAttribute("strokecolor"))
+        assertEquals("red", pointA.getAttribute("fillcolor"))
+        assertEquals(null, pointA.getAttribute("strokewidth"))
+        assertEquals(null, pointA.getAttribute("fillopacity"))
+        assertEquals(null, pointA.getAttribute("strokeopacity"))
+        assertEquals(null, pointA.getAttribute("size"))
+        assertEquals(null, pointA.getAttribute("face"))
+        assertEquals("Parallel", parallel.name)
+        assertFalse(parallel.getAttribute("strokecolor") == "green")
+
+        pointB.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(2.0, 1.0),
+        )
+        board.update()
+
+        assertEquals(0.0, through.Slope(), absoluteTolerance = 1.0e-12)
+        assertEquals(0.5, parallel.Slope(), absoluteTolerance = 1.0e-12)
+        assertEquals(-2.0, perpendicular.Slope(), absoluteTolerance = 1.0e-12)
+        assertEquals(2.0, endpoint2.X())
+        assertEquals(1.0, endpoint2.Y())
+
+        val tangentBeforeMove = tangent1.stdform.copyOf()
+        pointP.setPositionDirectly(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(4.0, 0.0),
+        )
+        board.update()
+        assertFalse(tangentBeforeMove.contentEquals(tangent1.stdform))
+        assertTrue(drawn.diagnostics.isEmpty())
     }
 
     @Test
-    fun registeredIntergeoReaderRejectsPartialBoardReadsBeforeMutation() {
+    fun registeredIntergeoReaderRollsBackCreationFailures() {
         val registry = ReaderRegistry<Board>().also {
             it.registerIntergeoReader()
         }
@@ -304,6 +376,7 @@ class IntergeoReaderTest {
         assertIs<Circle>(supportedBoard.select("K"))
 
         val unsupportedBoard = board()
+        unsupportedBoard.attributes["sentinel"] = "preserved"
         val failure = assertIs<
             GMResult.Err<ReaderError.DomainFailure>
         >(
@@ -313,9 +386,13 @@ class IntergeoReaderTest {
                     "<point id=\"P\"><euclidean_coordinates>",
                     "<double>1</double><double>2</double>",
                     "</euclidean_coordinates></point>",
+                    "<line id=\"L\"><homogeneous_coordinates>",
+                    "<double>0</double><double>1</double><double>0</double>",
+                    "</homogeneous_coordinates></line>",
                     "</elements><constraints>",
-                    "<locus_defined_by_point><point>P</point>",
-                    "</locus_defined_by_point>",
+                    "<line_parallel_to_line_through_point>",
+                    "<line>L</line><point>P</point><point>P</point>",
+                    "</line_parallel_to_line_through_point>",
                     "</constraints></construction>",
                 ).joinToString(""),
                 board = unsupportedBoard,
@@ -324,12 +401,30 @@ class IntergeoReaderTest {
             ),
         ).error
         val cause = assertIs<
-            IntergeoReaderError.UnsupportedBoardConstraints
+            IntergeoReaderError.StoredObjectTypeMismatch
         >(failure.cause)
-        assertEquals(listOf("locus_defined_by_point"), cause.constraintTypes)
+        assertEquals("P", cause.id)
+        assertEquals("line", cause.expected)
+        assertEquals("point", cause.actual)
         assertTrue(unsupportedBoard.objects.isEmpty())
         assertEquals(250.0, unsupportedBoard.origin.scrCoords[1])
         assertEquals(250.0, unsupportedBoard.origin.scrCoords[2])
+        assertEquals(
+            mapOf(
+                "animationdelay" to 35.0,
+                "boundingbox" to doubleArrayOf(-5.0, 5.0, 5.0, -5.0),
+                "intl" to mapOf(
+                    "enabled" to false,
+                    "locale" to null,
+                ),
+                "keepaspectratio" to false,
+                "zoomx" to 1.0,
+                "zoomy" to 1.0,
+                "sentinel" to "preserved",
+            ).keys,
+            unsupportedBoard.attributes.keys,
+        )
+        assertEquals("preserved", unsupportedBoard.attributes["sentinel"])
     }
 
     @Test
@@ -522,6 +617,9 @@ class IntergeoReaderTest {
             "    <point id=\"N\"><euclidean_coordinates>",
             "      <double>0</double><double>0</double>",
             "    </euclidean_coordinates></point>",
+            "    <point id=\"KC\"><euclidean_coordinates>",
+            "      <double>0</double><double>0</double>",
+            "    </euclidean_coordinates></point>",
             "    <point id=\"G\"><homogeneous_coordinates>",
             "      <double>2</double><double>0</double><double>1</double>",
             "    </homogeneous_coordinates></point>",
@@ -568,6 +666,9 @@ class IntergeoReaderTest {
             "    <circle_by_center_and_point>",
             "      <circle>K</circle><point>A</point><point>C</point>",
             "    </circle_by_center_and_point>",
+            "    <center_of_circle>",
+            "      <point>KC</point><circle>K</circle>",
+            "    </center_of_circle>",
             "    <point_on_line><point>U</point><line>L</line>",
             "    </point_on_line>",
             "    <point_on_circle><point>G</point><circle>K</circle>",
@@ -583,6 +684,9 @@ class IntergeoReaderTest {
             "      <line>D</line><point>A</point>",
             "      <point>B</point><point>C</point>",
             "    </angular_bisector_of_three_points>",
+            "    <locus_defined_by_point>",
+            "      <locus>traceM</locus><point>M</point>",
+            "    </locus_defined_by_point>",
             "  </constraints>",
             "</construction>",
         ).joinToString("\n")
@@ -636,5 +740,109 @@ class IntergeoReaderTest {
             "  </constraints>",
             "</construction>",
         ).joinToString("\n")
+
+        val REMAINING_CONSTRAINTS_SOURCE = listOf(
+            "<construction>",
+            "  <elements>",
+            "    <point id=\"A\"><euclidean_coordinates>",
+            "      <double>0</double><double>0</double>",
+            "    </euclidean_coordinates></point>",
+            "    <point id=\"B\"><euclidean_coordinates>",
+            "      <double>2</double><double>0</double>",
+            "    </euclidean_coordinates></point>",
+            "    <point id=\"C\"><euclidean_coordinates>",
+            "      <double>0</double><double>2</double>",
+            "    </euclidean_coordinates></point>",
+            "    <point id=\"P\"><euclidean_coordinates>",
+            "      <double>3</double><double>0</double>",
+            "    </euclidean_coordinates></point>",
+            "    <point id=\"E1\"><euclidean_coordinates>",
+            "      <double>8</double><double>8</double>",
+            "    </euclidean_coordinates></point>",
+            "    <point id=\"E2\"><euclidean_coordinates>",
+            "      <double>9</double><double>9</double>",
+            "    </euclidean_coordinates></point>",
+            storedLine("Base", 0.0, 1.0, 0.0),
+            storedLine("Through", 0.0, 1.0, 0.0),
+            storedLine("Parallel", 0.0, 1.0, -2.0),
+            storedLine("Ray", 0.0, 1.0, -2.0),
+            storedLine("Perpendicular", 1.0, 0.0, 0.0),
+            storedLine("Segment", 0.0, 1.0, 0.0),
+            storedLine("T1", 1.0, 1.0, -3.0),
+            storedLine("T2", 1.0, -1.0, 3.0),
+            "    <circle id=\"Circle\"><matrix>",
+            "      <double>1</double><double>0</double><double>0</double>",
+            "      <double>0</double><double>1</double><double>0</double>",
+            "      <double>0</double><double>0</double><double>-4</double>",
+            "    </matrix></circle>",
+            "    <polygon id=\"Poly\"/>",
+            "  </elements>",
+            "  <constraints>",
+            "    <line_through_two_points>",
+            "      <line>Base</line><point>A</point><point>B</point>",
+            "    </line_through_two_points>",
+            "    <line_through_point>",
+            "      <line>Through</line><point>C</point>",
+            "    </line_through_point>",
+            "    <line_parallel_to_line_through_point>",
+            "      <line>Parallel</line><point>C</point><line>Base</line>",
+            "    </line_parallel_to_line_through_point>",
+            "    <ray_from_point_and_vector>",
+            "      <ray>Ray</ray><point>C</point><vector>Base</vector>",
+            "    </ray_from_point_and_vector>",
+            "    <line_perpendicular_to_line_through_point>",
+            "      <line>Perpendicular</line>",
+            "      <point>C</point><line>Base</line>",
+            "    </line_perpendicular_to_line_through_point>",
+            "    <line_segment_by_points>",
+            "      <line_segment>Segment</line_segment>",
+            "      <point>A</point><point>B</point>",
+            "    </line_segment_by_points>",
+            "    <endpoints_of_line_segment>",
+            "      <point>E1</point><point>E2</point>",
+            "      <line_segment>Segment</line_segment>",
+            "    </endpoints_of_line_segment>",
+            "    <circle_by_center_and_point>",
+            "      <circle>Circle</circle><point>A</point><point>B</point>",
+            "    </circle_by_center_and_point>",
+            "    <circle_tangent_lines_by_point>",
+            "      <line>T1</line><line>T2</line>",
+            "      <circle>Circle</circle><point>P</point>",
+            "    </circle_tangent_lines_by_point>",
+            "    <polygon_by_vertices>",
+            "      <polygon>Poly</polygon>",
+            "      <list_of_vertices>",
+            "        <point>A</point><point>B</point><point>C</point>",
+            "      </list_of_vertices>",
+            "    </polygon_by_vertices>",
+            "  </constraints>",
+            "  <display>",
+            "    <background-color>#fefefe</background-color>",
+            "    <style ref=\"A\">",
+            "      <stroke>#123456</stroke>",
+            "      <stroke-width>4.5</stroke-width>",
+            "      <fill>#abcdef</fill>",
+            "      <fill-opacity>0.4</fill-opacity>",
+            "      <border-opacity>0.7</border-opacity>",
+            "      <point-size>6</point-size>",
+            "      <label>Alpha</label>",
+            "      <point-style>square</point-style>",
+            "    </style>",
+            "    <style ref=\"Parallel\">",
+            "      <stroke>green</stroke><label>ParallelLabel</label>",
+            "    </style>",
+            "  </display>",
+            "</construction>",
+        ).joinToString("\n")
+
+        private fun storedLine(
+            id: String,
+            first: Double,
+            second: Double,
+            third: Double,
+        ): String =
+            "    <line id=\"$id\"><homogeneous_coordinates>" +
+                "<double>$first</double><double>$second</double>" +
+                "<double>$third</double></homogeneous_coordinates></line>"
     }
 }

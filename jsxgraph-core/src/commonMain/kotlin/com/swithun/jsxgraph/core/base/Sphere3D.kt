@@ -10,6 +10,9 @@ package com.swithun.jsxgraph.core.base
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.math.Parametric3DEvaluator
+import com.swithun.jsxgraph.core.math.ParametricProjectionError
+import com.swithun.jsxgraph.core.math.ParametricScreenProjector
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
@@ -61,6 +64,10 @@ internal sealed interface Sphere3DError {
         val count: Int,
     ) : Sphere3DError
 
+    data class ParametricProjection(
+        val error: ParametricProjectionError<Sphere3DError>,
+    ) : Sphere3DError
+
     data class Registration(
         val error: BoardError,
     ) : Sphere3DError
@@ -92,6 +99,7 @@ internal class Sphere3D private constructor(
     internal val point2: Point3D?,
     private var radiusSource: Line3DCoordinateValue?,
     private val sampleCount: Int,
+    private val plotOptions: CurvePlotOptions,
     id: String,
     name: String?,
     needsRegularUpdate: Boolean,
@@ -258,7 +266,7 @@ internal class Sphere3D private constructor(
         coordinates: DoubleArray,
         parameters: DoubleArray,
     ): GMResult<DoubleArray, Sphere3DError> {
-        if (coordinates.size != 3) {
+        if (coordinates.size !in setOf(3, 4)) {
             return GMResult.Err(
                 Sphere3DError.InvalidCoordinateCount(coordinates.size),
             )
@@ -314,6 +322,49 @@ internal class Sphere3D private constructor(
         }
         return GMResult.Ok(vector)
     }
+
+    // JSXGraph 1.13.3: src/3d/element3d.js ->
+    // projectScreenCoords; src/3d/sphere3d.js -> X / Y / Z / ranges.
+    internal fun projectScreenCoords(
+        screenCoordinates: DoubleArray,
+        parameters: MutableList<Double>,
+        cyclic: Boolean = false,
+    ): GMResult<DoubleArray, Sphere3DError> =
+        when (
+            val result = Geometry.projectScreenCoordsToParametric(
+                screenCoordinates = screenCoordinates,
+                evaluator = Parametric3DEvaluator { values ->
+                    val radius = when (val evaluated = evaluateRadius()) {
+                        is GMResult.Ok -> evaluated.value
+                        is GMResult.Err ->
+                            return@Parametric3DEvaluator GMResult.Err(
+                                evaluated.error,
+                            )
+                    }
+                    val u = values[0]
+                    val v = values[1]
+                    GMResult.Ok(
+                        doubleArrayOf(
+                            radius * sin(u) * cos(v),
+                            radius * sin(u) * sin(v),
+                            radius * cos(u),
+                        ),
+                    )
+                },
+                projector = ParametricScreenProjector(
+                    view::project3DTo2D,
+                ),
+                parameters = parameters,
+                rangeU = rangeU,
+                rangeV = rangeV,
+                cyclic = cyclic,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                Sphere3DError.ParametricProjection(result.error),
+            )
+        }
 
     // JSXGraph: src/3d/sphere3d.js -> update.
     override fun update(fromParent: Boolean): Sphere3D {
@@ -376,7 +427,8 @@ internal class Sphere3D private constructor(
             }
         }
 
-    // JSXGraph 1.13.3: src/3d/sphere3d.js -> buildParallelProjection.
+    // JSXGraph 1.13.3: src/3d/sphere3d.js ->
+    // buildParallelProjection closure radius2d.
     private fun buildParallelProjection():
         GMResult<Sphere3D, Sphere3DError> {
         val boxSize = view.bbox3D[0][1] - view.bbox3D[0][0]
@@ -450,6 +502,7 @@ internal class Sphere3D private constructor(
                 pointOnEllipse = createdPoints[2],
                 parentlessPoints = createdPoints.toSet(),
                 sampleCount = sampleCount,
+                plotOptions = plotOptions,
                 name = "",
                 needsRegularUpdate = needsRegularUpdate,
                 centerName = "",
@@ -516,6 +569,7 @@ internal class Sphere3D private constructor(
             ownsPoint2: Boolean = false,
             radiusDependencies: Iterable<GeometryElement> = emptyList(),
             sampleCount: Int = DEFAULT_SAMPLE_COUNT,
+            plotOptions: CurvePlotOptions = CurvePlotOptions(),
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
@@ -562,6 +616,7 @@ internal class Sphere3D private constructor(
                 point2 = point2,
                 radiusSource = radiusSource,
                 sampleCount = sampleCount,
+                plotOptions = plotOptions,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,

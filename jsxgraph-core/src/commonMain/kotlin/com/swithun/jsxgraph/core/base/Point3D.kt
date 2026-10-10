@@ -54,6 +54,22 @@ internal sealed interface Point3DError {
         val count: Int,
     ) : Point3DError
 
+    data class SlideViewMismatch(
+        val slideId: String,
+    ) : Point3DError
+
+    data class SlideNotRegistered(
+        val slideId: String,
+    ) : Point3DError
+
+    data class UnsupportedSlide(
+        val elementType: String,
+    ) : Point3DError
+
+    data class SlideProjection(
+        val reason: String,
+    ) : Point3DError
+
     data class CoordinateEvaluation(
         val coordinateIndex: Int?,
         val error: Point3DDynamicError,
@@ -113,6 +129,7 @@ internal class Point3D private constructor(
     name: String?,
     needsRegularUpdate: Boolean,
     internal val isFixed: Boolean,
+    internal val slide: GeometryElement3D?,
 ) : GeometryElement3D(
     view = view,
     id = id,
@@ -130,6 +147,8 @@ internal class Point3D private constructor(
         private set
     internal var transformationEvaluationError: Point3DError? = null
         private set
+    internal var position: DoubleArray = doubleArrayOf()
+        private set
 
     private var projectedCoordinates: DoubleArray? = null
     private val movePath = ArrayDeque<DoubleArray>()
@@ -137,6 +156,12 @@ internal class Point3D private constructor(
     private var movementScheduled: Boolean = false
     internal var movementError: Point3DError? = null
         private set
+
+    internal fun takeMovementError(): Point3DError? {
+        val error = movementError
+        movementError = null
+        return error
+    }
 
     init {
         elType = POINT_3D_ELEMENT_TYPE
@@ -301,21 +326,41 @@ internal class Point3D private constructor(
                 !previousProjection.contentEquals(currentProjection)
 
         if (proxyMoved) {
-            val foot = doubleArrayOf(1.0, 0.0, 0.0, coords[3])
-            val coordinates3D = view.project2DTo3DPlane(
-                coordinates2D = currentProjection,
-                normal = doubleArrayOf(1.0, 0.0, 0.0, 1.0),
-                foot = foot,
-            )
-            if (coordinates3D[0] != 0.0) {
-                val (bounded, corrected) =
-                    view.project3DToCube(coordinates3D)
-                coords = bounded
-                if (corrected) {
-                    point2D.coords.setCoordinates(
-                        coordType = Const.COORDS_BY_USER,
-                        coordinates = view.project3DTo2D(coords),
+            if (slide != null) {
+                when (
+                    val result = projectScreenToSlide(
+                        doubleArrayOf(point2D.X(), point2D.Y()),
                     )
+                ) {
+                    is GMResult.Ok -> {
+                        coords = result.value
+                        coordinateEvaluationError = null
+                        point2D.coords.setCoordinates(
+                            coordType = Const.COORDS_BY_USER,
+                            coordinates = view.project3DTo2D(coords),
+                        )
+                    }
+                    is GMResult.Err -> {
+                        coordinateEvaluationError = result.error
+                    }
+                }
+            } else {
+                val foot = doubleArrayOf(1.0, 0.0, 0.0, coords[3])
+                val coordinates3D = view.project2DTo3DPlane(
+                    coordinates2D = currentProjection,
+                    normal = doubleArrayOf(1.0, 0.0, 0.0, 1.0),
+                    foot = foot,
+                )
+                if (coordinates3D[0] != 0.0) {
+                    val (bounded, corrected) =
+                        view.project3DToCube(coordinates3D)
+                    coords = bounded
+                    if (corrected) {
+                        point2D.coords.setCoordinates(
+                            coordType = Const.COORDS_BY_USER,
+                            coordinates = view.project3DTo2D(coords),
+                        )
+                    }
                 }
             }
         } else {
@@ -323,15 +368,31 @@ internal class Point3D private constructor(
             if (coordinateEvaluationError == null) {
                 updateTransform()
             }
-            point2D.coords.setCoordinates(
-                coordType = Const.COORDS_BY_USER,
-                coordinates = view.project3DTo2D(coords),
-            )
-            zIndex = Mat.innerProduct(
-                view.matrix3DRotShift[3],
-                coords,
-            )
-            point2D.prepareUpdate().update()
+            if (
+                coordinateEvaluationError == null &&
+                transformationEvaluationError == null
+            ) {
+                when (val result = projectToSlide()) {
+                    is GMResult.Ok -> {
+                        coords = result.value
+                        coordinateEvaluationError = null
+                    }
+                    is GMResult.Err -> {
+                        coordinateEvaluationError = result.error
+                    }
+                }
+            }
+            if (coordinateEvaluationError == null) {
+                point2D.coords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = view.project3DTo2D(coords),
+                )
+                zIndex = Mat.innerProduct(
+                    view.matrix3DRotShift[3],
+                    coords,
+                )
+                point2D.prepareUpdate().update()
+            }
         }
         projectedCoordinates = point2D.coords.usrCoords.copyOf()
         return this
@@ -506,6 +567,7 @@ internal class Point3D private constructor(
         return false
     }
 
+    // JSXGraph 1.13.3: src/3d/point3d.js -> moveTo closure stepFun.
     private fun animationProgress(
         step: Int,
         steps: Int,
@@ -534,21 +596,38 @@ internal class Point3D private constructor(
             method = Const.COORDS_BY_USER,
             coordinates = coordinates,
         )
-        val projected =
-            if (vertical) {
-                view.project2DTo3DVertical(
-                    point2D.coords.usrCoords,
-                    coords,
+        if (slide != null) {
+            when (
+                val result = projectScreenToSlide(
+                    doubleArrayOf(point2D.X(), point2D.Y()),
                 )
-            } else {
-                view.project2DTo3DPlane(
-                    coordinates2D = point2D.coords.usrCoords,
-                    normal = doubleArrayOf(1.0, 0.0, 0.0, 1.0),
-                    foot = doubleArrayOf(1.0, 0.0, 0.0, coords[3]),
-                )
+            ) {
+                is GMResult.Ok -> {
+                    coords = result.value
+                    coordinateEvaluationError = null
+                }
+                is GMResult.Err -> {
+                    coordinateEvaluationError = result.error
+                    return result
+                }
             }
-        if (projected[0] != 0.0) {
-            coords = view.project3DToCube(projected).first
+        } else {
+            val projected =
+                if (vertical) {
+                    view.project2DTo3DVertical(
+                        point2D.coords.usrCoords,
+                        coords,
+                    )
+                } else {
+                    view.project2DTo3DPlane(
+                        coordinates2D = point2D.coords.usrCoords,
+                        normal = doubleArrayOf(1.0, 0.0, 0.0, 1.0),
+                        foot = doubleArrayOf(1.0, 0.0, 0.0, coords[3]),
+                    )
+                }
+            if (projected[0] != 0.0) {
+                coords = view.project3DToCube(projected).first
+            }
         }
         point2D.coords.setCoordinates(
             coordType = Const.COORDS_BY_USER,
@@ -557,6 +636,147 @@ internal class Point3D private constructor(
         projectedCoordinates = point2D.coords.usrCoords.copyOf()
         return GMResult.Ok(this)
     }
+
+    // JSXGraph 1.13.3: src/3d/point3d.js -> update slide projection.
+    private fun projectToSlide(): GMResult<DoubleArray, Point3DError> {
+        val target = slide ?: return GMResult.Ok(coords)
+        val coordinates = doubleArrayOf(1.0, X(), Y(), Z())
+        return when (target) {
+            is Circle3D -> projectWithMutablePosition { parameters ->
+                target.projectCoords(
+                    coordinates = coordinates,
+                    parameters = parameters,
+                )
+            }
+            is Curve3D -> projectWithMutablePosition { parameters ->
+                target.projectCoords(
+                    coordinates = coordinates,
+                    parameters = parameters,
+                )
+            }
+            is Line3D -> {
+                val parameters = positionArray(1)
+                val projected = target.projectCoords(
+                    coordinates = coordinates,
+                    parameters = parameters,
+                )
+                position = parameters
+                GMResult.Ok(projected)
+            }
+            is Plane3D -> {
+                val parameters = positionArray(2)
+                val projected = target.projectCoords(
+                    coordinates = coordinates,
+                    parameters = parameters,
+                )
+                position = parameters
+                GMResult.Ok(projected)
+            }
+            is Sphere3D -> {
+                val parameters = positionArray(2)
+                when (
+                    val result = target.projectCoords(
+                        coordinates = coordinates,
+                        parameters = parameters,
+                    )
+                ) {
+                    is GMResult.Ok -> {
+                        position = parameters
+                        result
+                    }
+                    is GMResult.Err -> slideProjectionError(result.error)
+                }
+            }
+            is Surface3D -> projectWithMutablePosition { parameters ->
+                target.projectCoords(
+                    coordinates = coordinates,
+                    parameters = parameters,
+                )
+            }
+            else -> GMResult.Err(
+                Point3DError.UnsupportedSlide(target.elType),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/3d/point3d.js -> update drag branch;
+    // src/3d/element3d.js -> projectScreenCoords.
+    private fun projectScreenToSlide(
+        screenCoordinates: DoubleArray,
+    ): GMResult<DoubleArray, Point3DError> {
+        val target = slide ?: return GMResult.Ok(coords)
+        val cyclic = evalVisProp("cyclic") == true
+        return when (target) {
+            is Circle3D -> projectWithMutablePosition { parameters ->
+                target.projectScreenCoords(
+                    screenCoordinates = screenCoordinates,
+                    parameters = parameters,
+                    cyclic = cyclic,
+                )
+            }
+            is Curve3D -> projectWithMutablePosition { parameters ->
+                target.projectScreenCoords(
+                    screenCoordinates = screenCoordinates,
+                    parameters = parameters,
+                    cyclic = cyclic,
+                )
+            }
+            is Line3D -> GMResult.Ok(
+                target.projectScreenCoords(screenCoordinates),
+            )
+            is Plane3D -> projectWithMutablePosition { parameters ->
+                target.projectScreenCoords(
+                    screenCoordinates = screenCoordinates,
+                    parameters = parameters,
+                    cyclic = cyclic,
+                )
+            }
+            is Sphere3D -> projectWithMutablePosition { parameters ->
+                target.projectScreenCoords(
+                    screenCoordinates = screenCoordinates,
+                    parameters = parameters,
+                    cyclic = cyclic,
+                )
+            }
+            is Surface3D -> projectWithMutablePosition { parameters ->
+                target.projectScreenCoords(
+                    screenCoordinates = screenCoordinates,
+                    parameters = parameters,
+                    cyclic = cyclic,
+                )
+            }
+            else -> GMResult.Err(
+                Point3DError.UnsupportedSlide(target.elType),
+            )
+        }
+    }
+
+    private fun positionArray(minimumSize: Int): DoubleArray =
+        DoubleArray(maxOf(position.size, minimumSize)) { index ->
+            position.getOrElse(index) { 0.0 }
+        }
+
+    private fun <E> projectWithMutablePosition(
+        projection: (
+            MutableList<Double>,
+        ) -> GMResult<DoubleArray, E>,
+    ): GMResult<DoubleArray, Point3DError> {
+        val parameters = position.toMutableList()
+        return when (val result = projection(parameters)) {
+            is GMResult.Ok -> {
+                position = parameters.toDoubleArray()
+                result
+            }
+            is GMResult.Err -> slideProjectionError(result.error)
+        }
+    }
+
+    private fun slideProjectionError(
+        error: Any?,
+    ): GMResult.Err<Point3DError.SlideProjection> =
+        GMResult.Err(
+            Point3DError.SlideProjection(error.toString()),
+        )
 
     private fun evaluateCoordinates(
         source: Point3DCoordinateSource,
@@ -657,6 +877,8 @@ internal class Point3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            slide: GeometryElement3D? = null,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Point3D, Point3DError> =
             create(
                 view = view,
@@ -667,6 +889,8 @@ internal class Point3D private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                slide = slide,
+                attributes = attributes,
             )
 
         // JSXGraph: src/3d/point3d.js -> createPoint3D transformation form.
@@ -678,6 +902,8 @@ internal class Point3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            slide: GeometryElement3D? = null,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Point3D, Point3DError> {
             if (transformations.isEmpty()) {
                 return GMResult.Err(
@@ -697,6 +923,8 @@ internal class Point3D private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
+                slide = slide,
+                attributes = attributes,
             )
             val point = when (result) {
                 is GMResult.Ok -> result.value
@@ -718,7 +946,26 @@ internal class Point3D private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
+            slide: GeometryElement3D? = null,
+            attributes: Map<String, Any?> = emptyMap(),
         ): GMResult<Point3D, Point3DError> {
+            if (slide != null) {
+                if (slide.view !== view) {
+                    return GMResult.Err(
+                        Point3DError.SlideViewMismatch(slide.id),
+                    )
+                }
+                if (view.board.elementById(slide.id) !== slide) {
+                    return GMResult.Err(
+                        Point3DError.SlideNotRegistered(slide.id),
+                    )
+                }
+                if (!supportsSlideProjection(slide)) {
+                    return GMResult.Err(
+                        Point3DError.UnsupportedSlide(slide.elType),
+                    )
+                }
+            }
             val point = Point3D(
                 view = view,
                 coordinateSource = coordinateSource,
@@ -726,7 +973,9 @@ internal class Point3D private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 isFixed = fixed,
+                slide = slide,
             )
+            point.setCreationAttributes(attributes)
             when (val initialized = point.initCoords()) {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return initialized
@@ -758,9 +1007,15 @@ internal class Point3D private constructor(
                     )
                 }
             }
+            point.configureElement2D(
+                proxy = proxy,
+                attributes = attributes,
+                defaultWithLabel = true,
+            )
             proxy.dump = false
             point.point2D = proxy
             point.element2D = proxy
+            point.inherits += proxy
             point.isDraggable = proxy.isDraggable
             point.addChild(proxy)
             proxy.setParents(listOf(point))
@@ -769,7 +1024,24 @@ internal class Point3D private constructor(
             for (dependency in dependencies) {
                 dependency.addChild(point)
             }
+            if (slide != null) {
+                slide.addChild(point)
+                point.setParents(listOf(slide))
+            }
+            // JSXGraph 1.13.3: src/base/board.js -> Board.create
+            // invokes el.fullUpdate() after createPoint3D returns.
+            point.fullUpdate()
             return GMResult.Ok(point)
         }
+
+        private fun supportsSlideProjection(
+            slide: GeometryElement3D,
+        ): Boolean =
+            slide is Circle3D ||
+                slide is Curve3D ||
+                slide is Line3D ||
+                slide is Plane3D ||
+                slide is Sphere3D ||
+                slide is Surface3D
     }
 }

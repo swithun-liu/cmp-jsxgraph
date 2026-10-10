@@ -262,7 +262,8 @@ internal class Surface3D private constructor(
             }
         }
 
-    // JSXGraph: src/3d/surface3d.js -> evalF / F / X / Y / Z.
+    // JSXGraph 1.13.3: src/3d/surface3d.js -> constructor closures
+    // _F / _X / _Y / _Z, then evalF / F / X / Y / Z.
     internal fun evalFResult(
         parameterU: Double,
         parameterV: Double,

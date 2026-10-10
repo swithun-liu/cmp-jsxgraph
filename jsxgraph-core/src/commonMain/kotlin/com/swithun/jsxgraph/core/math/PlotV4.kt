@@ -1407,6 +1407,8 @@ private class PlotV4State<E>(
         negate: Boolean,
     ): GMResult<Double, PlotError<E>> {
         var evaluationError: PlotError<E>? = null
+        // JSXGraph 1.13.3: src/math/plot.js ->
+        // plot_v4 closures Ypl / Ymi.
         val minimum = Numerics.fminbr(
             function = { parameter ->
                 if (evaluationError != null) {

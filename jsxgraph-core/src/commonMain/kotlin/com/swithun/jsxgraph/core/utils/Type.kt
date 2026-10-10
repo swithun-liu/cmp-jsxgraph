@@ -772,7 +772,8 @@ internal object Type {
     fun cssStringify(value: Any?): String =
         TypeCss.stringify(value)
 
-    // JSXGraph 1.13.3: src/utils/type.js -> evalSlider.
+    // JSXGraph 1.13.3: src/utils/type.js -> evalSlider;
+    // src/base/coordselement.js -> addConstraint closure makeSliderFunction.
     fun evalSlider(value: Any?): Any? =
         if (value is Slider) {
             value.Value()
@@ -990,7 +991,7 @@ internal object Type {
     fun keys(value: Map<String, *>): List<String> =
         value.keys.sortedWith(JS_PROPERTY_KEY_ORDER)
 
-    // JSXGraph 1.13.3: src/utils/type.js -> clone.
+    // JSXGraph 1.13.3: src/utils/type.js -> clone closure cObj.
     fun clone(value: Any?): MutableMap<String, Any?> =
         linkedMapOf("prototype" to value)
 

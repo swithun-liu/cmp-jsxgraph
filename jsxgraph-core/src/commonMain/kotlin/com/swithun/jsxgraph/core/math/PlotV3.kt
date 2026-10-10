@@ -352,6 +352,8 @@ private class PlotV3State<E>(
             is GMResult.Err -> return result
         }
         var evaluationError: PlotError<E>? = null
+        // JSXGraph 1.13.3: src/math/plot.js ->
+        // _getCuspPos closure max_func.
         val result = Numerics.fminbr(
             function = { parameter ->
                 if (evaluationError != null) {
@@ -406,6 +408,8 @@ private class PlotV3State<E>(
         tb: Double,
     ): GMResult<Double, PlotError<E>> {
         var evaluationError: PlotError<E>? = null
+        // JSXGraph 1.13.3: src/math/plot.js ->
+        // _getJumpPos closure max_func.
         val result = Numerics.fminbr(
             function = { parameter ->
                 if (evaluationError != null) {

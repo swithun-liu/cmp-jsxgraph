@@ -36,6 +36,7 @@ class ConicTest {
                 point4 = points[3],
                 point5 = points[4],
                 sampleCount = 9,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "conic",
                 name = "five-point",
                 needsRegularUpdate = false,
@@ -147,6 +148,7 @@ class ConicTest {
                 board = numericBoard,
                 coefficients = doubleArrayOf(1.0, 2.0, -4.0, 0.0, 0.0, 0.0),
                 sampleCount = 9,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "numeric",
                 name = "",
                 centerId = "numeric-center",
@@ -187,6 +189,7 @@ class ConicTest {
                     0.0,
                 ),
                 sampleCount = 9,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 name = "",
             ),
         )
@@ -202,6 +205,7 @@ class ConicTest {
                     0.0,
                 ),
                 sampleCount = 9,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 name = "",
             ),
         )
@@ -235,6 +239,7 @@ class ConicTest {
                     JessieCodeNumericCoordinateFunction(0.0),
                 ),
                 sampleCount = 9,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "dynamic",
                 name = "",
                 centerId = "dynamic-center",
@@ -333,6 +338,7 @@ class ConicTest {
                 point4 = degeneratePoints[3],
                 point5 = degeneratePoints[4],
                 sampleCount = 9,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 name = "",
             ),
         )

@@ -41,7 +41,7 @@ try {
         )
     });
 
-    const evidence = await page.evaluate(() => {
+    const evidence = await page.evaluate(async () => {
         const source = [
             "<GEONEXT><elements>",
             "<point><name>A</name><id>P1</id>",
@@ -113,6 +113,17 @@ try {
             showCopyright: false,
             showNavigation: false
         });
+        const imageCanvas = document.createElement("canvas");
+        imageCanvas.width = 2;
+        imageCanvas.height = 1;
+        const imageContext = imageCanvas.getContext("2d");
+        imageContext.fillStyle = "#ff0000";
+        imageContext.fillRect(0, 0, 1, 1);
+        imageContext.fillStyle = "#0000ff";
+        imageContext.fillRect(1, 0, 1, 1);
+        const tinyPng = imageCanvas
+            .toDataURL("image/png")
+            .replace("data:image/png;base64,", "");
         const color = [
             "<color>",
             "<stroke>#102030FF</stroke>",
@@ -129,6 +140,9 @@ try {
             "<visible>true</visible><trace>false</trace>",
             "<style>3</style>",
             color,
+            "<image>",
+            tinyPng,
+            "</image>",
             "</point>",
             "<point><name>B</name><id>P2</id>",
             "<data><x>4</x><y>2</y></data><fix>false</fix>",
@@ -153,6 +167,9 @@ try {
             "<straight><first>false</first><last>true</last></straight>",
             "<visible>true</visible><trace>false</trace>",
             color,
+            "<image>",
+            tinyPng,
+            "</image>",
             "</line>",
             "<line><name>m</name><id>L2</id>",
             "<data><first>P3</first><last>P4</last></data>",
@@ -164,6 +181,9 @@ try {
             "<data><midpoint>P1</midpoint><radius>P2</radius></data>",
             "<visible>true</visible><trace>false</trace>",
             color,
+            "<image>",
+            tinyPng,
+            "</image>",
             "</circle>",
             "<circle><name>d</name><id>C2</id>",
             "<data><midpoint>P1</midpoint>",
@@ -303,6 +323,82 @@ try {
                 });
             }
         }
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+            if (
+                board.select("P1")?.image &&
+                board.select("L1")?.image &&
+                board.select("C1")?.image
+            ) {
+                break;
+            }
+            await new Promise((resolvePromise) => {
+                setTimeout(resolvePromise, 10);
+            });
+        }
+        const readImageGeometry = (image) => image
+            ? {
+                id: image.id,
+                source: image.url,
+                coordinates: [image.X(), image.Y()],
+                size: image.usrSize.slice(),
+                span: image.span.map((value) => value.slice()),
+                transformations: image.transformations.map(
+                    (transformation) => {
+                        transformation.update();
+                        return transformation.matrix.map(
+                            (row) => row.slice()
+                        );
+                    }
+                ),
+                anchor: image.element?.id ?? null
+            }
+            : null;
+        const boundImages = () => ({
+            point: readImageGeometry(board.select("P1").image),
+            line: readImageGeometry(board.select("L1").image),
+            circle: readImageGeometry(board.select("C1").image)
+        });
+        const imageInitial = boundImages();
+        board.select("P1").setPositionDirectly(
+            JXG.COORDS_BY_USER,
+            [2, 3]
+        );
+        board.select("P2").setPositionDirectly(
+            JXG.COORDS_BY_USER,
+            [5, 4]
+        );
+        board.update();
+        const imageMoved = boundImages();
+        board.select("P1").setPositionDirectly(
+            JXG.COORDS_BY_USER,
+            [1, 2]
+        );
+        board.select("P2").setPositionDirectly(
+            JXG.COORDS_BY_USER,
+            [4, 2]
+        );
+        board.update();
+
+        const backgroundTree = JXG.XML.parse([
+            "<root><file><src>",
+            tinyPng,
+            "</src><x>-4</x><y>3</y>",
+            "<width>6</width><height>2</height></file></root>"
+        ].join(""));
+        const backgroundImage = reader.parseImage(
+            board,
+            backgroundTree.getElementsByTagName("file")[0],
+            board.options.layer.image
+        );
+        const splitImageTree = JXG.XML.parse(
+            "<root><image>YWJj<![CDATA[ZGVm]]></image></root>"
+        );
+        const conditionsTree = JXG.XML.parse([
+            "<conditions>",
+            "<data>P1.visible=true</data>",
+            "<data><![CDATA[P1.x=2]]></data>",
+            "</conditions>"
+        ].join(""));
         const readPoint = (id) => {
             const point = board.select(id);
             return {
@@ -446,6 +542,17 @@ try {
             ),
             originIds: ["gOOe0", "gXOe0", "other"].map((id) =>
                 reader.changeOriginIds({id: "board-"}, id)
+            ),
+            images: {
+                readImage: reader.readImage(
+                    splitImageTree.getElementsByTagName("image")[0].firstChild
+                ),
+                initial: imageInitial,
+                moved: imageMoved,
+                background: readImageGeometry(backgroundImage)
+            },
+            conditions: reader.readConditions(
+                conditionsTree.getElementsByTagName("conditions")[0]
             ),
             drawing: {
                 points: [

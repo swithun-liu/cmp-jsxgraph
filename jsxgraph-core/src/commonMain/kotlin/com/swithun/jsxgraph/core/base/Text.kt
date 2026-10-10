@@ -17,6 +17,12 @@ import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import com.swithun.jsxgraph.core.utils.Type
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 internal sealed interface TextError {
     data class InvalidCoordinateCount(
@@ -69,6 +75,10 @@ internal sealed interface TextError {
         val error: SmartLabelError,
     ) : TextError
 
+    data class Rotation(
+        val error: TransformationError,
+    ) : TextError
+
     data object AnchorBoardMismatch : TextError
 
     data class AnchorNotRegistered(
@@ -81,9 +91,10 @@ internal sealed interface TextError {
 }
 
 /**
- * Initial translated slice of JXG.Text.
+ * Translated portable JXG.Text lifecycle.
  *
- * This slice covers static and function-valued content, JessieCode value tags,
+ * This implementation covers static and function-valued content, JessieCode
+ * value tags,
  * free, constrained, and element-anchored coordinates, Board registration,
  * content replacement, portable size estimates, hit testing, and the
  * coordinate/content update lifecycle. DOM HTML, MathJax/KaTeX, exact browser
@@ -100,6 +111,7 @@ internal class Text private constructor(
     internal val anchor: GeometryElement? = null,
     internal val relativeCoordinates: DoubleArray? = null,
     internal val isLabel: Boolean = false,
+    initialScreenOffset: DoubleArray = doubleArrayOf(0.0, 0.0),
     internal val isFixed: Boolean = false,
     internal val isVisible: Boolean = true,
     internal val strokeColor: String? = null,
@@ -141,14 +153,31 @@ internal class Text private constructor(
     internal var htmlControlDefinition: HtmlControlDefinition? = null
     // JSXGraph: src/base/text.js -> relativeCoords. Stored in CSS pixels and
     // resolved by the platform renderer after the user-coordinate transform.
-    internal var screenOffset: DoubleArray = doubleArrayOf(0.0, 0.0)
+    internal var screenOffset: DoubleArray = initialScreenOffset.copyOf()
+    // JSXGraph 1.13.3: src/base/chart.js -> highlightHandleLabel.
+    // Browser JSXGraph changes rendNode.style without mutating visProp.
+    internal var renderFontSizeScale: Double = 1.0
 
     init {
         elType = TEXT_ELEMENT_TYPE
+        _set("formatnumber", false)
+        _set("digits", digits)
+        _set("islabel", isLabel)
+        _set("offset", initialScreenOffset.copyOf())
+        _set(
+            "intl",
+            linkedMapOf(
+                "enabled" to "inherit",
+                "options" to linkedMapOf(
+                    "minimumfractiondigits" to 0,
+                    "maximumfractiondigits" to 2,
+                ),
+            ),
+        )
     }
 
     // JSXGraph: src/base/text.js -> setText / _setText /
-    // _createFctUpdateText.
+    // _createFctUpdateText closures updateText.
     internal fun setText(content: String): GMResult<Text, TextError> {
         val compiled = when (
             val result = compileContent(
@@ -172,7 +201,8 @@ internal class Text private constructor(
         return GMResult.Ok(this)
     }
 
-    // JSXGraph 1.13.3: src/base/text.js -> setTextJessieCode.
+    // JSXGraph 1.13.3: src/base/text.js ->
+    // setTextJessieCode sanitizing closure s.
     internal fun setTextJessieCode(
         content: String,
     ): GMResult<Text, TextError> =
@@ -198,7 +228,11 @@ internal class Text private constructor(
         if (!needsUpdate) {
             return this
         }
-        if (anchor == null || relativeCoordinates == null) {
+        if (
+            anchor == null ||
+            relativeCoordinates == null ||
+            coordinateFunctions.isNotEmpty()
+        ) {
             updateCoords(fromParent)
         } else {
             coords.setCoordinates(
@@ -207,11 +241,18 @@ internal class Text private constructor(
                     anchor = anchor,
                     relativeCoordinates = relativeCoordinates,
                     isLabel = isLabel,
+                    offset = autoPositionOffset(),
                 ),
             )
         }
         val result = dynamicContent?.invoke()
-            ?: evaluateContent(contentSegments, digits)
+            ?: evaluateContent(contentSegments, digits) { value, precision ->
+                if (useLocale()) {
+                    formatNumberLocaleText(value, precision)
+                } else {
+                    JsNumberFormat.fixed(value, precision)
+                }
+            }
         when (result) {
             is GMResult.Ok -> {
                 plaintext = if (
@@ -281,16 +322,14 @@ internal class Text private constructor(
         var x = screenX
         var y = screenY
         if (transformations.isNotEmpty()) {
-            var matrix = Mat.identity(3)
-            for (transformation in transformations) {
-                when (transformation.updateResult()) {
-                    is GMResult.Ok ->
-                        matrix = Mat.matMatMult(
-                            transformation.matrix,
-                            matrix,
-                        )
-                    is GMResult.Err -> return false
-                }
+            val matrix = when (
+                val result = joinScreenTransformations(
+                    board = board,
+                    transformations = transformations,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return false
             }
             val inverse = Mat.inverse(matrix)
             if (inverse.isEmpty()) {
@@ -372,6 +411,22 @@ internal class Text private constructor(
     // The size property already owns the JVM getSize signature.
     internal fun textSize(): DoubleArray = size.copyOf()
 
+    // JSXGraph 1.13.3: src/base/text.js -> getParents.
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(
+            when {
+                parents.isNotEmpty() -> parents.toList()
+                relativeCoordinates != null ->
+                    listOf(
+                        relativeCoordinates[0],
+                        relativeCoordinates[1],
+                        orgText,
+                    )
+                else -> listOf(Z(), X(), Y(), orgText)
+            },
+        )
+
     // JSXGraph 1.13.3: src/base/text.js -> setCoords.
     internal fun setCoords(
         horizontal: Double,
@@ -382,6 +437,7 @@ internal class Text private constructor(
                 anchor = anchor,
                 relativeCoordinates = doubleArrayOf(0.0, 0.0),
                 isLabel = isLabel,
+                offset = autoPositionOffset(),
             )
             if (isLabel) {
                 screenOffset = doubleArrayOf(
@@ -411,6 +467,336 @@ internal class Text private constructor(
             horizontal = coordinates.getOrElse(0) { Double.NaN },
             vertical = coordinates.getOrElse(1) { Double.NaN },
         )
+
+    // JSXGraph 1.13.3: src/base/element.js -> addRotation.
+    internal fun addRotation(
+        degrees: Double,
+    ): GMResult<Text, TextError> {
+        if (degrees == 0.0) {
+            return GMResult.Ok(this)
+        }
+        val dynamic = { value: () -> Double ->
+            TransformationParameter.Dynamic(
+                TransformationDynamicParameter {
+                    GMResult.Ok(value())
+                },
+            )
+        }
+        val definitions = listOf(
+            "translate" to listOf(dynamic { -X() }, dynamic { -Y() }),
+            "scale" to listOf(
+                dynamic { board.unitX / board.unitY },
+                TransformationParameter.Numeric(1.0),
+            ),
+            "rotate" to listOf(
+                TransformationParameter.Numeric(degrees * PI / 180.0),
+            ),
+            "scale" to listOf(
+                dynamic { board.unitY / board.unitX },
+                TransformationParameter.Numeric(1.0),
+            ),
+            "translate" to listOf(dynamic(::X), dynamic(::Y)),
+        )
+        val rotationTransforms = mutableListOf<Transformation>()
+        for ((type, parameters) in definitions) {
+            when (
+                val result = Transformation.create(
+                    board = board,
+                    type = type,
+                    parameters = parameters,
+                )
+            ) {
+                is GMResult.Ok -> rotationTransforms += result.value
+                is GMResult.Err -> return GMResult.Err(
+                    TextError.Rotation(result.error),
+                )
+            }
+        }
+        addTransform(this, rotationTransforms)
+        prepareUpdate()
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> getNumberOfConflicts.
+    internal fun getNumberOfConflicts(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        whiteList: List<String> = emptyList(),
+    ): Int {
+        var count = 0
+        val precision = (width + height) * 0.3
+        for (element in board.objectsList) {
+            if (
+                element.visualPropertiesCalculated["visible"] != true ||
+                element === this ||
+                element.id in whiteList ||
+                element.evalVisProp("ignoreforlabelautoposition") == true
+            ) {
+                continue
+            }
+            if (
+                element.evalVisProp("islabel") == true ||
+                element.elementClass == Const.OBJECT_CLASS_POINT
+            ) {
+                val coordinates = (element as? CoordsElement)
+                    ?.coords
+                    ?.scrCoords ?: continue
+                var centerX = coordinates.getOrNull(1) ?: continue
+                var centerY = coordinates.getOrNull(2) ?: continue
+                var elementWidth = 0.0
+                var elementHeight = 0.0
+                if (element.evalVisProp("islabel") == true) {
+                    val label = element as? Text ?: continue
+                    elementWidth = label.size[0]
+                    elementHeight = label.size[1]
+                    centerY += if (
+                        label.evalVisProp("anchory") == "top"
+                    ) {
+                        elementHeight * 0.5
+                    } else {
+                        -elementHeight * 0.5
+                    }
+                    centerX += if (
+                        label.evalVisProp("anchorx") == "left"
+                    ) {
+                        elementWidth * 0.5
+                    } else {
+                        -elementWidth * 0.5
+                    }
+                }
+                if (
+                    abs(centerX - x) < (width + elementWidth) * 0.5 &&
+                    abs(centerY - y) < (height + elementHeight) * 0.5
+                ) {
+                    count += 1
+                }
+            } else if (
+                element.hasPointForLabelAutoPosition(
+                    screenX = x,
+                    screenY = y,
+                    precision = precision,
+                )
+            ) {
+                count += 1
+            }
+        }
+        return count
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> calculateScore.
+    internal fun calculateAutoPositionScore(
+        radius: Double,
+        angle: Double,
+    ): Double {
+        val labelAnchor = anchor ?: return 0.0
+        if (evalVisProp("islabel") != true) {
+            return 0.0
+        }
+        val anchorCoordinates = labelAnchor.getLabelAnchor().scrCoords
+        val width = size[0]
+        val height = size[1]
+        val cosine = cos(angle)
+        val sine = sin(angle)
+        var x = anchorCoordinates[1] + radius * cosine
+        var y = anchorCoordinates[2] - radius * sine
+        val cornerX: Double
+        val cornerY: Double
+        if (cosine < 0.0) {
+            cornerX = x - width
+            x -= width * 0.5
+        } else {
+            cornerX = x + width
+            x += width * 0.5
+        }
+        if (sine < 0.0) {
+            cornerY = y + height
+            y += height * 0.5
+        } else {
+            cornerY = y - height
+            y -= height * 0.5
+        }
+
+        val boundingBox = board.getBoundingBox()
+        var score = 0.0
+        if (
+            cornerX < 0.0 ||
+            cornerX >
+            (boundingBox[2] - boundingBox[0]) * board.unitX ||
+            cornerY < 0.0 ||
+            cornerY >
+            (boundingBox[1] - boundingBox[3]) * board.unitY
+        ) {
+            score -= 1.0
+        }
+        score -= getNumberOfConflicts(
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            whiteList = autoPositionWhiteList(),
+        )
+
+        val minimumDistance = autoPositionDistance(
+            key = "autopositionmindistance",
+            default = DEFAULT_AUTO_POSITION_MIN_DISTANCE,
+        )
+        score -= radius / minimumDistance / 10.0 - 0.1
+
+        val currentOffset = autoPositionOffset()
+        var currentAngle = atan2(currentOffset[1], currentOffset[0])
+        if (currentAngle < 0.0) {
+            currentAngle += 2.0 * PI
+        }
+        val angleDifference = if (
+            cosine > 0.0 &&
+            cos(currentAngle) > 0.0 &&
+            abs(angle - currentAngle) > PI
+        ) {
+            abs(angle - currentAngle - 2.0 * PI)
+        } else {
+            abs(angle - currentAngle)
+        }
+        score -= angleDifference / 10.0
+        return score
+    }
+
+    // JSXGraph 1.13.3: src/base/text.js -> setAutoPosition.
+    internal fun setAutoPosition(): Text {
+        if (
+            anchor == null ||
+            visualPropertiesCalculated["visible"] != true ||
+            evalVisProp("islabel") != true
+        ) {
+            return this
+        }
+        val currentOffset = autoPositionOffset()
+        val currentRadius = sqrt(
+            currentOffset[0] * currentOffset[0] +
+                currentOffset[1] * currentOffset[1],
+        )
+        val currentAngle = atan2(currentOffset[1], currentOffset[0])
+        if (
+            calculateAutoPositionScore(
+                radius = currentRadius,
+                angle = currentAngle,
+            ) == 0.0
+        ) {
+            return this
+        }
+
+        val minimumRadius = autoPositionDistance(
+            key = "autopositionmindistance",
+            default = DEFAULT_AUTO_POSITION_MIN_DISTANCE,
+        )
+        val maximumRadius = autoPositionDistance(
+            key = "autopositionmaxdistance",
+            default = DEFAULT_AUTO_POSITION_MAX_DISTANCE,
+        )
+        val radiusStep =
+            (maximumRadius - minimumRadius) /
+                (AUTO_POSITION_RADIUS_COUNT - 1)
+        var bestScore = Double.NEGATIVE_INFINITY
+        var bestRadius = Double.NaN
+        var bestAngle = Double.NaN
+        search@ for (
+            radiusIndex in 0 until AUTO_POSITION_RADIUS_COUNT
+        ) {
+            val radius = minimumRadius + radiusIndex * radiusStep
+            for (angleIndex in 0 until AUTO_POSITION_ANGLE_COUNT) {
+                val angle =
+                    angleIndex.toDouble() /
+                        AUTO_POSITION_ANGLE_COUNT *
+                        2.0 *
+                        PI
+                val score = calculateAutoPositionScore(radius, angle)
+                if (score > bestScore) {
+                    bestAngle = angle
+                    bestRadius = radius
+                    bestScore = score
+                }
+                if (bestScore == 0.0) {
+                    break@search
+                }
+            }
+        }
+
+        val cosine = cos(bestAngle)
+        val sine = sin(bestAngle)
+        val offset = doubleArrayOf(
+            bestRadius * cosine,
+            bestRadius * sine,
+        )
+        screenOffset = offset.copyOf()
+        setAttribute(
+            mapOf(
+                "anchorx" to if (cosine < 0.0) "right" else "left",
+                "anchory" to if (sine < 0.0) "top" else "bottom",
+                "offset" to offset,
+            ),
+        )
+        return this
+    }
+
+    private fun autoPositionDistance(
+        key: String,
+        default: Double,
+    ): Double =
+        (evalVisProp(key) as? Number)?.toDouble() ?: default
+
+    private fun autoPositionOffset(): DoubleArray =
+        when (val offset = evalVisProp("offset")) {
+            is DoubleArray -> doubleArrayOf(
+                offset.getOrElse(0) { 0.0 },
+                offset.getOrElse(1) { 0.0 },
+            )
+            is List<*> -> doubleArrayOf(
+                (offset.getOrNull(0) as? Number)?.toDouble() ?: 0.0,
+                (offset.getOrNull(1) as? Number)?.toDouble() ?: 0.0,
+            )
+            else -> screenOffset.copyOf()
+        }
+
+    private fun autoPositionWhiteList(): List<String> =
+        when (val value = evalVisProp("autopositionwhitelist")) {
+            is Array<*> -> value.filterIsInstance<String>()
+            is Iterable<*> -> value.filterIsInstance<String>()
+            else -> emptyList()
+        }
+
+    private fun GeometryElement.hasPointForLabelAutoPosition(
+        screenX: Double,
+        screenY: Double,
+        precision: Double,
+    ): Boolean {
+        val hadInnerPoints = "hasinnerpoints" in visualProperties
+        val innerPoints = visualProperties["hasinnerpoints"]
+        visualProperties["hasinnerpoints"] = false
+        return try {
+            when (this) {
+                is Point -> hasPoint(screenX, screenY, precision)
+                is Line -> hasPoint(screenX, screenY, precision)
+                is Circle -> hasPoint(screenX, screenY, precision)
+                is Arc -> hasPoint(screenX, screenY, precision)
+                is Sector -> hasPoint(screenX, screenY, precision)
+                is Polygon -> hasPoint(screenX, screenY, precision)
+                is Curve -> hasPoint(screenX, screenY, precision)
+                is Ticks -> hasPoint(screenX, screenY, precision)
+                is Turtle -> hasPoint(screenX, screenY)
+                is Text -> hasPoint(screenX, screenY, precision)
+                is Image -> hasPoint(screenX, screenY, precision)
+                is ForeignObject -> hasPoint(screenX, screenY, precision)
+                else -> false
+            }
+        } finally {
+            if (hadInnerPoints) {
+                visualProperties["hasinnerpoints"] = innerPoints
+            } else {
+                visualProperties.remove("hasinnerpoints")
+            }
+        }
+    }
 
     // JSXGraph 1.13.3: src/base/text.js -> checkForSizeUpdate.
     internal fun checkForSizeUpdate(): Text {
@@ -484,6 +870,10 @@ internal class Text private constructor(
         private const val TEXT_ELEMENT_TYPE = "text"
         private const val DEFAULT_HIT_PRECISION = 4.0
         private const val DEFAULT_FONT_SIZE = 12.0
+        private const val DEFAULT_AUTO_POSITION_MIN_DISTANCE = 12.0
+        private const val DEFAULT_AUTO_POSITION_MAX_DISTANCE = 28.0
+        private const val AUTO_POSITION_ANGLE_COUNT = 60
+        private const val AUTO_POSITION_RADIUS_COUNT = 4
         private val UNICODE_ENTITY = Regex("&#x([0-9A-Fa-f]+);")
 
         // JSXGraph: src/base/text.js -> createText;
@@ -499,9 +889,11 @@ internal class Text private constructor(
             digits: Int = 2,
             anchor: GeometryElement? = null,
             isLabel: Boolean = false,
+            offset: DoubleArray = doubleArrayOf(0.0, 0.0),
             fixed: Boolean = false,
             visible: Boolean = true,
             strokeColor: String? = null,
+            rotationDegrees: Double = 0.0,
         ): GMResult<Text, TextError> {
             if (coordinates.size !in 2..3) {
                 return GMResult.Err(
@@ -534,6 +926,7 @@ internal class Text private constructor(
                             anchor = anchor,
                             relativeCoordinates = relativeCoordinates,
                             isLabel = isLabel,
+                            offset = offset,
                         )
                     },
                 content = content,
@@ -545,6 +938,7 @@ internal class Text private constructor(
                 relativeCoordinates =
                     if (anchor == null) null else relativeCoordinates,
                 isLabel = isLabel,
+                initialScreenOffset = offset,
                 isFixed = fixed,
                 isVisible = visible,
                 strokeColor = strokeColor,
@@ -559,7 +953,16 @@ internal class Text private constructor(
                         compiledContent.functions,
                     )
                     anchor?.addChild(text)
-                    registration
+                    if (anchor != null && isLabel) {
+                        text.setParents(listOf(anchor))
+                    }
+                    when (val rotation = text.addRotation(rotationDegrees)) {
+                        is GMResult.Ok -> registration
+                        is GMResult.Err -> {
+                            board.removeObject(text)
+                            rotation
+                        }
+                    }
                 }
                 is GMResult.Err -> registration
             }
@@ -575,6 +978,11 @@ internal class Text private constructor(
             needsRegularUpdate: Boolean = true,
             parse: Boolean = true,
             digits: Int = 2,
+            anchor: GeometryElement? = null,
+            isLabel: Boolean = false,
+            offset: DoubleArray = doubleArrayOf(0.0, 0.0),
+            fixed: Boolean = false,
+            rotationDegrees: Double = 0.0,
         ): GMResult<Text, TextError> {
             if (coordinateExpressions.size !in 2..3) {
                 return GMResult.Err(
@@ -582,6 +990,9 @@ internal class Text private constructor(
                         coordinateExpressions.size,
                     ),
                 )
+            }
+            validateAnchor(board, anchor)?.let {
+                return GMResult.Err(it)
             }
             val functions = when (
                 val result = compileCoordinateFunctions(
@@ -616,6 +1027,18 @@ internal class Text private constructor(
                 contentSegments = compiledContent.segments,
                 parse = parse,
                 digits = digits,
+                anchor = anchor,
+                relativeCoordinates =
+                    if (anchor == null) {
+                        null
+                    } else {
+                        DoubleArray(
+                            if (coordinateExpressions.size == 2) 2 else 3,
+                        )
+                    },
+                isLabel = isLabel,
+                initialScreenOffset = offset,
+                isFixed = fixed,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -641,7 +1064,17 @@ internal class Text private constructor(
                     text.addParentsFromJCFunctions(
                         functions + compiledContent.functions,
                     )
-                    GMResult.Ok(text)
+                    anchor?.addChild(text)
+                    if (anchor != null && isLabel) {
+                        text.setParents(listOf(anchor))
+                    }
+                    when (val rotation = text.addRotation(rotationDegrees)) {
+                        is GMResult.Ok -> GMResult.Ok(text)
+                        is GMResult.Err -> {
+                            board.removeObject(text)
+                            rotation
+                        }
+                    }
                 }
                 is GMResult.Err -> registration
             }
@@ -657,8 +1090,13 @@ internal class Text private constructor(
             needsRegularUpdate: Boolean = true,
             parse: Boolean = true,
             digits: Int = 2,
+            anchor: GeometryElement? = null,
+            isLabel: Boolean = false,
+            offset: DoubleArray = doubleArrayOf(0.0, 0.0),
+            fixed: Boolean = false,
             xjc: String? = null,
             yjc: String? = null,
+            rotationDegrees: Double = 0.0,
         ): GMResult<Text, TextError> {
             if (
                 coordinateFunctions.size !in 2..3 &&
@@ -672,6 +1110,9 @@ internal class Text private constructor(
                         coordinateFunctions.size,
                     ),
                 )
+            }
+            validateAnchor(board, anchor)?.let {
+                return GMResult.Err(it)
             }
             val compiledContent = when (
                 val result = compileContent(
@@ -700,6 +1141,18 @@ internal class Text private constructor(
                 contentSegments = compiledContent.segments,
                 parse = parse,
                 digits = digits,
+                anchor = anchor,
+                relativeCoordinates =
+                    if (anchor == null) {
+                        null
+                    } else {
+                        DoubleArray(
+                            if (coordinateFunctions.size == 2) 2 else 3,
+                        )
+                    },
+                isLabel = isLabel,
+                initialScreenOffset = offset,
+                isFixed = fixed,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -723,7 +1176,22 @@ internal class Text private constructor(
                     text.addParentsFromJCFunctions(
                         coordinateFunctions + compiledContent.functions,
                     )
-                    GMResult.Ok(text)
+                    text.addParents(
+                        coordinateFunctions.flatMap {
+                            it.coordinateParents
+                        },
+                    )
+                    anchor?.addChild(text)
+                    if (anchor != null && isLabel) {
+                        text.setParents(listOf(anchor))
+                    }
+                    when (val rotation = text.addRotation(rotationDegrees)) {
+                        is GMResult.Ok -> GMResult.Ok(text)
+                        is GMResult.Err -> {
+                            board.removeObject(text)
+                            rotation
+                        }
+                    }
                 }
                 is GMResult.Err -> registration
             }
@@ -762,6 +1230,7 @@ internal class Text private constructor(
             anchor: GeometryElement,
             relativeCoordinates: DoubleArray,
             isLabel: Boolean,
+            offset: DoubleArray = doubleArrayOf(0.0, 0.0),
         ): DoubleArray {
             val anchorCoordinates =
                 if (isLabel) {
@@ -781,9 +1250,11 @@ internal class Text private constructor(
                 method = Const.COORDS_BY_SCREEN,
                 coordinates = doubleArrayOf(
                     anchorCoordinates.scrCoords[1] +
-                        relativeCoordinates[0],
-                    anchorCoordinates.scrCoords[2] -
-                        relativeCoordinates[1],
+                        relativeCoordinates[0] +
+                        offset.getOrElse(0) { 0.0 },
+                    anchorCoordinates.scrCoords[2] +
+                        relativeCoordinates[1] -
+                        offset.getOrElse(1) { 0.0 },
                 ),
                 board = anchor.board,
                 emitter = false,
@@ -940,6 +1411,7 @@ internal class Text private constructor(
         private fun evaluateContent(
             segments: List<ContentSegment>,
             digits: Int,
+            formatNumber: ((Double, Int) -> String)? = null,
         ): GMResult<String, TextError> {
             val output = StringBuilder()
             for (segment in segments) {
@@ -967,7 +1439,11 @@ internal class Text private constructor(
                             )
                         }
                         output.append(
-                            JsNumberFormat.fixed(value.value, digits),
+                            formatNumber?.invoke(value.value, digits)
+                                ?: JsNumberFormat.fixed(
+                                    value.value,
+                                    digits,
+                                ),
                         )
                     }
                 }

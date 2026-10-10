@@ -6,6 +6,7 @@ package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.Group
 import com.swithun.jsxgraph.core.base.Point
 import kotlin.test.Test
@@ -45,6 +46,57 @@ class GroupCreatorTest {
         assertEquals(listOf("A", "B"), group.groupObjects.keys.toList())
         assertEquals(3, board.objects.size)
         assertEquals(1, board.groups.size)
+    }
+
+    @Test
+    fun creatorFiltersFixedTextAndImageMembersLikeUpstream() {
+        val board = board()
+        val value = evaluate(
+            source =
+                """
+                T = text(1, 1, "free") <<
+                    id: "T", name: "", fixed: false
+                >>;
+                FT = text(2, 2, "fixed") <<
+                    id: "FT", name: "", fixed: true
+                >>;
+                I = image("asset:free", [3, 3], [1, 1]) <<
+                    id: "I", name: "", fixed: false
+                >>;
+                FI = image("asset:fixed", [4, 4], [1, 1]) <<
+                    id: "FI", name: "", fixed: true
+                >>;
+                group(T, FT, I, FI) << id: "mixed", name: "" >>;
+                """.trimIndent(),
+            board = board,
+        )
+        val group = assertIs<Group>(
+            assertIs<JessieCodeRuntimeValue.CompositionReference>(
+                value,
+            ).composition,
+        )
+
+        assertEquals(
+            listOf("T", "FT", "I", "FI"),
+            group.getParents(),
+        )
+        assertEquals(listOf("T", "I"), group.groupObjects.keys.toList())
+        assertEquals(
+            listOf("mixed"),
+            assertIs<CoordsElement>(board.elementById("T")).groups,
+        )
+        assertEquals(
+            listOf("mixed"),
+            assertIs<CoordsElement>(board.elementById("I")).groups,
+        )
+        assertTrue(
+            assertIs<CoordsElement>(board.elementById("FT"))
+                .groups.isEmpty(),
+        )
+        assertTrue(
+            assertIs<CoordsElement>(board.elementById("FI"))
+                .groups.isEmpty(),
+        )
     }
 
     @Test

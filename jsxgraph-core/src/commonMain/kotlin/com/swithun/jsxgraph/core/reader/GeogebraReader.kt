@@ -473,12 +473,14 @@ internal class GeogebraReader(
     ) {
         val values = linkedMapOf<String, GeogebraReaderValue>()
         private val pending = mutableListOf<String>()
+        private var defaultOptions = GeogebraDefaultOptions()
 
         fun read(): GMResult<Unit, GeogebraReaderError> {
             when (val result = writeBoard()) {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
             }
+            setDefaultOptions()
             for (construction in parsed.constructions) {
                 for (command in construction.commands) {
                     if (
@@ -520,6 +522,12 @@ internal class GeogebraReader(
                 }
             }
             return GMResult.Ok(Unit)
+        }
+
+        // JSXGraph 1.13.3:
+        // src/reader/geogebra.js -> setDefaultOptions.
+        private fun setDefaultOptions() {
+            defaultOptions = GeogebraProperties.setDefaultOptions()
         }
 
         // JSXGraph 1.13.3: src/reader/geogebra.js -> writeBoard.
@@ -658,7 +666,7 @@ internal class GeogebraReader(
                     )
                 outputElements += element
             }
-            return when (command.name) {
+            val written = when (command.name) {
                 "point" -> {
                     requireCount(command, 1)?.let { return it }
                     val host = when (
@@ -835,6 +843,13 @@ internal class GeogebraReader(
                     command,
                     outputElements[0],
                 )
+                "text" -> registerSingle(
+                    command.outputs[0],
+                    createText(
+                        construction,
+                        outputElements[0],
+                    ),
+                )
                 "polar" -> createPolar(
                     construction,
                     command,
@@ -855,6 +870,15 @@ internal class GeogebraReader(
                     ),
                 )
             }
+            when (written) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return written
+            }
+            for ((index, output) in outputElements.withIndex()) {
+                val value = values[command.outputs[index]] ?: continue
+                applyElementProperties(output, value)
+            }
+            return GMResult.Ok(Unit)
         }
 
         private fun checkElement(
@@ -871,14 +895,16 @@ internal class GeogebraReader(
                 )
             }
             pending += name
-            val result = when (
-                val element = known ?: construction.elements[name]
-            ) {
+            val element = known ?: construction.elements[name]
+            val result = when (element) {
                 null -> createScalar(construction, name, name)
                 else -> createStandalone(construction, element)
             }
             pending.removeAt(pending.lastIndex)
             if (result is GMResult.Ok) {
+                if (element != null) {
+                    applyElementProperties(element, result.value)
+                }
                 values[name] = result.value
             }
             return result
@@ -3475,6 +3501,39 @@ internal class GeogebraReader(
                     ),
                 ),
             )
+
+        private fun applyElementProperties(
+            source: XmlElement,
+            value: GeogebraReaderValue,
+        ) {
+            val element = when (value) {
+                is GeogebraReaderValue.Element -> value.value
+                is GeogebraReaderValue.ElementScalar -> value.element
+                is GeogebraReaderValue.Scalar -> return
+            }
+            val optionType = when (element) {
+                is Point -> "point"
+                is Line -> "line"
+                is Polygon -> "polygon"
+                is Sector ->
+                    if (element.isAngle) "angle" else "sector"
+                else -> element.elType
+            }
+            val parsed = GeogebraProperties.visualProperties(
+                data = source,
+                attributes = GeogebraProperties.colorProperties(
+                    data = source,
+                    attributes = GeogebraElementAttributes(),
+                ),
+            )
+            element.setAttribute(
+                defaultOptions.attributesFor(optionType) +
+                    GeogebraProperties.visualAttributeMap(
+                        attributes = parsed,
+                        applyDefaultPointStyle = element is Point,
+                    ),
+            )
+        }
 
         private fun resolveValue(
             construction: GeogebraConstruction,

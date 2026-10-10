@@ -15,6 +15,18 @@ internal sealed interface ChartContainerError {
     ) : ChartContainerError
 }
 
+internal sealed interface ChartDataArrayError {
+    val message: String
+
+    data class Rejected(
+        override val message: String,
+    ) : ChartDataArrayError
+}
+
+internal fun interface ChartDataArrayUpdater {
+    fun update(): GMResult<Unit, ChartDataArrayError>
+}
+
 /**
  * Non-rendered Chart container. JSXGraph registers this object after all
  * style-specific children but returns the nested child array from its factory.
@@ -25,7 +37,7 @@ internal class Chart private constructor(
     id: String,
     name: String?,
     needsRegularUpdate: Boolean,
-    private var dataArrayUpdater: (() -> Unit)?,
+    private var dataArrayUpdater: ChartDataArrayUpdater?,
 ) : GeometryElement(
     board = board,
     id = id,
@@ -33,10 +45,18 @@ internal class Chart private constructor(
     elementClass = Const.OBJECT_CLASS_OTHER,
     needsRegularUpdate = needsRegularUpdate,
 ) {
+    internal var dataArrayError: ChartDataArrayError? = null
+        private set
+    private var dataPreparedForBoardUpdate: Boolean = false
+
     // JSXGraph 1.13.3: src/base/chart.js -> update.
     override fun update(fromParent: Boolean): Chart {
         if (needsUpdate) {
-            updateDataArray()
+            if (dataPreparedForBoardUpdate) {
+                dataPreparedForBoardUpdate = false
+            } else {
+                updateDataArray()
+            }
         }
         return this
     }
@@ -49,12 +69,29 @@ internal class Chart private constructor(
 
     // JSXGraph 1.13.3: src/base/chart.js -> updateDataArray.
     internal fun updateDataArray(): Chart {
-        dataArrayUpdater?.invoke()
+        dataArrayError = when (val result = dataArrayUpdater?.update()) {
+            null,
+            is GMResult.Ok,
+            -> null
+            is GMResult.Err -> result.error
+        }
+        return this
+    }
+
+    /**
+     * A host table snapshot must be loaded before this Chart's visible
+     * children update. JSXGraph registers the Chart container after those
+     * children, so Board performs this portable host-boundary preparation
+     * before its normal object-order update pass.
+     */
+    internal fun prepareDataArrayUpdate(): Chart {
+        updateDataArray()
+        dataPreparedForBoardUpdate = true
         return this
     }
 
     internal fun setDataArrayUpdater(
-        updater: (() -> Unit)?,
+        updater: ChartDataArrayUpdater?,
     ): Chart {
         dataArrayUpdater = updater
         return this
@@ -68,7 +105,7 @@ internal class Chart private constructor(
             id: String = "",
             name: String? = null,
             needsRegularUpdate: Boolean = true,
-            dataArrayUpdater: (() -> Unit)? = null,
+            dataArrayUpdater: ChartDataArrayUpdater? = null,
         ): GMResult<Chart, ChartContainerError> {
             val chart = Chart(
                 board = board,

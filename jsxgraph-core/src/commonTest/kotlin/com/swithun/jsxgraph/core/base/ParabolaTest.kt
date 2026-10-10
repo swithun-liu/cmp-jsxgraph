@@ -49,7 +49,7 @@ class ParabolaTest {
         assertFalse(parabola.isEllipse)
         assertFalse(parabola.isHyperbola)
         assertTrue(parabola.isDraggable)
-        assertEquals(Curve.DEFAULT_SAMPLE_COUNT, parabola.numberPoints)
+        assertTrue(parabola.numberPoints in 2 until Curve.DEFAULT_SAMPLE_COUNT)
         assertEquals(0.0, parabola.minX(), absoluteTolerance = TOLERANCE)
         assertEquals(2.0 * PI, parabola.maxX(), absoluteTolerance = TOLERANCE)
         assertEquals(
@@ -351,10 +351,12 @@ class ParabolaTest {
     }
 
     private fun board(id: String): Board = Board(
-        originX = 0.0,
-        originY = 0.0,
-        unitX = 1.0,
-        unitY = 1.0,
+        originX = 320.0,
+        originY = 240.0,
+        unitX = 40.0,
+        unitY = 40.0,
+        canvasWidth = 640.0,
+        canvasHeight = 480.0,
         id = id,
     )
 

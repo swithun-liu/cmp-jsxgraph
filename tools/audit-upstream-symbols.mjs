@@ -40,6 +40,100 @@ const excludedSymbols = new Map([
         "GLopt/GLPK-derived glomin is excluded from the MIT-only project."
     ]
 ]);
+const adaptedSymbols = new Map([
+    [
+        "src/math/ia.js#doubleBitsLE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#toDoubleLE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#lowUintLE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#highUintLE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#doubleBitsBE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#toDoubleBE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#lowUintBE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/math/ia.js#highUintBE",
+        "KMP raw-bit conversion is independent of host byte order."
+    ],
+    [
+        "src/utils/env.js#timerFun",
+        "The browser timeout closure is represented by EnvTimeoutScheduler."
+    ],
+    [
+        "src/utils/xml.js#DP",
+        "The browser DOMParser constructor is replaced by the bounded KMP XML parser."
+    ],
+    [
+        "src/utils/xml.js#parseFromString",
+        "The browser DOMParser call is replaced by the bounded KMP XML parser."
+    ],
+    [
+        "src/parser/jessiecode.js#r",
+        "Kotlin resolves native creators through a stateless registry instead of caching board-bound JavaScript closures."
+    ],
+    [
+        "src/parser/jessiecode.js#clearCache",
+        "The stateless Kotlin creator registry has no board-bound closure cache to clear."
+    ],
+    [
+        "src/parser/jessiecode.js#o",
+        "The generated Jison table-expansion helper is replaced by the native bounded recursive-descent parser."
+    ],
+    [
+        "src/parser/jessiecode.js#Parser",
+        "The generated Jison Parser wrapper is replaced by the native bounded recursive-descent parser."
+    ],
+    [
+        "src/reader/cinderella.js#makeRadiusFun",
+        "The malformed upstream Compass radius closure is preserved as a structured KMP reader failure instead of leaking TypeError."
+    ]
+]);
+const inScopeExcludedSymbols = new Map([
+    ...[
+        ["src/parser/jessiecode.js#create", "Legacy IE 6-8 Object.create shim is not needed by the Kotlin runtime."],
+        ["src/jsxgraph.js#onmousemove", "Browser document event plumbing is owned by the Compose host."],
+        ["src/jsxgraph.js#init", "Browser script-tag bootstrap is outside the pure KMP production runtime."],
+        ["src/jsxgraph.js#makeReload", "Browser script reload plumbing is outside the pure KMP production runtime."],
+        ["src/reader/file.js#cbp", "FileReader/XMLHttpRequest callbacks are host I/O; the KMP reader accepts supplied source bytes or text."],
+        ["src/renderer/abstract.js#cancelbubble", "DOM event cancellation is owned by the Compose host."],
+        ["src/renderer/abstract.js#createButton", "DOM form-node creation is outside the Compose Canvas backend."],
+        ["src/renderer/canvas.js#onload", "Browser image onload dispatch is owned by the KMP image resolver."],
+        ["src/renderer/svg.js#createShadowFilter", "SVG DOM filter construction is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#uniqName", "SVG DOM filter ID generation is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#toStr", "SVG DOM filter serialization is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#toURL", "SVG URL reference formatting is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#createClip", "SVG clipPath DOM construction is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#setClipPath", "SVG clipPath DOM mutation is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#updateClipPathRect", "SVG clipPath DOM mutation is outside the Compose Canvas backend."],
+        ["src/renderer/svg.js#onload", "Browser image onload dispatch is owned by the KMP image resolver."],
+        ["src/renderer/svg.js#onclick", "Browser navigation event dispatch is owned by the Compose host."],
+        ["src/renderer/svg.js#_copyCanvasToImg", "SVG foreignObject/canvas DOM copying is outside the Compose Canvas backend."],
+        ["src/element/button.js#_handler", "DOM button event wiring is owned by a platform control adapter."],
+        ["src/element/checkbox.js#update", "DOM checkbox state synchronization is owned by a platform control adapter."],
+        ["src/element/input.js#update", "DOM input state synchronization is owned by a platform control adapter."],
+        ["src/base/coordselement.js#generatePolynomial", "Symbolic locus polynomial generation is outside the declared CAS scope."],
+        ["src/base/point.js#generatePolynomial", "Symbolic locus polynomial generation is outside the declared CAS scope."],
+        ["src/element/composition.js#generatePolynomial", "Symbolic locus polynomial generation is outside the declared CAS scope."]
+    ]
+]);
 
 if (!existsSync(upstreamRoot)) {
     throw new Error(
@@ -85,15 +179,31 @@ const files = listFiles(upstreamRoot, ".js")
                 `${sourcePath}#${symbol.name}`
             ))
             .map((symbol) => {
+            const symbolKey = `${sourcePath}#${symbol.name}`;
             const mappedLocations = findMappedLocations(
                 sourcePath,
                 symbol.name,
                 kotlinSources
             );
+            const mapped = mappedLocations.length > 0;
+            const adaptationReason = adaptedSymbols.get(symbolKey);
+            const exclusionReason = inScopeExcludedSymbols.get(symbolKey);
+            const classification = exclusionReason !== undefined
+                ? "excluded"
+                : adaptationReason !== undefined
+                    ? mapped
+                        ? "adapted"
+                        : "pending"
+                    : mapped
+                        ? "translated"
+                        : "pending";
             return {
                 ...symbol,
-                mapped: mappedLocations.length > 0,
+                mapped,
                 mappedLocations,
+                classification,
+                classificationReason:
+                    exclusionReason ?? adaptationReason ?? null,
                 kotlinNameMatch: kotlinFunctionNames.has(
                     symbol.name.toLowerCase()
                 )
@@ -156,6 +266,10 @@ const result = {
         (count, file) => count + file.mappedSurfaceSymbolCount,
         0
     ),
+    translatedSymbolCount: countClassification(files, "translated"),
+    adaptedSymbolCount: countClassification(files, "adapted"),
+    excludedSymbolCount: countClassification(files, "excluded"),
+    pendingSymbolCount: countClassification(files, "pending"),
     files
 };
 
@@ -169,9 +283,23 @@ console.log(
         `${result.mappedSymbolCount} symbols with source-specific Kotlin mapping`,
         `${result.surfaceSymbolCount} API-surface symbols`,
         `${result.mappedSurfaceSymbolCount} API-surface symbols with source-specific Kotlin mapping`,
+        `${result.translatedSymbolCount} translated symbols`,
+        `${result.adaptedSymbolCount} KMP-adapted symbols`,
+        `${result.excludedSymbolCount} platform/CAS-excluded symbols`,
+        `${result.pendingSymbolCount} pending symbols`,
         `report: ${relative(repositoryRoot, outputPath)}`
     ].join("\n")
 );
+
+function countClassification(sourceFiles, classification) {
+    return sourceFiles.reduce(
+        (count, file) =>
+            count + file.symbols.filter(
+                (symbol) => symbol.classification === classification
+            ).length,
+        0
+    );
+}
 
 function listFiles(root, suffix) {
     if (!existsSync(root)) {

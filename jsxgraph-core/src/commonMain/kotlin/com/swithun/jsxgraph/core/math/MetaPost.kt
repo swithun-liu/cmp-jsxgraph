@@ -76,18 +76,24 @@ internal object MetaPost {
         var ry: Double = tension
         lateinit var next: Knot
 
+        // JSXGraph 1.13.3: src/math/metapost.js -> left_curl.
         fun leftCurl(): Double = jsOr(lx, 0.0)
 
+        // JSXGraph 1.13.3: src/math/metapost.js -> right_curl.
         fun rightCurl(): Double = jsOr(rx, 0.0)
 
+        // JSXGraph 1.13.3: src/math/metapost.js -> left_tension.
         fun leftTension(): Double = jsOr(ly, 1.0)
 
+        // JSXGraph 1.13.3: src/math/metapost.js -> right_tension.
         fun rightTension(): Double = jsOr(ry, 1.0)
 
+        // JSXGraph 1.13.3: src/math/metapost.js -> set_right_curl.
         fun setRightCurl(value: Double) {
             rx = jsOr(value, 0.0)
         }
 
+        // JSXGraph 1.13.3: src/math/metapost.js -> set_left_curl.
         fun setLeftCurl(value: Double) {
             lx = jsOr(value, 0.0)
         }

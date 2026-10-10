@@ -43,21 +43,24 @@ internal sealed interface PointError {
         val error: IntersectionError,
     ) : PointError
 
+    data class Anchor(
+        val error: CoordsElementAnchorError,
+    ) : PointError
+
     data class Registration(val error: BoardError) : PointError
 }
 
 /**
- * Initial translated slice of JXG.Point.
+ * Translated JXG.Point lifecycle.
  *
- * This slice covers numeric free points, JessieCode string coordinate
+ * This implementation covers numeric free points, JessieCode coordinate
  * constraints, board registration, coordinate updates, bounds, and incidence
  * checks against the translated Point, Line, Segment, Circle, Curve, and
  * Polygon elements, including the static incidence visual flags. It also
  * covers transformed-point construction, persistent 2D transformations, and
- * the Line/Segment/Circle Intersection wrappers in [IntersectionPoint] and
+ * the translated intersection wrappers in [IntersectionPoint] and
  * [OtherIntersectionPoint], screen hit testing, trace snapshots, face/style
- * mutation, and coordinate-constraint replacement. Remaining specialized
- * visual APIs and intersection parent families stay outside this slice.
+ * mutation, and coordinate-constraint replacement.
  */
 internal open class Point internal constructor(
     board: Board,
@@ -571,6 +574,7 @@ internal open class Point internal constructor(
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
             alwaysIntersect: Boolean = false,
+            anchor: GeometryElement? = null,
         ): GMResult<Point, PointError> {
             if (coordinates.size < 2) {
                 return GMResult.Err(
@@ -590,6 +594,23 @@ internal open class Point internal constructor(
             point.baseElement = point
             return when (val registration = board.setId(point, POINT_ID_PREFIX)) {
                 is GMResult.Ok -> {
+                    if (anchor != null) {
+                        when (
+                            val anchored = point.addAnchor(
+                                anchor = anchor,
+                                coordinates = coordinates,
+                                isLabel = false,
+                            )
+                        ) {
+                            is GMResult.Ok -> Unit
+                            is GMResult.Err -> {
+                                board.removeObject(point)
+                                return GMResult.Err(
+                                    PointError.Anchor(anchored.error),
+                                )
+                            }
+                        }
+                    }
                     point.handleSnapToGrid()
                     point.handleSnapToPoints()
                     point.handleAttractors()
@@ -611,6 +632,7 @@ internal open class Point internal constructor(
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
             alwaysIntersect: Boolean = false,
+            anchor: GeometryElement? = null,
         ): GMResult<Point, PointError> {
             if (coordinateExpressions.size < 2) {
                 return GMResult.Err(
@@ -638,6 +660,7 @@ internal open class Point internal constructor(
                 needsRegularUpdate = needsRegularUpdate,
                 fixed = fixed,
                 alwaysIntersect = alwaysIntersect,
+                anchor = anchor,
                 xjc = coordinateExpressions
                     .takeIf { it.size == 2 }
                     ?.get(0),
@@ -656,6 +679,7 @@ internal open class Point internal constructor(
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
             alwaysIntersect: Boolean = false,
+            anchor: GeometryElement? = null,
             xjc: String? = null,
             yjc: String? = null,
         ): GMResult<Point, PointError> {
@@ -703,6 +727,33 @@ internal open class Point internal constructor(
                     point.Yjc = yjc
                     point.applyCoordinateConstraint(initialCoordinates)
                     point.addParentsFromJCFunctions(coordinateFunctions)
+                    point.addParents(
+                        coordinateFunctions.flatMap {
+                            it.coordinateParents
+                        },
+                    )
+                    if (anchor != null) {
+                        when (
+                            val anchored = point.addAnchor(
+                                anchor = anchor,
+                                coordinates =
+                                    if (coordinateFunctions.size == 2) {
+                                        doubleArrayOf(0.0, 0.0)
+                                    } else {
+                                        doubleArrayOf(1.0, 0.0, 0.0)
+                                    },
+                                isLabel = false,
+                            )
+                        ) {
+                            is GMResult.Ok -> Unit
+                            is GMResult.Err -> {
+                                board.removeObject(point)
+                                return GMResult.Err(
+                                    PointError.Anchor(anchored.error),
+                                )
+                            }
+                        }
+                    }
                     point.handleSnapToGrid()
                     point.handleSnapToPoints()
                     point.handleAttractors()
@@ -725,6 +776,7 @@ internal open class Point internal constructor(
             needsRegularUpdate: Boolean = true,
             fixed: Boolean = false,
             alwaysIntersect: Boolean = false,
+            anchor: GeometryElement? = null,
         ): GMResult<Point, PointError> {
             if (transformations.isEmpty()) {
                 return GMResult.Err(
@@ -746,6 +798,23 @@ internal open class Point internal constructor(
             return when (val registration = board.setId(point, POINT_ID_PREFIX)) {
                 is GMResult.Ok -> {
                     point.addParents(listOf(basePoint))
+                    if (anchor != null) {
+                        when (
+                            val anchored = point.addAnchor(
+                                anchor = anchor,
+                                coordinates = doubleArrayOf(0.0, 0.0),
+                                isLabel = false,
+                            )
+                        ) {
+                            is GMResult.Ok -> Unit
+                            is GMResult.Err -> {
+                                board.removeObject(point)
+                                return GMResult.Err(
+                                    PointError.Anchor(anchored.error),
+                                )
+                            }
+                        }
+                    }
                     point.handleSnapToGrid()
                     point.handleSnapToPoints()
                     point.handleAttractors()

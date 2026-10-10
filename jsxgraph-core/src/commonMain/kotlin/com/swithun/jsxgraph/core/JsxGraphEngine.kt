@@ -19,10 +19,13 @@
  */
 package com.swithun.jsxgraph.core
 
-import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.AxisDistance
 import com.swithun.jsxgraph.core.base.Axes3D
+import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.BoardDefaultAxesError
+import com.swithun.jsxgraph.core.base.BoardInputEvent
+import com.swithun.jsxgraph.core.base.Chart
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.Circle3D
 import com.swithun.jsxgraph.core.base.Const
@@ -32,11 +35,14 @@ import com.swithun.jsxgraph.core.base.Face3D
 import com.swithun.jsxgraph.core.base.Face3DAttributes
 import com.swithun.jsxgraph.core.base.ForeignObject
 import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.GeometryElement3D
+import com.swithun.jsxgraph.core.base.GeometryElementEvaluationError
 import com.swithun.jsxgraph.core.base.Group
 import com.swithun.jsxgraph.core.base.Hatch
 import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.HtmlButtonHandler
 import com.swithun.jsxgraph.core.base.HtmlControlDefinition
+import com.swithun.jsxgraph.core.base.HostDrivenBoardAnimationScheduler
 import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
@@ -44,6 +50,7 @@ import com.swithun.jsxgraph.core.base.Line3D
 import com.swithun.jsxgraph.core.base.Mesh3D
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Point3D
+import com.swithun.jsxgraph.core.base.Point3DMoveOptions
 import com.swithun.jsxgraph.core.base.Plane3D
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Polygon3D
@@ -63,9 +70,13 @@ import com.swithun.jsxgraph.core.base.Ticks3D
 import com.swithun.jsxgraph.core.base.Turtle
 import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.base.View3D
+import com.swithun.jsxgraph.core.base.View3DNavigationEvent
 import com.swithun.jsxgraph.core.base.boxPlotPointCount
+import com.swithun.jsxgraph.core.base.createDefaultAxes
+import com.swithun.jsxgraph.core.base.joinScreenTransformations
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.parser.CoreGeometryElementRuntime
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
 import com.swithun.jsxgraph.core.parser.JessieCodeComputerAlgebraError
 import com.swithun.jsxgraph.core.parser.JessieCodeComputerAlgebraLimits
@@ -101,6 +112,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.round
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 data class JsxGraphEngineLimits(
     val maxSourceLength: Int = 1_000_000,
@@ -252,6 +264,21 @@ sealed interface JsxGraphDocumentError {
             "Could not create objects[$objectIndex] '$id' ($type): $reason"
     }
 
+    data class DefaultAxesCreation(
+        val reason: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Could not create the Board default axes: $reason"
+    }
+
+    data class ChartDataUpdate(
+        val id: String,
+        val reason: String,
+    ) : JsxGraphDocumentError {
+        override val message: String =
+            "Could not update chart '$id': $reason"
+    }
+
     data class InvalidAttribute(
         val objectIndex: Int,
         val id: String,
@@ -317,6 +344,139 @@ sealed interface JsxGraphControlInteraction {
     ) : JsxGraphControlInteraction
 }
 
+data class JsxGraphViewportSize(
+    val width: Double,
+    val height: Double,
+)
+
+enum class JsxGraphPointerDevice(
+    internal val upstreamName: String,
+) {
+    MOUSE("mouse"),
+    TOUCH("touch"),
+    PEN("pen"),
+}
+
+/**
+ * Platform-neutral Board pointer input.
+ *
+ * Positions use viewport-local CSS-pixel-equivalent screen units so translated
+ * hit tolerances and multi-pointer transforms retain JSXGraph browser
+ * semantics. The origin is the viewport's top-left and timestamps are
+ * monotonic host uptime milliseconds used by the translated frame-rate
+ * limiter.
+ */
+sealed interface JsxGraphBoardPointerInteraction {
+    data class Down(
+        val pointerId: Long,
+        val position: JsxGraphPoint2D,
+        val viewportSize: JsxGraphViewportSize,
+        val timestampMilliseconds: Long,
+        val device: JsxGraphPointerDevice = JsxGraphPointerDevice.TOUCH,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphBoardPointerInteraction
+
+    data class Move(
+        val position: JsxGraphPoint2D,
+        val viewportSize: JsxGraphViewportSize,
+        val timestampMilliseconds: Long,
+        val pointerId: Long? = null,
+        val device: JsxGraphPointerDevice = JsxGraphPointerDevice.MOUSE,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphBoardPointerInteraction
+
+    data class Up(
+        val pointerId: Long,
+        val position: JsxGraphPoint2D,
+        val viewportSize: JsxGraphViewportSize,
+        val timestampMilliseconds: Long,
+        val device: JsxGraphPointerDevice = JsxGraphPointerDevice.TOUCH,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphBoardPointerInteraction
+
+    data object Leave : JsxGraphBoardPointerInteraction
+}
+
+/**
+ * Portable Cartesian target used by public Point3D movement APIs.
+ */
+data class JsxGraphPoint3DCoordinates(
+    val x: Double,
+    val y: Double,
+    val z: Double,
+)
+
+enum class JsxGraphView3DKey(
+    internal val upstreamKey: String,
+) {
+    ARROW_UP("ArrowUp"),
+    ARROW_DOWN("ArrowDown"),
+    ARROW_LEFT("ArrowLeft"),
+    ARROW_RIGHT("ArrowRight"),
+    COMMA(","),
+    PERIOD("."),
+    LESS_THAN("<"),
+    GREATER_THAN(">"),
+    PAGE_UP("PageUp"),
+    PAGE_DOWN("PageDown"),
+}
+
+/**
+ * Platform-neutral input routed to the translated View3D navigation kernel.
+ *
+ * Pointer positions are Board user coordinates. Hosts provide their current
+ * viewport size so the core can reproduce JSXGraph's pixel-normalized camera
+ * speed and virtual-trackball geometry without accepting platform events.
+ */
+sealed interface JsxGraphView3DInteraction {
+    val viewId: String
+
+    data class PointerDown(
+        override val viewId: String,
+        val position: JsxGraphPoint2D,
+        val viewportSize: JsxGraphViewportSize,
+        val button: Int = 0,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphView3DInteraction
+
+    data class PointerMove(
+        override val viewId: String,
+        val position: JsxGraphPoint2D,
+        val viewportSize: JsxGraphViewportSize,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphView3DInteraction
+
+    data class PointerUp(
+        override val viewId: String,
+    ) : JsxGraphView3DInteraction
+
+    data class Wheel(
+        override val viewId: String,
+        val position: JsxGraphPoint2D,
+        val viewportSize: JsxGraphViewportSize,
+        val deltaY: Double,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphView3DInteraction
+
+    data class KeyDown(
+        override val viewId: String,
+        val key: JsxGraphView3DKey,
+        val shiftKey: Boolean = false,
+        val controlKey: Boolean = false,
+    ) : JsxGraphView3DInteraction
+}
+
+data class JsxGraphView3DInteractionResult(
+    val scene: JsxGraphScene,
+    val consumed: Boolean,
+)
+
 sealed interface JsxGraphInteractionError {
     data class UnknownPoint(
         val id: String,
@@ -324,6 +484,15 @@ sealed interface JsxGraphInteractionError {
 
     data class PointNotDraggable(
         val id: String,
+    ) : JsxGraphInteractionError
+
+    data class PointNotThreeDimensional(
+        val id: String,
+    ) : JsxGraphInteractionError
+
+    data class NonFinitePoint3DCoordinates(
+        val id: String,
+        val coordinates: JsxGraphPoint3DCoordinates,
     ) : JsxGraphInteractionError
 
     data class NonFiniteCoordinates(
@@ -355,8 +524,53 @@ sealed interface JsxGraphInteractionError {
         val reason: String,
     ) : JsxGraphInteractionError
 
+    data class NonFiniteBoardPointerCoordinates(
+        val coordinates: JsxGraphPoint2D,
+    ) : JsxGraphInteractionError
+
+    data class InvalidBoardPointerViewport(
+        val viewportSize: JsxGraphViewportSize,
+    ) : JsxGraphInteractionError
+
     data class ControlHandlerFailure(
         val id: String,
+        val reason: String,
+    ) : JsxGraphInteractionError
+
+    data class NavigationControlUnavailable(
+        val action: JsxGraphNavigationAction,
+    ) : JsxGraphInteractionError
+
+    data class UnknownView3D(
+        val id: String,
+    ) : JsxGraphInteractionError
+
+    data class NonFiniteView3DCoordinates(
+        val id: String,
+        val coordinates: JsxGraphPoint2D,
+    ) : JsxGraphInteractionError
+
+    data class InvalidView3DViewport(
+        val id: String,
+        val viewportSize: JsxGraphViewportSize,
+    ) : JsxGraphInteractionError
+
+    data class InvalidView3DPointerButton(
+        val id: String,
+        val button: Int,
+    ) : JsxGraphInteractionError
+
+    data class InvalidView3DWheelDelta(
+        val id: String,
+        val deltaY: Double,
+    ) : JsxGraphInteractionError
+
+    data class InvalidAnimationElapsedTime(
+        val milliseconds: Double,
+    ) : JsxGraphInteractionError
+
+    data class AnimationFailure(
+        val elementId: String,
         val reason: String,
     ) : JsxGraphInteractionError
 
@@ -372,10 +586,11 @@ sealed interface JsxGraphInteractionError {
 }
 
 /**
- * Mutable production Board session for Point interaction.
+ * Mutable production Board session for interaction and animation.
  *
  * The session owns the translated Board. Compose and other clients only
- * exchange portable scene snapshots and explicit interaction state.
+ * exchange portable scene snapshots, explicit interaction state, and elapsed
+ * frame time.
  */
 class JsxGraphSession internal constructor(
     private val board: Board,
@@ -388,11 +603,46 @@ class JsxGraphSession internal constructor(
     private val interactControlSource: (
         interaction: JsxGraphControlInteraction,
     ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val interactNavigationSource: (
+        action: JsxGraphNavigationAction,
+    ) -> GMResult<
+        JsxGraphNavigationInteractionResult,
+        JsxGraphInteractionError,
+        >,
+    private val interactPointerSource: (
+        interaction: JsxGraphBoardPointerInteraction,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    private val interactView3DSource: (
+        interaction: JsxGraphView3DInteraction,
+    ) -> GMResult<
+        JsxGraphView3DInteractionResult,
+        JsxGraphInteractionError,
+        >,
+    private val hasActiveAnimationsSource: () -> Boolean,
+    private val advanceAnimationsSource: (
+        elapsedMilliseconds: Double,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
 ) {
     private val initialInteractionState = captureInteractionState()
 
     var scene: JsxGraphScene = initialScene
         private set
+
+    val hasActiveAnimations: Boolean
+        get() = hasActiveAnimationsSource()
+
+    fun exportBoard(
+        format: JsxGraphBoardExportFormat,
+        noAttributes: Boolean = false,
+        limits: JsxGraphBoardExportLimits =
+            JsxGraphBoardExportLimits(),
+    ): GMResult<String, JsxGraphBoardExportError> =
+        exportBoardState(
+            board = board,
+            format = format,
+            noAttributes = noAttributes,
+            limits = limits,
+        )
 
     fun movePoint(
         id: String,
@@ -406,6 +656,90 @@ class JsxGraphSession internal constructor(
         point.setPosition(coordinates)
         board.update(draggedElement = point.element)
         return commitOrRollback(previous)
+    }
+
+    fun movePoint3D(
+        id: String,
+        coordinates: JsxGraphPoint3DCoordinates,
+        timeMilliseconds: Double,
+        effect: String? = null,
+        callback: (() -> Unit)? = null,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        if (!coordinates.isFinite()) {
+            return GMResult.Err(
+                JsxGraphInteractionError.NonFinitePoint3DCoordinates(
+                    id = id,
+                    coordinates = coordinates,
+                ),
+            )
+        }
+        val point = (points[id] as? SessionPoint.ThreeDimensional)?.point
+            ?: return GMResult.Err(
+                JsxGraphInteractionError.PointNotThreeDimensional(id),
+            )
+        return when (
+            val result = point.moveTo(
+                where = doubleArrayOf(
+                    coordinates.x,
+                    coordinates.y,
+                    coordinates.z,
+                ),
+                timeMilliseconds = timeMilliseconds,
+                options = Point3DMoveOptions(
+                    callback = callback,
+                    effect = effect,
+                ),
+            )
+        ) {
+            is GMResult.Err -> GMResult.Err(
+                JsxGraphInteractionError.AnimationFailure(
+                    elementId = id,
+                    reason = result.error.toString(),
+                ),
+            )
+            is GMResult.Ok -> commitAnimationStart()
+        }
+    }
+
+    fun movePoint3DAlong(
+        id: String,
+        path: List<JsxGraphPoint3DCoordinates>,
+        timeMilliseconds: Double,
+        callback: (() -> Unit)? = null,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        path.firstOrNull { !it.isFinite() }?.let { coordinates ->
+            return GMResult.Err(
+                JsxGraphInteractionError.NonFinitePoint3DCoordinates(
+                    id = id,
+                    coordinates = coordinates,
+                ),
+            )
+        }
+        val point = (points[id] as? SessionPoint.ThreeDimensional)?.point
+            ?: return GMResult.Err(
+                JsxGraphInteractionError.PointNotThreeDimensional(id),
+            )
+        return when (
+            val result = point.moveAlong(
+                traversePath = path.map { coordinates ->
+                    doubleArrayOf(
+                        coordinates.x,
+                        coordinates.y,
+                        coordinates.z,
+                    )
+                },
+                timeMilliseconds = timeMilliseconds,
+                options = Point3DMoveOptions(callback = callback),
+            )
+        ) {
+            is GMResult.Err -> GMResult.Err(
+                JsxGraphInteractionError.AnimationFailure(
+                    elementId = id,
+                    reason = result.error.toString(),
+                ),
+            )
+            is GMResult.Ok -> commitAnimationStart()
+        }
     }
 
     fun captureInteractionState(): JsxGraphInteractionState {
@@ -443,6 +777,67 @@ class JsxGraphSession internal constructor(
             }
             is GMResult.Err -> result
         }
+
+    fun interactNavigation(
+        action: JsxGraphNavigationAction,
+    ): GMResult<
+        JsxGraphNavigationInteractionResult,
+        JsxGraphInteractionError,
+        > = when (val result = interactNavigationSource(action)) {
+        is GMResult.Ok -> {
+            scene = result.value.scene
+            result
+        }
+        is GMResult.Err -> result
+    }
+
+    fun interactPointer(
+        interaction: JsxGraphBoardPointerInteraction,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        when (val result = interactPointerSource(interaction)) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+
+    fun interactView3D(
+        interaction: JsxGraphView3DInteraction,
+    ): GMResult<
+        JsxGraphView3DInteractionResult,
+        JsxGraphInteractionError,
+        > = when (val result = interactView3DSource(interaction)) {
+        is GMResult.Ok -> {
+            scene = result.value.scene
+            result
+        }
+        is GMResult.Err -> result
+    }
+
+    fun advanceAnimations(
+        elapsedMilliseconds: Double,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        if (
+            !elapsedMilliseconds.isFinite() ||
+            elapsedMilliseconds < 0.0
+        ) {
+            return GMResult.Err(
+                JsxGraphInteractionError.InvalidAnimationElapsedTime(
+                    elapsedMilliseconds,
+                ),
+            )
+        }
+        return when (
+            val result = advanceAnimationsSource(elapsedMilliseconds)
+        ) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> result
+        }
+    }
 
     private fun applyInteractionState(
         state: JsxGraphInteractionState,
@@ -538,7 +933,22 @@ class JsxGraphSession internal constructor(
                 )
             }
         }
+
+    private fun commitAnimationStart():
+        GMResult<JsxGraphScene, JsxGraphInteractionError> =
+        when (val result = snapshotScene()) {
+            is GMResult.Ok -> {
+                scene = result.value
+                result
+            }
+            is GMResult.Err -> GMResult.Err(
+                JsxGraphInteractionError.SceneUpdate(result.error),
+            )
+        }
 }
+
+internal fun JsxGraphPoint3DCoordinates.isFinite(): Boolean =
+    x.isFinite() && y.isFinite() && z.isFinite()
 
 internal sealed interface SessionPoint {
     val element: GeometryElement
@@ -580,8 +990,15 @@ internal sealed interface SessionPoint {
         }
 
         override fun setPosition(coordinates: JsxGraphPoint2D) {
-            point.setPositionFrom2D(
-                doubleArrayOf(coordinates.x, coordinates.y),
+            // JSXGraph 1.13.3: src/3d/point3d.js -> update drag branch.
+            // Pointer input moves element2D; Board.update performs the single
+            // inverse projection onto the 3D slide.
+            point.point2D.setPositionDirectly(
+                method = Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(
+                    coordinates.x,
+                    coordinates.y,
+                ),
             )
         }
     }
@@ -598,6 +1015,17 @@ private data class BoardPointCoordinates(
  * render scene.
  */
 object JsxGraphEngine {
+    private fun defaultAxesErrorReason(
+        error: BoardDefaultAxesError,
+    ): String =
+        when (error) {
+            is BoardDefaultAxesError.PointFactory ->
+                "${error.axis}-axis point ${error.pointIndex}: " +
+                    error.cause
+            is BoardDefaultAxesError.AxisFactory ->
+                "${error.axis}-axis: ${error.cause}"
+        }
+
     internal fun createJessieCodeSession(
         boardOptions: JsxGraphJessieCodeBoardOptions,
         limits: JsxGraphJessieCodeLimits,
@@ -609,6 +1037,7 @@ object JsxGraphEngine {
             return GMResult.Err(error)
         }
 
+        val animationScheduler = HostDrivenBoardAnimationScheduler()
         val board = Board.fromBoundingBox(
             boundingBox = doubleArrayOf(
                 boardOptions.boundingBox.left,
@@ -631,7 +1060,34 @@ object JsxGraphEngine {
                             boardOptions.boundingBox.left
                         ) * CURVE_DOMAIN_PADDING,
             maxCurvePoints = limits.maxCurvePoints,
+            animationScheduler = animationScheduler,
+            localeNumberFormatter =
+                boardOptions.runtimeOptions.localeNumberFormatter,
+            chartTableProvider =
+                boardOptions.runtimeOptions.chartTableProvider,
         )
+        if (
+            boardOptions.axis ||
+            boardOptions.axisAttributes.isNotEmpty()
+        ) {
+            when (
+                val result = createDefaultAxes(
+                    board = board,
+                    axisAttributes = boardOptions.axisAttributes,
+                    defaultAxesAttributes =
+                        boardOptions.defaultAxesAttributes,
+                )
+            ) {
+                is GMResult.Ok -> board.defaultAxes = result.value
+                is GMResult.Err -> return GMResult.Err(
+                    JsxGraphJessieCodeError.Scene(
+                        JsxGraphDocumentError.DefaultAxesCreation(
+                            defaultAxesErrorReason(result.error),
+                        ),
+                    ),
+                )
+            }
+        }
         val created = mutableListOf<CreatedSourceElement>()
         var creationCount = 0
         val trackedCreators = linkedMapOf<String, JessieCodeCreator>()
@@ -678,42 +1134,51 @@ object JsxGraphEngine {
                 )?.let { error ->
                     return@JessieCodeCreator GMResult.Err(error)
                 }
+                val ignoredArrowFunctionsByPath = mapOf(
+                    "attributes.firstarrow" to ARROW_HEAD_ATTRIBUTES,
+                    "attributes.lastarrow" to ARROW_HEAD_ATTRIBUTES,
+                )
+                val ignoredSemanticAttributes =
+                    when (creatorName) {
+                        "comb" -> COMB_SEMANTIC_ATTRIBUTES
+                        "inequality" -> INEQUALITY_SEMANTIC_ATTRIBUTES
+                        "implicitcurve" -> IMPLICIT_CURVE_ATTRIBUTES
+                        "measurement" -> MEASUREMENT_DYNAMIC_ATTRIBUTES
+                        "smartlabel" -> SMART_LABEL_DYNAMIC_ATTRIBUTES
+                        "vectorfield",
+                        "slopefield",
+                        "vectorfield3d",
+                        ->
+                            VECTOR_FIELD_SEMANTIC_ATTRIBUTES
+                        else -> emptySet()
+                    }
+                val ignoredSemanticFunctionsByPath =
+                    if (
+                        creatorName == "vectorfield" ||
+                        creatorName == "slopefield" ||
+                        creatorName == "vectorfield3d"
+                    ) {
+                        mapOf(
+                            "attributes.arrowhead" to
+                                VECTOR_FIELD_ARROW_HEAD_ATTRIBUTES,
+                        )
+                    } else {
+                        emptyMap()
+                    }
                 val sourceAttributes = when (
                     val result = JessieCodeAttributeSnapshotter(
                         maxDepth = limits.maxAttributeDepth,
                         maxValues = limits.maxCollectionSize,
                         location = location,
                         ignoredRootFunctionProperties =
-                            when (creatorName) {
-                                "comb" -> COMB_SEMANTIC_ATTRIBUTES
-                                "inequality" ->
-                                    INEQUALITY_SEMANTIC_ATTRIBUTES
-                                "implicitcurve" ->
-                                    IMPLICIT_CURVE_ATTRIBUTES
-                                "measurement" ->
-                                    MEASUREMENT_DYNAMIC_ATTRIBUTES
-                                "smartlabel" ->
-                                    SMART_LABEL_DYNAMIC_ATTRIBUTES
-                                "vectorfield",
-                                "slopefield",
-                                "vectorfield3d",
-                                ->
-                                    VECTOR_FIELD_SEMANTIC_ATTRIBUTES
-                                else -> emptySet()
-                            },
+                            ignoredSemanticAttributes +
+                                ARROW_VISUAL_ATTRIBUTES,
                         ignoredFunctionPropertiesByPath =
-                            if (
-                                creatorName == "vectorfield" ||
-                                    creatorName == "slopefield" ||
-                                    creatorName == "vectorfield3d"
-                            ) {
-                                mapOf(
-                                    "attributes.arrowhead" to
-                                        VECTOR_FIELD_ARROW_HEAD_ATTRIBUTES,
-                                )
-                            } else {
-                                emptyMap()
-                            },
+                            ignoredArrowFunctionsByPath +
+                                ignoredSemanticFunctionsByPath,
+                        ignoreAllObjectFunctions =
+                            creatorName in
+                                THREE_D_PROXY_ATTRIBUTE_CREATORS,
                     ).snapshot(attributes)
                 ) {
                     is GMResult.Ok -> result.value
@@ -729,6 +1194,12 @@ object JsxGraphEngine {
                     } else {
                         null
                     }
+                val initialDynamicArrowObjects =
+                    if (hasDynamicArrowAttributes(attributes)) {
+                        selectedBoard?.objectsList?.toSet()
+                    } else {
+                        null
+                    }
                 when (
                     val result = nativeCreator.create(
                         board = selectedBoard,
@@ -739,6 +1210,24 @@ object JsxGraphEngine {
                 ) {
                     is GMResult.Err -> result
                     is GMResult.Ok -> {
+                        when (
+                            val dynamicArrows =
+                                applyDynamicArrowAttributes(
+                                    value = result.value,
+                                    attributes = attributes,
+                                    location = location,
+                                )
+                        ) {
+                            is GMResult.Ok -> Unit
+                            is GMResult.Err -> {
+                                rollbackCreatedBoardObjects(
+                                    board = selectedBoard,
+                                    initialObjects =
+                                        initialDynamicArrowObjects,
+                                )
+                                return@JessieCodeCreator dynamicArrows
+                            }
+                        }
                         val nestedSceneElements =
                             createdSceneElements(result.value)
                         if (nestedSceneElements != null) {
@@ -1263,10 +1752,23 @@ object JsxGraphEngine {
         )
         val document = ParsedDocument(
             boundingBox = boardOptions.boundingBox,
-            axis = boardOptions.axis,
+            axis =
+                boardOptions.axis ||
+                    boardOptions.axisAttributes.isNotEmpty(),
             grid = boardOptions.grid,
             keepAspectRatio = boardOptions.keepAspectRatio,
             theme = boardOptions.theme,
+            navigationBar = JsxGraphNavigationConfiguration(
+                showNavigation = boardOptions.showNavigation,
+                showZoom = boardOptions.showZoom,
+                showClearTraces = boardOptions.showClearTraces,
+                showFullscreen = boardOptions.showFullscreen,
+                showScreenshot = boardOptions.showScreenshot,
+                showReload = boardOptions.showReload,
+                fullscreenSymbol = boardOptions.fullscreenSymbol,
+                screenshotSymbol = boardOptions.screenshotSymbol,
+                style = boardOptions.navbar,
+            ).toNavigationBar(),
             objects = emptyList(),
         )
         val initialScene = JsxGraphScene(
@@ -1275,19 +1777,35 @@ object JsxGraphEngine {
             grid = document.grid,
             keepAspectRatio = document.keepAspectRatio,
             elements = emptyList(),
+            navigationBar = document.navigationBar,
         )
-        val snapshotCurrentScene = {
+        var exposeBoardViewport = false
+        val snapshotCurrentScene: () -> GMResult<
+            JsxGraphScene,
+            JsxGraphDocumentError,
+            > = {
             val active = created.filter { sourceElement ->
                 isActiveSourceElement(board, sourceElement)
             }
-            snapshotScene(
-                document = document.copy(
-                    objects = active.map(CreatedSourceElement::source),
-                ),
-                created = active,
-                maxCurvePoints = limits.maxCurvePoints,
-                maxImageSourceLength = limits.maxImageSourceLength,
-            )
+            when (
+                val result = snapshotScene(
+                    board = board,
+                    document = document.copy(
+                        objects = active.map(CreatedSourceElement::source),
+                    ),
+                    created = active,
+                    maxCurvePoints = limits.maxCurvePoints,
+                    maxImageSourceLength = limits.maxImageSourceLength,
+                )
+            ) {
+                is GMResult.Ok -> GMResult.Ok(
+                    result.value.withBoardViewport(
+                        board = board,
+                        enabled = exposeBoardViewport,
+                    ),
+                )
+                is GMResult.Err -> result
+            }
         }
         val dynamicCurveLimitError = {
             created.asSequence()
@@ -1371,6 +1889,117 @@ object JsxGraphEngine {
                                     }
                                 }
                             }
+                        }
+                    }
+                },
+                exportBoardSource = {
+                        format,
+                        noAttributes,
+                        exportLimits,
+                    ->
+                    exportBoardState(
+                        board = board,
+                        format = format,
+                        noAttributes = noAttributes,
+                        limits = exportLimits,
+                    )
+                },
+                movePoint3DSource = movePoint3D@ {
+                        id,
+                        coordinates,
+                        timeMilliseconds,
+                        effect,
+                        callback,
+                    ->
+                    val point = (
+                        created.lastOrNull { sourceElement ->
+                            sourceElement.element.id == id &&
+                                board.elementById(id) ===
+                                sourceElement.element
+                        }
+                        )?.element as? Point3D
+                        ?: return@movePoint3D GMResult.Err(
+                            JsxGraphInteractionError
+                                .PointNotThreeDimensional(id),
+                        )
+                    when (
+                        val result = point.moveTo(
+                            where = doubleArrayOf(
+                                coordinates.x,
+                                coordinates.y,
+                                coordinates.z,
+                            ),
+                            timeMilliseconds = timeMilliseconds,
+                            options = Point3DMoveOptions(
+                                callback = callback,
+                                effect = effect,
+                            ),
+                        )
+                    ) {
+                        is GMResult.Err -> GMResult.Err(
+                            JsxGraphInteractionError.AnimationFailure(
+                                elementId = id,
+                                reason = result.error.toString(),
+                            ),
+                        )
+                        is GMResult.Ok -> when (
+                            val snapshot = snapshotCurrentScene()
+                        ) {
+                            is GMResult.Ok -> snapshot
+                            is GMResult.Err -> GMResult.Err(
+                                JsxGraphInteractionError.SceneUpdate(
+                                    snapshot.error,
+                                ),
+                            )
+                        }
+                    }
+                },
+                movePoint3DAlongSource = movePoint3DAlong@ {
+                        id,
+                        path,
+                        timeMilliseconds,
+                        callback,
+                    ->
+                    val point = (
+                        created.lastOrNull { sourceElement ->
+                            sourceElement.element.id == id &&
+                                board.elementById(id) ===
+                                sourceElement.element
+                        }
+                        )?.element as? Point3D
+                        ?: return@movePoint3DAlong GMResult.Err(
+                            JsxGraphInteractionError
+                                .PointNotThreeDimensional(id),
+                        )
+                    when (
+                        val result = point.moveAlong(
+                            traversePath = path.map { coordinates ->
+                                doubleArrayOf(
+                                    coordinates.x,
+                                    coordinates.y,
+                                    coordinates.z,
+                                )
+                            },
+                            timeMilliseconds = timeMilliseconds,
+                            options =
+                                Point3DMoveOptions(callback = callback),
+                        )
+                    ) {
+                        is GMResult.Err -> GMResult.Err(
+                            JsxGraphInteractionError.AnimationFailure(
+                                elementId = id,
+                                reason = result.error.toString(),
+                            ),
+                        )
+                        is GMResult.Ok -> when (
+                            val snapshot = snapshotCurrentScene()
+                        ) {
+                            is GMResult.Ok -> snapshot
+                            is GMResult.Err -> GMResult.Err(
+                                JsxGraphInteractionError.SceneUpdate(
+                                    snapshot.error,
+                                ),
+                            )
                         }
                     }
                 },
@@ -1669,6 +2298,78 @@ object JsxGraphEngine {
                         )
                     }
                 },
+                interactNavigationSource = { action ->
+                    interactNavigation(
+                        board = board,
+                        navigationBar = document.navigationBar,
+                        action = action,
+                        snapshotScene = {
+                            exposeBoardViewport = true
+                            snapshotCurrentScene()
+                        },
+                    )
+                },
+                interactPointerSource = { interaction ->
+                    interactBoardPointer(
+                        board = board,
+                        interaction = interaction,
+                        snapshotScene = {
+                            exposeBoardViewport = true
+                            snapshotCurrentScene()
+                        },
+                    )
+                },
+                interactView3DSource = { interaction ->
+                    interactView3D(
+                        board = board,
+                        interaction = interaction,
+                        snapshotScene = snapshotCurrentScene,
+                        resourceLimitError = {
+                            dynamicResourceLimitError()?.let { error ->
+                                JsxGraphInteractionError
+                                    .ResourceLimitExceeded(
+                                        resource = error.resource,
+                                        limit = error.limit,
+                                        requestedSize =
+                                            error.requestedSize,
+                                    )
+                            }
+                        },
+                    )
+                },
+                hasActiveAnimationsSource = {
+                    animationScheduler.hasScheduledAnimations
+                },
+                advanceAnimationsSource = { elapsedMilliseconds ->
+                    animationScheduler.advance(elapsedMilliseconds)
+                    val animationError = board.takeAnimationFailure()
+                    val limitError = dynamicResourceLimitError()
+                    if (animationError != null) {
+                        GMResult.Err(
+                            JsxGraphInteractionError.AnimationFailure(
+                                elementId = animationError.elementId,
+                                reason = animationError.reason,
+                            ),
+                        )
+                    } else if (limitError != null) {
+                        GMResult.Err(
+                            JsxGraphInteractionError.ResourceLimitExceeded(
+                                resource = limitError.resource,
+                                limit = limitError.limit,
+                                requestedSize = limitError.requestedSize,
+                            ),
+                        )
+                    } else {
+                        when (val result = snapshotCurrentScene()) {
+                            is GMResult.Ok -> result
+                            is GMResult.Err -> GMResult.Err(
+                                JsxGraphInteractionError.SceneUpdate(
+                                    result.error,
+                                ),
+                            )
+                        }
+                    }
+                },
                 storedSource = { interpreter.code },
             ),
         )
@@ -1679,6 +2380,12 @@ object JsxGraphEngine {
         limits: JsxGraphJessieCodeLimits,
     ): JsxGraphJessieCodeError.InvalidConfiguration? {
         val bounds = boardOptions.boundingBox
+        val navbar = boardOptions.navbar
+        val navbarColors = listOf(
+            navbar.strokeColor,
+            navbar.fillColor,
+            navbar.highlightFillColor,
+        )
         val invalid = when {
             boardOptions.containerId.isEmpty() ->
                 "containerId must not be empty"
@@ -1689,6 +2396,23 @@ object JsxGraphEngine {
                 "boundingBox values must be finite"
             bounds.left >= bounds.right || bounds.bottom >= bounds.top ->
                 "boundingBox must have positive width and height"
+            navbarColors.any { color ->
+                color.red !in 0..255 ||
+                    color.green !in 0..255 ||
+                    color.blue !in 0..255 ||
+                    color.alpha !in 0..255
+            } ->
+                "navbar colors must use channels in 0..255"
+            !navbar.paddingPixels.isFinite() ||
+                navbar.paddingPixels < 0.0 ->
+                "navbar paddingPixels must be finite and non-negative"
+            !navbar.fontSizePixels.isFinite() ||
+                navbar.fontSizePixels <= 0.0 ->
+                "navbar fontSizePixels must be finite and positive"
+            !navbar.rightPixels.isFinite() ->
+                "navbar rightPixels must be finite"
+            !navbar.bottomPixels.isFinite() ->
+                "navbar bottomPixels must be finite"
             limits.maxSourceLength < 0 ->
                 "maxSourceLength must not be negative"
             limits.maxTokens < 0 ->
@@ -1721,6 +2445,10 @@ object JsxGraphEngine {
                 "maxPolygonVertices must be positive"
             limits.maxTextLength < 0 ->
                 "maxTextLength must not be negative"
+            boardOptions.fullscreenSymbol.length > limits.maxTextLength ->
+                "fullscreenSymbol length exceeds maxTextLength"
+            boardOptions.screenshotSymbol.length > limits.maxTextLength ->
+                "screenshotSymbol length exceeds maxTextLength"
             limits.maxImageSourceLength < 0 ->
                 "maxImageSourceLength must not be negative"
             else -> null
@@ -2504,6 +3232,7 @@ object JsxGraphEngine {
                 "snapwidth",
                 "snapvalues",
                 "snapvaluedistance",
+                "moveonup",
                 "withticks",
                 "digits",
                 "precision",
@@ -3671,6 +4400,7 @@ object JsxGraphEngine {
         private val ignoredRootFunctionProperties: Set<String>,
         private val ignoredFunctionPropertiesByPath:
             Map<String, Set<String>>,
+        private val ignoreAllObjectFunctions: Boolean = false,
     ) {
         private var valueCount = 0
         private val activeContainers =
@@ -3704,6 +4434,7 @@ object JsxGraphEngine {
                 if (
                     child is JessieCodeRuntimeValue.FunctionValue &&
                     (
+                        ignoreAllObjectFunctions ||
                         (
                             path == "attributes" &&
                                 name in ignoredRootFunctionProperties
@@ -3856,15 +4587,87 @@ object JsxGraphEngine {
     fun parse(
         source: String,
         limits: JsxGraphEngineLimits = JsxGraphEngineLimits(),
+        runtimeOptions: JsxGraphRuntimeOptions =
+            JsxGraphRuntimeOptions(),
     ): GMResult<JsxGraphScene, JsxGraphDocumentError> =
-        when (val result = createSession(source, limits)) {
+        when (
+            val result = createSession(
+                source = source,
+                limits = limits,
+                runtimeOptions = runtimeOptions,
+            )
+        ) {
             is GMResult.Ok -> GMResult.Ok(result.value.scene)
             is GMResult.Err -> result
         }
 
+    // JSXGraph 1.13.3: src/reader/file.js -> parseString;
+    // src/jsxgraph.js -> loadBoardFromString.
+    internal fun snapshotReaderBoard(
+        board: Board,
+        options: JsxGraphReaderOptions,
+        limits: JsxGraphEngineLimits,
+    ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
+        val created = board.objectsList
+            .filter { element ->
+                element.dump ||
+                    (
+                        element is Text &&
+                            element.isLabel &&
+                            element.anchor?.dump == true
+                        )
+            }
+            .mapIndexed { index, element ->
+                val source = ParsedObject(
+                    index = index,
+                    id = element.id,
+                    type = element.elType.ifEmpty {
+                        themePrimitiveType(element) ?: "unknown"
+                    },
+                    parents = JsonArray(emptyList()),
+                    attributes = JsonObject(
+                        mapOf(
+                            "id" to JsonPrimitive(element.id),
+                            "name" to JsonPrimitive(element.name),
+                            "withlabel" to
+                                JsonPrimitive(element.hasLabel),
+                        ),
+                    ),
+                )
+                CreatedSourceElement(
+                    source = source,
+                    element = element,
+                )
+            }
+        val boundingBox = board.getBoundingBox()
+        val document = ParsedDocument(
+            boundingBox = JsxGraphBoundingBox(
+                left = boundingBox[0],
+                top = boundingBox[1],
+                right = boundingBox[2],
+                bottom = boundingBox[3],
+            ),
+            axis = options.axis || options.axisAttributes.isNotEmpty(),
+            grid = options.grid,
+            keepAspectRatio = board.keepAspectRatio,
+            theme = options.theme,
+            navigationBar = null,
+            objects = created.map(CreatedSourceElement::source),
+        )
+        return snapshotScene(
+            board = board,
+            document = document,
+            created = created,
+            maxCurvePoints = limits.maxCurvePoints,
+            maxImageSourceLength = limits.maxImageSourceLength,
+        )
+    }
+
     fun createSession(
         source: String,
         limits: JsxGraphEngineLimits = JsxGraphEngineLimits(),
+        runtimeOptions: JsxGraphRuntimeOptions =
+            JsxGraphRuntimeOptions(),
     ): GMResult<JsxGraphSession, JsxGraphDocumentError> {
         validateLimits(limits)?.let { error ->
             return GMResult.Err(error)
@@ -3905,13 +4708,15 @@ object JsxGraphEngine {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        return createSession(document, limits)
+        return createSession(document, limits, runtimeOptions)
     }
 
     private fun createSession(
         document: ParsedDocument,
         limits: JsxGraphEngineLimits,
+        runtimeOptions: JsxGraphRuntimeOptions,
     ): GMResult<JsxGraphSession, JsxGraphDocumentError> {
+        val animationScheduler = HostDrivenBoardAnimationScheduler()
         val board = Board.fromBoundingBox(
             boundingBox = doubleArrayOf(
                 document.boundingBox.left,
@@ -3934,7 +4739,29 @@ object JsxGraphEngine {
                             document.boundingBox.left
                         ) * CURVE_DOMAIN_PADDING,
             maxCurvePoints = limits.maxCurvePoints,
+            animationScheduler = animationScheduler,
+            localeNumberFormatter =
+                runtimeOptions.localeNumberFormatter,
+            chartTableProvider =
+                runtimeOptions.chartTableProvider,
         )
+        if (document.axis) {
+            when (
+                val result = createDefaultAxes(
+                    board = board,
+                    axisAttributes = document.axisAttributes,
+                    defaultAxesAttributes =
+                        document.defaultAxesAttributes,
+                )
+            ) {
+                is GMResult.Ok -> board.defaultAxes = result.value
+                is GMResult.Err -> return GMResult.Err(
+                    JsxGraphDocumentError.DefaultAxesCreation(
+                        defaultAxesErrorReason(result.error),
+                    ),
+                )
+            }
+        }
         val created = mutableListOf<CreatedSourceElement>()
         val transformationsById = linkedMapOf<String, Transformation>()
 
@@ -4305,6 +5132,7 @@ object JsxGraphEngine {
         board.fullUpdate()
         val scene = when (
             val result = snapshotScene(
+                board = board,
                 document = document,
                 created = created,
                 maxCurvePoints = limits.maxCurvePoints,
@@ -4333,20 +5161,35 @@ object JsxGraphEngine {
             }
             sessionPoints[sourceElement.source.id] = handle
         }
+        var exposeBoardViewport = false
+        val snapshotCurrentScene: () -> GMResult<
+            JsxGraphScene,
+            JsxGraphDocumentError,
+            > = {
+            when (
+                val result = snapshotScene(
+                    board = board,
+                    document = document,
+                    created = created,
+                    maxCurvePoints = limits.maxCurvePoints,
+                    maxImageSourceLength = limits.maxImageSourceLength,
+                )
+            ) {
+                is GMResult.Ok -> GMResult.Ok(
+                    result.value.withBoardViewport(
+                        board = board,
+                        enabled = exposeBoardViewport,
+                    ),
+                )
+                is GMResult.Err -> result
+            }
+        }
         return GMResult.Ok(
             JsxGraphSession(
                 board = board,
                 points = sessionPoints,
                 initialScene = scene,
-                snapshotScene = {
-                    snapshotScene(
-                        document = document,
-                        created = created,
-                        maxCurvePoints = limits.maxCurvePoints,
-                        maxImageSourceLength =
-                            limits.maxImageSourceLength,
-                    )
-                },
+                snapshotScene = snapshotCurrentScene,
                 interactControlSource = interactControl@ { interaction ->
                     val text = board.elementById(interaction.id) as? Text
                         ?: return@interactControl GMResult.Err(
@@ -4453,19 +5296,63 @@ object JsxGraphEngine {
                         }
                     }
                     board.update()
-                    when (
-                        val result = snapshotScene(
-                            document = document,
-                            created = created,
-                            maxCurvePoints = limits.maxCurvePoints,
-                            maxImageSourceLength =
-                                limits.maxImageSourceLength,
-                        )
-                    ) {
+                    when (val result = snapshotCurrentScene()) {
                         is GMResult.Ok -> result
                         is GMResult.Err -> GMResult.Err(
                             JsxGraphInteractionError.SceneUpdate(result.error),
                         )
+                    }
+                },
+                interactNavigationSource = { action ->
+                    interactNavigation(
+                        board = board,
+                        navigationBar = document.navigationBar,
+                        action = action,
+                        snapshotScene = {
+                            exposeBoardViewport = true
+                            snapshotCurrentScene()
+                        },
+                    )
+                },
+                interactPointerSource = { interaction ->
+                    interactBoardPointer(
+                        board = board,
+                        interaction = interaction,
+                        snapshotScene = {
+                            exposeBoardViewport = true
+                            snapshotCurrentScene()
+                        },
+                    )
+                },
+                interactView3DSource = { interaction ->
+                    interactView3D(
+                        board = board,
+                        interaction = interaction,
+                        snapshotScene = snapshotCurrentScene,
+                    )
+                },
+                hasActiveAnimationsSource = {
+                    animationScheduler.hasScheduledAnimations
+                },
+                advanceAnimationsSource = { elapsedMilliseconds ->
+                    animationScheduler.advance(elapsedMilliseconds)
+                    val animationError = board.takeAnimationFailure()
+                    if (animationError != null) {
+                        GMResult.Err(
+                            JsxGraphInteractionError.AnimationFailure(
+                                elementId = animationError.elementId,
+                                reason = animationError.reason,
+                            ),
+                        )
+                    } else {
+                        when (val result = snapshotCurrentScene()) {
+                            is GMResult.Ok -> result
+                            is GMResult.Err -> GMResult.Err(
+                                JsxGraphInteractionError.SceneUpdate(
+                                    result.error,
+                                ),
+                            )
+                        }
                     }
                 },
             ),
@@ -4528,12 +5415,426 @@ object JsxGraphEngine {
         }
     }
 
+    // JSXGraph 1.13.3: src/3d/view3d.js -> pointerDownHandler,
+    // pointerUpHandler, registered pointermove/wheel handlers, and the
+    // createView3D keydown listener.
+    private fun interactView3D(
+        board: Board,
+        interaction: JsxGraphView3DInteraction,
+        snapshotScene: () -> GMResult<
+            JsxGraphScene,
+            JsxGraphDocumentError,
+            >,
+        resourceLimitError: () ->
+            JsxGraphInteractionError.ResourceLimitExceeded? = { null },
+    ): GMResult<
+        JsxGraphView3DInteractionResult,
+        JsxGraphInteractionError,
+        > {
+        val view = board.elementById(interaction.viewId) as? View3D
+            ?: return GMResult.Err(
+                JsxGraphInteractionError.UnknownView3D(
+                    interaction.viewId,
+                ),
+            )
+        val consumed = when (interaction) {
+            is JsxGraphView3DInteraction.PointerDown -> {
+                if (interaction.button !in 0..2) {
+                    return GMResult.Err(
+                        JsxGraphInteractionError
+                            .InvalidView3DPointerButton(
+                                id = interaction.viewId,
+                                button = interaction.button,
+                            ),
+                    )
+                }
+                val event = when (
+                    val result = view3DPointerEvent(
+                        board = board,
+                        id = interaction.viewId,
+                        position = interaction.position,
+                        viewportSize = interaction.viewportSize,
+                        button = interaction.button,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (event.insideBoard) {
+                    view.pointerDownHandler(event)
+                    view.pointerNavigationActive
+                } else {
+                    false
+                }
+            }
+            is JsxGraphView3DInteraction.PointerMove -> {
+                val event = when (
+                    val result = view3DPointerEvent(
+                        board = board,
+                        id = interaction.viewId,
+                        position = interaction.position,
+                        viewportSize = interaction.viewportSize,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                view.pointerMoveHandler(event)
+            }
+            is JsxGraphView3DInteraction.PointerUp -> {
+                val wasActive = view.pointerNavigationActive
+                view.pointerUpHandler()
+                wasActive
+            }
+            is JsxGraphView3DInteraction.Wheel -> {
+                if (!interaction.deltaY.isFinite()) {
+                    return GMResult.Err(
+                        JsxGraphInteractionError.InvalidView3DWheelDelta(
+                            id = interaction.viewId,
+                            deltaY = interaction.deltaY,
+                        ),
+                    )
+                }
+                val event = when (
+                    val result = view3DPointerEvent(
+                        board = board,
+                        id = interaction.viewId,
+                        position = interaction.position,
+                        viewportSize = interaction.viewportSize,
+                        deltaY = interaction.deltaY,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                view.wheelHandler(event)
+            }
+            is JsxGraphView3DInteraction.KeyDown ->
+                view.keyDownHandler(
+                    View3DNavigationEvent(
+                        key = interaction.key.upstreamKey,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    ),
+                )
+        }
+        if (consumed) {
+            resourceLimitError()?.let { return GMResult.Err(it) }
+        }
+        return when (val result = snapshotScene()) {
+            is GMResult.Ok -> GMResult.Ok(
+                JsxGraphView3DInteractionResult(
+                    scene = result.value,
+                    consumed = consumed,
+                ),
+            )
+            is GMResult.Err -> GMResult.Err(
+                JsxGraphInteractionError.SceneUpdate(result.error),
+            )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/renderer/abstract.js -> drawNavigationBar
+    // button handlers.
+    private fun interactNavigation(
+        board: Board,
+        navigationBar: JsxGraphNavigationBar?,
+        action: JsxGraphNavigationAction,
+        snapshotScene: () -> GMResult<
+            JsxGraphScene,
+            JsxGraphDocumentError,
+            >,
+    ): GMResult<
+        JsxGraphNavigationInteractionResult,
+        JsxGraphInteractionError,
+        > {
+        if (
+            navigationBar?.controls?.none { control ->
+                control.action == action
+            } != false
+        ) {
+            return GMResult.Err(
+                JsxGraphInteractionError.NavigationControlUnavailable(action),
+            )
+        }
+        val hostAction = when (action) {
+            JsxGraphNavigationAction.FULLSCREEN ->
+                JsxGraphNavigationHostAction.FULLSCREEN
+            JsxGraphNavigationAction.SCREENSHOT ->
+                JsxGraphNavigationHostAction.SCREENSHOT
+            JsxGraphNavigationAction.RELOAD ->
+                JsxGraphNavigationHostAction.RELOAD
+            JsxGraphNavigationAction.CLEAR_TRACES -> {
+                board.clearTraces()
+                null
+            }
+            JsxGraphNavigationAction.ZOOM_OUT -> {
+                board.zoomOut()
+                null
+            }
+            JsxGraphNavigationAction.ZOOM_RESET -> {
+                board.zoom100()
+                null
+            }
+            JsxGraphNavigationAction.ZOOM_IN -> {
+                board.zoomIn()
+                null
+            }
+            JsxGraphNavigationAction.PAN_LEFT -> {
+                board.clickLeftArrow()
+                null
+            }
+            // JSXGraph's down glyph invokes clickUpArrow and vice versa.
+            JsxGraphNavigationAction.PAN_DOWN -> {
+                board.clickUpArrow()
+                null
+            }
+            JsxGraphNavigationAction.PAN_UP -> {
+                board.clickDownArrow()
+                null
+            }
+            JsxGraphNavigationAction.PAN_RIGHT -> {
+                board.clickRightArrow()
+                null
+            }
+        }
+        return when (val result = snapshotScene()) {
+            is GMResult.Ok ->
+                GMResult.Ok(
+                    JsxGraphNavigationInteractionResult(
+                        scene = result.value,
+                        hostAction = hostAction,
+                    ),
+                )
+            is GMResult.Err ->
+                GMResult.Err(
+                    JsxGraphInteractionError.SceneUpdate(result.error),
+                )
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> pointerDownListener,
+    // pointerMoveListener, pointerUpListener, pointerLeaveListener,
+    // highlightElements, and dehighlightAll.
+    private fun interactBoardPointer(
+        board: Board,
+        interaction: JsxGraphBoardPointerInteraction,
+        snapshotScene: () -> GMResult<
+            JsxGraphScene,
+            JsxGraphDocumentError,
+            >,
+    ): GMResult<JsxGraphScene, JsxGraphInteractionError> {
+        fun preparePointerInput(
+            position: JsxGraphPoint2D,
+            viewportSize: JsxGraphViewportSize,
+        ): GMResult<Unit, JsxGraphInteractionError> {
+            if (!position.x.isFinite() || !position.y.isFinite()) {
+                return GMResult.Err(
+                    JsxGraphInteractionError
+                        .NonFiniteBoardPointerCoordinates(position),
+                )
+            }
+            if (
+                !viewportSize.width.isFinite() ||
+                !viewportSize.height.isFinite() ||
+                viewportSize.width <= 0.0 ||
+                viewportSize.height <= 0.0
+            ) {
+                return GMResult.Err(
+                    JsxGraphInteractionError
+                        .InvalidBoardPointerViewport(viewportSize),
+                )
+            }
+            board.resizeContainer(
+                width = viewportSize.width,
+                height = viewportSize.height,
+                dontSetHostSize = true,
+            )
+            return GMResult.Ok(Unit)
+        }
+
+        fun boardEvent(
+            pointerId: Long?,
+            position: JsxGraphPoint2D,
+            timestampMilliseconds: Long,
+            device: JsxGraphPointerDevice,
+            shiftKey: Boolean,
+            controlKey: Boolean,
+        ): BoardInputEvent =
+            BoardInputEvent(
+                screenX = position.x,
+                screenY = position.y,
+                pointerId = pointerId,
+                shiftKey = shiftKey,
+                controlKey = controlKey,
+                timestampMilliseconds = timestampMilliseconds,
+                inputDevice = device.upstreamName,
+            )
+
+        when (interaction) {
+            is JsxGraphBoardPointerInteraction.Down -> {
+                when (
+                    val prepared = preparePointerInput(
+                        interaction.position,
+                        interaction.viewportSize,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return prepared
+                }
+                board.pointerDownListener(
+                    boardEvent(
+                        pointerId = interaction.pointerId,
+                        position = interaction.position,
+                        timestampMilliseconds =
+                            interaction.timestampMilliseconds,
+                        device = interaction.device,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    ),
+                )
+            }
+            is JsxGraphBoardPointerInteraction.Move -> {
+                when (
+                    val prepared = preparePointerInput(
+                        interaction.position,
+                        interaction.viewportSize,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return prepared
+                }
+                board.pointerMoveListener(
+                    boardEvent(
+                        pointerId = interaction.pointerId,
+                        position = interaction.position,
+                        timestampMilliseconds =
+                            interaction.timestampMilliseconds,
+                        device = interaction.device,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    ),
+                )
+            }
+            is JsxGraphBoardPointerInteraction.Up -> {
+                when (
+                    val prepared = preparePointerInput(
+                        interaction.position,
+                        interaction.viewportSize,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return prepared
+                }
+                board.pointerUpListener(
+                    boardEvent(
+                        pointerId = interaction.pointerId,
+                        position = interaction.position,
+                        timestampMilliseconds =
+                            interaction.timestampMilliseconds,
+                        device = interaction.device,
+                        shiftKey = interaction.shiftKey,
+                        controlKey = interaction.controlKey,
+                    ),
+                )
+            }
+            JsxGraphBoardPointerInteraction.Leave ->
+                board.pointerLeaveListener(
+                    BoardInputEvent(
+                        screenX = 0.0,
+                        screenY = 0.0,
+                        inputDevice = "mouse",
+                    ),
+                )
+        }
+        return when (val result = snapshotScene()) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                JsxGraphInteractionError.SceneUpdate(result.error),
+            )
+        }
+    }
+
+    private fun view3DPointerEvent(
+        board: Board,
+        id: String,
+        position: JsxGraphPoint2D,
+        viewportSize: JsxGraphViewportSize,
+        button: Int = -1,
+        deltaY: Double = 0.0,
+        shiftKey: Boolean,
+        controlKey: Boolean,
+    ): GMResult<View3DNavigationEvent, JsxGraphInteractionError> {
+        if (!position.x.isFinite() || !position.y.isFinite()) {
+            return GMResult.Err(
+                JsxGraphInteractionError.NonFiniteView3DCoordinates(
+                    id = id,
+                    coordinates = position,
+                ),
+            )
+        }
+        if (
+            !viewportSize.width.isFinite() ||
+            !viewportSize.height.isFinite() ||
+            viewportSize.width <= 0.0 ||
+            viewportSize.height <= 0.0
+        ) {
+            return GMResult.Err(
+                JsxGraphInteractionError.InvalidView3DViewport(
+                    id = id,
+                    viewportSize = viewportSize,
+                ),
+            )
+        }
+        board.resizeContainer(
+            width = viewportSize.width,
+            height = viewportSize.height,
+            dontSetHostSize = true,
+        )
+        val screenX =
+            board.origin.scrCoords[1] + position.x * board.unitX
+        val screenY =
+            board.origin.scrCoords[2] - position.y * board.unitY
+        return GMResult.Ok(
+            View3DNavigationEvent(
+                screenX = screenX,
+                screenY = screenY,
+                boardX = screenX,
+                boardY = screenY,
+                deltaY = deltaY,
+                button = button,
+                shiftKey = shiftKey,
+                controlKey = controlKey,
+                insideBoard =
+                    screenX in 0.0..viewportSize.width &&
+                        screenY in 0.0..viewportSize.height,
+            ),
+        )
+    }
+
     private fun snapshotScene(
+        board: Board,
         document: ParsedDocument,
         created: List<CreatedSourceElement>,
         maxCurvePoints: Int? = null,
         maxImageSourceLength: Int? = null,
     ): GMResult<JsxGraphScene, JsxGraphDocumentError> {
+        for (chart in board.objectsList.filterIsInstance<Chart>()) {
+            chart.dataArrayError?.let { error ->
+                return GMResult.Err(
+                    JsxGraphDocumentError.ChartDataUpdate(
+                        id = chart.id,
+                        reason = error.message,
+                    ),
+                )
+            }
+        }
         val sceneElements = mutableListOf<JsxGraphSceneElement>()
         val effectiveVisibilityByElement =
             mutableMapOf<GeometryElement, Boolean>()
@@ -4563,10 +5864,17 @@ object JsxGraphEngine {
                     } else {
                         expanded += sourceElement
                     }
+                is Line3D -> {
+                    expanded += line3DOwnedPointSourceElements(
+                        sourceElement = sourceElement,
+                        line = element,
+                    )
+                    expanded += sourceElement
+                }
                 else -> expanded += sourceElement
             }
         }
-        for (sourceElement in depthOrderedSourceElements(expanded)) {
+        for (sourceElement in expanded) {
             val curve = sourceElement.element as? Curve
             val image = sourceElement.element as? Image
             if (
@@ -4614,6 +5922,10 @@ object JsxGraphEngine {
                     element.majorGrid?.let { major ->
                         effectiveVisibilityByElement[major] ?: true
                     }
+                is Text ->
+                    element.anchor?.let { anchor ->
+                        effectiveVisibilityByElement[anchor] ?: true
+                    }
                 else -> null
             }
             when (
@@ -4627,6 +5939,27 @@ object JsxGraphEngine {
                     sceneElements += result.value
                     effectiveVisibilityByElement[sourceElement.element] =
                         result.value.style.visible
+                    val elementLabel =
+                        effectiveElementLabel(sourceElement.element)
+                            ?.takeIf { it.plaintext.isNotEmpty() }
+                    if (elementLabel != null) {
+                        when (
+                            val labelResult = sceneElement(
+                                sourceElement =
+                                    elementLabelSourceElement(
+                                        sourceElement = sourceElement,
+                                        label = elementLabel,
+                                    ),
+                                themeName = document.theme,
+                                inheritedVisibility =
+                                    result.value.style.visible,
+                            )
+                        ) {
+                            is GMResult.Ok ->
+                                sceneElements += labelResult.value
+                            is GMResult.Err -> return labelResult
+                        }
+                    }
                     val ticks = curve?.ticks3DDefinition
                     val drawsLabels =
                         (
@@ -4709,15 +6042,45 @@ object JsxGraphEngine {
                 is GMResult.Err -> return result
             }
         }
+        val orderedSceneElements = depthOrderedSceneElements(
+            sceneElements = sceneElements,
+            sourceElements = expanded,
+        )
+        val views3D = board.objectsList
+            .filterIsInstance<View3D>()
+            .map { view ->
+                JsxGraphView3D(
+                    id = view.id,
+                    lowerLeftCorner = JsxGraphPoint2D(
+                        x = view.llftCorner[0],
+                        y = view.llftCorner[1],
+                    ),
+                    size = JsxGraphPoint2D(
+                        x = view.size[0],
+                        y = view.size[1],
+                    ),
+                    azimuth = view.angles.az,
+                    elevation = view.angles.el,
+                    bank = view.angles.bank,
+                    cameraDistance = view.getCameraDistance(),
+                    trackballEnabled = view.trackballEnabled,
+                    pointerNavigationEnabled =
+                        view.pointerNavigationEnabled,
+                    keyboardNavigationEnabled =
+                        view.keyboardNavigationEnabled,
+                )
+            }
         return GMResult.Ok(
             JsxGraphScene(
                 boundingBox = document.boundingBox,
                 axis = document.axis,
                 grid = document.grid,
                 keepAspectRatio = document.keepAspectRatio,
-                elements = sceneElements,
+                elements = orderedSceneElements,
+                navigationBar = document.navigationBar,
+                views3D = views3D,
                 unsupportedRenderFeatures =
-                    sceneElements
+                    orderedSceneElements
                         .filterIsInstance<
                             JsxGraphSceneElement.ForeignObject
                             >()
@@ -4733,6 +6096,24 @@ object JsxGraphEngine {
                                         "SVG foreignObject HTML content.",
                             )
                         },
+            ),
+        )
+    }
+
+    private fun JsxGraphScene.withBoardViewport(
+        board: Board,
+        enabled: Boolean,
+    ): JsxGraphScene {
+        if (!enabled) {
+            return this
+        }
+        val boundingBox = board.getBoundingBox()
+        return copy(
+            boundingBox = JsxGraphBoundingBox(
+                left = boundingBox[0],
+                top = boundingBox[1],
+                right = boundingBox[2],
+                bottom = boundingBox[3],
             ),
         )
     }
@@ -4753,12 +6134,16 @@ object JsxGraphEngine {
                 sourceElement.source
             }
         val element = sourceElement.element
-        val source = baseSource.copy(
-            attributes = mergedVisualAttributes(
-                source = baseSource.attributes,
+        val mergedAttributes = when (
+            val result = mergedVisualAttributes(
+                source = baseSource,
                 element = element,
-            ),
-        )
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val source = baseSource.copy(attributes = mergedAttributes)
         val attributes = AttributeReader(
             source = source,
             defaults = JsxGraphThemes.elementDefaults(
@@ -4791,8 +6176,10 @@ object JsxGraphEngine {
                 is GMResult.Err -> return result
             } &&
             element.name.isNotEmpty() &&
+            effectiveElementLabel(element) == null &&
             !(
-                element is Text &&
+                element is Text3D ||
+                    element is Text &&
                     element.htmlControlDefinition is
                     HtmlControlDefinition.Slider
                 )
@@ -4943,6 +6330,13 @@ object JsxGraphEngine {
                             offsetX = config.labelOffset[0],
                             offsetY = config.labelOffset[1],
                         ),
+                        sliderValueRange =
+                            element.sliderLabelRange()?.let { range ->
+                                JsxGraphSliderTicksValueRange(
+                                    minimum = range.minimum,
+                                    maximum = range.maximum,
+                                )
+                            },
                     ),
                 )
             }
@@ -5300,6 +6694,72 @@ object JsxGraphEngine {
                     is GMResult.Ok -> result.value
                     is GMResult.Err -> return result
                 }
+                // JSXGraph 1.13.3: src/renderer/canvas.js -> drawLine.
+                // Canvas accepts Line#margin but deliberately replaces it
+                // with null / -4 (when arrows are present).
+                when (
+                    val result = attributes.number(
+                        name = "margin",
+                        default = 0.0,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return result
+                }
+                val touchFirstPoint = when (
+                    val result = attributes.boolean(
+                        name = "touchfirstpoint",
+                        default = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val touchLastPoint = when (
+                    val result = attributes.boolean(
+                        name = "touchlastpoint",
+                        default = false,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                fun touchDistance(
+                    point: Point,
+                    enabled: Boolean,
+                    arrow: JsxGraphArrowHead?,
+                ): Double? {
+                    if (
+                        !enabled ||
+                        arrow == null ||
+                        point.evalVisProp("visible") != true
+                    ) {
+                        return null
+                    }
+                    val size =
+                        (point.evalVisProp("size") as? Number)
+                            ?.toDouble() ?: 0.0
+                    val strokeWidth =
+                        (point.evalVisProp("strokewidth") as? Number)
+                            ?.toDouble() ?: 0.0
+                    return size + strokeWidth
+                }
+                val touchFirstPointDistance = touchDistance(
+                    point = element.point1,
+                    enabled = touchFirstPoint,
+                    arrow = firstArrow,
+                )
+                val touchLastPointDistance = touchDistance(
+                    point = element.point2,
+                    enabled = touchLastPoint,
+                    arrow = lastArrow,
+                )
+                if (
+                    touchFirstPointDistance?.isFinite() == false ||
+                    touchLastPointDistance?.isFinite() == false
+                ) {
+                    return GMResult.Err(attributes.nonFiniteGeometry())
+                }
                 // JSXGraph 1.13.3:
                 // src/math/geometry.js -> calcStraight. Ideal endpoint
                 // weights override the visible straightFirst/straightLast
@@ -5318,6 +6778,8 @@ object JsxGraphEngine {
                     straightLast = renderStraightLast,
                     firstArrow = firstArrow,
                     lastArrow = lastArrow,
+                    touchFirstPointDistance = touchFirstPointDistance,
+                    touchLastPointDistance = touchLastPointDistance,
                     axis = axisSceneDefinition(element),
                 )
             }
@@ -5681,6 +7143,43 @@ object JsxGraphEngine {
                 val y = text.Y()
                     .takeIf(Double::isFinite)
                     ?: return GMResult.Err(attributes.nonFiniteGeometry())
+                val affineTransform =
+                    if (text.transformations.isEmpty()) {
+                        null
+                    } else {
+                        val matrix = when (
+                            val result = joinScreenTransformations(
+                                board = text.board,
+                                transformations = text.transformations,
+                            )
+                        ) {
+                            is GMResult.Ok -> result.value
+                            is GMResult.Err -> return GMResult.Err(
+                                attributes.elementCreation(
+                                    result.error.toString(),
+                                ),
+                            )
+                        }
+                        if (
+                            matrix.any { row ->
+                                row.any { value -> !value.isFinite() }
+                            }
+                        ) {
+                            return GMResult.Err(
+                                attributes.nonFiniteGeometry(),
+                            )
+                        }
+                        JsxGraphAffineTransform(
+                            a = matrix[1][1],
+                            b = matrix[2][1],
+                            c = matrix[1][2],
+                            d = matrix[2][2],
+                            e = matrix[1][0],
+                            f = matrix[2][0],
+                            sourceViewportWidth = text.board.canvasWidth,
+                            sourceViewportHeight = text.board.canvasHeight,
+                        )
+                    }
                 val smartLabelDefinition = text.smartLabelDefinition
                 val fontSize = when (
                     val result = attributes.number(
@@ -5689,7 +7188,8 @@ object JsxGraphEngine {
                         minimum = 0.0,
                     )
                 ) {
-                    is GMResult.Ok -> result.value
+                    is GMResult.Ok ->
+                        result.value * text.renderFontSizeScale
                     is GMResult.Err -> return result
                 }
                 val fontUnit = when (
@@ -5849,14 +7349,6 @@ object JsxGraphEngine {
                             is GMResult.Err -> return result
                         }
                     }
-                if (smartLabelDefinition == null && rotate != 0.0) {
-                    return GMResult.Err(
-                        attributes.unsupportedValue(
-                            attribute = "rotate",
-                            value = rotate.toString(),
-                        ),
-                    )
-                }
                 val smartLabel = smartLabelDefinition?.let { definition ->
                     val box = when (val result = definition.boxStyle()) {
                         is GMResult.Ok -> result.value
@@ -6017,6 +7509,8 @@ object JsxGraphEngine {
                     fontSize = fontSize,
                     anchorX = anchorX,
                     anchorY = anchorY,
+                    rotationDegrees = rotate,
+                    affineTransform = affineTransform,
                     screenOffset = JsxGraphPoint2D(
                         x = text.screenOffset[0] +
                             smartLabelScreenOffset[0],
@@ -6143,27 +7637,149 @@ object JsxGraphEngine {
         return GMResult.Ok(sceneElement)
     }
 
+    private fun effectiveElementLabel(
+        element: GeometryElement,
+    ): Text? =
+        (element as? GeometryElement3D)
+            ?.element2D
+            ?.elementLabel
+            ?: element.elementLabel
+
+    private fun line3DOwnedPointSourceElements(
+        sourceElement: CreatedSourceElement,
+        line: Line3D,
+    ): List<CreatedSourceElement> {
+        val rolePoints =
+            if (line.point1 !in line.endpoints) {
+                listOf(
+                    "point1" to line.point1,
+                    "point2" to line.point2,
+                )
+            } else {
+                listOf("point" to line.point)
+            }
+        return rolePoints.mapNotNull { (role, point) ->
+            if (
+                line.childElements[point.id] !== point ||
+                point.point2D.evalVisProp("visible") != true
+            ) {
+                return@mapNotNull null
+            }
+            val attributes = linkedMapOf<String, JsonElement>()
+            attributes.putAll(
+                sourceElement.source.attributes[role] as?
+                    JsonObject ?: JsonObject(emptyMap()),
+            )
+            attributes["id"] = JsonPrimitive(point.id)
+            attributes["name"] = JsonPrimitive(point.name)
+            CreatedSourceElement(
+                source = sourceElement.source.copy(
+                    id = point.id,
+                    type = "point3d",
+                    attributes = JsonObject(attributes),
+                ),
+                element = point,
+            )
+        }
+    }
+
+    private fun elementLabelSourceElement(
+        sourceElement: CreatedSourceElement,
+        label: Text,
+    ): CreatedSourceElement {
+        val attributes = linkedMapOf<String, JsonElement>()
+        attributes.putAll(
+            sourceElement.source.attributes["label"] as?
+                JsonObject ?: JsonObject(emptyMap()),
+        )
+        attributes["id"] = JsonPrimitive(label.id)
+        attributes["name"] = JsonPrimitive(label.name)
+        attributes["withlabel"] = JsonPrimitive(false)
+        return CreatedSourceElement(
+            source = sourceElement.source.copy(
+                id = label.id,
+                type = "text",
+                attributes = JsonObject(attributes),
+            ),
+            element = label,
+        )
+    }
+
     // JSXGraph 1.13.3: src/base/element.js -> setAttribute / evalVisProp.
     // Runtime mutations live on the element and override creation attributes
     // when an immutable Compose scene snapshot is materialized.
     private fun mergedVisualAttributes(
-        source: JsonObject,
+        source: ParsedObject,
         element: GeometryElement,
-    ): JsonObject {
+    ): GMResult<JsonObject, JsxGraphDocumentError> {
         if (element.visualProperties.isEmpty()) {
-            return source
+            return GMResult.Ok(source.attributes)
         }
-        val merged = source.toMutableMap()
+        val merged = source.attributes.toMutableMap()
         for ((name, rawValue) in element.visualProperties) {
-            val evaluated = when (val result = element.evalResult(rawValue)) {
-                is GMResult.Ok -> result.value
-                is GMResult.Err -> continue
-            }
+            val evaluated =
+                if (name in ARROW_VISUAL_ATTRIBUTES) {
+                    when (
+                        val result = evaluateVisualAttribute(
+                            element = element,
+                            value = rawValue,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return GMResult.Err(
+                            JsxGraphDocumentError.ElementCreation(
+                                objectIndex = source.index,
+                                id = source.id,
+                                type = source.type,
+                                reason = result.error.toString(),
+                            ),
+                        )
+                    }
+                } else {
+                    when (val result = element.evalResult(rawValue)) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> continue
+                    }
+                }
             portableAttributeJson(evaluated)?.let { value ->
                 merged[name.lowercase()] = value
             }
         }
-        return JsonObject(merged)
+        return GMResult.Ok(JsonObject(merged))
+    }
+
+    // JSXGraph 1.13.3: src/base/element.js -> evalVisProp / eval;
+    // src/renderer/abstract.js -> getArrowHeadData.
+    private fun evaluateVisualAttribute(
+        element: GeometryElement,
+        value: Any?,
+        depth: Int = 0,
+    ): GMResult<Any?, GeometryElementEvaluationError> {
+        if (depth > MAX_JSON_DEPTH) {
+            return GMResult.Ok(null)
+        }
+        val evaluated = when (val result = element.evalResult(value)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (evaluated !is Map<*, *>) {
+            return GMResult.Ok(evaluated)
+        }
+        val properties = linkedMapOf<String, Any?>()
+        for ((rawName, child) in evaluated) {
+            val name = rawName as? String ?: continue
+            when (
+                val result = evaluateVisualAttribute(
+                    element = element,
+                    value = child,
+                    depth = depth + 1,
+                )
+            ) {
+                is GMResult.Ok -> properties[name] = result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(properties)
     }
 
     private fun portableAttributeJson(
@@ -6257,11 +7873,10 @@ object JsxGraphEngine {
             element.testIfFinite() &&
                 coordinates.x.isFinite() &&
                 coordinates.y.isFinite()
-        val size = when (
-            val result = attributes.number(
-                name = "size",
-                default = 3.0,
-                minimum = 0.0,
+        val sizeOptions = when (
+            val result = pointSizeOptions(
+                board = element.board,
+                attributes = attributes,
             )
         ) {
             is GMResult.Ok -> result.value
@@ -6276,7 +7891,7 @@ object JsxGraphEngine {
             is GMResult.Ok -> normalizePointFace(result.value)
             is GMResult.Err -> return result
         }
-        if (face != "o") {
+        if (face !in POINT_FACES) {
             return GMResult.Err(
                 attributes.unsupportedValue(
                     attribute = "face",
@@ -6290,8 +7905,10 @@ object JsxGraphEngine {
                 name = element.name,
                 style = style,
                 coordinates = coordinates,
-                size = size,
+                size = sizeOptions.size,
                 face = face,
+                sizeUnit = sizeOptions.sizeUnit,
+                zoomScale = sizeOptions.zoomScale,
                 draggable =
                     element.point2D.isDraggable &&
                         !element.isFixed &&
@@ -6337,11 +7954,10 @@ object JsxGraphEngine {
             } else {
                 return GMResult.Err(attributes.nonFiniteGeometry())
             }
-        val size = when (
-            val result = attributes.number(
-                name = "size",
-                default = 3.0,
-                minimum = 0.0,
+        val sizeOptions = when (
+            val result = pointSizeOptions(
+                board = element.board,
+                attributes = attributes,
             )
         ) {
             is GMResult.Ok -> result.value
@@ -6356,7 +7972,7 @@ object JsxGraphEngine {
             is GMResult.Ok -> normalizePointFace(result.value)
             is GMResult.Err -> return result
         }
-        if (face != "o") {
+        if (face !in POINT_FACES) {
             return GMResult.Err(
                 attributes.unsupportedValue(
                     attribute = "face",
@@ -6384,14 +8000,79 @@ object JsxGraphEngine {
                 name = element.name,
                 style = style,
                 coordinates = coordinates,
-                size = size,
+                size = sizeOptions.size,
                 face = face,
+                sizeUnit = sizeOptions.sizeUnit,
+                zoomScale = sizeOptions.zoomScale,
                 draggable =
                     element.isDraggable &&
                         !fixed &&
                         style.visible &&
                         isReal,
                 isReal = isReal,
+            ),
+        )
+    }
+
+    private data class PointSizeOptions(
+        val size: Double,
+        val sizeUnit: String,
+        val zoomScale: Double,
+    )
+
+    // JSXGraph 1.13.3:
+    // src/renderer/abstract.js -> updatePoint;
+    // src/options.js -> Options.point.sizeUnit / zoom.
+    private fun pointSizeOptions(
+        board: Board,
+        attributes: AttributeReader,
+    ): GMResult<PointSizeOptions, JsxGraphDocumentError> {
+        val size = when (
+            val result = attributes.number(
+                name = "size",
+                default = 3.0,
+                minimum = 0.0,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sizeUnit = when (
+            val result = attributes.string(
+                name = "sizeunit",
+                default = "screen",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (sizeUnit !in POINT_SIZE_UNITS) {
+            return GMResult.Err(
+                attributes.unsupportedValue(
+                    attribute = "sizeunit",
+                    value = sizeUnit,
+                ),
+            )
+        }
+        val zoom = when (
+            val result = attributes.boolean(
+                name = "zoom",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            PointSizeOptions(
+                size = size,
+                sizeUnit = sizeUnit,
+                zoomScale =
+                    if (zoom) {
+                        sqrt(board.zoomX * board.zoomY)
+                    } else {
+                        1.0
+                    },
             ),
         )
     }
@@ -6588,6 +8269,15 @@ object JsxGraphEngine {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
+        val handDrawing = when (
+            val result = attributes.boolean(
+                name = "handdrawing",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
         if (
             grid == null &&
             (
@@ -6609,6 +8299,7 @@ object JsxGraphEngine {
                 points = scenePoints,
                 bezierDegree = bezierDegree,
                 lineCap = lineCap,
+                handDrawing = handDrawing,
                 firstArrow = firstArrow,
                 lastArrow = lastArrow,
                 autoRadiusAngle = autoRadiusAngle,
@@ -6658,9 +8349,19 @@ object JsxGraphEngine {
             "schemaVersion",
             "boundingBox",
             "axis",
+            "defaultAxes",
             "grid",
             "keepAspectRatio",
             "theme",
+            "showNavigation",
+            "showZoom",
+            "showClearTraces",
+            "showFullscreen",
+            "showScreenshot",
+            "showReload",
+            "fullscreenSymbol",
+            "screenshotSymbol",
+            "navbar",
             "objects",
         )
         rootObject.keys.firstOrNull { it !in allowedFields }?.let { field ->
@@ -6684,12 +8385,34 @@ object JsxGraphEngine {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
         }
-        val axis = when (
-            val result = booleanField(rootObject, "axis", default = false)
-        ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return result
+        val axisElement = rootObject["axis"]
+        val axis = when (axisElement) {
+            null -> false
+            is JsonObject -> true
+            is JsonPrimitive ->
+                axisElement.booleanOrNull
+                    ?: return invalidField(
+                        "axis",
+                        "a boolean or attribute object",
+                    )
+            else -> return invalidField(
+                "axis",
+                "a boolean or attribute object",
+            )
         }
+        val axisAttributes =
+            (axisElement as? JsonObject)
+                ?.let(::jsonAttributeMap)
+                ?: emptyMap()
+        val defaultAxesAttributes =
+            when (val value = rootObject["defaultAxes"]) {
+                null -> emptyMap()
+                is JsonObject -> jsonAttributeMap(value)
+                else -> return invalidField(
+                    "defaultAxes",
+                    "an object with x and y axis attributes",
+                )
+            }
         val grid = when (
             val result = booleanField(rootObject, "grid", default = false)
         ) {
@@ -6715,6 +8438,15 @@ object JsxGraphEngine {
                     return invalidField("theme", "a string")
                 }
             else -> return invalidField("theme", "a string")
+        }
+        val navigationBar = when (
+            val result = parseNavigationBar(
+                root = rootObject,
+                maxSymbolLength = limits.maxTextLength,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
         }
         val objectArray = rootObject["objects"] as? JsonArray
             ?: return invalidField("objects", "an array")
@@ -6845,9 +8577,12 @@ object JsxGraphEngine {
             ParsedDocument(
                 boundingBox = boundingBox,
                 axis = axis,
+                axisAttributes = axisAttributes,
+                defaultAxesAttributes = defaultAxesAttributes,
                 grid = grid,
                 keepAspectRatio = keepAspectRatio,
                 theme = theme,
+                navigationBar = navigationBar,
                 objects = objects,
             ),
         )
@@ -6886,6 +8621,322 @@ object JsxGraphEngine {
                 bottom = numbers[3],
             ),
         )
+    }
+
+    // JSXGraph 1.13.3: src/options.js -> showNavigation, showZoom,
+    // showClearTraces, showFullscreen, showScreenshot, showReload, navbar;
+    // src/renderer/abstract.js -> drawNavigationBar.
+    private fun parseNavigationBar(
+        root: JsonObject,
+        maxSymbolLength: Int,
+    ): GMResult<JsxGraphNavigationBar?, JsxGraphDocumentError> {
+        val showNavigation = when (
+            val result = booleanField(
+                root,
+                "showNavigation",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showZoom = when (
+            val result = booleanField(root, "showZoom", default = true)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showClearTraces = when (
+            val result = booleanField(
+                root,
+                "showClearTraces",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showFullscreen = when (
+            val result = booleanField(
+                root,
+                "showFullscreen",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showScreenshot = when (
+            val result = booleanField(
+                root,
+                "showScreenshot",
+                default = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val showReload = when (
+            val result = booleanField(root, "showReload", default = false)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fullscreenSymbol = when (
+            val result = navigationStringField(
+                root,
+                "fullscreenSymbol",
+                default = "\u26f6",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val screenshotSymbol = when (
+            val result = navigationStringField(
+                root,
+                "screenshotSymbol",
+                default = "\u2318",
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (fullscreenSymbol.length > maxSymbolLength) {
+            return invalidField(
+                "fullscreenSymbol",
+                "a string no longer than $maxSymbolLength characters",
+            )
+        }
+        if (screenshotSymbol.length > maxSymbolLength) {
+            return invalidField(
+                "screenshotSymbol",
+                "a string no longer than $maxSymbolLength characters",
+            )
+        }
+        val style = when (val result = parseNavigationBarStyle(root["navbar"])) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            JsxGraphNavigationConfiguration(
+                showNavigation = showNavigation,
+                showZoom = showZoom,
+                showClearTraces = showClearTraces,
+                showFullscreen = showFullscreen,
+                showScreenshot = showScreenshot,
+                showReload = showReload,
+                fullscreenSymbol = fullscreenSymbol,
+                screenshotSymbol = screenshotSymbol,
+                style = style,
+            ).toNavigationBar(),
+        )
+    }
+
+    private fun parseNavigationBarStyle(
+        element: JsonElement?,
+    ): GMResult<JsxGraphNavigationBarStyle, JsxGraphDocumentError> {
+        if (element == null) {
+            return GMResult.Ok(JsxGraphNavigationBarStyle())
+        }
+        val value = element as? JsonObject
+            ?: return invalidField("navbar", "an object")
+        val allowedFields = setOf(
+            "strokeColor",
+            "fillColor",
+            "highlightFillColor",
+            "padding",
+            "fontSize",
+            "zIndex",
+            "right",
+            "bottom",
+        )
+        value.keys.firstOrNull { it !in allowedFields }?.let { field ->
+            return GMResult.Err(
+                JsxGraphDocumentError.UnsupportedField("navbar.$field"),
+            )
+        }
+        val defaults = JsxGraphNavigationBarStyle()
+        val strokeColor = when (
+            val result = navigationColorField(
+                value,
+                "strokeColor",
+                defaults.strokeColor,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fillColor = when (
+            val result = navigationColorField(
+                value,
+                "fillColor",
+                defaults.fillColor,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val highlightFillColor = when (
+            val result = navigationColorField(
+                value,
+                "highlightFillColor",
+                defaults.highlightFillColor,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val padding = when (
+            val result = navigationPixelField(
+                value,
+                "padding",
+                defaults.paddingPixels,
+                allowNegative = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val fontSize = when (
+            val result = navigationPixelField(
+                value,
+                "fontSize",
+                defaults.fontSizePixels,
+                allowNegative = false,
+                allowZero = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val right = when (
+            val result = navigationPixelField(
+                value,
+                "right",
+                defaults.rightPixels,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val bottom = when (
+            val result = navigationPixelField(
+                value,
+                "bottom",
+                defaults.bottomPixels,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val zIndex = when (
+            val result = navigationIntegerField(
+                value,
+                "zIndex",
+                defaults.zIndex,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            JsxGraphNavigationBarStyle(
+                strokeColor = strokeColor,
+                fillColor = fillColor,
+                highlightFillColor = highlightFillColor,
+                paddingPixels = padding,
+                fontSizePixels = fontSize,
+                zIndex = zIndex,
+                rightPixels = right,
+                bottomPixels = bottom,
+            ),
+        )
+    }
+
+    private fun navigationStringField(
+        value: JsonObject,
+        name: String,
+        default: String,
+    ): GMResult<String, JsxGraphDocumentError> {
+        val element = value[name] ?: return GMResult.Ok(default)
+        val string = (element as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)
+            ?.content
+            ?: return invalidField(name, "a string")
+        return GMResult.Ok(string)
+    }
+
+    private fun navigationColorField(
+        value: JsonObject,
+        name: String,
+        default: JsxGraphColor,
+    ): GMResult<JsxGraphColor, JsxGraphDocumentError> {
+        val element = value[name] ?: return GMResult.Ok(default)
+        val string = (element as? JsonPrimitive)
+            ?.takeIf(JsonPrimitive::isString)
+            ?.content
+            ?: return invalidField("navbar.$name", "a CSS color string")
+        if (
+            string.equals("none", ignoreCase = true) ||
+            string.equals("transparent", ignoreCase = true)
+        ) {
+            return GMResult.Ok(JsxGraphColor.Transparent)
+        }
+        val color = parseColor(string)
+            ?: return invalidField("navbar.$name", "a portable CSS color")
+        return GMResult.Ok(color)
+    }
+
+    private fun navigationPixelField(
+        value: JsonObject,
+        name: String,
+        default: Double,
+        allowNegative: Boolean = true,
+        allowZero: Boolean = true,
+    ): GMResult<Double, JsxGraphDocumentError> {
+        val element = value[name] ?: return GMResult.Ok(default)
+        val primitive = element as? JsonPrimitive
+            ?: return invalidField(
+                "navbar.$name",
+                "a finite number or px length",
+            )
+        val number = primitive.doubleOrNull
+            ?: primitive.takeIf(JsonPrimitive::isString)
+                ?.content
+                ?.trim()
+                ?.removeSuffix("px")
+                ?.toDoubleOrNull()
+        if (
+            number == null ||
+            !number.isFinite() ||
+            !allowNegative && number < 0.0 ||
+            !allowZero && number == 0.0
+        ) {
+            return invalidField(
+                "navbar.$name",
+                "a finite${if (allowNegative) "" else " non-negative"} " +
+                    "number or px length",
+            )
+        }
+        return GMResult.Ok(number)
+    }
+
+    private fun navigationIntegerField(
+        value: JsonObject,
+        name: String,
+        default: Int,
+    ): GMResult<Int, JsxGraphDocumentError> {
+        val element = value[name] ?: return GMResult.Ok(default)
+        val primitive = element as? JsonPrimitive
+            ?: return invalidField("navbar.$name", "an integer")
+        val number = primitive.intOrNull
+            ?: primitive.takeIf(JsonPrimitive::isString)
+                ?.content
+                ?.trim()
+                ?.toIntOrNull()
+            ?: return invalidField("navbar.$name", "an integer")
+        return GMResult.Ok(number)
     }
 
     private fun parseObject(
@@ -8225,7 +10276,7 @@ object JsxGraphEngine {
             }
         }
 
-    private fun validateLimits(
+    internal fun validateLimits(
         limits: JsxGraphEngineLimits,
     ): JsxGraphDocumentError.InvalidLimits? {
         val invalid = when {
@@ -8464,11 +10515,33 @@ object JsxGraphEngine {
     private data class ParsedDocument(
         val boundingBox: JsxGraphBoundingBox,
         val axis: Boolean,
+        val axisAttributes: Map<String, Any?> = emptyMap(),
+        val defaultAxesAttributes: Map<String, Any?> = emptyMap(),
         val grid: Boolean,
         val keepAspectRatio: Boolean,
         val theme: String,
+        val navigationBar: JsxGraphNavigationBar?,
         val objects: List<ParsedObject>,
     )
+
+    private fun jsonAttributeMap(
+        value: JsonObject,
+    ): Map<String, Any?> =
+        value.entries.associateTo(linkedMapOf()) { (name, child) ->
+            name to jsonAttributeValue(child)
+        }
+
+    private fun jsonAttributeValue(value: JsonElement): Any? =
+        when (value) {
+            JsonNull -> null
+            is JsonObject -> jsonAttributeMap(value)
+            is JsonArray -> value.map(::jsonAttributeValue)
+            is JsonPrimitive -> when {
+                value.isString -> value.content
+                value.booleanOrNull != null -> value.booleanOrNull
+                else -> value.doubleOrNull
+            }
+        }
 
     private data class ParsedObject(
         val index: Int,
@@ -8481,7 +10554,56 @@ object JsxGraphEngine {
     private data class CreatedSourceElement(
         val source: ParsedObject,
         val element: GeometryElement,
-    )
+    ) {
+        init {
+            element.setDumpCreationAttributes(source.attributes)
+            applyPointerInteractionAttributes(source, element)
+        }
+    }
+
+    // JSXGraph 1.13.3: src/jxg.js -> JSXGraph.createElement attribute copy;
+    // src/options.js -> Options.elements pointer-relevant defaults.
+    private fun applyPointerInteractionAttributes(
+        source: ParsedObject,
+        element: GeometryElement,
+    ) {
+        val attributes = normalizeObjectKeys(source.attributes)
+        val pointerAttributes = linkedMapOf<String, Any?>()
+        for (
+            name in listOf(
+                "visible",
+                "highlight",
+                "hasinnerpoints",
+                "fixed",
+                "scalable",
+                "rotatable",
+                "snaptogrid",
+                "snaptopoints",
+            )
+        ) {
+            (attributes[name] as? JsonPrimitive)
+                ?.booleanOrNull
+                ?.let { pointerAttributes[name] = it }
+        }
+        val numericPointerAttributes =
+            if (element is Point) {
+                listOf("size", "strokewidth")
+            } else {
+                listOf("size")
+            }
+        for (name in numericPointerAttributes) {
+            (attributes[name] as? JsonPrimitive)
+                ?.doubleOrNull
+                ?.let { pointerAttributes[name] = it }
+        }
+        val sizeUnit = attributes["sizeunit"] as? JsonPrimitive
+        if (sizeUnit?.isString == true) {
+            pointerAttributes["sizeunit"] = sizeUnit.content
+        }
+        if (pointerAttributes.isNotEmpty()) {
+            element.setAttribute(pointerAttributes)
+        }
+    }
 
     private fun createdSceneElements(
         value: JessieCodeRuntimeValue,
@@ -8524,6 +10646,60 @@ object JsxGraphEngine {
         } else {
             board.elementById(element.id) === element
         }
+    }
+
+    private fun hasDynamicArrowAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Boolean =
+        ARROW_VISUAL_ATTRIBUTES.any { name ->
+            when (val value = attributes.properties[name]) {
+                is JessieCodeRuntimeValue.FunctionValue -> true
+                is JessieCodeRuntimeValue.ObjectValue ->
+                    value.properties.any { (childName, child) ->
+                        childName in ARROW_HEAD_ATTRIBUTES &&
+                            child is JessieCodeRuntimeValue.FunctionValue
+                    }
+                else -> false
+            }
+        }
+
+    // JSXGraph 1.13.3: src/base/element.js -> evalVisProp / eval;
+    // src/renderer/abstract.js -> getArrowHeadData.
+    private fun applyDynamicArrowAttributes(
+        value: JessieCodeRuntimeValue,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<Unit, JessieCodeRuntimeError> {
+        val element = (
+            value as? JessieCodeRuntimeValue.ElementReference
+            )?.element ?: return GMResult.Ok(Unit)
+        for (name in ARROW_VISUAL_ATTRIBUTES) {
+            val attribute = attributes.properties[name] ?: continue
+            val dynamic = when (attribute) {
+                is JessieCodeRuntimeValue.FunctionValue -> true
+                is JessieCodeRuntimeValue.ObjectValue ->
+                    attribute.properties.any { (childName, child) ->
+                        childName in ARROW_HEAD_ATTRIBUTES &&
+                            child is JessieCodeRuntimeValue.FunctionValue
+                    }
+                else -> false
+            }
+            if (!dynamic) {
+                continue
+            }
+            when (
+                val result = CoreGeometryElementRuntime.assignProperty(
+                    element = element,
+                    property = name,
+                    value = attribute,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(Unit)
     }
 
     // JSXGraph 1.13.3: src/base/turtle.js -> init / _attributes /
@@ -8725,33 +10901,65 @@ object JsxGraphEngine {
             else -> emptyList()
         }
 
-    private fun depthOrderedSourceElements(
-        elements: List<CreatedSourceElement>,
-    ): List<CreatedSourceElement> {
-        val ordered = mutableListOf<CreatedSourceElement>()
-        var index = 0
-        while (index < elements.size) {
-            val face = elements[index].element as? Face3D
-            if (face == null) {
-                ordered += elements[index]
-                index += 1
-                continue
-            }
-            val definition = face.polyhedron
-            val group = mutableListOf<CreatedSourceElement>()
-            while (
-                index < elements.size &&
-                (elements[index].element as? Face3D)
-                    ?.polyhedron === definition
-            ) {
-                group += elements[index]
-                index += 1
-            }
-            ordered += group.sortedBy {
-                (it.element as Face3D).zIndex
-            }
+    // JSXGraph 1.13.3:
+    // src/base/board.js -> updateRendererCanvas / _compareDepth.
+    private fun depthOrderedSceneElements(
+        sceneElements: List<JsxGraphSceneElement>,
+        sourceElements: List<CreatedSourceElement>,
+    ): List<JsxGraphSceneElement> {
+        val view = sourceElements
+            .asSequence()
+            .mapNotNull { it.element as? GeometryElement3D }
+            .map(GeometryElement3D::view)
+            .firstOrNull(View3D::depthOrderEnabled)
+            ?: return sceneElements
+        val orderedLayers = view.depthOrderLayers.toSet()
+        if (orderedLayers.isEmpty()) {
+            return sceneElements
         }
-        return ordered
+        val element3DBySceneId = sourceElements
+            .mapNotNull { sourceElement ->
+                (sourceElement.element as? GeometryElement3D)?.let {
+                    sourceElement.element.id to it
+                }
+            }
+            .toMap()
+        return sceneElements
+            .withIndex()
+            .sortedWith { first, second ->
+                val firstLayer = first.value.style.layer
+                val secondLayer = second.value.style.layer
+                if (firstLayer != secondLayer) {
+                    return@sortedWith firstLayer.compareTo(secondLayer)
+                }
+                if (firstLayer !in orderedLayers) {
+                    return@sortedWith first.index.compareTo(second.index)
+                }
+                val first3D = element3DBySceneId[first.value.id]
+                val second3D = element3DBySceneId[second.value.id]
+                when {
+                    first3D == null && second3D == null ->
+                        first.index.compareTo(second.index)
+                    first3D != null && second3D == null -> -1
+                    first3D == null && second3D != null -> 1
+                    else -> {
+                        val firstDepth = first3D?.zIndex
+                        val secondDepth = second3D?.zIndex
+                        if (firstDepth == null || secondDepth == null) {
+                            return@sortedWith first.index.compareTo(
+                                second.index,
+                            )
+                        }
+                        val difference = firstDepth - secondDepth
+                        when {
+                            difference < 0.0 -> -1
+                            difference > 0.0 -> 1
+                            else -> first.index.compareTo(second.index)
+                        }
+                    }
+                }
+            }
+            .map(IndexedValue<JsxGraphSceneElement>::value)
     }
 
     private fun planeMeshSourceElement(
@@ -8822,6 +11030,9 @@ object JsxGraphEngine {
             element: GeometryElement,
             additionalAttributes: Set<String> = emptySet(),
         ): GMResult<Unit, JsxGraphDocumentError> {
+            val isElementReflection =
+                source.type.lowercase() in
+                    setOf("reflection", "mirrorelement")
             val supported =
                 COMMON_ATTRIBUTES +
                     when (element) {
@@ -8840,7 +11051,13 @@ object JsxGraphEngine {
                         is Sphere3D -> SPHERE_3D_ATTRIBUTES
                         is Polygon3D -> POLYGON_3D_ATTRIBUTES
                         is Point3D -> POINT_ATTRIBUTES
-                        is Point -> POINT_ATTRIBUTES
+                        is Point ->
+                            POINT_ATTRIBUTES +
+                                if (element is Slider) {
+                                    setOf("moveonup", "digits", "intl")
+                                } else {
+                                    emptySet()
+                                }
                         is Ticks -> TICKS_ATTRIBUTES
                         is Line ->
                             LINE_ATTRIBUTES +
@@ -8952,7 +11169,12 @@ object JsxGraphEngine {
                         is Image -> IMAGE_ATTRIBUTES
                         else -> emptySet()
                     } +
-                    additionalAttributes
+                    additionalAttributes +
+                    if (isElementReflection) {
+                        setOf("type")
+                    } else {
+                        emptySet()
+                    }
             attributes.keys.firstOrNull { it !in supported }?.let { name ->
                 return GMResult.Err(
                     JsxGraphDocumentError.UnsupportedAttribute(
@@ -8987,12 +11209,24 @@ object JsxGraphEngine {
                 else -> emptyList()
             }
             for (name in nestedNames) {
-                when (
-                    val result = validateHiddenSubElement(
-                        name = name,
-                        supportsIdentity =
-                            element is Line3D ||
+                val nestedValidation =
+                    if (element is Line3D) {
+                        validateNestedAttributes(
+                            name = name,
+                            supported =
+                                COMMON_ATTRIBUTES + POINT_ATTRIBUTES,
+                        )
+                    } else {
+                        validateHiddenSubElement(
+                            name = name,
+                            supportsIdentity =
                                 element is Plane3D ||
+                                isElementReflection &&
+                                (
+                                    element is Line ||
+                                        element is Circle &&
+                                        name == "center"
+                                    ) ||
                                 element is Line &&
                                 element.elType in setOf(
                                     "radicalaxis",
@@ -9009,9 +11243,14 @@ object JsxGraphEngine {
                                         element.isParabola ||
                                         element.isGenericConic
                                     ),
-                        supportsFixed =
-                            element is Line3D ||
+                            supportsFixed =
                                 element is Plane3D ||
+                                isElementReflection &&
+                                (
+                                    element is Line ||
+                                        element is Circle &&
+                                        name == "center"
+                                    ) ||
                                 element is Curve &&
                                 (
                                     element.isComb ||
@@ -9021,11 +11260,12 @@ object JsxGraphEngine {
                                             element.isParabola &&
                                                 name != "line"
                                             )
-                                    ),
-                    )
-                ) {
+                                        ),
+                        )
+                    }
+                when (nestedValidation) {
                     is GMResult.Ok -> Unit
-                    is GMResult.Err -> return result
+                    is GMResult.Err -> return nestedValidation
                 }
             }
             if (element is Curve && element.isBoxPlot) {
@@ -10709,6 +12949,10 @@ object JsxGraphEngine {
         "fillopacity",
         "layer",
         "fixed",
+        "scalable",
+        "rotatable",
+        "snaptogrid",
+        "snaptopoints",
         "highlight",
         "highlightstrokecolor",
         "highlightfillcolor",
@@ -10716,8 +12960,16 @@ object JsxGraphEngine {
         "highlightstrokeopacity",
         "highlightfillopacity",
         "withlabel",
+        "label",
+        "labelcolor",
+        "labelx",
+        "labely",
         "dash",
+        "dashggb",
         "dashscale",
+        "styleggb",
+        "slopewidth",
+        "trace",
         "linecap",
         "clip",
         "shadow",
@@ -10744,14 +12996,36 @@ object JsxGraphEngine {
     private val POINT_ATTRIBUTES = setOf(
         "size",
         "face",
+        "sizeunit",
+        "zoom",
         "alwaysintersect",
         "precision",
     )
+    // JSXGraph 1.13.3: src/options.js -> normalizePointFace;
+    // src/renderer/canvas.js -> drawPoint.
+    private val POINT_FACES = setOf(
+        "x",
+        "o",
+        "[]",
+        "+",
+        "|",
+        "-",
+        "<>",
+        "<<>>",
+        "^",
+        "v",
+        "<",
+        ">",
+    )
+    private val POINT_SIZE_UNITS = setOf("screen", "user")
     private val LINE_ATTRIBUTES = setOf(
         "straightfirst",
         "straightlast",
         "firstarrow",
         "lastarrow",
+        "margin",
+        "touchfirstpoint",
+        "touchlastpoint",
         "nonnegativeonly",
         "point",
         "point1",
@@ -10793,6 +13067,10 @@ object JsxGraphEngine {
         "size",
         "highlightsize",
     )
+    private val ARROW_VISUAL_ATTRIBUTES = setOf(
+        "firstarrow",
+        "lastarrow",
+    )
     private val CIRCLE_ATTRIBUTES = setOf(
         "nonnegativeonly",
         "center",
@@ -10801,6 +13079,7 @@ object JsxGraphEngine {
     private val CURVE_ATTRIBUTES = setOf(
         "doadvancedplot",
         "numberpointshigh",
+        "handdrawing",
         "plotversion",
         "recursiondepthhigh",
         "rdpsmoothing",
@@ -10811,6 +13090,7 @@ object JsxGraphEngine {
         "createpoints",
         "isarrayofcoordinates",
         "points",
+        "curvetype",
     )
     private val IMPLICIT_CURVE_ATTRIBUTES = setOf(
         "margin",
@@ -10921,6 +13201,7 @@ object JsxGraphEngine {
         "ticksdistance",
         "ticksperlabel",
         "type",
+        "intl",
         "useunicodeminus",
     )
     private val TICKS_LABEL_ATTRIBUTES =
@@ -10962,6 +13243,8 @@ object JsxGraphEngine {
     )
     private val TRANSFORMATION_CREATORS =
         setOf("transform", "transform3d")
+    private val THREE_D_PROXY_ATTRIBUTE_CREATORS =
+        setOf("point3d", "line3d", "axis3d", "text3d")
     private val NON_SCENE_CREATORS =
         TRANSFORMATION_CREATORS + setOf("group")
 
@@ -10978,7 +13261,17 @@ object JsxGraphEngine {
             ?.size ?: 0
         val meshCount =
             if (element is Plane3D && element.mesh3D != null) 1 else 0
-        return 1 + labelCount + meshCount
+        val elementLabelCount =
+            if (
+                effectiveElementLabel(element)
+                    ?.plaintext
+                    ?.isNotEmpty() == true
+            ) {
+                1
+            } else {
+                0
+            }
+        return 1 + labelCount + meshCount + elementLabelCount
     }
 
     private fun createdSceneElementCount(
@@ -11010,6 +13303,7 @@ object JsxGraphEngine {
             creatorName = creatorName,
             parents = parents,
             attributes = attributes,
+            board = board,
         )?.let { return it }
         if (creatorName == "ticks3d") {
             return ticks3DSceneElementCount(
@@ -11870,13 +14164,24 @@ object JsxGraphEngine {
         "digits",
         "parse",
         "display",
+        "anchor",
         "anchorx",
         "anchory",
+        "islabel",
+        "alwaysintersect",
+        "position",
+        "distance",
+        "offset",
+        "autoposition",
+        "autopositionmindistance",
+        "autopositionmaxdistance",
+        "autopositionwhitelist",
         "rotate",
         "usemathjax",
         "usekatex",
         "useasciimathml",
         "tofraction",
+        "intl",
     )
     private val MEASUREMENT_ATTRIBUTES = setOf(
         "baseunit",

@@ -914,8 +914,8 @@ internal class Plane3D private constructor(
                 fixed = fixed,
             )
 
-        // JSXGraph: src/3d/linspace3d.js -> createPlane3D,
-        // three-point form.
+        // JSXGraph 1.13.3: src/3d/linspace3d.js -> createPlane3D
+        // three-point closures dir1 / dir2.
         internal fun create(
             view: View3D,
             point1: Point3D,

@@ -108,6 +108,28 @@ try {
                 objects: boardSnapshot(board)
             };
         };
+        let tableIndex = 0;
+        const createTableChart = (style, attributes = {}) => {
+            const table = document.createElement("table");
+            table.id = `chart-table-${tableIndex++}`;
+            table.innerHTML = [
+                "<tr><td>row</td><td>Q1</td><td>Q2</td><td>Q3</td></tr>",
+                "<tr><td>alpha</td><td>1</td><td>2</td><td>3</td></tr>",
+                "<tr><td>beta</td><td>4</td><td>5</td><td>6</td></tr>"
+            ].join("");
+            document.querySelector("#fixtures").appendChild(table);
+            const board = createBoard();
+            const value = board.create("chart", [table.id], {
+                chartStyle: style,
+                withHeaders: true,
+                ...attributes
+            });
+            board.update();
+            return {
+                result: elementSnapshot(value),
+                objects: boardSnapshot(board)
+            };
+        };
         const captureError = (parents, attributes = {}) => {
             const board = createBoard();
             const before = board.objectsList.length;
@@ -183,6 +205,45 @@ try {
                 after: sector.label?.coords?.usrCoords?.slice() ?? null
             };
         })();
+        const pieHighlightBySize = (() => {
+            const board = createBoard();
+            const value = board.create("chart", [1, 1], {
+                chartStyle: "pie",
+                center: [0, 0],
+                radius: 2,
+                labels: ["P", "Q"],
+                highlightOnSector: true,
+                highlightBySize: true,
+                name: ""
+            });
+            const sector = value[0].sectors[0];
+            board.update();
+            const snapshot = () => ({
+                radius: sector.point1.Dist(sector.point2),
+                highlighted: sector.highlighted,
+                highlightedObjectIds: Object.keys(board.highlightedObjects),
+                labelFontSize:
+                    sector.label?.rendNode?.style?.fontSize ?? null,
+                labelVisPropFontSize:
+                    sector.label?.evalVisProp("fontsize") ?? null
+            });
+            const initial = snapshot();
+            sector.highlight();
+            const highlighted = snapshot();
+            sector.highlight();
+            const repeatedHighlight = snapshot();
+            sector.noHighlight();
+            const restored = snapshot();
+            sector.noHighlight();
+            const repeatedNoHighlight = snapshot();
+            return {
+                initial,
+                highlighted,
+                repeatedHighlight,
+                restored,
+                repeatedNoHighlight
+            };
+        })();
         const legend = (() => {
             const board = createBoard();
             const value = board.create("legend", [1, 2], {
@@ -225,8 +286,13 @@ try {
                 {degree: 2}
             ),
             combined: create("line, point", [3, -1, 2]),
+            tableLineFiltered: createTableChart("line", {
+                rows: ["beta"]
+            }),
+            tableBars: createTableChart("bar"),
             dynamicLine,
             dynamicPieLabel,
+            pieHighlightBySize,
             radar: create(
                 "radar",
                 [

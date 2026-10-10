@@ -18,7 +18,8 @@ import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import com.swithun.jsxgraph.core.JsxGraphShadow
 import com.swithun.jsxgraph.core.base.Board
-import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.base.ScreenTransformationError
+import com.swithun.jsxgraph.core.base.joinScreenTransformationMatrices
 import com.swithun.jsxgraph.core.resolveVisualStyle
 import com.swithun.jsxgraph.core.utils.EnvDimensions
 import kotlin.math.abs
@@ -76,6 +77,8 @@ internal sealed interface NativeRendererGeometry {
         val position: JsxGraphPoint2D,
         val size: Double,
         val face: String,
+        val sizeUnit: String,
+        val zoomScale: Double,
     ) : NativeRendererGeometry
 
     data class Line(
@@ -83,6 +86,8 @@ internal sealed interface NativeRendererGeometry {
         val point2: JsxGraphPoint2D,
         val straightFirst: Boolean,
         val straightLast: Boolean,
+        val touchFirstPointDistance: Double? = null,
+        val touchLastPointDistance: Double? = null,
     ) : NativeRendererGeometry
 
     data class Ellipse(
@@ -115,6 +120,7 @@ internal sealed interface NativeRendererGeometry {
         val fontSize: Double,
         val anchorX: String,
         val anchorY: String,
+        val rotationDegrees: Double = 0.0,
     ) : NativeRendererGeometry
 
     data class Image(
@@ -416,6 +422,14 @@ internal open class AbstractRenderer(
                 NativeRendererError.InvalidNumber("updatePoint", size),
             )
         }
+        if (!element.zoomScale.isFinite()) {
+            return GMResult.Err(
+                NativeRendererError.InvalidNumber(
+                    "updatePoint",
+                    element.zoomScale,
+                ),
+            )
+        }
         node.primitive = when (normalizePointFace(element.face)) {
             "o" -> "ellipse"
             "[]" -> "rect"
@@ -425,6 +439,8 @@ internal open class AbstractRenderer(
             position = element.coordinates,
             size = size,
             face = normalizePointFace(element.face),
+            sizeUnit = element.sizeUnit,
+            zoomScale = element.zoomScale,
         )
         return applyVisual(node, element.style)
     }
@@ -458,6 +474,8 @@ internal open class AbstractRenderer(
             point2 = element.point2,
             straightFirst = element.straightFirst,
             straightLast = element.straightLast,
+            touchFirstPointDistance = element.touchFirstPointDistance,
+            touchLastPointDistance = element.touchLastPointDistance,
         )
         val visual = applyVisual(node, element.style)
         if (visual is GMResult.Err) {
@@ -486,14 +504,24 @@ internal open class AbstractRenderer(
         element: JsxGraphSceneElement.Curve,
     ): GMResult<NativeRendererNode, NativeRendererError> {
         node.geometry = NativeRendererGeometry.Path(
-            subpaths = updatePathStringPrim(element),
-            bezierDegree = element.bezierDegree,
-            handDrawing = false,
+            subpaths =
+                if (element.handDrawing) {
+                    updatePathStringBezierPrim(element)
+                } else {
+                    updatePathStringPrim(element)
+                },
+            bezierDegree = if (element.handDrawing) 3 else element.bezierDegree,
+            handDrawing = element.handDrawing,
         )
         val visual = applyVisual(
             node = node,
             style = element.style,
-            lineCap = element.lineCap,
+            lineCap =
+                if (element.handDrawing) {
+                    "round"
+                } else {
+                    element.lineCap
+                },
         )
         if (visual is GMResult.Err) {
             return visual
@@ -720,6 +748,7 @@ internal open class AbstractRenderer(
             fontSize = element.fontSize,
             anchorX = element.anchorX,
             anchorY = element.anchorY,
+            rotationDegrees = element.rotationDegrees,
         )
         return updateTextStyle(node, element.style)
     }
@@ -770,53 +799,38 @@ internal open class AbstractRenderer(
         unitX: Double,
         unitY: Double,
         transformations: List<Array<DoubleArray>>,
-    ): GMResult<Array<DoubleArray>, NativeRendererError> {
-        val values = listOf(originX, originY, unitX, unitY)
-        values.firstOrNull { !it.isFinite() }?.let { invalid ->
-            return GMResult.Err(
-                NativeRendererError.InvalidNumber(
-                    operation = "joinTransforms",
-                    value = invalid,
-                ),
+    ): GMResult<Array<DoubleArray>, NativeRendererError> =
+        when (
+            val result = joinScreenTransformationMatrices(
+                originX = originX,
+                originY = originY,
+                unitX = unitX,
+                unitY = unitY,
+                transformations = transformations,
+            )
+        ) {
+            is GMResult.Ok -> result
+            is GMResult.Err -> GMResult.Err(
+                when (val error = result.error) {
+                    is ScreenTransformationError.InvalidBoardMetric ->
+                        NativeRendererError.InvalidNumber(
+                            operation = "joinTransforms",
+                            value = error.value,
+                        )
+                    is ScreenTransformationError.InvalidMatrixShape ->
+                        NativeRendererError.UnsupportedCapability(
+                            renderer = type,
+                            capability = "non-3x3 transformation",
+                        )
+                    is ScreenTransformationError.Evaluation ->
+                        NativeRendererError.UnsupportedCapability(
+                            renderer = type,
+                            capability =
+                                "transformation evaluation in matrix-only API",
+                        )
+                },
             )
         }
-        if (unitX == 0.0 || unitY == 0.0) {
-            return GMResult.Err(
-                NativeRendererError.InvalidNumber(
-                    operation = "joinTransforms",
-                    value = 0.0,
-                ),
-            )
-        }
-        var matrix = arrayOf(
-            doubleArrayOf(1.0, 0.0, 0.0),
-            doubleArrayOf(-originX / unitX, 1.0 / unitX, 0.0),
-            doubleArrayOf(originY / unitY, 0.0, -1.0 / unitY),
-        )
-        for (transformation in transformations) {
-            if (
-                transformation.size != 3 ||
-                transformation.any { row -> row.size != 3 }
-            ) {
-                return GMResult.Err(
-                    NativeRendererError.UnsupportedCapability(
-                        renderer = type,
-                        capability = "non-3x3 transformation",
-                    ),
-                )
-            }
-            matrix = Mat.matMatMult(transformation, matrix)
-        }
-        matrix = Mat.matMatMult(
-            arrayOf(
-                doubleArrayOf(1.0, 0.0, 0.0),
-                doubleArrayOf(originX, unitX, 0.0),
-                doubleArrayOf(originY, 0.0, -unitY),
-            ),
-            matrix,
-        )
-        return GMResult.Ok(matrix)
-    }
 
     internal fun transformRect(
         node: NativeRendererNode,

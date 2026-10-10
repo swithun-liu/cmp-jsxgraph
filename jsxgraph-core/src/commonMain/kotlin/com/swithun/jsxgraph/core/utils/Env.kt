@@ -597,6 +597,8 @@ internal object Env {
     ) {
         val todo = ArrayDeque(items)
         var processedCount = 0
+        // JSXGraph 1.13.3: src/utils/env.js ->
+        // timedChunk closure timerFun.
         lateinit var timerFunction: () -> Unit
         timerFunction = timer@{
             val start = clock.nowMilliseconds()

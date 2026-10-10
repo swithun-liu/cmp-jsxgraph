@@ -72,9 +72,10 @@ internal data class CircleTraceSnapshot(
 )
 
 /**
- * Initial translated slice of JXG.Circle.
+ * Translated JXG.Circle lifecycle.
  *
- * This slice covers circles defined by two or three registered points, a fixed
+ * This implementation covers circles defined by two or three registered
+ * points, a fixed
  * numeric radius, a registered line, or a registered circle. It includes
  * dependency links, standard and quadratic forms, cubic Bezier approximation,
  * numeric queries, JessieCode string or function radii, and static
@@ -264,6 +265,24 @@ internal open class Circle internal constructor(
         prepareUpdate()
         board.update()
         return this
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> twoFingerTouchCircle,
+    // pointRadius branch guarded by updateRadius.origin being numeric.
+    internal fun scaleStaticRadiusForTwoFinger(
+        factor: Double,
+    ): Boolean {
+        if (
+            method != POINT_RADIUS_METHOD ||
+            radiusValue == null ||
+            nativeRadiusFunction != null ||
+            updateRadius != null ||
+            radiusFunction != null
+        ) {
+            return false
+        }
+        setRadius(radius * factor)
+        return true
     }
 
     // JSXGraph 1.13.3: src/base/circle.js -> setRadius / Radius(value).
@@ -536,13 +555,19 @@ internal open class Circle internal constructor(
     }
 
     // JSXGraph 1.13.3: src/base/circle.js -> getParents.
-    // GeometryElement.parents already owns the JVM getParents signature.
-    internal fun parentData(): List<Any> =
+    internal fun parentData(): List<Any?> =
         if (parents.size == 1) {
-            parents.map { it as Any } + radius
+            parents + radius
         } else {
             parents.toList()
         }
+
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(parentData())
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     // JSXGraph 1.13.3: src/base/circle.js -> notifyParents.
     internal fun notifyParents(

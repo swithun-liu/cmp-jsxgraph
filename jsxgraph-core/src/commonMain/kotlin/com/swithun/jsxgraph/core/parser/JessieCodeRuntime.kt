@@ -259,6 +259,12 @@ internal sealed interface JessieCodeRuntimeValue {
         val isMap: Boolean = false,
         val dependencies: Map<String, GeometryElement> = emptyMap(),
         val creator: JessieCodeCreator? = null,
+        // JSXGraph 1.13.3: src/parser/jessiecode.js -> defineFunction.
+        // JavaScript functions retain reconstructable source through
+        // Function.prototype.toString(); the native runtime stores the
+        // equivalent compiled JessieCode expression explicitly.
+        val sourceExpression: String? = null,
+        val javaScriptSourceExpression: String? = null,
     ) : JessieCodeRuntimeValue
 
     class BoardReference(
@@ -284,9 +290,9 @@ internal sealed interface JessieCodeRuntimeValue {
 /**
  * Adapter for translated element methods and Value() semantics.
  *
- * The complete JSXGraph methodMap and slider contracts are not translated
- * yet. Callers can expose the currently available subset without teaching the
- * evaluator about individual element classes.
+ * All active JSXGraph 1.13.3 methodMap aliases are routed by the core runtime.
+ * The upstream-empty View3D and Point3D maps remain empty instead of exposing
+ * speculative methods.
  */
 internal interface JessieCodeElementRuntime {
     fun valueOf(

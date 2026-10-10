@@ -125,7 +125,7 @@ internal data class Curve3DVectorFieldSnapshot(
 )
 
 internal data class Curve3DVectorFieldDefinition(
-    val field: Curve3DVectorFieldFunction,
+    var field: Curve3DVectorFieldFunction,
     val xData: List<JessieCodeCoordinateFunction>,
     val yData: List<JessieCodeCoordinateFunction>,
     val zData: List<JessieCodeCoordinateFunction>,

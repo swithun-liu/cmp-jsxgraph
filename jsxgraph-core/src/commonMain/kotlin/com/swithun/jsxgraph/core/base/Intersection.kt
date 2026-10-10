@@ -183,6 +183,24 @@ internal class IntersectionPoint private constructor(
         return GMResult.Ok(doubleArrayOf(first, second))
     }
 
+    // JSXGraph 1.13.3: src/base/point.js ->
+    // createIntersectionPoint.getParents.
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        when (val result = currentIntersectionNumbers()) {
+            is GMResult.Ok ->
+                GMResult.Ok(
+                    parents + result.value.map { value -> value },
+                )
+            is GMResult.Err ->
+                GMResult.Err(
+                    GeometryElementDumpError.ParentEvaluation(
+                        elementId = id,
+                        reason = result.error.toString(),
+                    ),
+                )
+        }
+
     private fun coordinatesResult(
         external: Boolean,
     ): GMResult<DoubleArray, IntersectionError> {
@@ -627,6 +645,11 @@ private fun isSupportedOtherPair(
             )
 }
 
+/**
+ * JSXGraph 1.13.3: src/math/geometry.js -> intersectionFunction local func
+ * branches for Curve/Curve, Curve/Line, Polygon/Line, path/path, Line/Line,
+ * and the analytic Line/Circle/Arc fallback.
+ */
 internal fun intersectionCoordinates(
     first: GeometryElement,
     second: GeometryElement,
@@ -778,6 +801,10 @@ internal fun intersectionCoordinates(
     return GMResult.Ok(result)
 }
 
+/**
+ * JSXGraph 1.13.3: src/math/geometry.js -> otherIntersectionFunction local
+ * func branch.
+ */
 private fun otherIntersectionCoordinates(
     first: GeometryElement,
     second: GeometryElement,

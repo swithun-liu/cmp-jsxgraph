@@ -86,6 +86,7 @@ class JsxGraphSphere3DTest {
                           "parents": ["view", "center", "surfacePoint"],
                           "attributes": {
                             "name": "",
+                            "doAdvancedPlot": false,
                             "numberPointsHigh": 17,
                             "gradient": "none"
                           }
@@ -351,6 +352,7 @@ class JsxGraphSphere3DTest {
                           "parents": ["view", [0, 0, 0], 1],
                           "attributes": {
                             "name": "",
+                            "doAdvancedPlot": false,
                             "numberPointsHigh": 9
                           }
                         }

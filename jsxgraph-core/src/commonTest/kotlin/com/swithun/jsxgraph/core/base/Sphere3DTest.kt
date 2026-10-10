@@ -90,6 +90,7 @@ class Sphere3DTest {
                 center = center,
                 radiusSource = Line3DCoordinateValue.Numeric(1.0),
                 sampleCount = 17,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "sphere",
                 name = "",
             ),
@@ -165,7 +166,10 @@ class Sphere3DTest {
         )
         assertEquals(setOf(restoredProxy.id), sphere.childElements.keys)
         assertEquals(
-            setOf(restoredProxy.id),
+            setOfNotNull(
+                center.point2D.elementLabel?.id,
+                restoredProxy.id,
+            ),
             center.point2D.childElements.keys,
         )
     }

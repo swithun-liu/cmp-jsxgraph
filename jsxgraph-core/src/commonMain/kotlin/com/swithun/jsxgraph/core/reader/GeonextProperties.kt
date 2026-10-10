@@ -2,7 +2,7 @@
  * Kotlin translation of JSXGraph.
  * Upstream: src/reader/geonext.js -> changeOriginIds, gEBTN,
  * colorProperties, firstLevelProperties, defProperties, visualProperties,
- * transformProperties, readNodes, readNode point/line/circle/arrow/
+ * transformProperties, readNodes, readNode point/CAS/line/circle/arrow/
  * intersection/arc/angle/text property branches, subtreeToString, and
  * readViewPort.
  * Copyright 2008-2026 Matthias Ehmann, Michael Gerhaeuser, Carsten Miller,
@@ -186,11 +186,34 @@ internal object GeonextProperties {
         )
     }
 
+    // JSXGraph 1.13.3: src/reader/geonext.js -> readImage.
+    internal fun readImage(
+        node: XmlNode?,
+    ): String {
+        val image = StringBuilder()
+        var current = node
+        while (current != null) {
+            current.data?.let(image::append)
+            current = current.nextSibling
+        }
+        return image.toString()
+    }
+
+    // JSXGraph 1.13.3: src/reader/geonext.js -> readConditions.
+    internal fun readConditions(
+        node: XmlElement?,
+    ): String =
+        node
+            ?.getElementsByTagName(DATA_TAG)
+            ?.joinToString(separator = "", transform = ::serializeNode)
+            .orEmpty()
+
     internal fun readElementProperties(
         data: XmlElement,
         limits: GeonextPropertyLimits,
     ): GMResult<GeonextElementProperties, GeonextPropertyError> {
-        val point = data.nodeName == POINT_TAG
+        val point =
+            data.nodeName == POINT_TAG || data.nodeName == CAS_TAG
         val lineLike =
             data.nodeName == LINE_TAG || data.nodeName == ARROW_TAG
         val circle = data.nodeName == CIRCLE_TAG
@@ -1028,12 +1051,7 @@ internal object GeonextProperties {
         data: XmlElement,
     ): GMResult<Unit, GeonextPropertyError> {
         val color = data.getElementsByTagName(COLOR_TAG).firstOrNull()
-            ?: return GMResult.Err(
-                GeonextPropertyError.MissingTag(
-                    parent = data.nodeName,
-                    tag = COLOR_TAG,
-                ),
-            )
+            ?: return GMResult.Ok(Unit)
         val stroke = when (val result = readColor(color, STROKE_TAG)) {
             is GMResult.Ok -> result.value
             is GMResult.Err -> return result
@@ -1194,12 +1212,18 @@ internal object GeonextProperties {
         )
 
         if (point) {
-            values[FILL_COLOR_KEY] = values.getValue(STROKE_COLOR_KEY)
-            values[HIGHLIGHT_FILL_COLOR_KEY] =
-                values.getValue(HIGHLIGHT_STROKE_COLOR_KEY)
-            values[FILL_OPACITY_KEY] = values.getValue(STROKE_OPACITY_KEY)
-            values[HIGHLIGHT_FILL_OPACITY_KEY] =
-                values.getValue(HIGHLIGHT_STROKE_OPACITY_KEY)
+            values[STROKE_COLOR_KEY]?.let {
+                values[FILL_COLOR_KEY] = it
+            }
+            values[HIGHLIGHT_STROKE_COLOR_KEY]?.let {
+                values[HIGHLIGHT_FILL_COLOR_KEY] = it
+            }
+            values[STROKE_OPACITY_KEY]?.let {
+                values[FILL_OPACITY_KEY] = it
+            }
+            values[HIGHLIGHT_STROKE_OPACITY_KEY]?.let {
+                values[HIGHLIGHT_FILL_OPACITY_KEY] = it
+            }
         }
 
         if (values[LABEL_KEY] is GeonextPropertyValue.Text) {
@@ -1401,6 +1425,7 @@ internal object GeonextProperties {
 
     private const val ELEMENTS_TAG = "elements"
     private const val POINT_TAG = "point"
+    private const val CAS_TAG = "cas"
     private const val LINE_TAG = "line"
     private const val CIRCLE_TAG = "circle"
     private const val ARROW_TAG = "arrow"

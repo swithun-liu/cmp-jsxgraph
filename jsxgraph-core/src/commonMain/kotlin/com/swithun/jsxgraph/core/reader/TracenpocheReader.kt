@@ -29,6 +29,7 @@ import com.swithun.jsxgraph.core.base.MidpointPoint
 import com.swithun.jsxgraph.core.base.OrthogonalConstructionError
 import com.swithun.jsxgraph.core.base.OrthogonalPoint
 import com.swithun.jsxgraph.core.base.OrthogonalPointKind
+import com.swithun.jsxgraph.core.base.OtherIntersectionPoint
 import com.swithun.jsxgraph.core.base.ParallelConstructionError
 import com.swithun.jsxgraph.core.base.ParallelLine
 import com.swithun.jsxgraph.core.base.PerpendicularLine
@@ -48,6 +49,7 @@ import com.swithun.jsxgraph.core.base.TransformationDynamicParameter
 import com.swithun.jsxgraph.core.base.TransformationError
 import com.swithun.jsxgraph.core.base.TransformationParameter
 import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
+import com.swithun.jsxgraph.core.math.RandomSource
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
@@ -57,6 +59,7 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 internal data class TracenpocheReaderLimits(
     val parser: TracenpocheParserLimits = TracenpocheParserLimits(),
@@ -81,6 +84,11 @@ internal sealed interface TracenpocheReaderError : ReaderDomainError {
     data class InvalidIndexedReference(
         val name: String,
         val index: Double,
+    ) : TracenpocheReaderError
+
+    data class RandomCoordinateFailed(
+        val axis: Int,
+        val message: String?,
     ) : TracenpocheReaderError
 
     data class ArgumentCount(
@@ -205,22 +213,24 @@ internal data class DrawnTracenpoche(
 
 internal class TracenpocheReader(
     private val data: String,
+    private val randomSource: RandomSource = DEFAULT_RANDOM_SOURCE,
 ) {
     // JSXGraph 1.13.3: src/reader/tracenpoche.js -> parseFigure.
     internal fun parse(
         limits: TracenpocheReaderLimits = TracenpocheReaderLimits(),
     ): GMResult<ParsedTracenpoche, TracenpocheReaderError> {
         validateLimits(limits)?.let { return GMResult.Err(it) }
-        val start = data.indexOf(FIGURE_MARKER)
+        val prepared = prepareString(data)
+        val start = prepared.indexOf(FIGURE_MARKER)
         val figure =
             if (start < 0) {
                 ""
             } else {
                 val contentStart = start + FIGURE_MARKER.length
-                val end = data.indexOf('@', startIndex = contentStart)
+                val end = prepared.indexOf('@', startIndex = contentStart)
                     .takeIf { it >= 0 }
-                    ?: data.length
-                data.substring(contentStart, end)
+                    ?: prepared.length
+                prepared.substring(contentStart, end)
             }
         return when (
             val result = TracenpocheParser.parse(
@@ -236,6 +246,9 @@ internal class TracenpocheReader(
             )
         }
     }
+
+    // JSXGraph 1.13.3: src/reader/tracenpoche.js -> prepareString.
+    private fun prepareString(source: String): String = source
 
     // JSXGraph 1.13.3: src/reader/tracenpoche.js -> read / parseData.
     internal fun read(
@@ -266,6 +279,7 @@ internal class TracenpocheReader(
             board = board,
             limits = limits,
             initialObjectCount = existingIds.size,
+            randomSource = randomSource,
         )
         for (statement in parsed.program.statements) {
             when (val result = evaluator.evaluate(statement)) {
@@ -393,6 +407,7 @@ internal class TracenpocheReader(
         private val board: Board,
         private val limits: TracenpocheReaderLimits,
         private val initialObjectCount: Int,
+        private val randomSource: RandomSource,
     ) {
         val values = linkedMapOf<String, TracenpocheValue>()
         private var loopIterations = 0
@@ -836,10 +851,29 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> point.
         private fun createPoint(
             arguments: List<TracenpocheValue>,
             name: String?,
         ): GMResult<TracenpocheValue, TracenpocheReaderError> {
+            if (arguments.isEmpty()) {
+                val x = when (val result = randomCoordinate(axis = 0)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                val y = when (val result = randomCoordinate(axis = 1)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                return pointResult(
+                    function = "point",
+                    Point.create(
+                        board = board,
+                        coordinates = doubleArrayOf(x, y),
+                        name = name,
+                    ),
+                )
+            }
             requireCount("point", arguments, 2)?.let { return it }
             val x = when (val result = number(arguments[0], "point", 0)) {
                 is GMResult.Ok -> result.value
@@ -859,6 +893,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> image.
         private fun createImagePoint(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -910,6 +945,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> reel and entier.
         private fun createSlider(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -939,7 +975,7 @@ internal class TracenpocheReader(
                     attributes = SliderAttributes(
                         name = name,
                         snapWidth = values[3],
-                        withLabel = "sansnom" !in attributes,
+                        withLabel = handleAtts(attributes),
                     ),
                 )
             ) {
@@ -953,6 +989,8 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3:
+        // src/reader/tracenpoche.js -> segment, droite, and vecteur.
         private fun createLine(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1005,6 +1043,8 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3:
+        // src/reader/tracenpoche.js -> droiteEQR and droiteEQ.
         private fun createCoefficientLine(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1045,6 +1085,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> milieu.
         private fun createMidpoint(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1102,6 +1143,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> parallele.
         private fun createParallel(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1137,6 +1179,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> mediatrice.
         private fun createPerpendicularBisector(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1222,6 +1265,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> perpendiculaire.
         private fun createPerpendicular(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1260,6 +1304,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> bissectrice.
         private fun createBisector(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1294,6 +1339,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> tangente.
         private fun createTangent(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1377,6 +1423,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> intersection.
         private fun createIntersection(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1402,27 +1449,54 @@ internal class TracenpocheReader(
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
-            val index =
-                if (arguments.size == 3) {
-                    when (
-                        val result =
-                            number(arguments[2], "intersection", 2)
-                    ) {
-                        is GMResult.Ok -> result.value - 1.0
-                        is GMResult.Err -> return result
-                    }
+            val result =
+                if (
+                    arguments.size == 3 &&
+                    arguments[2] is TracenpocheValue.Element
+                ) {
+                    val excluded = (
+                        arguments[2] as TracenpocheValue.Element
+                        ).value as? Point
+                        ?: return argumentType(
+                            function = "intersection",
+                            index = 2,
+                            expected = "number or point",
+                            value = arguments[2],
+                        )
+                    OtherIntersectionPoint.create(
+                        board = board,
+                        first = first,
+                        second = second,
+                        excludedPoints = listOf(excluded),
+                        name = name,
+                    )
                 } else {
-                    0.0
+                    val index =
+                        if (arguments.size == 3) {
+                            when (
+                                val indexResult =
+                                    number(
+                                        arguments[2],
+                                        "intersection",
+                                        2,
+                                    )
+                            ) {
+                                is GMResult.Ok -> indexResult.value - 1.0
+                                is GMResult.Err -> return indexResult
+                            }
+                        } else {
+                            0.0
+                        }
+                    IntersectionPoint.create(
+                        board = board,
+                        first = first,
+                        second = second,
+                        firstIndex =
+                            IntersectionIndexSource.Number(index),
+                        name = name,
+                    )
                 }
-            return when (
-                val result = IntersectionPoint.create(
-                    board = board,
-                    first = first,
-                    second = second,
-                    firstIndex = IntersectionIndexSource.Number(index),
-                    name = name,
-                )
-            ) {
+            return when (result) {
                 is GMResult.Ok -> GMResult.Ok(
                     TracenpocheValue.Element(result.value),
                 )
@@ -1433,6 +1507,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> projete.
         private fun createProjection(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1516,6 +1591,8 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3:
+        // src/reader/tracenpoche.js -> pointsur and its lambda closures.
         private fun createPointOn(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1615,6 +1692,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> barycentre.
         private fun createBarycenter(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1684,6 +1762,8 @@ internal class TracenpocheReader(
                 ),
             )
 
+        // JSXGraph 1.13.3:
+        // src/reader/tracenpoche.js -> cercle and cerclerayon.
         private fun createCircle(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1741,6 +1821,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> polygone.
         private fun createPolygon(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1780,6 +1861,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> texte.
         private fun createText(
             arguments: List<TracenpocheValue>,
             name: String?,
@@ -1817,6 +1899,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> homothetie.
         private fun createHomothety(
             arguments: List<TracenpocheValue>,
             function: String,
@@ -1858,6 +1941,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> symetrie.
         private fun createPointSymmetry(
             arguments: List<TracenpocheValue>,
             function: String,
@@ -1879,6 +1963,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> reflexion.
         private fun createReflection(
             arguments: List<TracenpocheValue>,
             function: String,
@@ -1897,6 +1982,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> rotation.
         private fun createRotation(
             arguments: List<TracenpocheValue>,
             function: String,
@@ -1926,6 +2012,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> translation.
         private fun createTranslation(
             arguments: List<TracenpocheValue>,
             function: String,
@@ -1981,6 +2068,7 @@ internal class TracenpocheReader(
             )
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> fonction.
         private fun createFunctionGraph(
             function: TracenpocheExpression,
             name: String,
@@ -2008,6 +2096,7 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> carre.
         private fun numericFunction(
             call: TracenpocheExpression.Call,
         ): GMResult<TracenpocheValue, TracenpocheReaderError> {
@@ -2216,6 +2305,24 @@ internal class TracenpocheReader(
             }
         }
 
+        // JSXGraph 1.13.3: src/reader/tracenpoche.js -> handleAtts.
+        private fun handleAtts(attributes: List<String>): Boolean =
+            "sansnom" !in attributes
+
+        private fun randomCoordinate(
+            axis: Int,
+        ): GMResult<Double, TracenpocheReaderError> =
+            try {
+                GMResult.Ok(randomSource.nextDouble())
+            } catch (cause: Exception) {
+                GMResult.Err(
+                    TracenpocheReaderError.RandomCoordinateFailed(
+                        axis = axis,
+                        message = cause.message,
+                    ),
+                )
+            }
+
         private fun requireCount(
             function: String,
             arguments: List<*>,
@@ -2406,6 +2513,8 @@ internal class TracenpocheReader(
             ">",
             ">=",
         )
+        val DEFAULT_RANDOM_SOURCE =
+            RandomSource { Random.nextDouble() }
     }
 }
 

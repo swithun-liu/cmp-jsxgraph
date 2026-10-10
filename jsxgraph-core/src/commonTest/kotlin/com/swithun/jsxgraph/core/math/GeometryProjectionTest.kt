@@ -246,6 +246,46 @@ class GeometryProjectionTest {
     }
 
     @Test
+    fun worldParametricProjectionMatchesOfficialCobylaResult() {
+        val evaluator = Parametric3DEvaluator<String> { parameters ->
+            val parameter = parameters[0]
+            GMResult.Ok(
+                doubleArrayOf(
+                    kotlin.math.cos(parameter),
+                    kotlin.math.sin(parameter),
+                    parameter / kotlin.math.PI,
+                ),
+            )
+        }
+        val parameters = mutableListOf(0.3)
+
+        val projection = assertIs<GMResult.Ok<DoubleArray>>(
+            Geometry.projectCoordsToParametric(
+                coordinates = doubleArrayOf(1.0, 0.2, 1.2, 0.4),
+                evaluator = evaluator,
+                dimension = 1,
+                parameters = parameters,
+                rangeU = doubleArrayOf(0.0, 2.0 * kotlin.math.PI),
+            ),
+        )
+
+        assertPoint4Close(
+            expected = doubleArrayOf(
+                1.0,
+                0.1756886547215048,
+                0.9844457814436242,
+                0.44378479978702196,
+            ),
+            actual = projection.value,
+        )
+        assertEquals(
+            1.3941910667857254,
+            parameters.single(),
+            absoluteTolerance = 1.0e-12,
+        )
+    }
+
+    @Test
     fun screenParametricProjectionRejectsInvalidInputs() {
         val evaluator = Parametric3DEvaluator<String> {
             GMResult.Ok(doubleArrayOf(0.0, 0.0, 0.0))

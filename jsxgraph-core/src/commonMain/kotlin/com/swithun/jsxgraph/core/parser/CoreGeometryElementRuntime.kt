@@ -10,13 +10,18 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.AngleRadius
+import com.swithun.jsxgraph.core.base.AngleRadiusFunction
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.CircleRadiusFunction
 import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CoordsElement
 import com.swithun.jsxgraph.core.base.CoordsElementAnimationError
 import com.swithun.jsxgraph.core.base.CoordsElementMoveOptions
+import com.swithun.jsxgraph.core.base.CoordsElementPathFunction
 import com.swithun.jsxgraph.core.base.Curve
+import com.swithun.jsxgraph.core.base.CurveGeneratedTerm
 import com.swithun.jsxgraph.core.base.ForeignObject
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.GeometryElementEvaluationError
@@ -26,15 +31,20 @@ import com.swithun.jsxgraph.core.base.HtmlControlDefinition
 import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
+import com.swithun.jsxgraph.core.base.Polyhedron3D
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.Slider
+import com.swithun.jsxgraph.core.base.Sphere3D
 import com.swithun.jsxgraph.core.base.Text
+import com.swithun.jsxgraph.core.base.Ticks
+import com.swithun.jsxgraph.core.base.Transformation
 import com.swithun.jsxgraph.core.base.TransformationDynamicParameter
 import com.swithun.jsxgraph.core.base.TransformationDynamicParameterError
 import com.swithun.jsxgraph.core.base.Turtle
 import com.swithun.jsxgraph.core.base.TurtleError
 import com.swithun.jsxgraph.core.math.Mat
+import com.swithun.jsxgraph.core.utils.EventHandler
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.abs
 
@@ -42,6 +52,20 @@ import kotlin.math.abs
  * The methodMap subset backed by geometry classes translated so far.
  */
 internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
+    private data class ElementEventHandlerKey(
+        val element: GeometryElement,
+        val event: String,
+        val function: JessieCodeRuntimeValue.FunctionValue,
+    )
+
+    private class ElementEventHandlerState(
+        val handler: EventHandler,
+        var error: JessieCodeRuntimeError? = null,
+    )
+
+    private val elementEventHandlers =
+        mutableMapOf<ElementEventHandlerKey, ElementEventHandlerState>()
+
     override fun valueOf(
         element: GeometryElement,
         location: JessieCodeAstLocation,
@@ -129,7 +153,13 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         property: String,
         location: JessieCodeAstLocation,
     ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
-        resolveGeometryProperty(element, property)?.let {
+        resolveSphere3DProperty(element, property, location)?.let {
+            return it
+        }
+        resolvePolyhedron3DProperty(element, property, location)?.let {
+            return it
+        }
+        resolveGeometryProperty(element, property, location)?.let {
             return it
         }
         resolveTurtleProperty(element, property, location)?.let {
@@ -141,7 +171,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         resolveGliderProperty(element, property)?.let {
             return it
         }
-        resolveCurveProperty(element, property)?.let {
+        resolveCurveProperty(element, property, location)?.let {
             return it
         }
         resolveSlopeTriangleProperty(element, property, location)?.let {
@@ -180,8 +210,154 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         resolveCoordsProperty(element, property, location)?.let {
             return it
         }
+        resolveVisualProperty(element, property)?.let {
+            return it
+        }
         return unavailable(element, property, location)
     }
+
+    // JSXGraph 1.13.3: src/3d/sphere3d.js -> methodMap.
+    private fun resolveSphere3DProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val sphere = element as? Sphere3D ?: return null
+        return when (property) {
+            "center" -> elementReference(sphere.center)
+            "point2" -> sphere.point2?.let(::elementReference)
+                ?: unavailable(sphere, property, location)
+            "Radius" -> numberFunction("Radius", sphere::Radius)
+            else -> null
+        }
+    }
+
+    // JSXGraph 1.13.3: src/3d/polyhedron3d.js -> methodMap.
+    private fun resolvePolyhedron3DProperty(
+        element: GeometryElement,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult? {
+        val polyhedron = element as? Polyhedron3D ?: return null
+        return when (property) {
+            "setParents" -> function("setParents") {
+                    arguments,
+                    callLocation,
+                ->
+                val values = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    )?.values ?: arguments
+                val parents = mutableListOf<GeometryElement>()
+                for ((index, value) in values.withIndex()) {
+                    val parent = (
+                        value as?
+                            JessieCodeRuntimeValue.ElementReference
+                        )?.element ?: return@function invalidArgumentType(
+                        functionName = "setParents",
+                        argumentIndex = index,
+                        expected = "element",
+                        actual = value,
+                        location = callLocation,
+                    )
+                    parents += parent
+                }
+                polyhedron.setParents(parents)
+                elementReference(polyhedron)
+            }
+            "addTransform", "addTransformation", "trans" ->
+                function("addTransform") {
+                    arguments,
+                    callLocation,
+                ->
+                val source = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element as? Polyhedron3D
+                    ?: return@function invalidArgumentType(
+                        functionName = "addTransform",
+                        argumentIndex = 0,
+                        expected = "polyhedron3d",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                val transformations = when (
+                    val result = elementTransformations(
+                        functionName = "addTransform",
+                        value = arguments.getOrNull(1)
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                polyhedronMutation(
+                    polyhedron = polyhedron,
+                    method = "addTransform",
+                    location = callLocation,
+                    result = polyhedron.addTransform(
+                        element = source,
+                        transformations = transformations,
+                    ),
+                )
+            }
+            "removeTransform" -> function("removeTransform") {
+                    arguments,
+                    callLocation,
+                ->
+                val transformations = when (
+                    val result = elementTransformations(
+                        functionName = "removeTransform",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                polyhedronMutation(
+                    polyhedron = polyhedron,
+                    method = "removeTransform",
+                    location = callLocation,
+                    result =
+                        polyhedron.removeTransform(transformations),
+                )
+            }
+            "clearTransforms" -> function("clearTransforms") {
+                    _,
+                    callLocation,
+                ->
+                polyhedronMutation(
+                    polyhedron = polyhedron,
+                    method = "clearTransforms",
+                    location = callLocation,
+                    result = polyhedron.clearTransforms(),
+                )
+            }
+            else -> null
+        }
+    }
+
+    private fun polyhedronMutation(
+        polyhedron: Polyhedron3D,
+        method: String,
+        location: JessieCodeAstLocation,
+        result: GMResult<Polyhedron3D, *>,
+    ): ElementPropertyResult =
+        when (result) {
+            is GMResult.Ok -> elementReference(polyhedron)
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.ElementMethodUnavailable(
+                    elementId = polyhedron.id,
+                    method = method,
+                    reason = result.error.toString(),
+                    location = location,
+                ),
+            )
+        }
 
     // JSXGraph 1.13.3: src/base/turtle.js -> methodMap.
     private fun resolveTurtleProperty(
@@ -550,8 +726,130 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
     private fun resolveCurveProperty(
         element: GeometryElement,
         property: String,
+        location: JessieCodeAstLocation,
     ): ElementPropertyResult? {
         val curve = element as? Curve ?: return null
+        when (property) {
+            "minorGrid" -> return curve.minorGrid
+                ?.let(::elementReference)
+                ?: unavailable(curve, property, location)
+            "majorGrid" -> return curve.majorGrid
+                ?.let(::elementReference)
+                ?: unavailable(curve, property, location)
+            "MinX" -> return numberFunction("minX", curve::minX)
+            "MaxX" -> return numberFunction("maxX", curve::maxX)
+            "move", "moveTo" -> return function("moveTo") {
+                    arguments,
+                    callLocation,
+                ->
+                val target = when (
+                    val result = coordinateArray(
+                        functionName = "moveTo",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                when (val result = curve.moveTo(target)) {
+                    is GMResult.Ok -> elementReference(curve)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = curve.id,
+                            method = "moveTo",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
+            "generateTerm", "setTerm" ->
+                return function("generateTerm") {
+                        arguments,
+                        callLocation,
+                    ->
+                    curveGenerateTerm(
+                        curve = curve,
+                        arguments = arguments,
+                        location = callLocation,
+                    )
+                }
+            "setF" -> {
+                if (!curve.isVectorField) {
+                    return null
+                }
+                return function("setF") { arguments, callLocation ->
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                    val variableNames = when (
+                        val names = arguments.getOrNull(1)
+                            ?: JessieCodeRuntimeValue.UndefinedValue
+                    ) {
+                        JessieCodeRuntimeValue.UndefinedValue -> emptyList()
+                        is JessieCodeRuntimeValue.StringValue ->
+                            names.value
+                                .split(',')
+                                .map(String::trim)
+                                .filter(String::isNotEmpty)
+                        else -> return@function invalidArgumentType(
+                            functionName = "setF",
+                            argumentIndex = 1,
+                            expected = "string",
+                            actual = names,
+                            location = callLocation,
+                        )
+                    }
+                    val field = when (
+                        val result =
+                            if (curve.elType == "slopefield") {
+                                NativeJessieCodeCreators.slopeFieldFunction(
+                                    board = curve.board,
+                                    value = value,
+                                    location = callLocation,
+                                    variableNames = variableNames,
+                                )
+                            } else {
+                                NativeJessieCodeCreators.vectorFieldFunction(
+                                    board = curve.board,
+                                    value = value,
+                                    location = callLocation,
+                                    variableNames = variableNames,
+                                )
+                            }
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return@function GMResult.Err(
+                            JessieCodeRuntimeError.ElementMethodUnavailable(
+                                elementId = curve.id,
+                                method = "setF",
+                                reason = result.error.toString(),
+                                location = callLocation,
+                            ),
+                        )
+                    }
+                    when (val result = curve.setF(field)) {
+                        is GMResult.Ok ->
+                            if (curve.elType == "slopefield") {
+                                GMResult.Ok(
+                                    JessieCodeRuntimeValue.UndefinedValue,
+                                )
+                            } else {
+                                elementReference(curve)
+                            }
+                        is GMResult.Err -> GMResult.Err(
+                            JessieCodeRuntimeError.ElementMethodUnavailable(
+                                elementId = curve.id,
+                                method = "setF",
+                                reason = result.error.toString(),
+                                location = callLocation,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
         if (
             curve.isEllipse ||
             curve.isHyperbola ||
@@ -608,6 +906,392 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         }
     }
 
+    private fun curveGenerateTerm(
+        curve: Curve,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val variableName = when (
+            val value = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> "x"
+            is JessieCodeRuntimeValue.StringValue -> value.value
+            else -> return invalidArgumentType(
+                functionName = "generateTerm",
+                argumentIndex = 0,
+                expected = "string",
+                actual = value,
+                location = location,
+            )
+        }
+        val xValue = arguments.getOrNull(1)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val yValue = arguments.getOrNull(2)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val minimumTerm = when (
+            val result = optionalCurveTerm(
+                curve = curve,
+                termName = "minX",
+                argumentIndex = 3,
+                value = arguments.getOrNull(3)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                variableNames = emptyList(),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val maximumTerm = when (
+            val result = optionalCurveTerm(
+                curve = curve,
+                termName = "maxX",
+                argumentIndex = 4,
+                value = arguments.getOrNull(4)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                variableNames = emptyList(),
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val generatedTerm = when (xValue) {
+            is JessieCodeRuntimeValue.ArrayValue ->
+                when (
+                    val result = curveDataGeneratedTerm(
+                        curve = curve,
+                        xValue = xValue,
+                        yValue = yValue,
+                        variableName = variableName,
+                        minimumTerm = minimumTerm,
+                        maximumTerm = maximumTerm,
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            else -> {
+                val xTerm = when (
+                    val result = curveTerm(
+                        curve = curve,
+                        termName = "xterm",
+                        argumentIndex = 1,
+                        value = xValue,
+                        variableNames = listOf(variableName),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (
+                    xValue is JessieCodeRuntimeValue.FunctionValue &&
+                    yValue is JessieCodeRuntimeValue.ArrayValue
+                ) {
+                    if (yValue.values.size < 2) {
+                        return invalidArgumentType(
+                            functionName = "generateTerm",
+                            argumentIndex = 2,
+                            expected = "two polar offset terms",
+                            actual = yValue,
+                            location = location,
+                        )
+                    }
+                    val yTerms = when (
+                        val result = curveTerms(
+                            curve = curve,
+                            termName = "yterm",
+                            argumentIndex = 2,
+                            values = yValue.values,
+                            variableNames = emptyList(),
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    CurveGeneratedTerm.Polar(
+                        radiusTerm = xTerm,
+                        xOffsetTerm = yTerms[0],
+                        yOffsetTerm = yTerms[1],
+                        yTerms = yTerms,
+                        minimumTerm = minimumTerm,
+                        maximumTerm = maximumTerm,
+                    )
+                } else {
+                    val yTerms =
+                        (yValue as? JessieCodeRuntimeValue.ArrayValue)
+                            ?.let { array ->
+                                when (
+                                    val result = curveTerms(
+                                        curve = curve,
+                                        termName = "yterm",
+                                        argumentIndex = 2,
+                                        values = array.values,
+                                        variableNames = emptyList(),
+                                        location = location,
+                                    )
+                                ) {
+                                    is GMResult.Ok -> result.value
+                                    is GMResult.Err -> return result
+                                }
+                            }
+                    val yTerm =
+                        if (yTerms == null) {
+                            when (
+                                val result = curveTerm(
+                                    curve = curve,
+                                    termName = "yterm",
+                                    argumentIndex = 2,
+                                    value = yValue,
+                                    variableNames = listOf(variableName),
+                                    location = location,
+                                )
+                            ) {
+                                is GMResult.Ok -> result.value
+                                is GMResult.Err -> return result
+                            }
+                        } else {
+                            null
+                        }
+                    CurveGeneratedTerm.Continuous(
+                        xTerm = xTerm,
+                        yTerm = yTerm,
+                        yTerms = yTerms,
+                        functionGraph =
+                            xValue is JessieCodeRuntimeValue.StringValue,
+                        identityXTerm =
+                            (xValue as? JessieCodeRuntimeValue.StringValue)
+                                ?.value == variableName,
+                        minimumTerm = minimumTerm,
+                        maximumTerm = maximumTerm,
+                    )
+                }
+            }
+        }
+        curve.generateTerm(generatedTerm)
+        curve.board.update()
+        return GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
+    }
+
+    private fun curveDataGeneratedTerm(
+        curve: Curve,
+        xValue: JessieCodeRuntimeValue.ArrayValue,
+        yValue: JessieCodeRuntimeValue,
+        variableName: String,
+        minimumTerm: JessieCodeCoordinateFunction?,
+        maximumTerm: JessieCodeCoordinateFunction?,
+        location: JessieCodeAstLocation,
+    ): GMResult<CurveGeneratedTerm.Data, JessieCodeRuntimeError> {
+        val xTerms = mutableListOf<JessieCodeCoordinateFunction>()
+        val yTerms = mutableListOf<JessieCodeCoordinateFunction>()
+        var continuousYTerm: JessieCodeCoordinateFunction? = null
+        if (yValue === JessieCodeRuntimeValue.UndefinedValue) {
+            for ((index, pairValue) in xValue.values.withIndex()) {
+                val pair = pairValue as?
+                    JessieCodeRuntimeValue.ArrayValue
+                    ?: return invalidArgumentType(
+                        functionName = "generateTerm",
+                        argumentIndex = index,
+                        expected = "coordinate pair",
+                        actual = pairValue,
+                        location = location,
+                    )
+                if (pair.values.size !in 2..3) {
+                    return invalidArgumentType(
+                        functionName = "generateTerm",
+                        argumentIndex = index,
+                        expected = "coordinate pair",
+                        actual = pairValue,
+                        location = location,
+                    )
+                }
+                val offset = if (pair.values.size == 3) 1 else 0
+                when (
+                    val result = curveTerm(
+                        curve = curve,
+                        termName = "xterm[$index]",
+                        argumentIndex = index,
+                        value = pair.values[offset],
+                        variableNames = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> xTerms += result.value
+                    is GMResult.Err -> return result
+                }
+                when (
+                    val result = curveTerm(
+                        curve = curve,
+                        termName = "yterm[$index]",
+                        argumentIndex = index,
+                        value = pair.values[offset + 1],
+                        variableNames = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> yTerms += result.value
+                    is GMResult.Err -> return result
+                }
+            }
+        } else {
+            for ((index, value) in xValue.values.withIndex()) {
+                when (
+                    val result = curveTerm(
+                        curve = curve,
+                        termName = "xterm[$index]",
+                        argumentIndex = index,
+                        value = value,
+                        variableNames = emptyList(),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> xTerms += result.value
+                    is GMResult.Err -> return result
+                }
+            }
+            if (yValue is JessieCodeRuntimeValue.ArrayValue) {
+                for ((index, value) in yValue.values.withIndex()) {
+                    when (
+                        val result = curveTerm(
+                            curve = curve,
+                            termName = "yterm[$index]",
+                            argumentIndex = index,
+                            value = value,
+                            variableNames = emptyList(),
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> yTerms += result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+            } else {
+                continuousYTerm = when (
+                    val result = curveTerm(
+                        curve = curve,
+                        termName = "yterm",
+                        argumentIndex = 2,
+                        value = yValue,
+                        variableNames = listOf(variableName),
+                        location = location,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+        }
+        return GMResult.Ok(
+            CurveGeneratedTerm.Data(
+                xTerms = xTerms,
+                yTerms = yTerms.takeIf { it.isNotEmpty() },
+                continuousYTerm = continuousYTerm,
+                minimumTerm = minimumTerm,
+                maximumTerm = maximumTerm,
+            ),
+        )
+    }
+
+    private fun optionalCurveTerm(
+        curve: Curve,
+        termName: String,
+        argumentIndex: Int,
+        value: JessieCodeRuntimeValue,
+        variableNames: List<String>,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeCoordinateFunction?, JessieCodeRuntimeError> =
+        if (value === JessieCodeRuntimeValue.UndefinedValue) {
+            GMResult.Ok(null)
+        } else {
+            curveTerm(
+                curve = curve,
+                termName = termName,
+                argumentIndex = argumentIndex,
+                value = value,
+                variableNames = variableNames,
+                location = location,
+            )
+        }
+
+    private fun curveTerms(
+        curve: Curve,
+        termName: String,
+        argumentIndex: Int,
+        values: List<JessieCodeRuntimeValue>,
+        variableNames: List<String>,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<JessieCodeCoordinateFunction>, JessieCodeRuntimeError> {
+        val terms = mutableListOf<JessieCodeCoordinateFunction>()
+        for ((index, value) in values.withIndex()) {
+            when (
+                val result = curveTerm(
+                    curve = curve,
+                    termName = "$termName[$index]",
+                    argumentIndex = argumentIndex,
+                    value = value,
+                    variableNames = variableNames,
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> terms += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(terms)
+    }
+
+    private fun curveTerm(
+        curve: Curve,
+        termName: String,
+        argumentIndex: Int,
+        value: JessieCodeRuntimeValue,
+        variableNames: List<String>,
+        location: JessieCodeAstLocation,
+    ): GMResult<JessieCodeCoordinateFunction, JessieCodeRuntimeError> =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(
+                    JessieCodeNumericCoordinateFunction(value.value),
+                )
+            is JessieCodeRuntimeValue.StringValue ->
+                when (
+                    val result = JessieCodeExpressionFunction.compile(
+                        source = value.value,
+                        board = curve.board,
+                        variableNames = variableNames,
+                    )
+                ) {
+                    is GMResult.Ok -> result
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = curve.id,
+                            method = "generateTerm",
+                            reason = "$termName: ${result.error}",
+                            location = location,
+                        ),
+                    )
+                }
+            is JessieCodeRuntimeValue.FunctionValue ->
+                GMResult.Ok(
+                    JessieCodeRuntimeCoordinateFunction(
+                        function = value,
+                        location = location,
+                        returnsCoordinateArray = false,
+                    ),
+                )
+            else -> invalidArgumentType(
+                functionName = "generateTerm",
+                argumentIndex = argumentIndex,
+                expected = "number, string, or function",
+                actual = value,
+                location = location,
+            )
+        }
+
     private fun resolveArcSectorProperty(
         element: GeometryElement,
         property: String,
@@ -621,6 +1305,25 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         return when (property) {
             "radius", "Radius", "getRadius" ->
                 numberFunction("Radius", radius)
+            "L", "Length" -> numberFunction("L") {
+                when (element) {
+                    is Arc -> element.L()
+                    is Sector -> element.L()
+                    else -> Double.NaN
+                }
+            }
+            "A", "Area" ->
+                if (element is Sector) {
+                    numberFunction("Area", element::Area)
+                } else {
+                    unavailable(element, property, location)
+                }
+            "Perimeter" ->
+                if (element is Sector) {
+                    numberFunction("Perimeter", element::Perimeter)
+                } else {
+                    unavailable(element, property, location)
+                }
             "V", "Value" -> function("Value") {
                     arguments,
                     callLocation,
@@ -654,6 +1357,60 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     )
                 }
             }
+            "setRadius" ->
+                if (element is Sector) {
+                    function("setRadius") { arguments, callLocation ->
+                        val result = when (
+                            val value = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue
+                        ) {
+                            is JessieCodeRuntimeValue.NumberValue ->
+                                element.setRadius(value.value)
+                            is JessieCodeRuntimeValue.StringValue ->
+                                if (value.value.lowercase() == "auto") {
+                                    element.setRadiusAuto()
+                                } else {
+                                    return@function invalidArgumentType(
+                                        functionName = "setRadius",
+                                        argumentIndex = 0,
+                                        expected = "number, function, or auto",
+                                        actual = value,
+                                        location = callLocation,
+                                    )
+                                }
+                            is JessieCodeRuntimeValue.FunctionValue ->
+                                element.setRadius(
+                                    AngleRadius.Function(
+                                        AngleRadiusFunction(
+                                            function = value,
+                                            location = callLocation,
+                                        ),
+                                    ),
+                                )
+                            else -> return@function invalidArgumentType(
+                                functionName = "setRadius",
+                                argumentIndex = 0,
+                                expected = "number, function, or auto",
+                                actual = value,
+                                location = callLocation,
+                            )
+                        }
+                        when (result) {
+                            is GMResult.Ok -> elementReference(element)
+                            is GMResult.Err -> GMResult.Err(
+                                JessieCodeRuntimeError
+                                    .ElementMethodUnavailable(
+                                        elementId = element.id,
+                                        method = "setRadius",
+                                        reason = result.error.toString(),
+                                        location = callLocation,
+                                    ),
+                            )
+                        }
+                    }
+                } else {
+                    unavailable(element, property, location)
+                }
             "center", "point1" -> GMResult.Ok(
                 JessieCodeRuntimeValue.ElementReference(
                     when (element) {
@@ -823,7 +1580,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             }?.let {
                 GMResult.Ok(JessieCodeRuntimeValue.ElementReference(it))
             } ?: GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
-            else -> unavailable(element, property, location)
+            else -> null
         }
     }
 
@@ -878,7 +1635,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             is GMResult.Err -> return result
         }
         element.setAttribute(mapOf(property to attributeValue))
-        element.board.update()
+        updateAfterAttributeMutation(element)
         return GMResult.Ok(Unit)
     }
 
@@ -1014,6 +1771,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
     private fun resolveGeometryProperty(
         element: GeometryElement,
         property: String,
+        location: JessieCodeAstLocation,
     ): ElementPropertyResult? =
         when (property) {
             "name" -> GMResult.Ok(
@@ -1026,6 +1784,25 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             )
             "getName", "Name" -> stringFunction("getName") {
                 element.name
+            }
+            "label" -> element.elementLabel?.let(::elementReference)
+            "setLabel" -> function("setLabel") {
+                    arguments,
+                    callLocation,
+                ->
+                val label = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.StringValue
+                    )?.value ?: return@function invalidArgumentType(
+                    functionName = "setLabel",
+                    argumentIndex = 0,
+                    expected = "string",
+                    actual = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                element.setLabel(label)
+                GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
             }
             "Bounds" -> function("Bounds") { _, _ ->
                 GMResult.Ok(array(bounds(element)))
@@ -1087,8 +1864,570 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     GMResult.Ok(JessieCodeRuntimeValue.UndefinedValue)
                 }
             }
+            "addTransform" -> function("addTransform") {
+                    arguments,
+                    callLocation,
+                ->
+                val transformations = when (
+                    val result = elementTransformations(
+                        functionName = "addTransform",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                when (element) {
+                    is Circle -> element.addTransform(transformations)
+                    is Line -> element.addTransform(transformations)
+                    is Curve -> element.addTransform(transformations)
+                    is CoordsElement ->
+                        element.addTransform(element, transformations)
+                    else -> transformations.forEach(element::addTransformBase)
+                }
+                elementReference(element)
+                }
+            "removeTransform" -> function("removeTransform") {
+                    arguments,
+                    callLocation,
+                ->
+                val transformations = when (
+                    val result = elementTransformations(
+                        functionName = "removeTransform",
+                        value = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                when (element) {
+                    is Circle -> element.removeTransform(transformations)
+                    is Line -> element.removeTransform(transformations)
+                    is Curve -> element.removeTransform(transformations)
+                    is CoordsElement ->
+                        element.removeTransform(transformations)
+                    else ->
+                        transformations.forEach(element::removeTransformBase)
+                }
+                elementReference(element)
+            }
+            "clearTransforms" -> function("clearTransforms") { _, _ ->
+                when (element) {
+                    is Circle -> element.clearTransforms()
+                    is Line -> element.clearTransforms()
+                    is Curve -> element.clearTransforms()
+                    is CoordsElement -> element.clearTransforms()
+                    else -> element.clearTransformsBase()
+                }
+                elementReference(element)
+            }
+            "setProperty", "setAttribute" ->
+                function("setAttribute") { arguments, callLocation ->
+                    val attributes = when (
+                        val result = elementAttributeArguments(
+                            element = element,
+                            arguments = arguments,
+                            functionName = "setAttribute",
+                            location = callLocation,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return@function result
+                    }
+                    element.setAttribute(attributes)
+                    updateAfterAttributeMutation(element)
+                    elementReference(element)
+                }
+            "animate" -> function("animate") { arguments, callLocation ->
+                val attributes = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ObjectValue
+                    ) ?: return@function invalidArgumentType(
+                    functionName = "animate",
+                    argumentIndex = 0,
+                    expected = "object",
+                    actual = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                val targetAttributes = when (
+                    val result = elementAttributeObject(
+                        element = element,
+                        value = attributes,
+                        property = "animate",
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                val duration = (
+                    arguments.getOrNull(1) as?
+                        JessieCodeRuntimeValue.NumberValue
+                    )?.value ?: return@function invalidArgumentType(
+                    functionName = "animate",
+                    argumentIndex = 1,
+                    expected = "number",
+                    actual = arguments.getOrNull(1)
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                val callback = when (
+                    val value = arguments.getOrNull(2)
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    JessieCodeRuntimeValue.UndefinedValue -> null
+                    is JessieCodeRuntimeValue.ObjectValue -> {
+                        when (
+                            val raw = value.properties["callback"]
+                                ?: JessieCodeRuntimeValue.UndefinedValue
+                        ) {
+                            JessieCodeRuntimeValue.UndefinedValue -> null
+                            is JessieCodeRuntimeValue.FunctionValue -> {
+                                {
+                                    raw.externalCallable.call(
+                                        arguments = emptyList(),
+                                        location = callLocation,
+                                    )
+                                    Unit
+                                }
+                            }
+                            else -> return@function invalidArgumentType(
+                                functionName = "animate",
+                                argumentIndex = 2,
+                                expected =
+                                    "options.callback function",
+                                actual = raw,
+                                location = callLocation,
+                            )
+                        }
+                    }
+                    else -> return@function invalidArgumentType(
+                        functionName = "animate",
+                        argumentIndex = 2,
+                        expected = "object or undefined",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                when (
+                    val result = element.animateResult(
+                        targetAttributes = targetAttributes,
+                        timeMilliseconds = duration,
+                        options =
+                            com.swithun.jsxgraph.core.base
+                                .GeometryElementAnimationOptions(
+                                    callback = callback,
+                                ),
+                    )
+                ) {
+                    is GMResult.Ok -> elementReference(element)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = element.id,
+                            method = "animate",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
+            "on" -> function("on") { arguments, callLocation ->
+                elementOn(element, arguments, callLocation)
+            }
+            "off" -> function("off") { arguments, callLocation ->
+                elementOff(element, arguments, callLocation)
+            }
+            "trigger" -> function("trigger") {
+                    arguments,
+                    callLocation,
+                ->
+                elementTrigger(element, arguments, callLocation)
+            }
+            "addTicks" -> function("addTicks") {
+                    arguments,
+                    callLocation,
+                ->
+                val ticks = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element as? Ticks
+                    ?: return@function invalidArgumentType(
+                        functionName = "addTicks",
+                        argumentIndex = 0,
+                        expected = "ticks",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.StringValue(
+                        element.addTicks(ticks),
+                    ),
+                )
+            }
+            "removeTicks" -> function("removeTicks") {
+                    arguments,
+                    callLocation,
+                ->
+                val ticks = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element as? Ticks
+                    ?: return@function invalidArgumentType(
+                        functionName = "removeTicks",
+                        argumentIndex = 0,
+                        expected = "ticks",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                elementReference(element.removeTicks(ticks))
+            }
+            "removeAllTicks" -> function("removeAllTicks") { _, _ ->
+                elementReference(element.removeAllTicks())
+            }
             else -> null
         }
+
+    private fun elementTransformations(
+        functionName: String,
+        value: JessieCodeRuntimeValue,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<Transformation>, JessieCodeRuntimeError> {
+        val values = if (value is JessieCodeRuntimeValue.ArrayValue) {
+            value.values
+        } else {
+            listOf(value)
+        }
+        val transformations = mutableListOf<Transformation>()
+        for ((index, child) in values.withIndex()) {
+            val transformation = (
+                child as?
+                    JessieCodeRuntimeValue.TransformationReference
+                )?.transformation ?: return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "transformation",
+                actual = child,
+                location = location,
+            )
+            transformations += transformation
+        }
+        return GMResult.Ok(transformations)
+    }
+
+    private fun elementAttributeArguments(
+        element: GeometryElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        functionName: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<Map<String, Any?>, JessieCodeRuntimeError> {
+        val attributes = linkedMapOf<String, Any?>()
+        for ((index, argument) in arguments.withIndex()) {
+            when (argument) {
+                is JessieCodeRuntimeValue.ObjectValue -> {
+                    when (
+                        val result = elementAttributeObject(
+                            element = element,
+                            value = argument,
+                            property = functionName,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> attributes.putAll(result.value)
+                        is GMResult.Err -> return result
+                    }
+                }
+                is JessieCodeRuntimeValue.StringValue -> {
+                    val separator = argument.value.indexOf(':')
+                    if (separator < 0) {
+                        return invalidArgumentType(
+                            functionName = functionName,
+                            argumentIndex = index,
+                            expected = "key:value string",
+                            actual = argument,
+                            location = location,
+                        )
+                    }
+                    attributes[
+                        argument.value.substring(0, separator).trim()
+                    ] = argument.value.substring(separator + 1).trim()
+                }
+                is JessieCodeRuntimeValue.ArrayValue -> {
+                    if (
+                        argument.values.size != 2 ||
+                        argument.values[0] !is
+                            JessieCodeRuntimeValue.StringValue
+                    ) {
+                        return invalidArgumentType(
+                            functionName = functionName,
+                            argumentIndex = index,
+                            expected = "[string, value] pair",
+                            actual = argument,
+                            location = location,
+                        )
+                    }
+                    val key = (
+                        argument.values[0] as
+                            JessieCodeRuntimeValue.StringValue
+                        ).value
+                    when (
+                        val result = runtimeAttributeValue(
+                            value = argument.values[1],
+                            elementId = element.id,
+                            property = key,
+                            location = location,
+                        )
+                    ) {
+                        is GMResult.Ok -> attributes[key] = result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                else -> return invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = index,
+                    expected = "object, key:value string, or pair",
+                    actual = argument,
+                    location = location,
+                )
+            }
+        }
+        return GMResult.Ok(attributes)
+    }
+
+    // JSXGraph 1.13.3: src/base/element.js -> setAttribute.
+    private fun updateAfterAttributeMutation(
+        element: GeometryElement,
+    ) {
+        if (element.needsRegularUpdate) {
+            element.board.update(element)
+        } else {
+            element.board.fullUpdate()
+        }
+    }
+
+    private fun elementAttributeObject(
+        element: GeometryElement,
+        value: JessieCodeRuntimeValue.ObjectValue,
+        property: String,
+        location: JessieCodeAstLocation,
+    ): GMResult<Map<String, Any?>, JessieCodeRuntimeError> {
+        val attributes = linkedMapOf<String, Any?>()
+        for ((key, child) in value.properties) {
+            when (
+                val result = runtimeAttributeValue(
+                    value = child,
+                    elementId = element.id,
+                    property = "$property.$key",
+                    location = location,
+                )
+            ) {
+                is GMResult.Ok -> attributes[key] = result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(attributes)
+    }
+
+    private fun elementOn(
+        element: GeometryElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val event = (
+            arguments.firstOrNull() as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: return invalidArgumentType(
+            functionName = "on",
+            argumentIndex = 0,
+            expected = "string",
+            actual = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue,
+            location = location,
+        )
+        val callback = arguments.getOrNull(1) as?
+            JessieCodeRuntimeValue.FunctionValue
+            ?: return invalidArgumentType(
+                functionName = "on",
+                argumentIndex = 1,
+                expected = "function",
+                actual = arguments.getOrNull(1)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        val key = ElementEventHandlerKey(element, event, callback)
+        val state = elementEventHandlers.getOrPut(key) {
+            lateinit var handlerState: ElementEventHandlerState
+            val handler = EventHandler { _, nativeArguments ->
+                val result = callback.externalCallable.call(
+                    arguments = nativeArguments.map(::runtimeValue),
+                    location = location,
+                )
+                handlerState.error = when (result) {
+                    is GMResult.Ok -> null
+                    is GMResult.Err -> result.error
+                }
+            }
+            ElementEventHandlerState(handler).also {
+                handlerState = it
+            }
+        }
+        element.on(event, state.handler)
+        return elementReference(element)
+    }
+
+    private fun elementOff(
+        element: GeometryElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val event = (
+            arguments.firstOrNull() as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: return invalidArgumentType(
+            functionName = "off",
+            argumentIndex = 0,
+            expected = "string",
+            actual = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue,
+            location = location,
+        )
+        val callback = when (
+            val value = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> null
+            is JessieCodeRuntimeValue.FunctionValue -> value
+            else -> return invalidArgumentType(
+                functionName = "off",
+                argumentIndex = 1,
+                expected = "function or undefined",
+                actual = value,
+                location = location,
+            )
+        }
+        if (callback == null) {
+            element.off(event)
+            elementEventHandlers.keys.removeAll {
+                it.element === element && it.event == event
+            }
+        } else {
+            val key = ElementEventHandlerKey(element, event, callback)
+            elementEventHandlers.remove(key)?.let {
+                element.off(event, it.handler)
+            }
+        }
+        return elementReference(element)
+    }
+
+    private fun elementTrigger(
+        element: GeometryElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val events = when (
+            val value = arguments.firstOrNull()
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            is JessieCodeRuntimeValue.StringValue -> listOf(value.value)
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val names = mutableListOf<String>()
+                for ((index, child) in value.values.withIndex()) {
+                    val name = (
+                        child as? JessieCodeRuntimeValue.StringValue
+                        )?.value ?: return invalidArgumentType(
+                        functionName = "trigger",
+                        argumentIndex = index,
+                        expected = "string event name",
+                        actual = child,
+                        location = location,
+                    )
+                    names += name
+                }
+                names
+            }
+            else -> return invalidArgumentType(
+                functionName = "trigger",
+                argumentIndex = 0,
+                expected = "string or string array",
+                actual = value,
+                location = location,
+            )
+        }
+        val states = elementEventHandlers
+            .filterKeys {
+                it.element === element && it.event in events
+            }
+            .values
+        states.forEach { it.error = null }
+        element.trigger(events, arguments.drop(1))
+        states.firstNotNullOfOrNull { it.error }?.let {
+            return GMResult.Err(it)
+        }
+        return elementReference(element)
+    }
+
+    private fun resolveVisualProperty(
+        element: GeometryElement,
+        property: String,
+    ): ElementPropertyResult? {
+        val normalized = normalizedAttributeName(property)
+        val attributes = element.getAttributes()
+        if (normalized !in attributes) {
+            return null
+        }
+        return nativeRuntimeValue(attributes[normalized])?.let {
+            GMResult.Ok(it)
+        }
+    }
+
+    private fun nativeRuntimeValue(
+        value: Any?,
+    ): JessieCodeRuntimeValue? =
+        when (value) {
+            null -> JessieCodeRuntimeValue.NullValue
+            is JessieCodeRuntimeValue -> value
+            is Boolean -> JessieCodeRuntimeValue.BooleanValue(value)
+            is Number ->
+                JessieCodeRuntimeValue.NumberValue(value.toDouble())
+            is String -> JessieCodeRuntimeValue.StringValue(value)
+            is GeometryElement ->
+                JessieCodeRuntimeValue.ElementReference(value)
+            is Transformation ->
+                JessieCodeRuntimeValue.TransformationReference(value)
+            is List<*> -> {
+                val converted = value.map(::nativeRuntimeValue)
+                if (converted.any { it == null }) {
+                    null
+                } else {
+                    JessieCodeRuntimeValue.ArrayValue(
+                        converted.filterNotNull(),
+                    )
+                }
+            }
+            is DoubleArray ->
+                JessieCodeRuntimeValue.ArrayValue(
+                    value.map(JessieCodeRuntimeValue::NumberValue),
+                )
+            is Map<*, *> -> {
+                val converted = linkedMapOf<String, JessieCodeRuntimeValue>()
+                for ((key, child) in value) {
+                    val name = key as? String ?: return null
+                    converted[name] =
+                        nativeRuntimeValue(child) ?: return null
+                }
+                JessieCodeRuntimeValue.ObjectValue(converted)
+            }
+            else -> null
+        }
+
+    private fun runtimeValue(value: Any?): JessieCodeRuntimeValue =
+        nativeRuntimeValue(value) ?: JessieCodeRuntimeValue.UndefinedValue
 
     private fun resolvePolygonProperty(
         element: GeometryElement,
@@ -1114,9 +2453,214 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 function("boundingBox") { _, _ ->
                     GMResult.Ok(array(polygon.bounds()))
                 }
-            else -> unavailable(polygon, property, location)
+            "addPoints" -> function("addPoints") {
+                    arguments,
+                    callLocation,
+                ->
+                val points = when (
+                    val result = polygonPointArguments(
+                        polygon = polygon,
+                        functionName = "addPoints",
+                        arguments = arguments,
+                        offset = 0,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                polygonMutation(
+                    polygon = polygon,
+                    method = "addPoints",
+                    location = callLocation,
+                    result = polygon.addPoints(points),
+                )
+            }
+            "insertPoints" -> function("insertPoints") {
+                    arguments,
+                    callLocation,
+                ->
+                val indexValue = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.NumberValue
+                    )?.value ?: return@function invalidArgumentType(
+                    functionName = "insertPoints",
+                    argumentIndex = 0,
+                    expected = "integer",
+                    actual = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                if (
+                    !indexValue.isFinite() ||
+                    indexValue % 1.0 != 0.0 ||
+                    indexValue < Int.MIN_VALUE.toDouble() ||
+                    indexValue > Int.MAX_VALUE.toDouble()
+                ) {
+                    return@function invalidArgumentType(
+                        functionName = "insertPoints",
+                        argumentIndex = 0,
+                        expected = "integer",
+                        actual = arguments.first(),
+                        location = callLocation,
+                    )
+                }
+                val points = when (
+                    val result = polygonPointArguments(
+                        polygon = polygon,
+                        functionName = "insertPoints",
+                        arguments = arguments,
+                        offset = 1,
+                        location = callLocation,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return@function result
+                }
+                polygonMutation(
+                    polygon = polygon,
+                    method = "insertPoints",
+                    location = callLocation,
+                    result = polygon.insertPoints(
+                        index = indexValue.toInt(),
+                        points = points,
+                    ),
+                )
+            }
+            "removePoints" -> function("removePoints") {
+                    arguments,
+                    callLocation,
+                ->
+                val indices = mutableListOf<Int>()
+                for ((index, argument) in arguments.withIndex()) {
+                    when (argument) {
+                        is JessieCodeRuntimeValue.ElementReference -> {
+                            val point = argument.element as? Point
+                                ?: return@function invalidArgumentType(
+                                    functionName = "removePoints",
+                                    argumentIndex = index,
+                                    expected = "point or integer",
+                                    actual = argument,
+                                    location = callLocation,
+                                )
+                            indices += polygon.findPoint(point)
+                        }
+                        is JessieCodeRuntimeValue.NumberValue -> {
+                            if (
+                                !argument.value.isFinite() ||
+                                argument.value % 1.0 != 0.0 ||
+                                argument.value < Int.MIN_VALUE.toDouble() ||
+                                argument.value > Int.MAX_VALUE.toDouble()
+                            ) {
+                                return@function invalidArgumentType(
+                                    functionName = "removePoints",
+                                    argumentIndex = index,
+                                    expected = "point or integer",
+                                    actual = argument,
+                                    location = callLocation,
+                                )
+                            }
+                            indices += argument.value.toInt()
+                        }
+                        else -> return@function invalidArgumentType(
+                            functionName = "removePoints",
+                            argumentIndex = index,
+                            expected = "point or integer",
+                            actual = argument,
+                            location = callLocation,
+                        )
+                    }
+                }
+                polygonMutation(
+                    polygon = polygon,
+                    method = "removePoints",
+                    location = callLocation,
+                    result = polygon.removePoints(indices),
+                )
+            }
+            "Intersect" -> function("intersect") {
+                    arguments,
+                    callLocation,
+                ->
+                val other = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.ElementReference
+                    )?.element as? Polygon
+                    ?: return@function invalidArgumentType(
+                        functionName = "intersect",
+                        argumentIndex = 0,
+                        expected = "polygon",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                GMResult.Ok(
+                    JessieCodeRuntimeValue.ArrayValue(
+                        polygon.intersect(other).map(::array),
+                    ),
+                )
+            }
+            else -> null
         }
     }
+
+    private fun polygonPointArguments(
+        polygon: Polygon,
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        offset: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<List<Point>, JessieCodeRuntimeError> {
+        val points = mutableListOf<Point>()
+        for (index in offset until arguments.size) {
+            val point = (
+                arguments[index] as?
+                    JessieCodeRuntimeValue.ElementReference
+                )?.element as? Point
+                ?: return invalidArgumentType(
+                    functionName = functionName,
+                    argumentIndex = index,
+                    expected = "point",
+                    actual = arguments[index],
+                    location = location,
+                )
+            if (
+                point.board !== polygon.board ||
+                polygon.board.select(point) !== point
+            ) {
+                return GMResult.Err(
+                    JessieCodeRuntimeError.ElementMethodUnavailable(
+                        elementId = polygon.id,
+                        method = functionName,
+                        reason =
+                            "point ${point.id} is not registered on " +
+                                "the polygon board",
+                        location = location,
+                    ),
+                )
+            }
+            points += point
+        }
+        return GMResult.Ok(points)
+    }
+
+    private fun polygonMutation(
+        polygon: Polygon,
+        method: String,
+        location: JessieCodeAstLocation,
+        result: GMResult<Polygon, *>,
+    ): ElementPropertyResult =
+        when (result) {
+            is GMResult.Ok -> elementReference(result.value)
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.ElementMethodUnavailable(
+                    elementId = polygon.id,
+                    method = method,
+                    reason = result.error.toString(),
+                    location = location,
+                ),
+            )
+        }
 
     // JSXGraph 1.13.3: src/element/slopetriangle.js ->
     // extendInstanceMethodMap.
@@ -1176,7 +2720,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     },
                 ),
             )
-            else -> unavailable(polygon, property, location)
+            else -> null
         }
     }
 
@@ -1201,6 +2745,45 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             "Diameter" -> numberFunction("Diameter") {
                 circle.Diameter()
             }
+            "setRadius" -> function("setRadius") {
+                    arguments,
+                    callLocation,
+                ->
+                val result: GMResult<Circle, *> = when (
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    is JessieCodeRuntimeValue.NumberValue ->
+                        GMResult.Ok(circle.setRadius(value.value))
+                    is JessieCodeRuntimeValue.StringValue ->
+                        circle.setRadius(value.value)
+                    is JessieCodeRuntimeValue.FunctionValue ->
+                        circle.setRadius(
+                            CircleRadiusFunction(
+                                function = value,
+                                location = callLocation,
+                            ),
+                        )
+                    else -> return@function invalidArgumentType(
+                        functionName = "setRadius",
+                        argumentIndex = 0,
+                        expected = "number, string, or function",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                when (result) {
+                    is GMResult.Ok -> elementReference(circle)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = circle.id,
+                            method = "setRadius",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
             "center" -> GMResult.Ok(
                 JessieCodeRuntimeValue.ElementReference(circle.center),
             )
@@ -1214,7 +2797,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     JessieCodeRuntimeValue.ElementReference(it),
                 )
             } ?: unavailable(circle, property, location)
-            else -> unavailable(circle, property, location)
+            else -> null
         }
     }
 
@@ -1288,7 +2871,69 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             "L", "Length", "length" -> numberFunction("L") {
                 line.L()
             }
-            else -> unavailable(line, property, location)
+            "setFixedLength" -> function("setFixedLength") {
+                    arguments,
+                    callLocation,
+                ->
+                val result: GMResult<Line, *> = when (
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    is JessieCodeRuntimeValue.NumberValue ->
+                        GMResult.Ok(line.setFixedLength(value.value))
+                    is JessieCodeRuntimeValue.StringValue ->
+                        line.setFixedLength(value.value)
+                    is JessieCodeRuntimeValue.FunctionValue ->
+                        line.setFixedLength(value, callLocation)
+                    else -> return@function invalidArgumentType(
+                        functionName = "setFixedLength",
+                        argumentIndex = 0,
+                        expected = "number, string, or function",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                when (result) {
+                    is GMResult.Ok -> elementReference(line)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = line.id,
+                            method = "setFixedLength",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
+            "setStraight" -> function("setStraight") {
+                    arguments,
+                    callLocation,
+                ->
+                val first = (
+                    arguments.firstOrNull() as?
+                        JessieCodeRuntimeValue.BooleanValue
+                    )?.value ?: return@function invalidArgumentType(
+                    functionName = "setStraight",
+                    argumentIndex = 0,
+                    expected = "boolean",
+                    actual = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                val last = (
+                    arguments.getOrNull(1) as?
+                        JessieCodeRuntimeValue.BooleanValue
+                    )?.value ?: return@function invalidArgumentType(
+                    functionName = "setStraight",
+                    argumentIndex = 1,
+                    expected = "boolean",
+                    actual = arguments.getOrNull(1)
+                        ?: JessieCodeRuntimeValue.UndefinedValue,
+                    location = callLocation,
+                )
+                elementReference(line.setStraight(first, last))
+            }
+            else -> null
         }
     }
 
@@ -1418,6 +3063,57 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
     ): ElementPropertyResult? {
         val text = element as? Text ?: return null
         return when (property) {
+            "move" -> function("setCoords") {
+                    arguments,
+                    callLocation,
+                ->
+                val coordinates = when (
+                    val first = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    is JessieCodeRuntimeValue.ArrayValue -> when (
+                        val result = coordinateArray(
+                            functionName = "setCoords",
+                            value = first,
+                            location = callLocation,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return@function result
+                    }
+                    is JessieCodeRuntimeValue.NumberValue -> {
+                        val second = (
+                            arguments.getOrNull(1) as?
+                                JessieCodeRuntimeValue.NumberValue
+                            )?.value ?: return@function invalidArgumentType(
+                            functionName = "setCoords",
+                            argumentIndex = 1,
+                            expected = "number",
+                            actual = arguments.getOrNull(1)
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
+                        )
+                        doubleArrayOf(first.value, second)
+                    }
+                    else -> return@function invalidArgumentType(
+                        functionName = "setCoords",
+                        argumentIndex = 0,
+                        expected = "coordinate array or number",
+                        actual = first,
+                        location = callLocation,
+                    )
+                }
+                elementReference(text.setCoords(coordinates))
+            }
+            "Size" -> function("getSize") { _, _ ->
+                GMResult.Ok(array(text.textSize()))
+            }
+            "setAutoPosition" -> function("setAutoPosition") {
+                    _,
+                    _,
+                ->
+                elementReference(text.setAutoPosition())
+            }
             "setText" -> function("setText") {
                     arguments,
                     callLocation,
@@ -1839,11 +3535,257 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     ?: false
                 GMResult.Ok(array(coordinates.Coords(withZ)))
             }
+            "glide", "makeGlider" -> function("makeGlider") {
+                    arguments,
+                    callLocation,
+                ->
+                val slide = when (
+                    val value = arguments.firstOrNull()
+                        ?: JessieCodeRuntimeValue.UndefinedValue
+                ) {
+                    is JessieCodeRuntimeValue.ElementReference ->
+                        value.element
+                    is JessieCodeRuntimeValue.StringValue ->
+                        coordinates.board.select(value.value)
+                            ?: return@function GMResult.Err(
+                                JessieCodeRuntimeError
+                                    .ElementMethodUnavailable(
+                                        elementId = coordinates.id,
+                                        method = "makeGlider",
+                                        reason =
+                                            "unknown slide object " +
+                                                value.value,
+                                        location = callLocation,
+                                    ),
+                            )
+                    else -> return@function invalidArgumentType(
+                        functionName = "makeGlider",
+                        argumentIndex = 0,
+                        expected = "element or string reference",
+                        actual = value,
+                        location = callLocation,
+                    )
+                }
+                when (val result = coordinates.makeGlider(slide)) {
+                    is GMResult.Ok -> elementReference(coordinates)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = coordinates.id,
+                            method = "makeGlider",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
+            "intersect", "makeIntersection" ->
+                function("makeIntersection") {
+                        arguments,
+                        callLocation,
+                    ->
+                    val point = coordinates as? Point
+                        ?: return@function GMResult.Err(
+                            JessieCodeRuntimeError
+                                .ElementMethodUnavailable(
+                                    elementId = coordinates.id,
+                                    method = "makeIntersection",
+                                    reason =
+                                        "only Point can become an " +
+                                            "intersection",
+                                    location = callLocation,
+                                ),
+                        )
+                    val first = (
+                        arguments.firstOrNull() as?
+                            JessieCodeRuntimeValue.ElementReference
+                        )?.element
+                        ?: return@function invalidArgumentType(
+                            functionName = "makeIntersection",
+                            argumentIndex = 0,
+                            expected = "element",
+                            actual = arguments.firstOrNull()
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
+                        )
+                    val second = (
+                        arguments.getOrNull(1) as?
+                            JessieCodeRuntimeValue.ElementReference
+                        )?.element
+                        ?: return@function invalidArgumentType(
+                            functionName = "makeIntersection",
+                            argumentIndex = 1,
+                            expected = "element",
+                            actual = arguments.getOrNull(1)
+                                ?: JessieCodeRuntimeValue.UndefinedValue,
+                            location = callLocation,
+                        )
+                    val firstIndex = optionalNumberArgument(
+                        functionName = "makeIntersection",
+                        arguments = arguments,
+                        index = 2,
+                        default = 0.0,
+                        location = callLocation,
+                    )
+                    val secondIndex = optionalNumberArgument(
+                        functionName = "makeIntersection",
+                        arguments = arguments,
+                        index = 3,
+                        default = 0.0,
+                        location = callLocation,
+                    )
+                    val firstIndexValue = when (firstIndex) {
+                        is GMResult.Ok -> firstIndex.value
+                        is GMResult.Err -> return@function firstIndex
+                    }
+                    val secondIndexValue = when (secondIndex) {
+                        is GMResult.Ok -> secondIndex.value
+                        is GMResult.Err -> return@function secondIndex
+                    }
+                    when (
+                        val result = point.makeIntersection(
+                            first = first,
+                            second = second,
+                            firstIndex = firstIndexValue,
+                            secondIndex = secondIndexValue,
+                        )
+                    ) {
+                        is GMResult.Ok -> elementReference(point)
+                        is GMResult.Err -> GMResult.Err(
+                            JessieCodeRuntimeError
+                                .ElementMethodUnavailable(
+                                    elementId = point.id,
+                                    method = "makeIntersection",
+                                    reason = result.error.toString(),
+                                    location = callLocation,
+                                ),
+                        )
+                    }
+                }
+            "free" -> function("free") { _, _ ->
+                elementReference(coordinates.free())
+            }
+            "setPosition", "setGliderPosition" ->
+                function("setGliderPosition") {
+                        arguments,
+                        callLocation,
+                    ->
+                    val value = (
+                        arguments.firstOrNull() as?
+                            JessieCodeRuntimeValue.NumberValue
+                        )?.value ?: return@function invalidArgumentType(
+                        functionName = "setGliderPosition",
+                        argumentIndex = 0,
+                        expected = "number",
+                        actual = arguments.firstOrNull()
+                            ?: JessieCodeRuntimeValue.UndefinedValue,
+                        location = callLocation,
+                    )
+                    if (coordinates.type == Const.OBJECT_TYPE_GLIDER) {
+                        coordinates.position = value
+                        coordinates.board.update()
+                    }
+                    elementReference(coordinates)
+                }
+            "onPolygon" -> GMResult.Ok(
+                JessieCodeRuntimeValue.BooleanValue(
+                    coordinates.onPolygon,
+                ),
+            )
+            "startAnimation" -> function("startAnimation") {
+                    arguments,
+                    callLocation,
+                ->
+                val direction = requiredNumberArgument(
+                    functionName = "startAnimation",
+                    arguments = arguments,
+                    index = 0,
+                    location = callLocation,
+                )
+                val steps = requiredNumberArgument(
+                    functionName = "startAnimation",
+                    arguments = arguments,
+                    index = 1,
+                    location = callLocation,
+                )
+                val directionValue = when (direction) {
+                    is GMResult.Ok -> direction.value
+                    is GMResult.Err -> return@function direction
+                }
+                val stepsValue = when (steps) {
+                    is GMResult.Ok -> steps.value
+                    is GMResult.Err -> return@function steps
+                }
+                if (
+                    !stepsValue.isFinite() ||
+                    stepsValue % 1.0 != 0.0 ||
+                    stepsValue < Int.MIN_VALUE.toDouble() ||
+                    stepsValue > Int.MAX_VALUE.toDouble()
+                ) {
+                    return@function invalidArgumentType(
+                        functionName = "startAnimation",
+                        argumentIndex = 1,
+                        expected = "integer",
+                        actual = arguments[1],
+                        location = callLocation,
+                    )
+                }
+                val delay = optionalNumberArgument(
+                    functionName = "startAnimation",
+                    arguments = arguments,
+                    index = 2,
+                    default = 250.0,
+                    location = callLocation,
+                )
+                val delayValue = when (delay) {
+                    is GMResult.Ok -> delay.value
+                    is GMResult.Err -> return@function delay
+                }
+                when (
+                    val result = coordinates.startAnimation(
+                        direction = directionValue,
+                        stepCount = stepsValue.toInt(),
+                        delayMilliseconds = delayValue,
+                    )
+                ) {
+                    is GMResult.Ok -> elementReference(coordinates)
+                    is GMResult.Err -> GMResult.Err(
+                        JessieCodeRuntimeError.ElementMethodUnavailable(
+                            elementId = coordinates.id,
+                            method = "startAnimation",
+                            reason = result.error.toString(),
+                            location = callLocation,
+                        ),
+                    )
+                }
+            }
+            "stopAnimation" -> function("stopAnimation") { _, _ ->
+                elementReference(coordinates.stopAnimation())
+            }
             "move", "moveTo" -> function("moveTo") {
                     arguments,
                     callLocation,
                 ->
                 moveTo(
+                    element = coordinates,
+                    arguments = arguments,
+                    location = callLocation,
+                )
+            }
+            "moveAlong" -> function("moveAlong") {
+                    arguments,
+                    callLocation,
+                ->
+                moveAlong(
+                    element = coordinates,
+                    arguments = arguments,
+                    location = callLocation,
+                )
+            }
+            "visit" -> function("visit") {
+                    arguments,
+                    callLocation,
+                ->
+                visit(
                     element = coordinates,
                     arguments = arguments,
                     location = callLocation,
@@ -1885,9 +3827,52 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                     number(coordinates.Dist(other))
                 }
             }
-            else -> unavailable(coordinates, property, location)
+            else -> null
         }
     }
+
+    private fun requiredNumberArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        index: Int,
+        location: JessieCodeAstLocation,
+    ): GMResult<Double, JessieCodeRuntimeError> {
+        val value = arguments.getOrNull(index)
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val number = (
+            value as? JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return invalidArgumentType(
+            functionName = functionName,
+            argumentIndex = index,
+            expected = "number",
+            actual = value,
+            location = location,
+        )
+        return GMResult.Ok(number)
+    }
+
+    private fun optionalNumberArgument(
+        functionName: String,
+        arguments: List<JessieCodeRuntimeValue>,
+        index: Int,
+        default: Double,
+        location: JessieCodeAstLocation,
+    ): GMResult<Double, JessieCodeRuntimeError> =
+        when (
+            val value = arguments.getOrNull(index)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> GMResult.Ok(default)
+            is JessieCodeRuntimeValue.NumberValue ->
+                GMResult.Ok(value.value)
+            else -> invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = index,
+                expected = "number or undefined",
+                actual = value,
+                location = location,
+            )
+        }
 
     private fun numberFunction(
         name: String,
@@ -2123,6 +4108,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         }
         val options = when (
             val result = moveOptions(
+                functionName = "moveTo",
                 element = element,
                 value = arguments.getOrNull(2)
                     ?: JessieCodeRuntimeValue.UndefinedValue,
@@ -2154,7 +4140,230 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         }
     }
 
+    private fun moveAlong(
+        element: CoordsElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val duration = when (
+            val time = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> 0.0
+            is JessieCodeRuntimeValue.NumberValue -> time.value
+            else -> return invalidArgumentType(
+                functionName = "moveAlong",
+                argumentIndex = 1,
+                expected = "number or undefined",
+                actual = time,
+                location = location,
+            )
+        }
+        val options = when (
+            val result = moveOptions(
+                functionName = "moveAlong",
+                element = element,
+                value = arguments.getOrNull(2)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val path = arguments.firstOrNull()
+            ?: JessieCodeRuntimeValue.UndefinedValue
+        val result = when (path) {
+            is JessieCodeRuntimeValue.ArrayValue -> {
+                val coordinates = mutableListOf<DoubleArray>()
+                for ((index, value) in path.values.withIndex()) {
+                    val pointCoordinates = when (value) {
+                        is JessieCodeRuntimeValue.ElementReference -> {
+                            val point = value.element as? CoordsElement
+                                ?: return invalidArgumentType(
+                                    functionName = "moveAlong",
+                                    argumentIndex = index,
+                                    expected =
+                                        "coordinate array or point",
+                                    actual = value,
+                                    location = location,
+                                )
+                            doubleArrayOf(point.X(), point.Y())
+                        }
+                        else -> when (
+                            val parsed = coordinateArray(
+                                functionName = "moveAlong",
+                                value = value,
+                                location = location,
+                            )
+                        ) {
+                            is GMResult.Ok -> parsed.value
+                            is GMResult.Err -> return parsed
+                        }
+                    }
+                    coordinates += pointCoordinates
+                }
+                element.moveAlong(
+                    path = coordinates,
+                    timeMilliseconds = duration,
+                    options = options,
+                )
+            }
+            is JessieCodeRuntimeValue.FunctionValue ->
+                element.moveAlong(
+                    path = CoordsElementPathFunction {
+                            elapsedMilliseconds,
+                        ->
+                        when (
+                            val evaluated = path.externalCallable.call(
+                                arguments = listOf(
+                                    JessieCodeRuntimeValue.NumberValue(
+                                        elapsedMilliseconds,
+                                    ),
+                                ),
+                                location = location,
+                            )
+                        ) {
+                            is GMResult.Err -> GMResult.Err(
+                                CoordsElementAnimationError.PathEvaluation(
+                                    evaluated.error.toString(),
+                                ),
+                            )
+                            is GMResult.Ok -> when (val value = evaluated.value) {
+                                JessieCodeRuntimeValue.UndefinedValue,
+                                JessieCodeRuntimeValue.NullValue,
+                                -> GMResult.Ok(null)
+                                is JessieCodeRuntimeValue.NumberValue ->
+                                    if (value.value.isNaN()) {
+                                        GMResult.Ok(null)
+                                    } else {
+                                        GMResult.Err(
+                                            CoordsElementAnimationError
+                                                .PathEvaluation(
+                                                    "expected coordinates " +
+                                                        "or NaN, got number",
+                                                ),
+                                        )
+                                    }
+                                is JessieCodeRuntimeValue.ArrayValue ->
+                                    when (
+                                        val coordinates = coordinateArray(
+                                            functionName = "moveAlong",
+                                            value = value,
+                                            location = location,
+                                        )
+                                    ) {
+                                        is GMResult.Ok ->
+                                            GMResult.Ok(coordinates.value)
+                                        is GMResult.Err -> GMResult.Err(
+                                            CoordsElementAnimationError
+                                                .PathEvaluation(
+                                                    coordinates.error
+                                                        .toString(),
+                                                ),
+                                        )
+                                    }
+                                else -> GMResult.Err(
+                                    CoordsElementAnimationError.PathEvaluation(
+                                        "expected coordinates or NaN, got " +
+                                            typeName(value),
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                    timeMilliseconds = duration,
+                    options = options,
+                )
+            else -> return invalidArgumentType(
+                functionName = "moveAlong",
+                argumentIndex = 0,
+                expected = "path array or function",
+                actual = path,
+                location = location,
+            )
+        }
+        return movementResult(
+            element = element,
+            method = "moveAlong",
+            location = location,
+            result = result,
+        )
+    }
+
+    private fun visit(
+        element: CoordsElement,
+        arguments: List<JessieCodeRuntimeValue>,
+        location: JessieCodeAstLocation,
+    ): ElementPropertyResult {
+        val coordinates = when (
+            val result = coordinateArray(
+                functionName = "visit",
+                value = arguments.firstOrNull()
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val duration = (
+            arguments.getOrNull(1) as?
+                JessieCodeRuntimeValue.NumberValue
+            )?.value ?: return invalidArgumentType(
+            functionName = "visit",
+            argumentIndex = 1,
+            expected = "number",
+            actual = arguments.getOrNull(1)
+                ?: JessieCodeRuntimeValue.UndefinedValue,
+            location = location,
+        )
+        val options = when (
+            val result = moveOptions(
+                functionName = "visit",
+                element = element,
+                value = arguments.getOrNull(2)
+                    ?: JessieCodeRuntimeValue.UndefinedValue,
+                location = location,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return movementResult(
+            element = element,
+            method = "visit",
+            location = location,
+            result = element.visit(
+                where = coordinates,
+                timeMilliseconds = duration,
+                options = options,
+            ),
+        )
+    }
+
+    private fun movementResult(
+        element: CoordsElement,
+        method: String,
+        location: JessieCodeAstLocation,
+        result: GMResult<CoordsElement, CoordsElementAnimationError>,
+    ): ElementPropertyResult =
+        when (result) {
+            is GMResult.Ok -> GMResult.Ok(
+                JessieCodeRuntimeValue.BoardReference(element.board),
+            )
+            is GMResult.Err -> GMResult.Err(
+                JessieCodeRuntimeError.ElementMethodUnavailable(
+                    elementId = element.id,
+                    method = method,
+                    reason = result.error.toString(),
+                    location = location,
+                ),
+            )
+        }
+
     private fun moveOptions(
+        functionName: String,
         element: CoordsElement,
         value: JessieCodeRuntimeValue,
         location: JessieCodeAstLocation,
@@ -2165,7 +4374,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
         val properties = (
             value as? JessieCodeRuntimeValue.ObjectValue
             )?.properties ?: return invalidArgumentType(
-            functionName = "moveTo",
+            functionName = functionName,
             argumentIndex = 2,
             expected = "object or undefined",
             actual = value,
@@ -2178,7 +4387,7 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             JessieCodeRuntimeValue.UndefinedValue -> null
             is JessieCodeRuntimeValue.StringValue -> raw.value
             else -> return invalidArgumentType(
-                functionName = "moveTo",
+                functionName = functionName,
                 argumentIndex = 2,
                 expected = "options.effect string",
                 actual = raw,
@@ -2208,9 +4417,53 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
                 }
             }
             else -> return invalidArgumentType(
-                functionName = "moveTo",
+                functionName = functionName,
                 argumentIndex = 2,
                 expected = "options.callback function",
+                actual = raw,
+                location = location,
+            )
+        }
+        val interpolate = when (
+            val raw = properties["interpolate"]
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> true
+            is JessieCodeRuntimeValue.BooleanValue -> raw.value
+            else -> return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = 2,
+                expected = "options.interpolate boolean",
+                actual = raw,
+                location = location,
+            )
+        }
+        val repeat = when (
+            val raw = properties["repeat"]
+                ?: JessieCodeRuntimeValue.UndefinedValue
+        ) {
+            JessieCodeRuntimeValue.UndefinedValue -> 1
+            is JessieCodeRuntimeValue.NumberValue -> {
+                if (
+                    !raw.value.isFinite() ||
+                    raw.value % 1.0 != 0.0 ||
+                    raw.value < Int.MIN_VALUE.toDouble() ||
+                    raw.value > Int.MAX_VALUE.toDouble()
+                ) {
+                    return invalidArgumentType(
+                        functionName = functionName,
+                        argumentIndex = 2,
+                        expected = "options.repeat integer",
+                        actual = raw,
+                        location = location,
+                    )
+                }
+                raw.value.toInt()
+            }
+            else -> return invalidArgumentType(
+                functionName = functionName,
+                argumentIndex = 2,
+                expected = "options.repeat integer",
                 actual = raw,
                 location = location,
             )
@@ -2219,6 +4472,8 @@ internal object CoreGeometryElementRuntime : JessieCodeElementRuntime {
             CoordsElementMoveOptions(
                 callback = callback,
                 effect = effect,
+                interpolate = interpolate,
+                repeat = repeat,
             ),
         )
     }

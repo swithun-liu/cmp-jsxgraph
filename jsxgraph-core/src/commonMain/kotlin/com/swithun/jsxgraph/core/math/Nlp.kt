@@ -162,6 +162,7 @@ internal object Nlp {
         )
         lastNumberOfEvaluations = 0
 
+        // JSXGraph 1.13.3: src/math/nlp.js -> FindMinimum closure fcalcfc.
         val internalCalculation =
             InternalCalculation<E> { n, m, x, constraints ->
                 val externalVariables = DoubleArray(n)

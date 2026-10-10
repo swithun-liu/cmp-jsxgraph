@@ -5,6 +5,7 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.utils.EventHandler
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -287,6 +288,123 @@ class GliderSliderTest {
     }
 
     @Test
+    fun sliderTicksGenerateLabelsFromCurrentSliderRange() {
+        val board = board()
+        val slider = slider(
+            Slider.create(
+                board = board,
+                startCoordinates = doubleArrayOf(-4.0, 0.0),
+                endCoordinates = doubleArrayOf(4.0, 0.0),
+                range = doubleArrayOf(-10.0, 0.0, 10.0),
+                attributes = SliderAttributes(
+                    id = "slider",
+                    name = "",
+                    withLabel = false,
+                    ticksAttributes =
+                        SliderAttributes.DEFAULT_TICKS_ATTRIBUTES.copy(
+                            drawLabels = true,
+                            insertTicks = false,
+                            ticksDistance = 2.0,
+                        ),
+                ),
+            ),
+        )
+        val ticks = assertIs<Ticks>(slider.sliderTicks)
+
+        assertEquals("−10", ticks.generateSliderLabelText(0.0, 8.0))
+        assertEquals("−5", ticks.generateSliderLabelText(2.0, 8.0))
+        assertEquals("0", ticks.generateSliderLabelText(4.0, 8.0))
+        assertEquals("10", ticks.generateSliderLabelText(8.0, 8.0))
+        assertEquals("0", ticks.generateSliderLabelText(2.0, 0.0))
+
+        slider.setMin(-20.0).setMax(20.0)
+
+        assertEquals("−10", ticks.generateSliderLabelText(2.0, 8.0))
+        assertEquals("20", ticks.generateSliderLabelText(8.0, 8.0))
+    }
+
+    @Test
+    fun baselinePointerUpMovesSliderUnlessDisabledOrFixed() {
+        val board = board()
+        val slider = slider(
+            Slider.create(
+                board = board,
+                startCoordinates = doubleArrayOf(-4.0, 0.0),
+                endCoordinates = doubleArrayOf(4.0, 0.0),
+                range = doubleArrayOf(0.0, 2.0, 10.0),
+                attributes = SliderAttributes(
+                    id = "slider",
+                    name = "",
+                    withLabel = false,
+                    withTicks = false,
+                ),
+            ),
+        )
+        var dragCount = 0
+        slider.on(
+            event = "drag",
+            handler = EventHandler { _, _ -> dragCount += 1 },
+        )
+        board.fullUpdate()
+
+        clickBaseline(board, x = 2.0, y = 0.0)
+
+        assertPoint(2.0, 0.0, slider)
+        assertEquals(0.75, slider.position)
+        assertEquals(7.5, slider.Value())
+        assertEquals(1, dragCount)
+        assertNull(slider.baselineMoveError)
+        assertTrue(board.downObjects.isEmpty())
+        assertTrue(board.touches.isEmpty())
+
+        val disabledBoard = board()
+        val disabled = slider(
+            Slider.create(
+                board = disabledBoard,
+                startCoordinates = doubleArrayOf(-4.0, 0.0),
+                endCoordinates = doubleArrayOf(4.0, 0.0),
+                range = doubleArrayOf(0.0, 2.0, 10.0),
+                attributes = SliderAttributes(
+                    id = "disabled",
+                    name = "",
+                    moveOnUp = false,
+                    withLabel = false,
+                    withTicks = false,
+                ),
+            ),
+        )
+        disabledBoard.fullUpdate()
+
+        clickBaseline(disabledBoard, x = 2.0, y = 0.0)
+
+        assertPoint(-2.4, 0.0, disabled)
+        assertEquals(2.0, disabled.Value())
+
+        val fixedBoard = board()
+        val fixed = slider(
+            Slider.create(
+                board = fixedBoard,
+                startCoordinates = doubleArrayOf(-4.0, 0.0),
+                endCoordinates = doubleArrayOf(4.0, 0.0),
+                range = doubleArrayOf(0.0, 2.0, 10.0),
+                attributes = SliderAttributes(
+                    id = "fixed",
+                    name = "",
+                    fixed = true,
+                    withLabel = false,
+                    withTicks = false,
+                ),
+            ),
+        )
+        fixedBoard.fullUpdate()
+
+        clickBaseline(fixedBoard, x = 2.0, y = 0.0)
+
+        assertPoint(-2.4, 0.0, fixed)
+        assertEquals(2.0, fixed.Value())
+    }
+
+    @Test
     fun sliderAppliesSnapWidthAndSnapValuesLikeUpstream() {
         val board = board()
         val slider = slider(
@@ -368,6 +486,30 @@ class GliderSliderTest {
         unitY = 50.0,
         id = "board",
     )
+
+    private fun clickBaseline(
+        board: Board,
+        x: Double,
+        y: Double,
+    ) {
+        val screen = Coords(
+            method = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(x, y),
+            board = board,
+            emitter = false,
+        ).scrCoords
+        val down = BoardInputEvent(
+            screenX = screen[1],
+            screenY = screen[2],
+            pointerId = 1L,
+            timestampMilliseconds = 100L,
+            inputDevice = "mouse",
+        )
+        board.pointerDownListener(down)
+        board.pointerUpListener(
+            down.copy(timestampMilliseconds = 120L),
+        )
+    }
 
     private fun point(
         board: Board,

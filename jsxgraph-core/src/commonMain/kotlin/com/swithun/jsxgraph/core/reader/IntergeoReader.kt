@@ -28,11 +28,22 @@ import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.LineError
 import com.swithun.jsxgraph.core.base.MidpointError
 import com.swithun.jsxgraph.core.base.MidpointPoint
+import com.swithun.jsxgraph.core.base.OrthogonalConstructionError
 import com.swithun.jsxgraph.core.base.OtherIntersectionPoint
+import com.swithun.jsxgraph.core.base.ParallelConstructionError
+import com.swithun.jsxgraph.core.base.ParallelLine
+import com.swithun.jsxgraph.core.base.PerpendicularLine
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.PointError
 import com.swithun.jsxgraph.core.base.BisectorLine
+import com.swithun.jsxgraph.core.base.Polygon
+import com.swithun.jsxgraph.core.base.PolygonError
+import com.swithun.jsxgraph.core.base.Tangent
+import com.swithun.jsxgraph.core.base.TangentError
 import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
 import com.swithun.jsxgraph.core.utils.XML
 import com.swithun.jsxgraph.core.utils.XmlDocument
 import com.swithun.jsxgraph.core.utils.XmlElement
@@ -104,6 +115,11 @@ internal sealed interface IntergeoReaderError : ReaderDomainError {
         val actual: Int,
     ) : IntergeoReaderError
 
+    data class MissingConstraintParameterList(
+        val constraintType: String,
+        val listName: String,
+    ) : IntergeoReaderError
+
     data class MissingStoredObject(
         val id: String,
     ) : IntergeoReaderError
@@ -123,6 +139,10 @@ internal sealed interface IntergeoReaderError : ReaderDomainError {
     data class BoardCreationFailed(
         val id: String,
         val cause: IntergeoCreationError,
+    ) : IntergeoReaderError
+
+    data class MissingDisplayElement(
+        val reference: String,
     ) : IntergeoReaderError
 
     data class UnsupportedBoardConstraints(
@@ -153,6 +173,22 @@ internal sealed interface IntergeoCreationError {
 
     data class BisectorLines(
         val cause: BisectorLinesError,
+    ) : IntergeoCreationError
+
+    data class Parallel(
+        val cause: ParallelConstructionError,
+    ) : IntergeoCreationError
+
+    data class Perpendicular(
+        val cause: OrthogonalConstructionError,
+    ) : IntergeoCreationError
+
+    data class Polygon(
+        val cause: PolygonError,
+    ) : IntergeoCreationError
+
+    data class Tangent(
+        val cause: TangentError,
     ) : IntergeoCreationError
 }
 
@@ -186,6 +222,10 @@ internal sealed interface IntergeoReaderDiagnostic {
     data class UnsupportedBoardConstraint(
         val constraintType: String,
         val firstParameter: String?,
+    ) : IntergeoReaderDiagnostic
+
+    data class UnsupportedDisplayProperty(
+        val propertyType: String,
     ) : IntergeoReaderDiagnostic
 }
 
@@ -222,18 +262,38 @@ internal data class IntergeoConstraint(
     val name: String,
     val parameters: List<String>,
     val supportedByUpstreamReader: Boolean,
+    val nestedParameters: Map<String, List<String>> = emptyMap(),
+)
+
+internal data class IntergeoDisplayStyle(
+    val reference: String,
+    val attributes: Map<String, Any?>,
+)
+
+internal data class IntergeoDisplay(
+    val backgroundColor: String? = null,
+    val styles: List<IntergeoDisplayStyle> = emptyList(),
 )
 
 internal data class ParsedIntergeo(
     val objects: Map<String, IntergeoStoredObject>,
     val constraints: List<IntergeoConstraint>,
     val diagnostics: List<IntergeoReaderDiagnostic>,
+    val display: IntergeoDisplay = IntergeoDisplay(),
 )
 
 internal data class DrawnIntergeo(
     val parsed: ParsedIntergeo,
     val objects: Map<String, GeometryElement>,
     val diagnostics: List<IntergeoReaderDiagnostic>,
+)
+
+private data class IntergeoBoardReadState(
+    val originX: Double,
+    val originY: Double,
+    val unitX: Double,
+    val unitY: Double,
+    val attributes: Map<String, Any?>,
 )
 
 /**
@@ -314,6 +374,13 @@ internal class IntergeoReader(
         val diagnostics = parsed.diagnostics.toMutableList()
         val objects = linkedMapOf<String, GeometryElement>()
         val existingIds = board.objects.keys.toSet()
+        val boardState = IntergeoBoardReadState(
+            originX = board.origin.scrCoords[1],
+            originY = board.origin.scrCoords[2],
+            unitX = board.unitX,
+            unitY = board.unitY,
+            attributes = board.attributes.toMap(),
+        )
         board.setCoordinateSystem(
             originX = INTERGEO_ORIGIN_X,
             originY = INTERGEO_ORIGIN_Y,
@@ -345,7 +412,7 @@ internal class IntergeoReader(
             ) {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> {
-                    rollbackBoardRead(board, existingIds)
+                    rollbackBoardRead(board, existingIds, boardState)
                     return result
                 }
             }
@@ -364,13 +431,26 @@ internal class IntergeoReader(
             ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> {
-                    rollbackBoardRead(board, existingIds)
+                    rollbackBoardRead(board, existingIds, boardState)
                     return result
                 }
             }
             objects[id] = element
         }
 
+        when (
+            val result = readDisplay(
+                board = board,
+                display = parsed.display,
+                objects = objects,
+            )
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> {
+                rollbackBoardRead(board, existingIds, boardState)
+                return result
+            }
+        }
         board.unsuspendUpdate()
         return GMResult.Ok(
             DrawnIntergeo(
@@ -415,6 +495,38 @@ internal class IntergeoReader(
                     straightFirst = false,
                     straightLast = false,
                 )
+            LINE_THROUGH_POINT_CONSTRAINT ->
+                createLineThroughPoint(
+                    board = board,
+                    parsed = parsed,
+                    objects = objects,
+                    constraint = constraint,
+                )
+            LINE_PARALLEL_TO_LINE_THROUGH_POINT_CONSTRAINT,
+            RAY_FROM_POINT_AND_VECTOR_CONSTRAINT,
+            -> createParallelThroughPoint(
+                board = board,
+                parsed = parsed,
+                objects = objects,
+                constraint = constraint,
+                isRay =
+                    constraint.name ==
+                        RAY_FROM_POINT_AND_VECTOR_CONSTRAINT,
+            )
+            LINE_PERPENDICULAR_TO_LINE_THROUGH_POINT_CONSTRAINT ->
+                createPerpendicularThroughPoint(
+                    board = board,
+                    parsed = parsed,
+                    objects = objects,
+                    constraint = constraint,
+                )
+            ENDPOINTS_OF_LINE_SEGMENT_CONSTRAINT ->
+                constrainSegmentEndpoints(
+                    board = board,
+                    parsed = parsed,
+                    objects = objects,
+                    constraint = constraint,
+                )
             FREE_LINE_CONSTRAINT ->
                 createFreeLine(
                     board = board,
@@ -448,6 +560,12 @@ internal class IntergeoReader(
                 createCircleByCenterAndPoint(
                     board = board,
                     parsed = parsed,
+                    objects = objects,
+                    constraint = constraint,
+                )
+            CENTER_OF_CIRCLE_CONSTRAINT ->
+                createCenterOfCircle(
+                    board = board,
                     objects = objects,
                     constraint = constraint,
                 )
@@ -512,9 +630,36 @@ internal class IntergeoReader(
                 objects = objects,
                 constraint = constraint,
             )
+            CIRCLE_TANGENT_LINES_BY_POINT_CONSTRAINT ->
+                createCircleTangentLinesByPoint(
+                    board = board,
+                    parsed = parsed,
+                    objects = objects,
+                    constraint = constraint,
+                )
+            POLYGON_BY_VERTICES_CONSTRAINT ->
+                createPolygonByVertices(
+                    board = board,
+                    parsed = parsed,
+                    objects = objects,
+                    constraint = constraint,
+                )
+            LOCUS_DEFINED_BY_POINT_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_ON_LINE_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_ON_LINE_SEGMENT_CONSTRAINT,
+            LOCUS_DEFINED_BY_LINE_THROUGH_POINT_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_ON_CIRCLE_CONSTRAINT,
+            -> enableTrace(
+                objects = objects,
+                constraint = constraint,
+            )
             else -> GMResult.Ok(Unit)
         }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addLineThroughTwoPoints and addLineSegmentByTwoPoints.
+     */
     private fun createLineThroughTwoPoints(
         board: Board,
         parsed: ParsedIntergeo,
@@ -567,10 +712,310 @@ internal class IntergeoReader(
             }
         }
         line.configureVisibleRange(straightFirst, straightLast)
+        if (!straightFirst && !straightLast) {
+            line.setAttribute(mapOf("strokecolor" to "black"))
+        }
         objects[outputId] = line
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addLineThroughPoint.
+    private fun createLineThroughPoint(
+        board: Board,
+        parsed: ParsedIntergeo,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 2)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val outputId = constraint.parameters[0]
+        val stored = when (
+            val result = storedLine(parsed, outputId)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        if (stored.coords.size < LINE_COORDINATE_COUNT) {
+            return GMResult.Err(
+                IntergeoReaderError.InvalidStoredCoordinateCount(
+                    id = outputId,
+                    minimum = LINE_COORDINATE_COUNT,
+                    actual = stored.coords.size,
+                ),
+            )
+        }
+        val point = when (
+            val result = materializePoint(
+                board = board,
+                parsed = parsed,
+                objects = objects,
+                id = constraint.parameters[1],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val coefficients = IntergeoLineThroughPointCoefficients(
+            storedCoordinates = stored.coords,
+            point = point,
+        )
+        val first = when (
+            val result = createLineCoefficientEndpoint(
+                board = board,
+                coefficients = coefficients,
+                firstEndpoint = true,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Point(result.error),
+                )
+            }
+        }
+        val second = when (
+            val result = createLineCoefficientEndpoint(
+                board = board,
+                coefficients = coefficients,
+                firstEndpoint = false,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                board.removeObject(first)
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Point(result.error),
+                )
+            }
+        }
+        val line = when (
+            val result = Line.create(
+                board = board,
+                point1 = first,
+                point2 = second,
+                name = outputId,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                board.removeObjects(listOf(first, second))
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Line(result.error),
+                )
+            }
+        }
+        line.setAttribute(
+            mapOf(
+                "strokecolor" to "black",
+                "withlabel" to true,
+            ),
+        )
+        objects[outputId] = line
+        return GMResult.Ok(Unit)
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addLineParallelToLineThroughPoint.
+     */
+    private fun createParallelThroughPoint(
+        board: Board,
+        parsed: ParsedIntergeo,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+        isRay: Boolean,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 3)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val outputId = constraint.parameters[0]
+        val point = when (
+            val result = materializePoint(
+                board,
+                parsed,
+                objects,
+                constraint.parameters[1],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sourceLine = when (
+            val result = materializeLine(
+                board,
+                parsed,
+                objects,
+                constraint.parameters[2],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val line = when (
+            val result = ParallelLine.create(
+                board = board,
+                sourceLine = sourceLine,
+                throughPoint = point,
+                name = outputId,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Parallel(result.error),
+                )
+            }
+        }
+        line.configureVisibleRange(
+            straightFirst = !isRay,
+            straightLast = true,
+        )
+        line.setAttribute(mapOf("withlabel" to true))
+        objects[outputId] = line
+        return GMResult.Ok(Unit)
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addLinePerpendicularToLineThroughPoint.
+     */
+    private fun createPerpendicularThroughPoint(
+        board: Board,
+        parsed: ParsedIntergeo,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 3)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val outputId = constraint.parameters[0]
+        val point = when (
+            val result = materializePoint(
+                board,
+                parsed,
+                objects,
+                constraint.parameters[1],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val sourceLine = when (
+            val result = materializeLine(
+                board,
+                parsed,
+                objects,
+                constraint.parameters[2],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val line = when (
+            val result = PerpendicularLine.create(
+                board = board,
+                line = sourceLine,
+                point = point,
+                id = outputId,
+                name = outputId,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Perpendicular(result.error),
+                )
+            }
+        }
+        line.configureVisibleRange(
+            straightFirst = true,
+            straightLast = true,
+        )
+        line.setAttribute(mapOf("withlabel" to true))
+        objects[outputId] = line
+        return GMResult.Ok(Unit)
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addEndpointsOfLineSegment.
+     */
+    private fun constrainSegmentEndpoints(
+        board: Board,
+        parsed: ParsedIntergeo,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 3)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val segment = when (
+            val result = materializeLine(
+                board,
+                parsed,
+                objects,
+                constraint.parameters[2],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val endpoints = listOf(segment.point1, segment.point2)
+        for (index in endpoints.indices) {
+            val outputId = constraint.parameters[index]
+            val point = when (
+                val result = materializePoint(
+                    board,
+                    parsed,
+                    objects,
+                    outputId,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            val endpoint = endpoints[index]
+            val dependencies = mapOf(segment.id to segment)
+            val functions = listOf(
+                IntergeoCoordinateFunction(dependencies, endpoint::Z),
+                IntergeoCoordinateFunction(dependencies, endpoint::X),
+                IntergeoCoordinateFunction(dependencies, endpoint::Y),
+            )
+            val coordinates = when (
+                val result = point.coordinateConstraintResult(functions)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return creationFailure(
+                        outputId,
+                        IntergeoCreationError.Point(
+                            PointError.CoordinateExpressionEvaluation(
+                                result.error,
+                            ),
+                        ),
+                    )
+                }
+            }
+            point
+                .replaceCoordinateFunctions(functions)
+                .applyCoordinateConstraint(coordinates)
+            setAttributes(point)
+            objects[outputId] = point
+        }
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addFreeLine.
     private fun createFreeLine(
         board: Board,
         parsed: ParsedIntergeo,
@@ -609,6 +1054,7 @@ internal class IntergeoReader(
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addMidpointOfTwoPoints.
     private fun createMidpointOfTwoPoints(
         board: Board,
         parsed: ParsedIntergeo,
@@ -658,10 +1104,12 @@ internal class IntergeoReader(
                 )
             }
         }
+        setAttributes(midpoint)
         objects[outputId] = midpoint
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addMidpointOfLineSegment.
     private fun createMidpointOfLineSegment(
         board: Board,
         parsed: ParsedIntergeo,
@@ -701,10 +1149,15 @@ internal class IntergeoReader(
                 )
             }
         }
+        setAttributes(midpoint)
         objects[outputId] = midpoint
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addPointIntersectionOfTwoLines.
+     */
     private fun createPointIntersectionOfTwoLines(
         board: Board,
         objects: MutableMap<String, GeometryElement>,
@@ -750,10 +1203,15 @@ internal class IntergeoReader(
                 )
             }
         }
+        setAttributes(point)
         objects[outputId] = point
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addCircleByCenterAndPoint.
+     */
     private fun createCircleByCenterAndPoint(
         board: Board,
         parsed: ParsedIntergeo,
@@ -808,6 +1266,56 @@ internal class IntergeoReader(
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addCenterOfCircle.
+    private fun createCenterOfCircle(
+        board: Board,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 2)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val outputId = constraint.parameters[0]
+        val circle = when (
+            val result = resolvedCircle(
+                objects,
+                constraint.parameters[1],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val dependencies = mapOf(circle.id to circle)
+        val point = when (
+            val result = Point.createConstrained(
+                board = board,
+                coordinateFunctions = listOf(
+                    IntergeoCoordinateFunction(dependencies) {
+                        circle.center.X()
+                    },
+                    IntergeoCoordinateFunction(dependencies) {
+                        circle.center.Y()
+                    },
+                ),
+                id = outputId,
+                name = outputId,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Point(result.error),
+                )
+            }
+        }
+        setAttributes(point)
+        objects[outputId] = point
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addPointOnLine.
     private fun createPointOnLine(
         board: Board,
         parsed: ParsedIntergeo,
@@ -847,10 +1355,12 @@ internal class IntergeoReader(
                 )
             }
         }
+        setAttributes(point)
         objects[outputId] = point
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addPointOnCircle.
     private fun createPointOnCircle(
         board: Board,
         parsed: ParsedIntergeo,
@@ -914,10 +1424,15 @@ internal class IntergeoReader(
                 )
             }
         }
+        setAttributes(point)
         objects[outputId] = point
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addVectorFromPointToPoint.
+     */
     private fun createVectorFromPointToPoint(
         board: Board,
         parsed: ParsedIntergeo,
@@ -968,10 +1483,12 @@ internal class IntergeoReader(
             }
         }
         vector.configureArrow()
+        setAttributes(vector)
         objects[outputId] = vector
         return GMResult.Ok(Unit)
     }
 
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addCircleByThreePoints.
     private fun createCircleByThreePoints(
         board: Board,
         parsed: ParsedIntergeo,
@@ -1019,6 +1536,10 @@ internal class IntergeoReader(
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addAngularBisectorOfThreePoints.
+     */
     private fun createAngularBisectorOfThreePoints(
         board: Board,
         parsed: ParsedIntergeo,
@@ -1067,10 +1588,16 @@ internal class IntergeoReader(
             straightFirst = isLine,
             straightLast = true,
         )
+        bisector.setAttribute(mapOf("strokecolor" to "#000000"))
         objects[outputId] = bisector
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addIntersectionPointsOfTwoCircles and
+     * addIntersectionPointsOfCircleAndLine.
+     */
     private fun createIntersectionPoints(
         board: Board,
         objects: MutableMap<String, GeometryElement>,
@@ -1123,11 +1650,17 @@ internal class IntergeoReader(
                     )
                 }
             }
+            setAttributes(point)
             objects[outputId] = point
         }
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addOtherIntersectionPointOfTwoCircles and
+     * addOtherIntersectionPointOfCircleAndLine.
+     */
     private fun createOtherIntersectionPoint(
         board: Board,
         objects: MutableMap<String, GeometryElement>,
@@ -1183,10 +1716,15 @@ internal class IntergeoReader(
                 )
             }
         }
+        setAttributes(point)
         objects[outputId] = point
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addAngularBisectorsOfTwoLines.
+     */
     private fun createAngularBisectorsOfTwoLines(
         board: Board,
         objects: MutableMap<String, GeometryElement>,
@@ -1252,6 +1790,202 @@ internal class IntergeoReader(
         return GMResult.Ok(Unit)
     }
 
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addCircleTangentLinesByPoint.
+     */
+    private fun createCircleTangentLinesByPoint(
+        board: Board,
+        parsed: ParsedIntergeo,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 4)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val circle = when (
+            val result = resolvedElement(
+                objects,
+                constraint.parameters[2],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val point = when (
+            val result = materializePoint(
+                board,
+                parsed,
+                objects,
+                constraint.parameters[3],
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val polar = when (
+            val result = Tangent.createPolarLine(
+                board = board,
+                firstParent = circle,
+                secondParent = point,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    constraint.parameters[0],
+                    IntergeoCreationError.Tangent(result.error),
+                )
+            }
+        }
+        polar.setAttribute(mapOf("visible" to false))
+        val intersections = mutableListOf<IntersectionPoint>()
+        for (index in 0..1) {
+            val intersection = when (
+                val result = IntersectionPoint.create(
+                    board = board,
+                    first = circle,
+                    second = polar,
+                    firstIndex =
+                        IntersectionIndexSource.Number(index.toDouble()),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return creationFailure(
+                        constraint.parameters[index],
+                        IntergeoCreationError.Intersection(result.error),
+                    )
+                }
+            }
+            intersection.setAttribute(mapOf("visible" to false))
+            intersections += intersection
+        }
+        for (index in intersections.indices) {
+            val outputId = constraint.parameters[index]
+            val tangent = when (
+                val result = Tangent.create(
+                    board = board,
+                    firstParent = intersections[index],
+                    secondParent = circle,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    return creationFailure(
+                        outputId,
+                        IntergeoCreationError.Tangent(result.error),
+                    )
+                }
+            }
+            objects[outputId] = tangent
+        }
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addPolygonByVertices.
+    private fun createPolygonByVertices(
+        board: Board,
+        parsed: ParsedIntergeo,
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 1)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val vertexIds =
+            constraint.nestedParameters[LIST_OF_VERTICES_TAG]
+                ?: return GMResult.Err(
+                    IntergeoReaderError.MissingConstraintParameterList(
+                        constraintType = constraint.name,
+                        listName = LIST_OF_VERTICES_TAG,
+                    ),
+                )
+        val vertices = mutableListOf<Point>()
+        for (id in vertexIds) {
+            when (
+                val result = materializePoint(
+                    board,
+                    parsed,
+                    objects,
+                    id,
+                )
+            ) {
+                is GMResult.Ok -> vertices += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        val outputId = constraint.parameters[0]
+        val polygon = when (
+            val result = Polygon.create(
+                board = board,
+                vertices = vertices,
+                id = outputId,
+                name = outputId,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    outputId,
+                    IntergeoCreationError.Polygon(result.error),
+                )
+            }
+        }
+        polygon.setAttribute(mapOf("withlabel" to true))
+        objects[outputId] = polygon
+        return GMResult.Ok(Unit)
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * addLocusDefinedByPoint, addLocusDefinedByPointOnLine,
+     * addLocusDefinedByLineThroughPoint, and
+     * addLocusDefinedByPointOnCircle.
+     */
+    private fun enableTrace(
+        objects: MutableMap<String, GeometryElement>,
+        constraint: IntergeoConstraint,
+    ): GMResult<Unit, IntergeoReaderError> {
+        when (val result = requireParameters(constraint, 2)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val tracedId = constraint.parameters[1]
+        val element = when (
+            val result = resolvedElement(objects, tracedId)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        element.setAttribute(mapOf("trace" to true))
+        setAttributes(element)
+        objects[tracedId] = element
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> setAttributes.
+    private fun setAttributes(element: GeometryElement) {
+        element.setAttribute(
+            mapOf(
+                "strokecolor" to "blue",
+                "fillcolor" to "blue",
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/reader/intergeo.js -> addPoint.
+    private fun setFreePointAttributes(point: Point) {
+        point.setAttribute(
+            mapOf(
+                "strokecolor" to "red",
+                "fillcolor" to "red",
+            ),
+        )
+    }
+
     private fun materializePoint(
         board: Board,
         parsed: ParsedIntergeo,
@@ -1300,6 +2034,7 @@ internal class IntergeoReader(
                 )
             }
         }
+        setFreePointAttributes(point)
         objects[id] = point
         return GMResult.Ok(point)
     }
@@ -1351,6 +2086,27 @@ internal class IntergeoReader(
         return GMResult.Ok(line)
     }
 
+    private fun storedLine(
+        parsed: ParsedIntergeo,
+        id: String,
+    ): GMResult<IntergeoLineObject, IntergeoReaderError> {
+        val stored = parsed.objects[id]
+            ?: return GMResult.Err(
+                IntergeoReaderError.MissingStoredObject(id),
+            )
+        return if (stored is IntergeoLineObject) {
+            GMResult.Ok(stored)
+        } else {
+            GMResult.Err(
+                IntergeoReaderError.StoredObjectTypeMismatch(
+                    id = id,
+                    expected = "line",
+                    actual = stored.i2geoType,
+                ),
+            )
+        }
+    }
+
     private fun materializeStoredObject(
         board: Board,
         stored: IntergeoStoredObject,
@@ -1366,7 +2122,10 @@ internal class IntergeoReader(
                         name = stored.id,
                     )
                 ) {
-                    is GMResult.Ok -> result
+                    is GMResult.Ok -> {
+                        setFreePointAttributes(result.value)
+                        result
+                    }
                     is GMResult.Err -> creationFailure(
                         stored.id,
                         IntergeoCreationError.Point(result.error),
@@ -1405,7 +2164,12 @@ internal class IntergeoReader(
                 name = stored.id,
             )
         ) {
-            is GMResult.Ok -> result
+            is GMResult.Ok -> {
+                result.value.setAttribute(
+                    mapOf("strokecolor" to "black"),
+                )
+                result
+            }
             is GMResult.Err -> creationFailure(
                 stored.id,
                 IntergeoCreationError.Line(result.error),
@@ -1549,6 +2313,7 @@ internal class IntergeoReader(
     private fun rollbackBoardRead(
         board: Board,
         existingIds: Set<String>,
+        state: IntergeoBoardReadState,
     ) {
         val created = board.objects
             .filterKeys { it !in existingIds }
@@ -1556,8 +2321,32 @@ internal class IntergeoReader(
             .toList()
             .asReversed()
         board.removeObjects(created)
+        board.setCoordinateSystem(
+            originX = state.originX,
+            originY = state.originY,
+            unitX = state.unitX,
+            unitY = state.unitY,
+        )
+        board.attributes.clear()
+        board.attributes.putAll(state.attributes)
         board.unsuspendUpdate()
     }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * readDisplay and readDisplayProperty.
+     */
+    private fun readDisplay(
+        board: Board,
+        display: IntergeoDisplay,
+        objects: Map<String, GeometryElement>,
+    ): GMResult<Unit, IntergeoReaderError> =
+        /*
+         * In 1.13.3 read() passes the NodeList returned by
+         * getElementsByTagName("display"). JXG.isArray(NodeList) is false,
+         * so upstream readDisplay returns before readDisplayProperty.
+         */
+        GMResult.Ok(Unit)
 
     private fun parseTree(
         tree: XmlDocument,
@@ -1609,11 +2398,15 @@ internal class IntergeoReader(
         val parsedConstraints = mutableListOf<IntergeoConstraint>()
         var parameterCount = 0L
         for (node in constraintNodes) {
-            val parameters = when (val result = readParams(node)) {
+            val parameterGroups = when (
+                val result = readConstraintParameters(node)
+            ) {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
-            parameterCount += parameters.size
+            parameterCount +=
+                parameterGroups.parameters.size +
+                    parameterGroups.nested.values.sumOf(List<String>::size)
             if (parameterCount > limits.maxParameters.toLong()) {
                 return GMResult.Err(
                     IntergeoReaderError.ParameterLimitExceeded(
@@ -1622,6 +2415,7 @@ internal class IntergeoReader(
                     ),
                 )
             }
+            val parameters = parameterGroups.parameters
             val supported = node.nodeName in SUPPORTED_CONSTRAINTS
             if (!supported) {
                 diagnostics +=
@@ -1635,6 +2429,7 @@ internal class IntergeoReader(
                     name = node.nodeName,
                     parameters = parameters,
                     supportedByUpstreamReader = supported,
+                    nestedParameters = parameterGroups.nested,
                 )
         }
 
@@ -1643,6 +2438,7 @@ internal class IntergeoReader(
                 objects = objects.toMap(),
                 constraints = parsedConstraints.toList(),
                 diagnostics = diagnostics.toList(),
+                display = IntergeoDisplay(),
             ),
         )
     }
@@ -1662,6 +2458,7 @@ internal class IntergeoReader(
             CIRCLE_TAG,
             CONIC_TAG,
             -> storeConic(node, diagnostics)
+            POLYGON_TAG -> GMResult.Ok(null)
             else -> {
                 diagnostics +=
                     IntergeoReaderDiagnostic.UnsupportedElement(
@@ -1895,6 +2692,142 @@ internal class IntergeoReader(
         return GMResult.Ok(parameters)
     }
 
+    private data class IntergeoConstraintParameters(
+        val parameters: List<String>,
+        val nested: Map<String, List<String>>,
+    )
+
+    private fun readConstraintParameters(
+        node: XmlElement,
+    ): GMResult<IntergeoConstraintParameters, IntergeoReaderError> {
+        val parameters = mutableListOf<String>()
+        val nested = linkedMapOf<String, List<String>>()
+        for ((index, child) in node.childElements().withIndex()) {
+            if (child.childElements().isEmpty()) {
+                val value = when (
+                    val result = readText(
+                        parent = node,
+                        child = child,
+                        childIndex = index,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                parameters += value
+            } else {
+                val values = when (val result = readParams(child)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                nested[child.nodeName] = values
+            }
+        }
+        return GMResult.Ok(
+            IntergeoConstraintParameters(
+                parameters = parameters,
+                nested = nested,
+            ),
+        )
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/intergeo.js ->
+     * readDisplay and readDisplayProperty.
+     */
+    private fun parseDisplay(
+        tree: XmlDocument,
+        diagnostics: MutableList<IntergeoReaderDiagnostic>,
+    ): GMResult<IntergeoDisplay, IntergeoReaderError> {
+        val displayNode =
+            tree.getElementsByTagName(DISPLAY_TAG).firstOrNull()
+                ?: return GMResult.Ok(IntergeoDisplay())
+        var backgroundColor: String? = null
+        val styles = mutableListOf<IntergeoDisplayStyle>()
+        for ((index, node) in displayNode.childElements().withIndex()) {
+            when (node.nodeName) {
+                BACKGROUND_COLOR_TAG -> {
+                    backgroundColor = when (
+                        val result = readText(
+                            parent = displayNode,
+                            child = node,
+                            childIndex = index,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                STYLE_TAG -> {
+                    val reference =
+                        node.getAttribute(REFERENCE_ATTRIBUTE).orEmpty()
+                    val attributes = linkedMapOf<String, Any?>()
+                    for ((propertyIndex, property) in
+                        node.childElements().withIndex()
+                    ) {
+                        val value = when (
+                            val result = readText(
+                                parent = node,
+                                child = property,
+                                childIndex = propertyIndex,
+                            )
+                        ) {
+                            is GMResult.Ok -> result.value
+                            is GMResult.Err -> return result
+                        }
+                        val translated = translateDisplayProperty(
+                            key = property.nodeName,
+                            value = value,
+                        )
+                        attributes[translated.first] = translated.second
+                    }
+                    styles += IntergeoDisplayStyle(
+                        reference = reference,
+                        attributes = attributes,
+                    )
+                }
+                else -> diagnostics +=
+                    IntergeoReaderDiagnostic.UnsupportedDisplayProperty(
+                        propertyType = node.nodeName,
+                    )
+            }
+        }
+        return GMResult.Ok(
+            IntergeoDisplay(
+                backgroundColor = backgroundColor,
+                styles = styles,
+            ),
+        )
+    }
+
+    private fun translateDisplayProperty(
+        key: String,
+        value: String,
+    ): Pair<String, Any?> =
+        when (key) {
+            STROKE_TAG -> "strokeColor" to value
+            STROKE_WIDTH_TAG,
+            BORDER_WIDTH_TAG,
+            -> "strokeWidth" to jsParseFloat(value)
+            FILL_TAG -> "fillColor" to value
+            FILL_OPACITY_TAG -> "fillOpacity" to jsParseFloat(value)
+            BORDER_OPACITY_TAG -> "strokeOpacity" to jsParseFloat(value)
+            POINT_SIZE_TAG -> "size" to jsParseFloat(value)
+            LABEL_TAG -> "name" to value
+            POINT_STYLE_TAG -> "face" to
+                when (value) {
+                    "circle",
+                    "point",
+                    -> "o"
+                    "cross" -> "+"
+                    "x-mark" -> "x"
+                    "square" -> "[]"
+                    "triangle" -> "triangleup"
+                    else -> value
+                }
+            else -> key to value
+        }
+
     private fun readId(
         node: XmlElement,
     ): GMResult<String, IntergeoReaderError> {
@@ -1998,7 +2931,9 @@ internal class IntergeoReader(
     private companion object {
         const val ELEMENTS_TAG = "elements"
         const val CONSTRAINTS_TAG = "constraints"
+        const val DISPLAY_TAG = "display"
         const val ID_ATTRIBUTE = "id"
+        const val REFERENCE_ATTRIBUTE = "ref"
         const val POINT_TAG = "point"
         const val LINE_TAG = "line"
         const val LINE_SEGMENT_TAG = "line_segment"
@@ -2006,6 +2941,7 @@ internal class IntergeoReader(
         const val VECTOR_TAG = "vector"
         const val CIRCLE_TAG = "circle"
         const val CONIC_TAG = "conic"
+        const val POLYGON_TAG = "polygon"
         const val HOMOGENEOUS_COORDINATES_TAG = "homogeneous_coordinates"
         const val EUCLIDEAN_COORDINATES_TAG = "euclidean_coordinates"
         const val EUCLIDIAN_COORDINATES_TAG = "euclidian_coordinates"
@@ -2013,6 +2949,20 @@ internal class IntergeoReader(
         const val MATRIX_TAG = "matrix"
         const val DOUBLE_TAG = "double"
         const val COMPLEX_TAG = "complex"
+        const val LIST_OF_VERTICES_TAG = "list_of_vertices"
+        const val BACKGROUND_COLOR_TAG = "background-color"
+        const val STYLE_TAG = "style"
+        const val STROKE_TAG = "stroke"
+        const val STROKE_WIDTH_TAG = "stroke-width"
+        const val BORDER_WIDTH_TAG = "border-width"
+        const val FILL_TAG = "fill"
+        const val FILL_OPACITY_TAG = "fill-opacity"
+        const val BORDER_OPACITY_TAG = "border-opacity"
+        const val POINT_SIZE_TAG = "point-size"
+        const val LABEL_TAG = "label"
+        const val POINT_STYLE_TAG = "point-style"
+        const val CONTAINER_BACKGROUND_COLOR_ATTRIBUTE =
+            "containerbackgroundcolor"
         const val COMPLEX_REAL_EPSILON = 1e-10
         const val LINE_COORDINATE_COUNT = 3
         const val CONIC_MATRIX_COORDINATE_COUNT = 9
@@ -2028,6 +2978,15 @@ internal class IntergeoReader(
             "ray_from_point_through_point"
         const val LINE_SEGMENT_BY_POINTS_CONSTRAINT =
             "line_segment_by_points"
+        const val LINE_THROUGH_POINT_CONSTRAINT = "line_through_point"
+        const val LINE_PARALLEL_TO_LINE_THROUGH_POINT_CONSTRAINT =
+            "line_parallel_to_line_through_point"
+        const val RAY_FROM_POINT_AND_VECTOR_CONSTRAINT =
+            "ray_from_point_and_vector"
+        const val LINE_PERPENDICULAR_TO_LINE_THROUGH_POINT_CONSTRAINT =
+            "line_perpendicular_to_line_through_point"
+        const val ENDPOINTS_OF_LINE_SEGMENT_CONSTRAINT =
+            "endpoints_of_line_segment"
         const val FREE_LINE_CONSTRAINT = "free_line"
         const val MIDPOINT_OF_TWO_POINTS_CONSTRAINT =
             "midpoint_of_two_points"
@@ -2040,6 +2999,7 @@ internal class IntergeoReader(
             "point_intersection_of_two_lines"
         const val CIRCLE_BY_CENTER_AND_POINT_CONSTRAINT =
             "circle_by_center_and_point"
+        const val CENTER_OF_CIRCLE_CONSTRAINT = "center_of_circle"
         const val POINT_ON_LINE_CONSTRAINT = "point_on_line"
         const val POINT_ON_LINE_SEGMENT_CONSTRAINT =
             "point_on_line_segment"
@@ -2064,6 +3024,19 @@ internal class IntergeoReader(
             "angular_bisectors_of_two_lines"
         const val LINE_ANGULAR_BISECTORS_OF_TWO_LINES_CONSTRAINT =
             "line_angular_bisectors_of_two_lines"
+        const val CIRCLE_TANGENT_LINES_BY_POINT_CONSTRAINT =
+            "circle_tangent_lines_by_point"
+        const val POLYGON_BY_VERTICES_CONSTRAINT = "polygon_by_vertices"
+        const val LOCUS_DEFINED_BY_POINT_CONSTRAINT =
+            "locus_defined_by_point"
+        const val LOCUS_DEFINED_BY_POINT_ON_LINE_CONSTRAINT =
+            "locus_defined_by_point_on_line"
+        const val LOCUS_DEFINED_BY_POINT_ON_LINE_SEGMENT_CONSTRAINT =
+            "locus_defined_by_point_on_line_segment"
+        const val LOCUS_DEFINED_BY_LINE_THROUGH_POINT_CONSTRAINT =
+            "locus_defined_by_line_through_point"
+        const val LOCUS_DEFINED_BY_POINT_ON_CIRCLE_CONSTRAINT =
+            "locus_defined_by_point_on_circle"
 
         val FLOAT_PREFIX =
             Regex(
@@ -2115,6 +3088,11 @@ internal class IntergeoReader(
             LINE_THROUGH_TWO_POINTS_CONSTRAINT,
             RAY_FROM_POINT_THROUGH_POINT_CONSTRAINT,
             LINE_SEGMENT_BY_POINTS_CONSTRAINT,
+            LINE_THROUGH_POINT_CONSTRAINT,
+            LINE_PARALLEL_TO_LINE_THROUGH_POINT_CONSTRAINT,
+            RAY_FROM_POINT_AND_VECTOR_CONSTRAINT,
+            LINE_PERPENDICULAR_TO_LINE_THROUGH_POINT_CONSTRAINT,
+            ENDPOINTS_OF_LINE_SEGMENT_CONSTRAINT,
             FREE_LINE_CONSTRAINT,
             MIDPOINT_OF_TWO_POINTS_CONSTRAINT,
             MIDPOINT_CONSTRAINT,
@@ -2135,8 +3113,122 @@ internal class IntergeoReader(
             OTHER_INTERSECTION_POINT_OF_CIRCLE_AND_LINE_CONSTRAINT,
             ANGULAR_BISECTORS_OF_TWO_LINES_CONSTRAINT,
             LINE_ANGULAR_BISECTORS_OF_TWO_LINES_CONSTRAINT,
+            CIRCLE_TANGENT_LINES_BY_POINT_CONSTRAINT,
+            POLYGON_BY_VERTICES_CONSTRAINT,
+            CENTER_OF_CIRCLE_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_ON_LINE_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_ON_LINE_SEGMENT_CONSTRAINT,
+            LOCUS_DEFINED_BY_LINE_THROUGH_POINT_CONSTRAINT,
+            LOCUS_DEFINED_BY_POINT_ON_CIRCLE_CONSTRAINT,
         )
     }
+}
+
+private class IntergeoLineThroughPointCoefficients(
+    private val storedCoordinates: List<Double>,
+    private val point: Point,
+) {
+    val dependencies: Map<String, GeometryElement> =
+        mapOf(point.id to point)
+
+    fun evaluate(): DoubleArray {
+        val xCoefficient = storedCoordinates[0]
+        val yCoefficient = storedCoordinates[1]
+        val storedConstant = storedCoordinates[2]
+        return doubleArrayOf(
+            storedConstant -
+                xCoefficient * point.X() -
+                yCoefficient * point.Y() -
+                storedConstant * point.Z(),
+            xCoefficient,
+            yCoefficient,
+        )
+    }
+}
+
+private fun createLineCoefficientEndpoint(
+    board: Board,
+    coefficients: IntergeoLineThroughPointCoefficients,
+    firstEndpoint: Boolean,
+): GMResult<Point, PointError> =
+    Point.createConstrained(
+        board = board,
+        coordinateFunctions = listOf(
+            IntergeoLineEndpointFunction(
+                coefficients = coefficients,
+                firstEndpoint = firstEndpoint,
+                coordinateIndex = 0,
+            ),
+            IntergeoLineEndpointFunction(
+                coefficients = coefficients,
+                firstEndpoint = firstEndpoint,
+                coordinateIndex = 1,
+            ),
+            IntergeoLineEndpointFunction(
+                coefficients = coefficients,
+                firstEndpoint = firstEndpoint,
+                coordinateIndex = 2,
+            ),
+        ),
+        name = "",
+    )
+
+private class IntergeoLineEndpointFunction(
+    private val coefficients: IntergeoLineThroughPointCoefficients,
+    private val firstEndpoint: Boolean,
+    private val coordinateIndex: Int,
+) : JessieCodeCoordinateFunction {
+    override val origin: String? = null
+    override val dependencies: Map<String, GeometryElement> =
+        coefficients.dependencies
+
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> {
+        val values = coefficients.evaluate()
+        val constant = values[0]
+        val xCoefficient = values[1]
+        val yCoefficient = values[2]
+        val homogeneous =
+            yCoefficient * yCoefficient +
+                xCoefficient * xCoefficient
+        val coordinates =
+            if (firstEndpoint) {
+                doubleArrayOf(
+                    homogeneous,
+                    yCoefficient -
+                        xCoefficient * constant +
+                        yCoefficient,
+                    -xCoefficient -
+                        yCoefficient * constant -
+                        xCoefficient,
+                )
+            } else {
+                doubleArrayOf(
+                    homogeneous,
+                    -xCoefficient * constant + yCoefficient,
+                    -yCoefficient * constant - xCoefficient,
+                )
+            }
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.NumberValue(
+                coordinates[coordinateIndex],
+            ),
+        )
+    }
+}
+
+private class IntergeoCoordinateFunction(
+    override val dependencies: Map<String, GeometryElement>,
+    private val value: () -> Double,
+) : JessieCodeCoordinateFunction {
+    override val origin: String? = null
+
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        GMResult.Ok(JessieCodeRuntimeValue.NumberValue(value()))
 }
 
 internal object IntergeoReaderFactory :

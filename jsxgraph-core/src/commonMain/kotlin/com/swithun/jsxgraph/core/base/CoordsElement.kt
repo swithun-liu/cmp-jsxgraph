@@ -46,6 +46,14 @@ internal sealed interface CoordinateConstraintError {
     ) : CoordinateConstraintError
 }
 
+internal sealed interface CoordsElementAnchorError {
+    data object BoardMismatch : CoordsElementAnchorError
+
+    data class AnchorNotRegistered(
+        val id: String,
+    ) : CoordsElementAnchorError
+}
+
 internal sealed interface CoordinateTransformationError {
     data class InvalidBaseElement(
         val baseElementId: String?,
@@ -96,6 +104,24 @@ internal sealed interface CoordsElementAnimationError {
     data class Callback(
         val message: String,
     ) : CoordsElementAnimationError
+
+    data class PathEvaluation(
+        val message: String,
+    ) : CoordsElementAnimationError
+}
+
+internal sealed interface CoordsElementGliderError {
+    data class ParentBoardMismatch(
+        val id: String,
+    ) : CoordsElementGliderError
+
+    data class ParentNotRegistered(
+        val id: String,
+    ) : CoordsElementGliderError
+
+    data object TicksNotSupported : CoordsElementGliderError
+
+    data object EmptyPolygon : CoordsElementGliderError
 }
 
 internal data class CoordsElementMoveOptions(
@@ -105,14 +131,19 @@ internal data class CoordsElementMoveOptions(
     val repeat: Int = 1,
 )
 
+internal fun interface CoordsElementPathFunction {
+    fun evaluate(
+        elapsedMilliseconds: Double,
+    ): GMResult<DoubleArray?, CoordsElementAnimationError>
+}
+
 /**
- * Initial coordinate-access slice of JXG.CoordsElement.
+ * Translated coordinate lifecycle of JXG.CoordsElement.
  *
- * JessieCode string and function coordinate constraints and the persistent
- * 2D transformation lifecycle and the line-backed Glider update hook are
- * present. Coords-object, remaining Glider hosts, animation, and renderer
- * behavior remain in the untranslated element model.
- * This class stays internal until those lifecycle contracts are available.
+ * JessieCode string, function, array, and Coords-object constraints,
+ * relative coordinates, persistent 2D transformations, attractor binding,
+ * movement animation, and Glider update hooks are supported. Renderer-owned
+ * DOM behavior remains outside the pure Kotlin core.
  */
 internal open class CoordsElement(
     board: Board,
@@ -135,9 +166,10 @@ internal open class CoordsElement(
     internal var coordinateFunctions:
         List<JessieCodeCoordinateFunction> = coordinateFunctions
         private set
+    private var pendingCoordinateObject: Coords? = null
 
     // JSXGraph: src/base/coordselement.js -> CoordsElement constructor.
-    internal val coords = Coords(
+    internal var coords = Coords(
         method = Const.COORDS_BY_USER,
         coordinates = coordinates,
         board = board,
@@ -155,6 +187,12 @@ internal open class CoordsElement(
         board = board,
     )
 
+    internal var relativeCoords: Coords? = null
+        private set
+    internal var anchorElement: GeometryElement? = null
+        private set
+    internal var relativeCoordinatesAreScreen: Boolean = false
+        private set
     internal var position: Double? = null
     internal var isConstrained: Boolean = coordinateFunctions.isNotEmpty()
     internal var onPolygon: Boolean = false
@@ -173,9 +211,12 @@ internal open class CoordsElement(
     private val movePath = ArrayDeque<DoubleArray>()
     private var moveCallback: (() -> Unit)? = null
     private var movementScheduled: Boolean = false
+    private var moveFunction: CoordsElementPathFunction? = null
+    private var movementElapsedMilliseconds: Double = 0.0
     private var gliderAnimationRunning: Boolean = false
     private var gliderAnimationStep: Int = 0
     private var gliderAnimationRounds: Int = 0
+    private var attractorPolygonHost: Polygon? = null
     internal var movementError: CoordsElementAnimationError? = null
         private set
 
@@ -183,6 +224,12 @@ internal open class CoordsElement(
         error: CoordsElementAnimationError,
     ) {
         movementError = error
+    }
+
+    internal fun takeMovementError(): CoordsElementAnimationError? {
+        val error = movementError
+        movementError = null
+        return error
     }
 
     protected fun setTransformationEvaluationError(
@@ -244,8 +291,26 @@ internal open class CoordsElement(
         functions: List<JessieCodeCoordinateFunction>,
     ): GMResult<DoubleArray, CoordinateConstraintError> {
         if (functions.isEmpty()) {
+            pendingCoordinateObject = null
             return GMResult.Ok(coords.usrCoords.copyOf())
         }
+        if (functions.size == 1) {
+            when (val result = functions[0].evaluateCoordsObject()) {
+                is GMResult.Err -> return GMResult.Err(
+                    CoordinateConstraintError.Evaluation(
+                        coordinateIndex = 0,
+                        error = result.error,
+                    ),
+                )
+                is GMResult.Ok -> result.value?.let { coordinateObject ->
+                    pendingCoordinateObject = coordinateObject
+                    return GMResult.Ok(
+                        coordinateObject.usrCoords.copyOf(),
+                    )
+                }
+            }
+        }
+        pendingCoordinateObject = null
         if (
             functions.size == 1 &&
             functions[0].returnsCoordinateArray
@@ -342,12 +407,20 @@ internal open class CoordsElement(
     // JSXGraph: src/base/coordselement.js -> updateConstraint
     internal open fun updateConstraint(): CoordsElement {
         if (coordinateFunctions.isEmpty()) {
+            anchoredCoordinates()?.let { anchored ->
+                coordinateEvaluationError = null
+                coords.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = anchored,
+                )
+            }
             return this
         }
 
         when (val result = coordinateConstraintResult()) {
             is GMResult.Ok -> applyCoordinateConstraint(result.value)
             is GMResult.Err -> {
+                pendingCoordinateObject = null
                 coordinateEvaluationError = result.error
                 coords.setCoordinates(
                     coordType = Const.COORDS_BY_USER,
@@ -364,12 +437,105 @@ internal open class CoordsElement(
         coordinates: DoubleArray,
     ): CoordsElement {
         coordinateEvaluationError = null
-        coords.setCoordinates(
-            coordType = Const.COORDS_BY_USER,
-            coordinates = coordinates,
-        )
+        val coordinateObject = pendingCoordinateObject
+        if (coordinateObject == null) {
+            coords.setCoordinates(
+                coordType = Const.COORDS_BY_USER,
+                coordinates = coordinates,
+            )
+        } else {
+            coords = coordinateObject
+        }
+        pendingCoordinateObject = null
         return this
     }
+
+    // JSXGraph: src/base/coordselement.js -> addAnchor.
+    internal fun addAnchor(
+        anchor: GeometryElement,
+        coordinates: DoubleArray,
+        isLabel: Boolean,
+    ): GMResult<CoordsElement, CoordsElementAnchorError> {
+        if (anchor.board !== board) {
+            return GMResult.Err(CoordsElementAnchorError.BoardMismatch)
+        }
+        if (board.elementById(anchor.id) !== anchor) {
+            return GMResult.Err(
+                CoordsElementAnchorError.AnchorNotRegistered(anchor.id),
+            )
+        }
+        anchorElement?.removeChild(this)
+        anchorElement = anchor
+        relativeCoordinatesAreScreen = isLabel
+        _set("islabel", isLabel)
+        relativeCoords = Coords(
+            method =
+                if (isLabel) {
+                    Const.COORDS_BY_SCREEN
+                } else {
+                    Const.COORDS_BY_USER
+                },
+            coordinates = coordinates,
+            board = board,
+        )
+        anchor.addChild(this)
+        if (isLabel) {
+            setParents(listOf(anchor))
+        }
+        isConstrained = true
+        updateConstraint()
+        return GMResult.Ok(this)
+    }
+
+    private fun anchoredCoordinates(): DoubleArray? {
+        val anchor = anchorElement ?: return null
+        val relative = relativeCoords ?: return null
+        val usesScreenCoordinates =
+            evalVisProp("islabel") == true
+        val anchorCoordinates =
+            if (usesScreenCoordinates) {
+                anchor.getLabelAnchor()
+            } else {
+                anchor.getTextAnchor()
+            }
+        return if (usesScreenCoordinates) {
+            val offset = anchorLabelOffset()
+            Coords(
+                method = Const.COORDS_BY_SCREEN,
+                coordinates = doubleArrayOf(
+                    anchorCoordinates.scrCoords[1] +
+                        relative.scrCoords[1] +
+                        offset[0],
+                    anchorCoordinates.scrCoords[2] +
+                        relative.scrCoords[2] -
+                        offset[1],
+                ),
+                board = board,
+                emitter = false,
+            ).usrCoords.copyOf()
+        } else {
+            doubleArrayOf(
+                anchorCoordinates.usrCoords[0],
+                anchorCoordinates.usrCoords[1] +
+                    relative.usrCoords[1],
+                anchorCoordinates.usrCoords[2] +
+                    relative.usrCoords[2],
+            )
+        }
+    }
+
+    private fun anchorLabelOffset(): DoubleArray =
+        when (val value = evalVisProp("offset")) {
+            is DoubleArray -> doubleArrayOf(
+                value.getOrElse(0) { 0.0 },
+                value.getOrElse(1) { 0.0 },
+            )
+            is List<*> -> doubleArrayOf(
+                (value.getOrNull(0) as? Number)?.toDouble() ?: 0.0,
+                (value.getOrNull(1) as? Number)?.toDouble() ?: 0.0,
+            )
+            else -> doubleArrayOf(0.0, 0.0)
+        }
 
     // JSXGraph: src/base/coordselement.js -> updateTransform
     internal open fun updateTransform(fromParent: Boolean): CoordsElement {
@@ -478,8 +644,16 @@ internal open class CoordsElement(
             return this
         }
 
-        // Glider overrides update() and preserves this shared free-element path.
         updateConstraint()
+        // A free Point can become a Glider at runtime through attractors.
+        // The dedicated Glider class keeps its richer host-specific lifecycle.
+        if (type == Const.OBJECT_TYPE_GLIDER && this !is Glider) {
+            if (fromParent) {
+                updateAttractorGliderFromParent()
+            } else {
+                updateAttractorGlider()
+            }
+        }
         updateTransform(fromParent)
         return this
     }
@@ -691,13 +865,14 @@ internal open class CoordsElement(
                     Const.COORDS_BY_USER,
                     projected.usrCoords,
                 )
-                bindToAttractor(attractor)
+                if (!activeAttractorMatches(attractor)) {
+                    bindToAttractor(attractor)
+                }
                 break
             }
             if (
                 distance >= snatchDistance &&
-                slideObject === attractor &&
-                this !is Glider
+                activeAttractorMatches(attractor)
             ) {
                 popSlideObject()
             }
@@ -718,6 +893,40 @@ internal open class CoordsElement(
         method: Int,
         coordinates: DoubleArray,
     ): GMResult<CoordsElement, CoordinateTransformationError> {
+        relativeCoords?.let { relative ->
+            val target = Coords(
+                method = method,
+                coordinates = coordinates,
+                board = board,
+                emitter = false,
+            )
+            if (evalVisProp("islabel") == true) {
+                relative.setCoordinates(
+                    coordType = Const.COORDS_BY_SCREEN,
+                    coordinates = doubleArrayOf(
+                        relative.scrCoords[1] +
+                            target.scrCoords[1] -
+                            coords.scrCoords[1],
+                        relative.scrCoords[2] +
+                            target.scrCoords[2] -
+                            coords.scrCoords[2],
+                    ),
+                )
+            } else {
+                relative.setCoordinates(
+                    coordType = Const.COORDS_BY_USER,
+                    coordinates = doubleArrayOf(
+                        relative.usrCoords[1] +
+                            target.usrCoords[1] -
+                            coords.usrCoords[1],
+                        relative.usrCoords[2] +
+                            target.usrCoords[2] -
+                            coords.usrCoords[2],
+                    ),
+                )
+            }
+            return GMResult.Ok(this)
+        }
         coords.setCoordinates(method, coordinates)
         handleSnapToGrid()
         handleSnapToPoints()
@@ -837,12 +1046,84 @@ internal open class CoordsElement(
         return GMResult.Ok(this)
     }
 
+    // JSXGraph 1.13.3: src/base/coordselement.js -> makeGlider.
+    internal fun makeGlider(
+        slide: GeometryElement,
+    ): GMResult<CoordsElement, CoordsElementGliderError> {
+        if (slide.board !== board) {
+            return GMResult.Err(
+                CoordsElementGliderError.ParentBoardMismatch(slide.id),
+            )
+        }
+        if (board.select(slide) !== slide) {
+            return GMResult.Err(
+                CoordsElementGliderError.ParentNotRegistered(slide.id),
+            )
+        }
+        if (slide is Ticks) {
+            return GMResult.Err(
+                CoordsElementGliderError.TicksNotSupported,
+            )
+        }
+        if (slide is Polygon && slide.borders.isEmpty()) {
+            return GMResult.Err(CoordsElementGliderError.EmptyPolygon)
+        }
+
+        bindToAttractor(slide)
+        setAttribute(mapOf("snapwidth" to -1.0))
+        needsUpdateFromParent = true
+        updateAttractorGliderFromParent()
+        return GMResult.Ok(this)
+    }
+
+    // JSXGraph 1.13.3: src/base/coordselement.js -> free.
+    internal fun free(): CoordsElement {
+        transformations.clear()
+        replaceCoordinateFunctions(emptyList())
+        isConstrained = false
+        isDraggable = true
+        Xjc = null
+        Yjc = null
+
+        for (ancestor in board.objectsList) {
+            ancestor.descendants.remove(id)
+            ancestor.childElements.remove(id)
+            elementLabel?.let { label ->
+                ancestor.descendants.remove(label.id)
+                ancestor.childElements.remove(label.id)
+            }
+        }
+        ancestors.clear()
+        parents.clear()
+        for (slide in slideObjects.toList()) {
+            slide.removeChild(this)
+        }
+        slideObjects.clear()
+        slideObject = null
+        attractorPolygonHost = null
+        onPolygon = false
+        type = originalType
+        elType = when {
+            elementClass == Const.OBJECT_CLASS_POINT -> "point"
+            elementClass == Const.OBJECT_CLASS_TEXT -> "text"
+            type == Const.OBJECT_TYPE_FOREIGNOBJECT -> "foreignobject"
+            type == Const.OBJECT_TYPE_IMAGE -> "image"
+            else -> elType
+        }
+        return this
+    }
+
     // JSXGraph 1.13.3: src/base/coordselement.js -> popSlideObject.
     internal fun popSlideObject(): CoordsElement {
         val previous = slideObjects.removeLastOrNull() ?: return this
         previous.removeChild(this)
-        slideObject = slideObjects.lastOrNull()
+        val activeSlide = slideObjects.lastOrNull()
+        slideObject = activeSlide
+        if (this is Glider && activeSlide != null) {
+            slideElement = activeSlide
+        }
         if (slideObject == null) {
+            attractorPolygonHost = null
             type = originalType
             elType = when {
                 type == Const.OBJECT_TYPE_POINT -> "point"
@@ -852,7 +1133,6 @@ internal open class CoordsElement(
                     "foreignobject"
                 else -> elType
             }
-            onPolygon = false
         }
         return this
     }
@@ -887,7 +1167,7 @@ internal open class CoordsElement(
             duration == 0.0 ||
             abs(target[0] - coords.usrCoords[0]) > Mat.eps
         ) {
-            return setAnimatedPosition(target, options.callback)
+            return setAnimatedPosition(target)
         }
 
         val deltaX = target[1] - X()
@@ -915,7 +1195,7 @@ internal open class CoordsElement(
                 Y() + deltaY * progress,
             )
         }
-        return scheduleMovement(path, duration, options.callback)
+        return scheduleMovement(path, options.callback)
     }
 
     // JSXGraph 1.13.3: src/base/coordselement.js -> moveAlong.
@@ -945,12 +1225,12 @@ internal open class CoordsElement(
             }
         }
         if (timeMilliseconds == 0.0) {
-            return setAnimatedPosition(path.last(), options.callback)
+            return setAnimatedPosition(path.last())
         }
-        val steps = maxOf(
-            1,
-            ceil(timeMilliseconds / board.animationDelay).toInt(),
-        )
+        val stepRatio = timeMilliseconds / board.animationDelay
+        val sampleCount = maxOf(1, ceil(stepRatio).toInt())
+        // JSXGraph 1.13.3: src/base/coordselement.js ->
+        // moveAlong closure makeFakeFunction.
         val normalizedPath = path.map {
             Coords(
                 method = Const.COORDS_BY_USER,
@@ -961,15 +1241,59 @@ internal open class CoordsElement(
         }
         val interpolated =
             if (options.interpolate && normalizedPath.size > 1) {
-                polynomialPath(normalizedPath, steps)
+                polynomialPath(
+                    path = normalizedPath,
+                    stepRatio = stepRatio,
+                    sampleCount = sampleCount,
+                )
             } else {
-                linearPath(normalizedPath, steps)
+                linearPath(
+                    path = normalizedPath,
+                    stepRatio = stepRatio,
+                    sampleCount = sampleCount,
+                )
             }
         return scheduleMovement(
             interpolated,
-            timeMilliseconds,
             options.callback,
         )
+    }
+
+    // JSXGraph 1.13.3: src/base/coordselement.js -> moveAlong,
+    // function-valued animationPath branch.
+    internal fun moveAlong(
+        path: CoordsElementPathFunction,
+        timeMilliseconds: Double,
+        options: CoordsElementMoveOptions =
+            CoordsElementMoveOptions(),
+    ): GMResult<CoordsElement, CoordsElementAnimationError> {
+        if (!timeMilliseconds.isFinite() || timeMilliseconds < 0.0) {
+            return GMResult.Err(
+                CoordsElementAnimationError.InvalidDuration(
+                    timeMilliseconds,
+                ),
+            )
+        }
+        if (board.animationScheduler.runsSynchronously) {
+            return GMResult.Err(
+                CoordsElementAnimationError
+                    .UnboundedSynchronousAnimation,
+            )
+        }
+        movePath.clear()
+        moveFunction = path
+        movementElapsedMilliseconds = 0.0
+        moveCallback = options.callback
+        movementError = null
+        if (movementScheduled) {
+            return GMResult.Ok(this)
+        }
+        movementScheduled = true
+        board.animationScheduler.schedule(
+            board.animationDelay,
+            ::advanceMovement,
+        )
+        return GMResult.Ok(this)
     }
 
     // JSXGraph 1.13.3: src/base/coordselement.js -> visit.
@@ -1008,10 +1332,10 @@ internal open class CoordsElement(
             emitter = false,
         ).usrCoords
         if (timeMilliseconds == 0.0) {
-            return setAnimatedPosition(start, options.callback)
+            return setAnimatedPosition(start)
         }
         val steps = maxOf(
-            2,
+            1,
             ceil(
                 timeMilliseconds /
                     (board.animationDelay * options.repeat),
@@ -1041,7 +1365,6 @@ internal open class CoordsElement(
         }
         return scheduleMovement(
             path,
-            timeMilliseconds,
             options.callback,
         )
     }
@@ -1087,10 +1410,11 @@ internal open class CoordsElement(
             )
         }
         gliderAnimationRunning = true
-        gliderAnimationStep = 0
         gliderAnimationRounds = 0
         movementError = null
-        board.animationScheduler.schedule(delayMilliseconds) {
+        val effectiveDelay =
+            if (delayMilliseconds == 0.0) 250.0 else delayMilliseconds
+        board.animationScheduler.schedule(effectiveDelay) {
             advanceGliderAnimation(
                 direction = direction,
                 stepCount = stepCount,
@@ -1180,7 +1504,7 @@ internal open class CoordsElement(
 
     internal override fun getLabelAnchor(): Coords = coords
 
-    internal fun parentData(): List<Any> {
+    internal fun parentData(): List<Any?> {
         val currentSlideObject = slideObject
         return when {
             type == Const.OBJECT_TYPE_GLIDER &&
@@ -1191,21 +1515,28 @@ internal open class CoordsElement(
         }
     }
 
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(parentData())
+
     private fun scheduleMovement(
         path: List<DoubleArray>,
-        timeMilliseconds: Double,
         callback: (() -> Unit)?,
     ): GMResult<CoordsElement, CoordsElementAnimationError> {
         movePath.clear()
         movePath.addAll(path.map(DoubleArray::copyOf))
+        moveFunction = null
+        movementElapsedMilliseconds = 0.0
         moveCallback = callback
         movementError = null
         if (movementScheduled) {
             return GMResult.Ok(this)
         }
         movementScheduled = true
-        val stepTime = timeMilliseconds / maxOf(path.size, 1)
-        board.animationScheduler.schedule(stepTime, ::advanceMovement)
+        board.animationScheduler.schedule(
+            board.animationDelay,
+            ::advanceMovement,
+        )
         val error = movementError
         return if (error == null) {
             GMResult.Ok(this)
@@ -1215,6 +1546,50 @@ internal open class CoordsElement(
     }
 
     private fun advanceMovement(): Boolean {
+        val function = moveFunction
+        if (function != null) {
+            movementElapsedMilliseconds += board.animationDelay
+            when (
+                val result =
+                    function.evaluate(movementElapsedMilliseconds)
+            ) {
+                is GMResult.Err -> {
+                    movementError = result.error
+                    moveFunction = null
+                }
+                is GMResult.Ok -> {
+                    val next = result.value
+                    if (next == null) {
+                        moveFunction = null
+                    } else if (next.size !in setOf(2, 3)) {
+                        movementError =
+                            CoordsElementAnimationError
+                                .InvalidCoordinateCount(next.size)
+                        moveFunction = null
+                    } else {
+                        when (
+                            val positionResult =
+                                setPositionDirectlyResult(
+                                    Const.COORDS_BY_USER,
+                                    next,
+                                )
+                        ) {
+                            is GMResult.Ok -> {
+                                board.update(this)
+                                return true
+                            }
+                            is GMResult.Err -> {
+                                movementError =
+                                    CoordsElementAnimationError.Position(
+                                        positionResult.error,
+                                    )
+                                moveFunction = null
+                            }
+                        }
+                    }
+                }
+            }
+        }
         val next = movePath.removeFirstOrNull()
         if (next != null) {
             when (
@@ -1230,18 +1605,20 @@ internal open class CoordsElement(
                     movePath.clear()
                 }
             }
-        }
-        if (movePath.isNotEmpty()) {
-            return true
+            if (movementError == null) {
+                // src/base/board.js -> animate removes animationPath and
+                // invokes its callback on the tick after the final frame.
+                return true
+            }
         }
         movementScheduled = false
+        movementElapsedMilliseconds = 0.0
         runAnimationCallback()
         return false
     }
 
     private fun setAnimatedPosition(
         coordinates: DoubleArray,
-        callback: (() -> Unit)?,
     ): GMResult<CoordsElement, CoordsElementAnimationError> {
         return when (
             val result = setPositionDirectlyResult(
@@ -1254,15 +1631,8 @@ internal open class CoordsElement(
             )
             is GMResult.Ok -> {
                 board.update(this)
-                moveCallback = callback
                 movementError = null
-                runAnimationCallback()
-                val error = movementError
-                if (error == null) {
-                    GMResult.Ok(this)
-                } else {
-                    GMResult.Err(error)
-                }
+                GMResult.Ok(this)
             }
         }
     }
@@ -1284,7 +1654,8 @@ internal open class CoordsElement(
 
     private fun polynomialPath(
         path: List<DoubleArray>,
-        steps: Int,
+        stepRatio: Double,
+        sampleCount: Int,
     ): List<DoubleArray> {
         val points = path.map {
             CoordsElement(
@@ -1294,9 +1665,12 @@ internal open class CoordsElement(
         }
         val neville =
             com.swithun.jsxgraph.core.math.Numerics.Neville(points)
-        return List(steps + 1) { index ->
+        return List(sampleCount) { index ->
+            val upstreamIndex = sampleCount - 1 - index
             val parameter =
-                index.toDouble() / steps * neville.end()
+                (stepRatio - upstreamIndex) /
+                    stepRatio *
+                    neville.end()
             doubleArrayOf(
                 1.0,
                 neville.x(parameter),
@@ -1307,26 +1681,35 @@ internal open class CoordsElement(
 
     private fun linearPath(
         path: List<DoubleArray>,
-        steps: Int,
+        stepRatio: Double,
+        sampleCount: Int,
     ): List<DoubleArray> {
         if (path.size == 1) {
             return listOf(path[0].copyOf())
         }
-        return List(steps + 1) { index ->
-            val location =
-                index.toDouble() / steps * path.lastIndex
-            val segment = minOf(location.toInt(), path.lastIndex - 1)
-            val fraction = location - segment
-            doubleArrayOf(
-                1.0,
-                (1.0 - fraction) * path[segment][1] +
-                    fraction * path[segment + 1][1],
-                (1.0 - fraction) * path[segment][2] +
-                    fraction * path[segment + 1][2],
-            )
+        return buildList {
+            repeat(sampleCount) { index ->
+                val location =
+                    index.toDouble() / stepRatio * path.lastIndex
+                val segment =
+                    minOf(location.toInt(), path.lastIndex - 1)
+                val fraction = location - segment
+                add(
+                    doubleArrayOf(
+                        1.0,
+                        (1.0 - fraction) * path[segment][1] +
+                            fraction * path[segment + 1][1],
+                        (1.0 - fraction) * path[segment][2] +
+                            fraction * path[segment + 1][2],
+                    ),
+                )
+            }
+            add(path.last().copyOf())
         }
     }
 
+    // JSXGraph 1.13.3: src/base/coordselement.js ->
+    // moveTo / visit closures stepFun.
     private fun animationProgress(
         step: Int,
         steps: Int,
@@ -1373,17 +1756,35 @@ internal open class CoordsElement(
         val slide = slideObject
         val next = when (slide) {
             is Line -> {
-                val first =
-                    if (direction > 0.0) slide.point1 else slide.point2
-                val second =
-                    if (direction > 0.0) slide.point2 else slide.point1
-                val fraction =
-                    gliderAnimationStep.toDouble() / stepCount
-                doubleArrayOf(
-                    1.0,
-                    first.X() + (second.X() - first.X()) * fraction,
-                    first.Y() + (second.Y() - first.Y()) * fraction,
+                val firstScreen = slide.point1.coords.scrCoords
+                val secondScreen = slide.point2.coords.scrCoords
+                var deltaX = round(
+                    (secondScreen[1] - firstScreen[1]) *
+                        gliderAnimationStep /
+                        stepCount,
                 )
+                var deltaY = round(
+                    (secondScreen[2] - firstScreen[2]) *
+                        gliderAnimationStep /
+                        stepCount,
+                )
+                val start =
+                    if (direction > 0.0) {
+                        slide.point1
+                    } else {
+                        deltaX *= -1.0
+                        deltaY *= -1.0
+                        slide.point2
+                    }
+                Coords(
+                    method = Const.COORDS_BY_SCREEN,
+                    coordinates = doubleArrayOf(
+                        start.coords.scrCoords[1] + deltaX,
+                        start.coords.scrCoords[2] + deltaY,
+                    ),
+                    board = board,
+                    emitter = false,
+                ).usrCoords
             }
             is Curve -> {
                 val minimum = slide.minX()
@@ -1435,21 +1836,203 @@ internal open class CoordsElement(
     private fun bindToAttractor(
         attractor: GeometryElement,
     ) {
-        if (slideObject === attractor) {
-            return
-        }
+        val effectiveAttractor =
+            if (attractor is Polygon) {
+                attractor.borders.minByOrNull { border ->
+                    Geometry.distPointLine(
+                        point = coords.usrCoords,
+                        line = border.stdform,
+                    )
+                } ?: return
+            } else {
+                attractor
+            }
         if (this is Glider) {
-            slideElement = attractor
+            slideElement = effectiveAttractor
         }
-        slideObject = attractor
-        if (attractor !in slideObjects) {
-            slideObjects += attractor
-        }
-        addParents(listOf(attractor))
-        attractor.addChild(this)
+        slideObject = effectiveAttractor
+        slideObjects += effectiveAttractor
+        addParents(listOf(effectiveAttractor))
+        effectiveAttractor.addChild(this)
         type = Const.OBJECT_TYPE_GLIDER
         elType = "glider"
         isDraggable = true
+        onPolygon = attractor is Polygon
+        attractorPolygonHost = attractor as? Polygon
+        if (this is Glider) {
+            polygonHost = attractorPolygonHost
+        }
+        updateAttractorGlider()
+    }
+
+    private fun activeAttractorMatches(
+        attractor: GeometryElement,
+    ): Boolean {
+        val activeSlide = slideObject ?: return false
+        return activeSlide === attractor ||
+            (
+                onPolygon &&
+                    attractor is Polygon &&
+                    activeSlide in attractor.borders
+                )
+    }
+
+    // JSXGraph 1.13.3: src/base/coordselement.js ->
+    // makeGlider / updateGlider.
+    private fun updateAttractorGlider() {
+        when (val slide = slideObject) {
+            is Point -> {
+                coords.setCoordinates(
+                    Const.COORDS_BY_USER,
+                    slide.coords.usrCoords,
+                )
+            }
+            is Line -> {
+                val activeLine = polygonAttractorLine(slide)
+                val projection = Geometry.projectCoordsToSegment(
+                    point = coords.usrCoords,
+                    first = activeLine.point1.coords.usrCoords,
+                    second = activeLine.point2.coords.usrCoords,
+                )
+                position = projection.parameter
+                coords.setCoordinates(
+                    Const.COORDS_BY_USER,
+                    projection.point,
+                )
+            }
+            is Circle -> {
+                val projected = Geometry.projectPointToCircle(
+                    point = coords.usrCoords,
+                    center = slide.center.coords.usrCoords,
+                    radius = slide.Radius(),
+                )
+                coords.setCoordinates(Const.COORDS_BY_USER, projected)
+                position = Geometry.rad(
+                    first = doubleArrayOf(
+                        slide.center.X() + 1.0,
+                        slide.center.Y(),
+                    ),
+                    vertex = slide.center.Coords(),
+                    third = Coords(),
+                ) / (2.0 * PI)
+            }
+            is Curve -> {
+                projectToCurve(slide)?.let {
+                    coords.setCoordinates(Const.COORDS_BY_USER, it)
+                }
+            }
+            is Arc -> {
+                projectToSampledAttractor(
+                    points = slide.points.take(slide.numberPoints),
+                    bezierDegree = slide.bezierDegree,
+                )?.let {
+                    coords.setCoordinates(Const.COORDS_BY_USER, it)
+                }
+            }
+            is Sector -> {
+                projectToSampledAttractor(
+                    points = slide.points.take(slide.numberPoints),
+                    bezierDegree = slide.bezierDegree,
+                )?.let {
+                    coords.setCoordinates(Const.COORDS_BY_USER, it)
+                }
+            }
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/coordselement.js ->
+    // updateGliderFromParent.
+    private fun updateAttractorGliderFromParent() {
+        val relativePosition = position ?: 0.0
+        when (val slide = slideObject) {
+            is Point -> {
+                coords.setCoordinates(
+                    Const.COORDS_BY_USER,
+                    slide.coords.usrCoords,
+                )
+            }
+            is Line -> {
+                val activeLine = polygonAttractorLine(slide)
+                val first = activeLine.point1.coords.usrCoords
+                val second = activeLine.point2.coords.usrCoords
+                coords.setCoordinates(
+                    Const.COORDS_BY_USER,
+                    doubleArrayOf(
+                        first[0] +
+                            relativePosition * (second[0] - first[0]),
+                        first[1] +
+                            relativePosition * (second[1] - first[1]),
+                        first[2] +
+                            relativePosition * (second[2] - first[2]),
+                    ),
+                )
+            }
+            is Circle -> {
+                val angle = relativePosition * 2.0 * PI
+                val radius = slide.Radius()
+                coords.setCoordinates(
+                    Const.COORDS_BY_USER,
+                    doubleArrayOf(
+                        slide.center.X() + radius * cos(angle),
+                        slide.center.Y() + radius * sin(angle),
+                    ),
+                )
+            }
+            is Curve -> {
+                coords.setCoordinates(
+                    Const.COORDS_BY_USER,
+                    doubleArrayOf(
+                        slide.Z(relativePosition),
+                        slide.X(relativePosition),
+                        slide.Y(relativePosition),
+                    ),
+                )
+            }
+            is Arc -> updateFromSampledAttractor(
+                points = slide.points.take(slide.numberPoints),
+                bezierDegree = slide.bezierDegree,
+                parameter = relativePosition,
+            )
+            is Sector -> updateFromSampledAttractor(
+                points = slide.points.take(slide.numberPoints),
+                bezierDegree = slide.bezierDegree,
+                parameter = relativePosition,
+            )
+        }
+    }
+
+    private fun polygonAttractorLine(
+        line: Line,
+    ): Line {
+        val polygon = attractorPolygonHost ?: return line
+        val borderIndex = polygon.borders.indexOf(line)
+        if (borderIndex < 0 || polygon.borders.isEmpty()) {
+            return line
+        }
+        val projection = Geometry.projectCoordsToSegment(
+            point = coords.usrCoords,
+            first = line.point1.coords.usrCoords,
+            second = line.point2.coords.usrCoords,
+        )
+        val activeLine = when {
+            projection.parameter < 0.0 ->
+                polygon.borders[
+                    (borderIndex - 1 + polygon.borders.size) %
+                        polygon.borders.size
+                ]
+            projection.parameter > 1.0 ->
+                polygon.borders[
+                    (borderIndex + 1) % polygon.borders.size
+                ]
+            else -> line
+        }
+        if (activeLine !== line) {
+            slideObject = activeLine
+            if (this is Glider) {
+                slideElement = activeLine
+            }
+        }
+        return activeLine
     }
 
     private fun projectToAttractor(
@@ -1479,6 +2062,14 @@ internal open class CoordsElement(
                 radius = attractor.Radius(),
             )
             is Curve -> projectToCurve(attractor)
+            is Arc -> projectToSampledAttractor(
+                points = attractor.points.take(attractor.numberPoints),
+                bezierDegree = attractor.bezierDegree,
+            )
+            is Sector -> projectToSampledAttractor(
+                points = attractor.points.take(attractor.numberPoints),
+                bezierDegree = attractor.bezierDegree,
+            )
             is Polygon -> when (
                 val result = Geometry.projectCoordsToPolygon(
                     point = coords.usrCoords,
@@ -1546,6 +2137,54 @@ internal open class CoordsElement(
             }
             is GMResult.Err -> null
         }
+    }
+
+    private fun projectToSampledAttractor(
+        points: List<Coords>,
+        bezierDegree: Int,
+    ): DoubleArray? =
+        when (
+            val result = Geometry.projectCoordsToCurve(
+                point = coords.usrCoords,
+                curve = DiscreteCurve2D(
+                    points = points.map { it.usrCoords.copyOf() },
+                    bezierDegree = bezierDegree,
+                ),
+            )
+        ) {
+            is GMResult.Ok -> {
+                position = result.value.parameter
+                result.value.point
+            }
+            is GMResult.Err -> null
+        }
+
+    private fun updateFromSampledAttractor(
+        points: List<Coords>,
+        bezierDegree: Int,
+        parameter: Double,
+    ) {
+        if (points.isEmpty()) {
+            return
+        }
+        coords.setCoordinates(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(
+                1.0,
+                sampledCoordinate(
+                    points,
+                    bezierDegree,
+                    parameter,
+                    coordinateIndex = 1,
+                ),
+                sampledCoordinate(
+                    points,
+                    bezierDegree,
+                    parameter,
+                    coordinateIndex = 2,
+                ),
+            ),
+        )
     }
 
     private fun ignoredSnapElements(): Set<GeometryElement> {

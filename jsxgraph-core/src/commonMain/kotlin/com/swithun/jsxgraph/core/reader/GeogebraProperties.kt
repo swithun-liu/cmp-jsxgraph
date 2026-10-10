@@ -87,6 +87,25 @@ internal data class GeogebraElementAttributes(
     val fixed: String? = null,
 )
 
+internal data class GeogebraDefaultOptions(
+    val elements: Map<String, Any?> = emptyMap(),
+    val point: Map<String, Any?> = emptyMap(),
+    val line: Map<String, Any?> = emptyMap(),
+    val polygon: Map<String, Any?> = emptyMap(),
+    val sector: Map<String, Any?> = emptyMap(),
+    val angle: Map<String, Any?> = emptyMap(),
+) {
+    internal fun attributesFor(type: String): Map<String, Any?> =
+        elements + when (type) {
+            "point" -> point
+            "line" -> line
+            "polygon" -> polygon
+            "sector" -> sector
+            "angle" -> angle
+            else -> emptyMap()
+        }
+}
+
 internal sealed interface GeogebraCoordinateSource {
     fun x(): Double
 
@@ -106,6 +125,8 @@ internal sealed interface GeogebraCoordinateSource {
         val offsetX: Double,
         val offsetY: Double,
     ) : GeogebraCoordinateSource {
+        // JSXGraph 1.13.3: src/reader/geogebra.js ->
+        // coordinates startPoint closures x / y.
         override fun x(): Double = point.X() + offsetX
 
         override fun y(): Double = point.Y() - offsetY
@@ -122,6 +143,103 @@ internal data class GeogebraElementCoordinates(
 }
 
 internal object GeogebraProperties {
+    // JSXGraph 1.13.3: src/reader/geogebra.js -> setDefaultOptions.
+    // The KMP reader keeps this as an immutable per-read snapshot because its
+    // Board factories do not expose the browser runtime's mutable options bag.
+    internal fun setDefaultOptions(): GeogebraDefaultOptions {
+        val areaColor = "#993300"
+        return GeogebraDefaultOptions(
+            elements = linkedMapOf(
+                "strokeWidth" to 1.0,
+                "withLabel" to true,
+            ),
+            point = linkedMapOf(
+                "face" to "circle",
+                "size" to 3.0,
+                "fillColor" to "blue",
+                "fillOpacity" to 1.0,
+                "highlightFillOpacity" to 1.0,
+                "strokeColor" to "black",
+                "highlightStrokeColor" to "black",
+                "strokeWidth" to 2.0,
+            ),
+            line = linkedMapOf(
+                "strokeWidth" to 1.0,
+                "highlightStrokeColor" to "#000000",
+                "strokeColor" to "#000000",
+            ),
+            polygon = linkedMapOf(
+                "fillColor" to areaColor,
+                "fillOpacity" to 0.1,
+                "highlightFillColor" to areaColor,
+                "highlightFillOpacity" to 0.1,
+            ),
+            sector = linkedMapOf(
+                "fillColor" to areaColor,
+                "fillOpacity" to 0.1,
+                "highlightFillColor" to areaColor,
+                "highlightFillOpacity" to 0.1,
+            ),
+            angle = linkedMapOf(
+                "fillColor" to "#006400",
+                "fillOpacity" to 0.1,
+                "highlightFillOpacity" to 0.1,
+            ),
+        )
+    }
+
+    internal fun visualAttributeMap(
+        attributes: GeogebraElementAttributes,
+        applyDefaultPointStyle: Boolean = false,
+    ): Map<String, Any?> {
+        val resolved =
+            if (applyDefaultPointStyle && attributes.styleGGB == null) {
+                attributes.copy(
+                    face = "circle",
+                    fillColor = attributes.strokeColor,
+                    fillOpacity = 1.0,
+                    highlightFillColor = attributes.strokeColor,
+                    highlightFillOpacity = 1.0,
+                    strokeColor = "black",
+                    strokeWidth = 1.0,
+                )
+            } else {
+                attributes
+            }
+        return buildMap {
+            resolved.fillColor?.let { put("fillColor", it) }
+            resolved.strokeColor?.let { put("strokeColor", it) }
+            resolved.highlightFillColor?.let {
+                put("highlightFillColor", it)
+            }
+            resolved.highlightStrokeColor?.let {
+                put("highlightStrokeColor", it)
+            }
+            resolved.fillOpacity?.let { put("fillOpacity", it) }
+            resolved.highlightFillOpacity?.let {
+                put("highlightFillOpacity", it)
+            }
+            resolved.strokeOpacity?.let { put("strokeOpacity", it) }
+            resolved.labelColor?.let { put("labelColor", it) }
+            resolved.visible?.let { put("visible", it) }
+            resolved.withLabel?.let { put("withLabel", it) }
+            resolved.size?.let { put("size", it) }
+            resolved.styleGGB?.let { put("styleGGB", it) }
+            resolved.face?.let { put("face", it) }
+            resolved.slopeWidth?.let { put("slopeWidth", it) }
+            resolved.strokeWidth?.let { put("strokeWidth", it) }
+            resolved.highlightStrokeWidth?.let {
+                put("highlightStrokeWidth", it)
+            }
+            resolved.dashGGB?.let { put("dashGGB", it) }
+            resolved.dash?.let { put("dash", it) }
+            resolved.labelX?.let { put("labelX", it) }
+            resolved.labelY?.let { put("labelY", it) }
+            resolved.trace?.let { put("trace", it) }
+            resolved.fixed?.let { put("fixed", it) }
+        }
+    }
+
     // JSXGraph 1.13.3: src/reader/geogebra.js -> boardProperties.
     internal fun boardProperties(
         attributes: GeogebraElementAttributes,

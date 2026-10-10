@@ -59,6 +59,65 @@ class JsxGraphEngineTest {
     }
 
     @Test
+    fun axisAttributeObjectCreatesDefaultAxesUsedByParentlessGrid() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "schemaVersion": 1,
+                  "boundingBox": [-5, 5, 5, -5],
+                  "axis": {
+                    "ticks": {
+                      "ticksDistance": 2,
+                      "minorTicks": 1
+                    }
+                  },
+                  "defaultAxes": {
+                    "y": {
+                      "ticks": {
+                        "ticksDistance": 2.5,
+                        "minorTicks": 3
+                      }
+                    }
+                  },
+                  "grid": false,
+                  "keepAspectRatio": false,
+                  "objects": [
+                    {
+                      "id": "grid",
+                      "type": "grid",
+                      "parents": [],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "majorStep": ["auto", "auto"],
+                        "minorElements": ["auto", "auto"]
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        assertTrue(scene.axis)
+        val major = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements.single { it.id == "grid" },
+        )
+        val minor = assertIs<JsxGraphSceneElement.Curve>(
+            scene.elements.single { it.id == "grid_minor" },
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(2.0, 2.5),
+            assertIs<JsxGraphGrid2D>(major.grid).parentMajorStep,
+        )
+        assertEquals(
+            JsxGraphGridPair<Double?>(1.0, 3.0),
+            assertIs<JsxGraphGrid2D>(minor.grid).parentMinorElements,
+        )
+    }
+
+    @Test
     fun portableStyleCarriesRendererVisualSemantics() {
         val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
             JsxGraphEngine.parse(
@@ -1367,6 +1426,156 @@ class JsxGraphEngineTest {
             JsxGraphPoint2D(2.0, -3.0),
             scenePoint(moved, "alias").coordinates,
         )
+    }
+
+    @Test
+    fun elementReflectionCreatorsRenderDocumentBranches() {
+        val result = JsxGraphEngine.parse(
+                documentWithObjects(
+                    """
+                    {
+                      "id":"axisA",
+                      "type":"point",
+                      "parents":[0,-5],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"axisB",
+                      "type":"point",
+                      "parents":[0,5],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"axis",
+                      "type":"line",
+                      "parents":["axisA","axisB"],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"mirror",
+                      "type":"point",
+                      "parents":[1,-1],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"lineA",
+                      "type":"point",
+                      "parents":[-3,-2],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"lineB",
+                      "type":"point",
+                      "parents":[-1,1],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"sourceLine",
+                      "type":"line",
+                      "parents":["lineA","lineB"],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"circleCenter",
+                      "type":"point",
+                      "parents":[-3,2],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"circleRadius",
+                      "type":"point",
+                      "parents":[-2,2],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"sourceCircle",
+                      "type":"circle",
+                      "parents":["circleCenter","circleRadius"],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"arcAngle",
+                      "type":"point",
+                      "parents":[-3,3],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"sourceArc",
+                      "type":"arc",
+                      "parents":[
+                        "circleCenter",
+                        "circleRadius",
+                        "arcAngle"
+                      ],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"reflectedLine",
+                      "type":"reflection",
+                      "parents":["sourceLine","axis"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "point1":{"name":"","fixed":true},
+                        "point2":{"name":"","fixed":true}
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"projectiveCircle",
+                      "type":"reflection",
+                      "parents":["sourceCircle","axis"],
+                      "attributes":{
+                        "name":"",
+                        "withLabel":false,
+                        "type":"projective",
+                        "center":{"name":""}
+                      }
+                    }
+                    """.trimIndent(),
+                    """
+                    {
+                      "id":"mirroredArc",
+                      "type":"mirrorelement",
+                      "parents":["sourceArc","mirror"],
+                      "attributes":{"name":"","withLabel":false}
+                    }
+                    """.trimIndent(),
+                ),
+            )
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            result,
+            result.toString(),
+        ).value
+
+        sceneLine(scene, "reflectedLine")
+        sceneCurve(scene, "projectiveCircle")
+        sceneCurve(scene, "mirroredArc")
     }
 
     @Test
@@ -5342,7 +5551,7 @@ class JsxGraphEngineTest {
     }
 
     @Test
-    fun normalDocumentsRejectCoordinatePointAndNestedIdCollision() {
+    fun normalDocumentsReportCoordinateDefectAndNestedIdCollision() {
         val coordinatePoint = assertIs<
             GMResult.Err<JsxGraphDocumentError.ElementCreation>,
             >(
@@ -5361,7 +5570,9 @@ class JsxGraphEngineTest {
             ),
         ).error
         assertEquals("normal", coordinatePoint.type)
-        assertTrue("UnsupportedParents" in coordinatePoint.reason)
+        assertTrue(
+            "UpstreamCoordinateParentDefect" in coordinatePoint.reason,
+        )
 
         val collision = assertIs<
             GMResult.Err<JsxGraphDocumentError.ElementCreation>,
@@ -5647,26 +5858,26 @@ class JsxGraphEngineTest {
             ),
         ).value
         assertTrue(shadowScene.elements.single().style.shadow.enabled)
-        val squareFaceError =
+        val unsupportedFaceError =
             assertIs<JsxGraphDocumentError.UnsupportedAttributeValue>(
-            assertError(
-                documentWithObjects(
-                    """
-                    {
-                      "id":"A",
-                      "type":"point",
-                      "parents":[0,0],
-                      "attributes":{
-                        "name":"",
-                        "withLabel":false,
-                        "face":"square"
-                      }
-                    }
-                    """.trimIndent(),
+                assertError(
+                    documentWithObjects(
+                        """
+                        {
+                          "id":"A",
+                          "type":"point",
+                          "parents":[0,0],
+                          "attributes":{
+                            "name":"",
+                            "withLabel":false,
+                            "face":"star"
+                          }
+                        }
+                        """.trimIndent(),
+                    ),
                 ),
-            ),
-        )
-        assertEquals("[]", squareFaceError.value)
+            )
+        assertEquals("star", unsupportedFaceError.value)
         assertIs<JsxGraphDocumentError.ElementCreation>(
             assertError(
                 documentWithObjects(
@@ -5696,7 +5907,7 @@ class JsxGraphEngineTest {
                         "name":"",
                         "withLabel":false,
                         "parse":false,
-                        "rotate":30
+                        "fontUnit":"em"
                       }
                     }
                     """.trimIndent(),

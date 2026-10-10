@@ -296,7 +296,8 @@ internal class Face3D internal constructor(
         return GMResult.Ok(this)
     }
 
-    // JSXGraph: src/3d/face3d.js -> updateDataArray2D.
+    // JSXGraph 1.13.3: src/3d/face3d.js ->
+    // element2D.updateDataArray / updateDataArray2D.
     internal fun updateDataArray2D():
         GMResult<CurveDataUpdate, Face3DError> {
         val face = polyhedron.faceKeys[faceNumber]
@@ -699,6 +700,9 @@ internal class Face3D internal constructor(
             }
             curve.dump = false
             curve.isDraggable = false
+            // JSXGraph 1.13.3: src/3d/face3d.js ->
+            // element2D.hasPoint. Face proxy hit testing is disabled.
+            curve.hitTestEnabled = false
             curve.setParents(listOf(face))
             curve.setDataUpdater(
                 CurveDataUpdater {
@@ -744,6 +748,8 @@ internal class Polyhedron3D private constructor(
         elType = POLYHEDRON_3D_ELEMENT_TYPE
     }
 
+    // JSXGraph 1.13.3: src/3d/polyhedron3d.js -> generateMethod.
+    // Kotlin keeps the generated forwarding methods explicit and typed.
     override fun prepareUpdate(): Polyhedron3D {
         for (face in faces) {
             face.prepareUpdate()

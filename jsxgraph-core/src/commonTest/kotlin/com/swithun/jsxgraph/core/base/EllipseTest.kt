@@ -13,6 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -45,7 +46,7 @@ class EllipseTest {
         assertFalse(ellipse.needsRegularUpdate)
         assertTrue(ellipse.isEllipse)
         assertTrue(ellipse.isDraggable)
-        assertEquals(Curve.DEFAULT_SAMPLE_COUNT, ellipse.numberPoints)
+        assertTrue(ellipse.numberPoints in 2 until Curve.DEFAULT_SAMPLE_COUNT)
         assertEquals(0.0, ellipse.minX(), absoluteTolerance = TOLERANCE)
         assertEquals(2.0 * PI, ellipse.maxX(), absoluteTolerance = TOLERANCE)
         assertEquals(
@@ -171,7 +172,7 @@ class EllipseTest {
         assertEquals(10.0, numeric.majorAxis())
         assertEquals(-0.5 * PI, numeric.minX())
         assertEquals(PI, numeric.maxX())
-        assertEquals(64, numeric.numberPoints)
+        assertTrue(numeric.numberPoints in 2 until Curve.DEFAULT_SAMPLE_COUNT)
         assertEquals(
             -1.9999999999999998,
             numeric.X(-0.5 * PI),
@@ -209,6 +210,35 @@ class EllipseTest {
         assertEquals(14.0, function.majorAxis())
         assertEquals(7.0, function.X(0.0), absoluteTolerance = TOLERANCE)
         assertEquals(40.0, function.quadraticform[0][0])
+    }
+
+    @Test
+    fun hasInnerPointsUsesExactFocusDistanceAndDynamicMajorAxis() {
+        val board = board("ellipse-hit-testing")
+        val majorAxis = MutableNumberFunction(10.0)
+        val ellipse = ellipse(
+            Ellipse.create(
+                board = board,
+                focus1 = point(board, -3.0, 0.0, "focus1"),
+                focus2 = point(board, 3.0, 0.0, "focus2"),
+                majorAxisTerm = majorAxis,
+                sampleCount = 4,
+                id = "ellipse",
+                name = "",
+            ),
+        )
+
+        assertFalse(ellipse.hasPoint(460.0, 140.0, precision = 0.0))
+        ellipse.setAttribute(mapOf("hasinnerpoints" to true))
+
+        assertTrue(ellipse.hasPoint(460.0, 140.0, precision = 0.0))
+        assertTrue(ellipse.hasPoint(320.0, 80.0, precision = 0.0))
+        assertFalse(ellipse.hasPoint(480.0, 120.0, precision = 0.0))
+        assertTrue(ellipse.hasPoint(320.0, 120.0, precision = 0.0))
+
+        majorAxis.value = 8.0
+
+        assertFalse(ellipse.hasPoint(320.0, 120.0, precision = 0.0))
     }
 
     @Test
@@ -392,7 +422,7 @@ class EllipseTest {
     }
 
     @Test
-    fun conicMatrixAndDerivativeInteropAreTranslatedWhileIntersectionsRemainStructured() {
+    fun conicConstructionInteroperationMatchesOfficialLifecycle() {
         val board = board("conic-boundaries")
         val focus1 = point(board, -3.0, 0.0, "focus1")
         val focus2 = point(board, 3.0, 0.0, "focus2")
@@ -407,6 +437,7 @@ class EllipseTest {
                 name = "",
             ),
         )
+        val tangentPoint = point(board, 0.0, 5.0, "tangentPoint")
         val externalPoint = point(board, 7.0, 4.0, "externalPoint")
         val line = line(
             board = board,
@@ -418,7 +449,7 @@ class EllipseTest {
             Tangent.create(
                 board = board,
                 firstParent = ellipse,
-                secondParent = externalPoint,
+                secondParent = tangentPoint,
                 id = "tangent",
                 point1Id = "tangentPoint1",
                 point2Id = "tangentPoint2",
@@ -458,13 +489,26 @@ class EllipseTest {
         assertEquals("polarline", polar.elType)
         assertEquals("normal", normal.elType)
         assertEquals("polepoint", pole.elType)
-        for (index in 0..2) {
-            assertEquals(
-                tangent.stdform[index],
-                polar.stdform[index],
-                absoluteTolerance = TOLERANCE,
-            )
-        }
+        assertStandardForm(
+            doubleArrayOf(-5.0, 0.0, 1.0),
+            tangent,
+        )
+        assertStandardForm(
+            doubleArrayOf(
+                -3.835176238426169,
+                0.7895951079112676,
+                0.6136281981481896,
+            ),
+            polar,
+        )
+        assertStandardForm(
+            doubleArrayOf(
+                -0.7608232468737077,
+                0.5758596474432485,
+                -0.8175485713072573,
+            ),
+            normal,
+        )
         assertEquals(0.0, pole.X(), absoluteTolerance = TOLERANCE)
         assertEquals(6.25, pole.Y(), absoluteTolerance = TOLERANCE)
 
@@ -495,6 +539,16 @@ class EllipseTest {
                 ),
             ),
         ).value
+        val tangentToPoint = assertIs<Point>(tangentTo.tangentToPoint)
+        val glider = assertIs<GMResult.Ok<Glider>>(
+            Glider.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 7.0),
+                slideObject = ellipse,
+                id = "glider",
+                name = "",
+            ),
+        ).value
         board.update()
 
         assertEquals(4.0, firstIntersection.Y(), absoluteTolerance = 1.0e-5)
@@ -503,8 +557,113 @@ class EllipseTest {
             firstIntersection.X() * otherIntersection.X() < 0.0,
         )
         assertEquals("tangentto", tangentTo.elType)
-        assertTrue(tangentTo.tangentToPoint!!.X().isFinite())
-        assertTrue(tangentTo.tangentToPoint!!.Y().isFinite())
+        assertEquals(
+            1.032873022075841,
+            tangentToPoint.X(),
+            absoluteTolerance = 1.0e-5,
+        )
+        assertEquals(
+            4.920931681891556,
+            tangentToPoint.Y(),
+            absoluteTolerance = 1.0e-5,
+        )
+        assertEquals(0.0, glider.X(), absoluteTolerance = 1.0e-4)
+        assertEquals(5.0, glider.Y(), absoluteTolerance = 1.0e-4)
+
+        focus1.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(-4.0, 1.0),
+        )
+        focus2.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(2.0, -1.0),
+        )
+        ellipsePoint.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(1.0, 4.0),
+        )
+        externalPoint.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(6.0, 3.0),
+        )
+        board.update()
+
+        assertStandardForm(
+            doubleArrayOf(
+                -3.6763424906847724,
+                0.23653188164739739,
+                0.9716237280780773,
+            ),
+            tangent,
+        )
+        assertStandardForm(
+            doubleArrayOf(
+                -2.32205835828255,
+                0.8215786051635543,
+                0.5700952512848256,
+            ),
+            polar,
+        )
+        assertStandardForm(
+            doubleArrayOf(
+                -0.494811413467168,
+                0.5119701797935517,
+                -0.859003221764714,
+            ),
+            normal,
+        )
+        assertEquals(
+            -1.7499999999999993,
+            pole.X(),
+            absoluteTolerance = 1.0e-5,
+        )
+        assertEquals(
+            5.2165171868296225,
+            pole.Y(),
+            absoluteTolerance = 1.0e-5,
+        )
+        assertEquals(
+            1.0000017593239434,
+            firstIntersection.X(),
+            absoluteTolerance = 1.0e-4,
+        )
+        assertEquals(
+            -4.150194712093245,
+            otherIntersection.X(),
+            absoluteTolerance = 1.0e-4,
+        )
+        assertEquals(
+            -0.23188668353605513,
+            tangentToPoint.X(),
+            absoluteTolerance = 1.0e-4,
+        )
+        assertEquals(
+            4.407283070231742,
+            tangentToPoint.Y(),
+            absoluteTolerance = 1.0e-4,
+        )
+        assertEquals(
+            -0.0699746066585627,
+            glider.X(),
+            absoluteTolerance = 1.0e-4,
+        )
+        assertEquals(
+            4.36858678495223,
+            glider.Y(),
+            absoluteTolerance = 1.0e-4,
+        )
+
+        board.removeObject(ellipse)
+
+        assertNull(board.elementById(ellipse.id))
+        assertSame(tangent, board.elementById(tangent.id))
+        assertSame(polar, board.elementById(polar.id))
+        assertNull(board.elementById(normal.id))
+        assertNull(board.elementById(pole.id))
+        assertNull(board.elementById(firstIntersection.id))
+        assertNull(board.elementById(otherIntersection.id))
+        assertNull(board.elementById(tangentTo.id))
+        assertNull(board.elementById(glider.id))
     }
 
     private fun numericEllipse(majorAxis: Double): Curve {
@@ -539,11 +698,27 @@ class EllipseTest {
         }
     }
 
+    private fun assertStandardForm(
+        expected: DoubleArray,
+        line: Line,
+    ) {
+        for (index in expected.indices) {
+            assertEquals(
+                expected[index],
+                line.stdform[index],
+                absoluteTolerance = 1.0e-12,
+                message = "stdform[$index]",
+            )
+        }
+    }
+
     private fun board(id: String): Board = Board(
-        originX = 0.0,
-        originY = 0.0,
-        unitX = 1.0,
-        unitY = 1.0,
+        originX = 320.0,
+        originY = 240.0,
+        unitX = 40.0,
+        unitY = 40.0,
+        canvasWidth = 640.0,
+        canvasHeight = 480.0,
         id = id,
     )
 

@@ -63,6 +63,54 @@ class JsxGraphPointHitTestTest {
         )
     }
 
+    @Test
+    fun hitTestingUsesUserUnitsButOmitsRendererZoomFactor() {
+        assertEquals(
+            "user",
+            draggablePointAt(
+                scene = scene(
+                    point(
+                        id = "user",
+                        size = 1.0,
+                        sizeUnit = "user",
+                    ),
+                ),
+                position = Offset(75.0f, 50.0f),
+                width = 120.0f,
+                height = 100.0f,
+                density = 2.0f,
+            )?.id,
+        )
+        assertNull(
+            draggablePointAt(
+                scene = scene(
+                    point(
+                        id = "screen",
+                        size = 1.0,
+                    ),
+                ),
+                position = Offset(75.0f, 50.0f),
+                width = 120.0f,
+                height = 100.0f,
+                density = 2.0f,
+            ),
+        )
+        assertNull(
+            draggablePointAt(
+                scene = scene(
+                    point(
+                        id = "zoom",
+                        zoomScale = 4.0,
+                    ),
+                ),
+                position = Offset(67.0f, 50.0f),
+                width = 120.0f,
+                height = 100.0f,
+                density = 1.0f,
+            ),
+        )
+    }
+
     private fun scene(
         vararg points: JsxGraphSceneElement.Point,
     ): JsxGraphScene =
@@ -84,6 +132,9 @@ class JsxGraphPointHitTestTest {
         draggable: Boolean = true,
         visible: Boolean = true,
         isReal: Boolean = true,
+        size: Double = 3.0,
+        sizeUnit: String = "screen",
+        zoomScale: Double = 1.0,
     ): JsxGraphSceneElement.Point =
         JsxGraphSceneElement.Point(
             id = id,
@@ -97,8 +148,10 @@ class JsxGraphPointHitTestTest {
                 fillOpacity = 1.0,
             ),
             coordinates = JsxGraphPoint2D(0.0, 0.0),
-            size = 3.0,
+            size = size,
             face = "o",
+            sizeUnit = sizeUnit,
+            zoomScale = zoomScale,
             draggable = draggable,
             isReal = isReal,
         )

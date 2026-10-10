@@ -1460,8 +1460,11 @@ class NativeJessieCodeCreatorsTest {
             board = board("normal-coordinate"),
         )
         assertEquals("normal", coordinateParent.creatorName)
-        assertIs<JessieCodeCreatorError.UnsupportedParents>(
-            coordinateParent.error,
+        assertEquals(
+            NormalError.UpstreamCoordinateParentDefect(),
+            assertIs<JessieCodeCreatorError.NormalFactory>(
+                coordinateParent.error,
+            ).error,
         )
 
         val onePointCurve = creatorError(

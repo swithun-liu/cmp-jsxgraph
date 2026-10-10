@@ -7,12 +7,19 @@ package com.swithun.jsxgraph.compose
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +39,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -50,12 +58,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -68,11 +80,28 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shadow as ComposeShadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerButtons
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isCtrlPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.input.pointer.isTertiaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -88,6 +117,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -95,7 +125,9 @@ import androidx.compose.ui.unit.sp
 import com.swithun.jsxgraph.compose.generated.resources.Res
 import com.swithun.jsxgraph.compose.generated.resources.arimo_regular
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphAffineTransform
 import com.swithun.jsxgraph.core.JsxGraphArrowHead
+import com.swithun.jsxgraph.core.JsxGraphBoardPointerInteraction
 import com.swithun.jsxgraph.core.JsxGraphColor
 import com.swithun.jsxgraph.core.JsxGraphControlInteraction
 import com.swithun.jsxgraph.core.JsxGraphElementStyle
@@ -104,7 +136,12 @@ import com.swithun.jsxgraph.core.JsxGraphInteractionError
 import com.swithun.jsxgraph.core.JsxGraphInteractionState
 import com.swithun.jsxgraph.core.JsxGraphHtmlControl
 import com.swithun.jsxgraph.core.JsxGraphJessieCodeSession
+import com.swithun.jsxgraph.core.JsxGraphNavigationAction
+import com.swithun.jsxgraph.core.JsxGraphNavigationBar
+import com.swithun.jsxgraph.core.JsxGraphNavigationControl
+import com.swithun.jsxgraph.core.JsxGraphNavigationHostAction
 import com.swithun.jsxgraph.core.JsxGraphPoint2D
+import com.swithun.jsxgraph.core.JsxGraphPointerDevice
 import com.swithun.jsxgraph.core.JsxGraphScene
 import com.swithun.jsxgraph.core.JsxGraphSceneElement
 import com.swithun.jsxgraph.core.JsxGraphSession
@@ -112,6 +149,10 @@ import com.swithun.jsxgraph.core.JsxGraphShadow
 import com.swithun.jsxgraph.core.JsxGraphSmartLabelBoxKind
 import com.swithun.jsxgraph.core.JsxGraphSmartLabelParentKind
 import com.swithun.jsxgraph.core.JsxGraphSmartLabelVisibility
+import com.swithun.jsxgraph.core.JsxGraphView3D
+import com.swithun.jsxgraph.core.JsxGraphView3DInteraction
+import com.swithun.jsxgraph.core.JsxGraphView3DKey
+import com.swithun.jsxgraph.core.JsxGraphViewportSize
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.resolveVisualStyle
@@ -125,6 +166,7 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.random.Random
 import org.jetbrains.compose.resources.Font
 
 private val Background = Color(0xFFF3F5F7)
@@ -137,6 +179,7 @@ private val CircleColor = Color(0xFF16877A)
 private val ControlColor = Color(0xFFE0A11A)
 private val InkColor = Color(0xFF1D252C)
 private val MutedColor = Color(0xFF66717A)
+private const val NANOS_PER_MILLISECOND = 1_000_000.0
 
 data class GeometryPlaygroundScene(
     val fixedPoint: Offset,
@@ -302,14 +345,30 @@ fun JsxGraphScenePreview(
     modifier: Modifier = Modifier,
     onPointDrag: ((String, JsxGraphPoint2D) -> Unit)? = null,
     onControlInteraction: ((JsxGraphControlInteraction) -> Unit)? = null,
+    onNavigationInteraction: ((JsxGraphNavigationAction) -> Unit)? = null,
+    onBoardPointerInteraction:
+        ((JsxGraphBoardPointerInteraction) -> Unit)? = null,
     imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
     onImageError: (JsxGraphImageLoadError) -> Unit = {},
+    onView3DInteraction:
+        ((JsxGraphView3DInteraction) -> Boolean)? = null,
 ) {
     val textMeasurer = rememberTextMeasurer()
+    val focusRequester = remember { FocusRequester() }
+    val viewIds = scene.views3D.map(JsxGraphView3D::id)
+    var activeView3DId by remember(viewIds) {
+        mutableStateOf(scene.views3D.singleOrNull()?.id)
+    }
     val currentScene by rememberUpdatedState(scene)
     val currentOnPointDrag by rememberUpdatedState(onPointDrag)
     val currentOnControlInteraction by
         rememberUpdatedState(onControlInteraction)
+    val currentOnNavigationInteraction by
+        rememberUpdatedState(onNavigationInteraction)
+    val currentOnBoardPointerInteraction by
+        rememberUpdatedState(onBoardPointerInteraction)
+    val currentOnView3DInteraction by
+        rememberUpdatedState(onView3DInteraction)
     val currentOnImageError by rememberUpdatedState(onImageError)
     val imageSources = scene.elements
         .filterIsInstance<JsxGraphSceneElement.Image>()
@@ -355,12 +414,58 @@ fun JsxGraphScenePreview(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-            .pointerInput(onPointDrag != null) {
-                if (currentOnPointDrag == null) {
+                .focusRequester(focusRequester)
+                .onKeyEvent { event ->
+                    if (
+                        event.type != KeyEventType.KeyDown ||
+                        currentOnView3DInteraction == null
+                    ) {
+                        return@onKeyEvent false
+                    }
+                    val key = event.toJsxGraphView3DKey()
+                        ?: return@onKeyEvent false
+                    val viewId = activeView3DId
+                        ?: currentScene.views3D
+                            .firstOrNull {
+                                it.keyboardNavigationEnabled
+                            }
+                            ?.id
+                        ?: return@onKeyEvent false
+                    currentOnView3DInteraction?.invoke(
+                        JsxGraphView3DInteraction.KeyDown(
+                            viewId = viewId,
+                            key = key,
+                            shiftKey = event.isShiftPressed,
+                            controlKey = event.isCtrlPressed,
+                        ),
+                    ) ?: false
+                }
+                .focusable(
+                    enabled =
+                        onView3DInteraction != null &&
+                            scene.views3D.any {
+                                it.keyboardNavigationEnabled
+                            },
+                )
+                .pointerInput(
+                    onPointDrag != null,
+                    onView3DInteraction != null,
+                ) {
+                if (
+                    currentOnPointDrag == null &&
+                    currentOnView3DInteraction == null
+                ) {
                     return@pointerInput
                 }
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    if (
+                        down.type == PointerType.Touch &&
+                        currentOnBoardPointerInteraction != null
+                    ) {
+                        waitForUpOrCancellation()
+                        return@awaitEachGesture
+                    }
                     val metrics = currentScene.boardMetrics(
                         width = size.width.toFloat(),
                         height = size.height.toFloat(),
@@ -371,27 +476,188 @@ fun JsxGraphScenePreview(
                         width = size.width.toFloat(),
                         height = size.height.toFloat(),
                         density = density,
+                    )
+                    if (point != null && currentOnPointDrag != null) {
+                        val dragOffset =
+                            metrics.toScreen(point.coordinates.toOffset()) -
+                                down.position
+                        drag(down.id) { change ->
+                            val dragMetrics =
+                                currentScene.boardMetrics(
+                                    width = size.width.toFloat(),
+                                    height = size.height.toFloat(),
+                                )
+                            val user = dragMetrics.toUser(
+                                change.position + dragOffset,
+                            )
+                            change.consume()
+                            currentOnPointDrag?.invoke(
+                                point.id,
+                                user.toJsxGraphPoint2D(),
+                            )
+                        }
+                        return@awaitEachGesture
+                    }
+                    val view = view3DAt(
+                        scene = currentScene,
+                        position = metrics.toUser(down.position),
                     ) ?: return@awaitEachGesture
-                    val dragOffset =
-                        metrics.toScreen(point.coordinates.toOffset()) -
-                            down.position
-                    drag(down.id) { change ->
-                        val metrics = currentScene.boardMetrics(
-                            width = size.width.toFloat(),
-                            height = size.height.toFloat(),
-                        )
-                        val user = metrics.toUser(change.position + dragOffset)
-                        change.consume()
-                        currentOnPointDrag?.invoke(
-                            point.id,
-                            JsxGraphPoint2D(
-                                x = user.x.toDouble(),
-                                y = user.y.toDouble(),
-                            ),
+                    val callback = currentOnView3DInteraction
+                        ?: return@awaitEachGesture
+                    activeView3DId = view.id
+                    if (view.keyboardNavigationEnabled) {
+                        focusRequester.requestFocus()
+                    }
+                    val pointerButton =
+                        currentEvent.buttons.toJsxGraphPointerButton()
+                    val modifiers = currentEvent.keyboardModifiers
+                    val viewportSize = JsxGraphViewportSize(
+                        width = size.width.toDouble(),
+                        height = size.height.toDouble(),
+                    )
+                    callback(
+                        JsxGraphView3DInteraction.PointerDown(
+                            viewId = view.id,
+                            position =
+                                metrics.toUser(down.position)
+                                    .toJsxGraphPoint2D(),
+                            viewportSize = viewportSize,
+                            button = pointerButton,
+                            shiftKey = modifiers.isShiftPressed,
+                            controlKey = modifiers.isCtrlPressed,
+                        ),
+                    )
+                    try {
+                        drag(down.id) { change ->
+                            val dragMetrics =
+                                currentScene.boardMetrics(
+                                    width = size.width.toFloat(),
+                                    height = size.height.toFloat(),
+                                )
+                            val consumed = callback(
+                                JsxGraphView3DInteraction.PointerMove(
+                                    viewId = view.id,
+                                    position =
+                                        dragMetrics
+                                            .toUser(change.position)
+                                            .toJsxGraphPoint2D(),
+                                    viewportSize = JsxGraphViewportSize(
+                                        width = size.width.toDouble(),
+                                        height = size.height.toDouble(),
+                                    ),
+                                    shiftKey = modifiers.isShiftPressed,
+                                    controlKey = modifiers.isCtrlPressed,
+                                ),
+                            )
+                            if (consumed) {
+                                change.consume()
+                            }
+                        }
+                    } finally {
+                        callback(
+                            JsxGraphView3DInteraction.PointerUp(view.id),
                         )
                     }
                 }
-            },
+            }
+                .pointerInput(onView3DInteraction != null) {
+                    if (currentOnView3DInteraction == null) {
+                        return@pointerInput
+                    }
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type != PointerEventType.Scroll) {
+                                continue
+                            }
+                            val change = event.changes.firstOrNull()
+                                ?: continue
+                            if (change.scrollDelta.y == 0.0f) {
+                                continue
+                            }
+                            val metrics =
+                                currentScene.boardMetrics(
+                                    width = size.width.toFloat(),
+                                    height = size.height.toFloat(),
+                                )
+                            val view = view3DAt(
+                                scene = currentScene,
+                                position =
+                                    metrics.toUser(change.position),
+                            ) ?: continue
+                            activeView3DId = view.id
+                            val consumed =
+                                currentOnView3DInteraction?.invoke(
+                                    JsxGraphView3DInteraction.Wheel(
+                                        viewId = view.id,
+                                        position =
+                                            metrics
+                                                .toUser(change.position)
+                                                .toJsxGraphPoint2D(),
+                                        viewportSize =
+                                            JsxGraphViewportSize(
+                                                width =
+                                                    size.width.toDouble(),
+                                                height =
+                                                    size.height.toDouble(),
+                                            ),
+                                        deltaY =
+                                            change.scrollDelta.y.toDouble(),
+                                        shiftKey =
+                                            event.keyboardModifiers
+                                                .isShiftPressed,
+                                        controlKey =
+                                            event.keyboardModifiers
+                                                .isCtrlPressed,
+                                    ),
+                                ) ?: false
+                            if (consumed) {
+                                change.consume()
+                            }
+                        }
+                    }
+                }
+                .pointerInput(onBoardPointerInteraction != null) {
+                    if (currentOnBoardPointerInteraction == null) {
+                        return@pointerInput
+                    }
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val interactions =
+                                boardPointerInteractionsForEvent(
+                                    eventType = event.type,
+                                    changes = event.changes.map { change ->
+                                        BoardPointerEventChange(
+                                            pointerId = change.id.value,
+                                            position = change.position,
+                                            timestampMilliseconds =
+                                                change.uptimeMillis,
+                                            pressed = change.pressed,
+                                            previousPressed =
+                                                change.previousPressed,
+                                            device =
+                                                change.type
+                                                    .toJsxGraphPointerDevice(),
+                                        )
+                                    },
+                                    viewportSize = size,
+                                    density = density,
+                                    shiftKey =
+                                        event.keyboardModifiers
+                                            .isShiftPressed,
+                                    controlKey =
+                                        event.keyboardModifiers
+                                            .isCtrlPressed,
+                                )
+                            for (interaction in interactions) {
+                                currentOnBoardPointerInteraction?.invoke(
+                                    interaction,
+                                )
+                            }
+                        }
+                    }
+                },
     ) {
         val metrics = scene.boardMetrics(size.width, size.height)
         val horizontalMajorStep = metrics.majorTickDistance(
@@ -504,8 +770,104 @@ fun JsxGraphScenePreview(
             scene = scene,
             onInteraction = currentOnControlInteraction,
         )
+        SceneNavigationBar(
+            navigationBar = scene.navigationBar,
+            onInteraction = currentOnNavigationInteraction,
+        )
     }
 }
+
+/**
+ * JSXGraph 1.13.3: src/renderer/abstract.js -> drawNavigationBar.
+ */
+@Composable
+private fun BoxScope.SceneNavigationBar(
+    navigationBar: JsxGraphNavigationBar?,
+    onInteraction: ((JsxGraphNavigationAction) -> Unit)?,
+) {
+    val bar = navigationBar ?: return
+    val style = bar.style
+    Row(
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .offset(
+                x = (-style.rightPixels).dp,
+                y = (-style.bottomPixels).dp,
+            )
+            .zIndex(style.zIndex.toFloat())
+            .background(style.fillColor.toComposeColor(opacity = 1.0))
+            .padding(style.paddingPixels.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (control in bar.controls) {
+            SceneNavigationControl(
+                control = control,
+                navigationBar = bar,
+                enabled = onInteraction != null,
+                onClick = {
+                    onInteraction?.invoke(control.action)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SceneNavigationControl(
+    control: JsxGraphNavigationControl,
+    navigationBar: JsxGraphNavigationBar,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val style = navigationBar.style
+    val interactionSource = remember(control.action) {
+        MutableInteractionSource()
+    }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    val pressed by interactionSource.collectIsPressedAsState()
+    val width =
+        max(28.0, style.fontSizePixels + 14.0 + style.paddingPixels * 2.0)
+    val height =
+        max(24.0, style.fontSizePixels + style.paddingPixels * 2.0)
+    Box(
+        modifier = Modifier
+            .size(width.dp, height.dp)
+            .background(
+                if (hovered || pressed) {
+                    style.highlightFillColor.toComposeColor(opacity = 1.0)
+                } else {
+                    Color.Transparent
+                },
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (control.usesDefaultFullscreenIcon()) {
+            Icon(
+                imageVector = Icons.Default.Fullscreen,
+                contentDescription = null,
+                tint = style.strokeColor.toComposeColor(opacity = 1.0),
+                modifier = Modifier.size((style.fontSizePixels + 4.0).dp),
+            )
+        } else {
+            Text(
+                text = control.symbol,
+                color = style.strokeColor.toComposeColor(opacity = 1.0),
+                fontSize = style.fontSizePixels.sp,
+                letterSpacing = 0.sp,
+            )
+        }
+    }
+}
+
+internal fun JsxGraphNavigationControl.usesDefaultFullscreenIcon(): Boolean =
+    action == JsxGraphNavigationAction.FULLSCREEN &&
+        symbol == "\u26f6"
 
 @Composable
 private fun SceneHtmlControls(
@@ -549,15 +911,45 @@ private fun SceneHtmlControls(
                 "bottom" -> measuredSize.height
                 else -> measuredSize.height / 2
             }
+            val topLeft = IntOffset(
+                x = anchor.x.roundToInt() - horizontalOffset,
+                y = anchor.y.roundToInt() - verticalOffset,
+            )
+            val affineTransform =
+                text.affineTransform?.resolveFor(metrics)
             Box(
                 modifier = Modifier
-                    .offset {
-                        IntOffset(
-                            x = anchor.x.roundToInt() - horizontalOffset,
-                            y = anchor.y.roundToInt() - verticalOffset,
-                        )
-                    }
-                    .onSizeChanged { measuredSize = it },
+                    .offset { topLeft }
+                    .onSizeChanged { measuredSize = it }
+                    .then(
+                        if (affineTransform == null) {
+                            Modifier.graphicsLayer {
+                                rotationZ =
+                                    -text.rotationDegrees.toFloat()
+                                transformOrigin = textTransformOrigin(
+                                    anchorX = text.anchorX,
+                                    anchorY = text.anchorY,
+                                )
+                            }
+                        } else {
+                            Modifier.drawWithContent {
+                                val matrix =
+                                    affineTransform.toComposeMatrix(
+                                        localOrigin = Offset(
+                                            topLeft.x.toFloat(),
+                                            topLeft.y.toFloat(),
+                                        ),
+                                    )
+                                drawContext.canvas.save()
+                                try {
+                                    drawContext.canvas.concat(matrix)
+                                    drawContent()
+                                } finally {
+                                    drawContext.canvas.restore()
+                                }
+                            }
+                        },
+                    ),
             ) {
                 SceneHtmlControl(
                     text = text,
@@ -567,6 +959,86 @@ private fun SceneHtmlControls(
         }
     }
 }
+
+// JSXGraph 1.13.3:
+// src/renderer/abstract.js -> updateText;
+// src/renderer/canvas.js -> transformRect.
+internal fun textTransformOrigin(
+    anchorX: String,
+    anchorY: String,
+): TransformOrigin =
+    TransformOrigin(
+        pivotFractionX = when (anchorX) {
+            "middle" -> 0.5f
+            "right" -> 1.0f
+            else -> 0.0f
+        },
+        pivotFractionY = when (anchorY) {
+            "middle" -> 0.5f
+            "bottom" -> 1.0f
+            else -> 0.0f
+        },
+    )
+
+// JSXGraph 1.13.3: src/renderer/abstract.js -> joinTransforms.
+internal fun JsxGraphAffineTransform.resolveFor(
+    metrics: BoardMetrics,
+): JsxGraphAffineTransform {
+    val sourceMetrics = metrics.copy(
+        width = sourceViewportWidth.toFloat(),
+        height = sourceViewportHeight.toFloat(),
+    )
+    val scaleX = metrics.scaleX.toDouble() /
+        sourceMetrics.scaleX.toDouble()
+    val scaleY = metrics.scaleY.toDouble() /
+        sourceMetrics.scaleY.toDouble()
+    val translateX =
+        (
+            sourceMetrics.left.toDouble() -
+                metrics.left.toDouble()
+            ) * metrics.scaleX.toDouble()
+    val translateY =
+        (
+            metrics.top.toDouble() -
+                sourceMetrics.top.toDouble()
+            ) * metrics.scaleY.toDouble()
+    val resolvedB = scaleY / scaleX * b
+    val resolvedC = scaleX / scaleY * c
+    return JsxGraphAffineTransform(
+        a = a,
+        b = resolvedB,
+        c = resolvedC,
+        d = d,
+        e = scaleX * e + translateX -
+            a * translateX - resolvedC * translateY,
+        f = scaleY * f + translateY -
+            resolvedB * translateX - d * translateY,
+        sourceViewportWidth = metrics.width.toDouble(),
+        sourceViewportHeight = metrics.height.toDouble(),
+    )
+}
+
+internal fun JsxGraphAffineTransform.toComposeMatrix(
+    localOrigin: Offset = Offset.Zero,
+): Matrix =
+    Matrix().also { matrix ->
+        matrix[0, 0] = a.toFloat()
+        matrix[0, 1] = b.toFloat()
+        matrix[1, 0] = c.toFloat()
+        matrix[1, 1] = d.toFloat()
+        matrix[3, 0] = (
+            a * localOrigin.x +
+                c * localOrigin.y +
+                e -
+                localOrigin.x
+            ).toFloat()
+        matrix[3, 1] = (
+            b * localOrigin.x +
+                d * localOrigin.y +
+                f -
+                localOrigin.y
+            ).toFloat()
+    }
 
 @Composable
 private fun SceneHtmlControl(
@@ -707,20 +1179,82 @@ private fun sliderStepCount(
     return intervals.roundToInt().minus(1).coerceAtLeast(0)
 }
 
+internal fun view3DAt(
+    scene: JsxGraphScene,
+    position: Offset,
+): JsxGraphView3D? =
+    scene.views3D.asReversed().firstOrNull { view ->
+        if (!view.pointerNavigationEnabled) {
+            return@firstOrNull false
+        }
+        val right = view.lowerLeftCorner.x + view.size.x
+        val top = view.lowerLeftCorner.y + view.size.y
+        position.x.toDouble() in
+            min(view.lowerLeftCorner.x, right)..
+                max(view.lowerLeftCorner.x, right) &&
+            position.y.toDouble() in
+            min(view.lowerLeftCorner.y, top)..
+                max(view.lowerLeftCorner.y, top)
+    }
+
+private fun PointerButtons.toJsxGraphPointerButton(): Int =
+    when {
+        isSecondaryPressed -> 2
+        isTertiaryPressed -> 1
+        else -> 0
+    }
+
+private fun KeyEvent.toJsxGraphView3DKey(): JsxGraphView3DKey? =
+    when (key) {
+        Key.DirectionUp -> JsxGraphView3DKey.ARROW_UP
+        Key.DirectionDown -> JsxGraphView3DKey.ARROW_DOWN
+        Key.DirectionLeft -> JsxGraphView3DKey.ARROW_LEFT
+        Key.DirectionRight -> JsxGraphView3DKey.ARROW_RIGHT
+        Key.Comma ->
+            if (isShiftPressed) {
+                JsxGraphView3DKey.LESS_THAN
+            } else {
+                JsxGraphView3DKey.COMMA
+            }
+        Key.Period ->
+            if (isShiftPressed) {
+                JsxGraphView3DKey.GREATER_THAN
+            } else {
+                JsxGraphView3DKey.PERIOD
+            }
+        Key.PageUp -> JsxGraphView3DKey.PAGE_UP
+        Key.PageDown -> JsxGraphView3DKey.PAGE_DOWN
+        else -> null
+    }
+
 @Composable
 fun JsxGraphBoard(
     session: JsxGraphSession,
     modifier: Modifier = Modifier,
     onInteractionStateChange: (JsxGraphInteractionState) -> Unit = {},
     onInteractionError: (JsxGraphInteractionError) -> Unit = {},
+    onNavigationHostAction: (JsxGraphNavigationHostAction) -> Unit = {},
     imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
     onImageError: (JsxGraphImageLoadError) -> Unit = {},
 ) {
     var scene by remember(session) {
         mutableStateOf(session.scene)
     }
+    var animationGeneration by remember(session) {
+        mutableStateOf(0)
+    }
     val currentOnStateChange by rememberUpdatedState(onInteractionStateChange)
     val currentOnError by rememberUpdatedState(onInteractionError)
+    val currentOnNavigationHostAction by
+        rememberUpdatedState(onNavigationHostAction)
+    LaunchedEffect(session, animationGeneration) {
+        driveSessionAnimations(
+            hasActiveAnimations = { session.hasActiveAnimations },
+            advanceAnimations = session::advanceAnimations,
+            onScene = { scene = it },
+            onError = currentOnError,
+        )
+    }
     JsxGraphScenePreview(
         scene = scene,
         modifier = modifier,
@@ -730,6 +1264,7 @@ fun JsxGraphBoard(
             when (val result = session.movePoint(id, coordinates)) {
                 is com.swithun.jsxgraph.core.GMResult.Ok -> {
                     scene = result.value
+                    animationGeneration += 1
                     currentOnStateChange(session.captureInteractionState())
                 }
                 is com.swithun.jsxgraph.core.GMResult.Err ->
@@ -738,10 +1273,45 @@ fun JsxGraphBoard(
         },
         onControlInteraction = { interaction ->
             when (val result = session.interactControl(interaction)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value
+                    animationGeneration += 1
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+        onNavigationInteraction = { action ->
+            when (val result = session.interactNavigation(action)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value.scene
+                    result.value.hostAction?.let(
+                        currentOnNavigationHostAction,
+                    )
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+        onBoardPointerInteraction = { interaction ->
+            when (val result = session.interactPointer(interaction)) {
                 is com.swithun.jsxgraph.core.GMResult.Ok ->
                     scene = result.value
                 is com.swithun.jsxgraph.core.GMResult.Err ->
                     currentOnError(result.error)
+            }
+        },
+        onView3DInteraction = { interaction ->
+            when (val result = session.interactView3D(interaction)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value.scene
+                    animationGeneration += 1
+                    result.value.consumed
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err -> {
+                    currentOnError(result.error)
+                    false
+                }
             }
         },
     )
@@ -752,13 +1322,27 @@ fun JsxGraphBoard(
     session: JsxGraphJessieCodeSession,
     modifier: Modifier = Modifier,
     onInteractionError: (JsxGraphInteractionError) -> Unit = {},
+    onNavigationHostAction: (JsxGraphNavigationHostAction) -> Unit = {},
     imageResolver: JsxGraphImageResolver = DefaultJsxGraphImageResolver,
     onImageError: (JsxGraphImageLoadError) -> Unit = {},
 ) {
     var scene by remember(session) {
         mutableStateOf(session.scene)
     }
+    var animationGeneration by remember(session) {
+        mutableStateOf(0)
+    }
     val currentOnError by rememberUpdatedState(onInteractionError)
+    val currentOnNavigationHostAction by
+        rememberUpdatedState(onNavigationHostAction)
+    LaunchedEffect(session, animationGeneration) {
+        driveSessionAnimations(
+            hasActiveAnimations = { session.hasActiveAnimations },
+            advanceAnimations = session::advanceAnimations,
+            onScene = { scene = it },
+            onError = currentOnError,
+        )
+    }
     JsxGraphScenePreview(
         scene = scene,
         modifier = modifier,
@@ -766,22 +1350,235 @@ fun JsxGraphBoard(
         onImageError = onImageError,
         onPointDrag = { id, coordinates ->
             when (val result = session.movePoint(id, coordinates)) {
-                is com.swithun.jsxgraph.core.GMResult.Ok ->
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
                     scene = result.value
+                    animationGeneration += 1
+                }
                 is com.swithun.jsxgraph.core.GMResult.Err ->
                     currentOnError(result.error)
             }
         },
         onControlInteraction = { interaction ->
             when (val result = session.interactControl(interaction)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value
+                    animationGeneration += 1
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+        onNavigationInteraction = { action ->
+            when (val result = session.interactNavigation(action)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value.scene
+                    result.value.hostAction?.let(
+                        currentOnNavigationHostAction,
+                    )
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err ->
+                    currentOnError(result.error)
+            }
+        },
+        onBoardPointerInteraction = { interaction ->
+            when (val result = session.interactPointer(interaction)) {
                 is com.swithun.jsxgraph.core.GMResult.Ok ->
                     scene = result.value
                 is com.swithun.jsxgraph.core.GMResult.Err ->
                     currentOnError(result.error)
             }
         },
+        onView3DInteraction = { interaction ->
+            when (val result = session.interactView3D(interaction)) {
+                is com.swithun.jsxgraph.core.GMResult.Ok -> {
+                    scene = result.value.scene
+                    animationGeneration += 1
+                    result.value.consumed
+                }
+                is com.swithun.jsxgraph.core.GMResult.Err -> {
+                    currentOnError(result.error)
+                    false
+                }
+            }
+        },
     )
 }
+
+private suspend fun driveSessionAnimations(
+    hasActiveAnimations: () -> Boolean,
+    advanceAnimations: (
+        elapsedMilliseconds: Double,
+    ) -> GMResult<JsxGraphScene, JsxGraphInteractionError>,
+    onScene: (JsxGraphScene) -> Unit,
+    onError: (JsxGraphInteractionError) -> Unit,
+) {
+    if (!hasActiveAnimations()) {
+        return
+    }
+    var previousFrameNanos = withFrameNanos { it }
+    while (hasActiveAnimations()) {
+        val frameNanos = withFrameNanos { it }
+        val elapsedMilliseconds =
+            (frameNanos - previousFrameNanos)
+                .coerceAtLeast(0L) / NANOS_PER_MILLISECOND
+        previousFrameNanos = frameNanos
+        when (val result = advanceAnimations(elapsedMilliseconds)) {
+            is GMResult.Ok -> onScene(result.value)
+            is GMResult.Err -> {
+                onError(result.error)
+                return
+            }
+        }
+    }
+}
+
+internal fun boardPointerInteractionForEvent(
+    eventType: PointerEventType,
+    position: Offset?,
+    viewportSize: IntSize,
+    density: Float,
+    timestampMilliseconds: Long,
+    pointerPressed: Boolean,
+    shiftKey: Boolean = false,
+    controlKey: Boolean = false,
+): JsxGraphBoardPointerInteraction? =
+    when (eventType) {
+        PointerEventType.Move ->
+            if (position == null || pointerPressed) {
+                null
+            } else {
+                JsxGraphBoardPointerInteraction.Move(
+                    position = JsxGraphPoint2D(
+                        x = position.x.toDouble() / density,
+                        y = position.y.toDouble() / density,
+                    ),
+                    viewportSize = JsxGraphViewportSize(
+                        width = viewportSize.width.toDouble() / density,
+                        height = viewportSize.height.toDouble() / density,
+                    ),
+                    timestampMilliseconds = timestampMilliseconds,
+                    shiftKey = shiftKey,
+                    controlKey = controlKey,
+                )
+            }
+        PointerEventType.Exit -> JsxGraphBoardPointerInteraction.Leave
+        else -> null
+    }
+
+internal data class BoardPointerEventChange(
+    val pointerId: Long,
+    val position: Offset,
+    val timestampMilliseconds: Long,
+    val pressed: Boolean,
+    val previousPressed: Boolean,
+    val device: JsxGraphPointerDevice,
+)
+
+internal fun boardPointerInteractionsForEvent(
+    eventType: PointerEventType,
+    changes: List<BoardPointerEventChange>,
+    viewportSize: IntSize,
+    density: Float,
+    shiftKey: Boolean = false,
+    controlKey: Boolean = false,
+): List<JsxGraphBoardPointerInteraction> {
+    val viewport = JsxGraphViewportSize(
+        width = viewportSize.width.toDouble() / density,
+        height = viewportSize.height.toDouble() / density,
+    )
+    fun BoardPointerEventChange.position(): JsxGraphPoint2D =
+        JsxGraphPoint2D(
+            x = position.x.toDouble() / density,
+            y = position.y.toDouble() / density,
+        )
+
+    return when (eventType) {
+        PointerEventType.Press ->
+            changes.filter {
+                it.device == JsxGraphPointerDevice.TOUCH &&
+                    it.pressed &&
+                    !it.previousPressed
+            }.map { change ->
+                JsxGraphBoardPointerInteraction.Down(
+                    pointerId = change.pointerId,
+                    position = change.position(),
+                    viewportSize = viewport,
+                    timestampMilliseconds =
+                        change.timestampMilliseconds,
+                    device = change.device,
+                    shiftKey = shiftKey,
+                    controlKey = controlKey,
+                )
+            }
+        PointerEventType.Move -> buildList {
+            for (change in changes) {
+                if (
+                    change.device == JsxGraphPointerDevice.TOUCH &&
+                    change.pressed &&
+                    change.previousPressed
+                ) {
+                    add(
+                        JsxGraphBoardPointerInteraction.Move(
+                            pointerId = change.pointerId,
+                            position = change.position(),
+                            viewportSize = viewport,
+                            timestampMilliseconds =
+                                change.timestampMilliseconds,
+                            device = change.device,
+                            shiftKey = shiftKey,
+                            controlKey = controlKey,
+                        ),
+                    )
+                } else if (
+                    change.device != JsxGraphPointerDevice.TOUCH &&
+                    !change.pressed
+                ) {
+                    add(
+                        JsxGraphBoardPointerInteraction.Move(
+                            position = change.position(),
+                            viewportSize = viewport,
+                            timestampMilliseconds =
+                                change.timestampMilliseconds,
+                            device = change.device,
+                            shiftKey = shiftKey,
+                            controlKey = controlKey,
+                        ),
+                    )
+                    break
+                }
+            }
+        }
+        PointerEventType.Release ->
+            changes.filter {
+                it.device == JsxGraphPointerDevice.TOUCH &&
+                    !it.pressed &&
+                    it.previousPressed
+            }.map { change ->
+                JsxGraphBoardPointerInteraction.Up(
+                    pointerId = change.pointerId,
+                    position = change.position(),
+                    viewportSize = viewport,
+                    timestampMilliseconds =
+                        change.timestampMilliseconds,
+                    device = change.device,
+                    shiftKey = shiftKey,
+                    controlKey = controlKey,
+                )
+            }
+        PointerEventType.Exit ->
+            listOf(JsxGraphBoardPointerInteraction.Leave)
+        else -> emptyList()
+    }
+}
+
+private fun PointerType.toJsxGraphPointerDevice():
+    JsxGraphPointerDevice =
+    when (this) {
+        PointerType.Touch -> JsxGraphPointerDevice.TOUCH
+        PointerType.Stylus, PointerType.Eraser ->
+            JsxGraphPointerDevice.PEN
+        else -> JsxGraphPointerDevice.MOUSE
+    }
 
 internal fun draggablePointAt(
     scene: JsxGraphScene,
@@ -804,8 +1601,14 @@ internal fun draggablePointAt(
             }
             val center = metrics.toScreen(point.coordinates.toOffset())
             // JSXGraph: src/base/point.js -> hasPoint.
+            val pointSize = point.resolveHitSize(
+                cssPixelsPerUnitX =
+                    metrics.scaleX.toDouble() / density,
+                cssPixelsPerUnitY =
+                    metrics.scaleY.toDouble() / density,
+            )
             val radius = max(
-                point.size.toFloat() * density +
+                pointSize.toFloat() * density +
                     point.style.resolveVisualStyle()
                         .strokeWidth.toFloat() * density * 0.5f,
                 POINT_HIT_PRECISION_DP * density,
@@ -1062,7 +1865,12 @@ private fun DrawScope.drawScenePoint(
     metrics: BoardMetrics,
 ) {
     val center = metrics.toScreen(point.coordinates.toOffset())
-    val size = point.size.dp.toPx()
+    val size = point.resolveSize(
+        cssPixelsPerUnitX =
+            metrics.scaleX.toDouble() / density,
+        cssPixelsPerUnitY =
+            metrics.scaleY.toDouble() / density,
+    ).toFloat() * density
     val visual = point.style.resolveVisualStyle()
     val fill = visual.fillColor.toComposeColor(
         opacity = visual.fillOpacity,
@@ -1306,6 +2114,10 @@ private fun DrawScope.drawSceneLine(
         strokeWidth = strokeWidth,
         firstArrow = line.firstArrow.forVisualState(visual.isHighlighted),
         lastArrow = line.lastArrow.forVisualState(visual.isHighlighted),
+        touchFirstPointDistance =
+            line.touchFirstPointDistance?.toFloat()?.dp?.toPx(),
+        touchLastPointDistance =
+            line.touchLastPointDistance?.toFloat()?.dp?.toPx(),
     ) ?: return
     if (color.alpha > 0.0f && strokeWidth > 0.0f) {
         val cap = line.style.lineCap.toStrokeCap()
@@ -1573,15 +2385,29 @@ private fun DrawScope.drawSceneCurve(
             is GMResult.Err -> null
         }
     }
-    val commands = curvePathCommands(
-        points = curveScreenPoints(
-            curve = curve,
-            metrics = metrics,
-            density = density,
-            resolvedGrid = resolvedGrid,
-        ),
-        bezierDegree = resolvedGrid?.bezierDegree ?: curve.bezierDegree,
+    val screenPoints = curveScreenPoints(
+        curve = curve,
+        metrics = metrics,
+        density = density,
+        resolvedGrid = resolvedGrid,
     )
+    val bezierDegree = resolvedGrid?.bezierDegree ?: curve.bezierDegree
+    val strokeWidth =
+        resolvedGrid?.pointStrokeWidth ?: visual.strokeWidth
+    val strokeWidthPixels = strokeWidth.dp.toPx()
+    val regularCommands = curvePathCommands(
+        points = screenPoints,
+        bezierDegree = bezierDegree,
+    )
+    val commands =
+        if (curve.handDrawing) {
+            handDrawingCurvePathCommands(
+                points = screenPoints,
+                strokeWidth = curve.style.strokeWidth.dp.toPx(),
+            )
+        } else {
+            regularCommands
+        }
     val path = Path()
     var segmentCount = 0
     for (command in commands) {
@@ -1615,17 +2441,23 @@ private fun DrawScope.drawSceneCurve(
     val stroke = visual.strokeColor.toComposeColor(
         opacity = visual.strokeOpacity,
     )
-    val strokeWidth =
-        resolvedGrid?.pointStrokeWidth ?: visual.strokeWidth
     if (
         segmentCount > 0 &&
         stroke.alpha > 0.0f &&
         strokeWidth > 0.0
     ) {
-        val strokeWidthPixels = strokeWidth.dp.toPx()
-        val cap = (
-            resolvedGrid?.lineCap ?: curve.lineCap
-            ).toStrokeCap()
+        val cap =
+            if (curve.handDrawing) {
+                StrokeCap.Round
+            } else {
+                (resolvedGrid?.lineCap ?: curve.lineCap).toStrokeCap()
+            }
+        val join =
+            if (curve.handDrawing) {
+                StrokeJoin.Round
+            } else {
+                StrokeJoin.Miter
+            }
         curve.style.shadowPaint(
             sourceColor = visual.strokeColor,
             sourceOpacity = visual.strokeOpacity,
@@ -1640,6 +2472,7 @@ private fun DrawScope.drawSceneCurve(
                             strokeWidthPixels +
                                 shadow.blurRadius,
                         cap = cap,
+                        join = join,
                     ),
                 )
             }
@@ -1650,11 +2483,14 @@ private fun DrawScope.drawSceneCurve(
             style = Stroke(
                 width = strokeWidthPixels,
                 cap = cap,
+                join = join,
                 pathEffect = strokeDashPathEffect(curve.style),
             ),
         )
         val arrows = curveArrowRenderGeometry(
-            commands = commands,
+            // Canvas drawArrows uses the original sampled points, not the
+            // randomized hand-drawing control points.
+            commands = regularCommands,
             strokeWidth = strokeWidthPixels,
             firstArrow =
                 curve.firstArrow.forVisualState(visual.isHighlighted),
@@ -1986,6 +2822,58 @@ internal fun curvePathCommands(
     return commands
 }
 
+// JSXGraph 1.13.3:
+// src/renderer/canvas.js -> updatePathStringBezierPrim.
+internal fun handDrawingCurvePathCommands(
+    points: List<Offset?>,
+    strokeWidth: Float,
+    random: () -> Float = { Random.nextFloat() },
+): List<CurvePathCommand> {
+    if (!strokeWidth.isFinite() || strokeWidth < 0.0f) {
+        return emptyList()
+    }
+    val commands = mutableListOf<CurvePathCommand>()
+    for (pass in 1..2) {
+        var previous: Offset? = null
+        for (point in points) {
+            if (
+                point == null ||
+                !point.x.isFinite() ||
+                !point.y.isFinite()
+            ) {
+                previous = null
+                continue
+            }
+            val start = previous
+            if (start == null) {
+                commands += CurvePathCommand.MoveTo(point)
+            } else {
+                val randomScale = 2.0f * pass
+                fun jitter(): Float =
+                    strokeWidth *
+                        (randomScale * random() - pass.toFloat())
+                commands += CurvePathCommand.CubicTo(
+                    control1 = Offset(
+                        x = start.x + (point.x - start.x) * 0.333f +
+                            jitter(),
+                        y = start.y + (point.y - start.y) * 0.333f +
+                            jitter(),
+                    ),
+                    control2 = Offset(
+                        x = start.x + (point.x - start.x) * 0.666f +
+                            jitter(),
+                        y = start.y + (point.y - start.y) * 0.666f +
+                            jitter(),
+                    ),
+                    end = point,
+                )
+            }
+            previous = point
+        }
+    }
+    return commands
+}
+
 // JSXGraph: src/renderer/abstract.js -> drawPolygon / updatePolygon.
 private fun DrawScope.drawScenePolygonFill(
     polygon: JsxGraphSceneElement.Polygon,
@@ -2112,6 +3000,30 @@ private fun DrawScope.drawSceneText(
     if (text.content.isEmpty() || text.fontSize <= 0.0) {
         return
     }
+    val affineTransform = text.affineTransform?.resolveFor(metrics)
+    if (affineTransform != null) {
+        drawContext.canvas.save()
+        try {
+            drawContext.canvas.concat(
+                affineTransform.toComposeMatrix(),
+            )
+            drawSceneText(
+                text = text.copy(
+                    rotationDegrees = 0.0,
+                    affineTransform = null,
+                    smartLabel = text.smartLabel?.copy(
+                        rotationDegrees = 0.0,
+                    ),
+                ),
+                metrics = metrics,
+                textMeasurer = textMeasurer,
+                fontFamily = fontFamily,
+            )
+        } finally {
+            drawContext.canvas.restore()
+        }
+        return
+    }
     val visual = text.style.resolveVisualStyle()
     val shadow = text.style.shadowPaint(
         sourceColor = visual.strokeColor,
@@ -2151,16 +3063,25 @@ private fun DrawScope.drawSceneText(
         )
     val smartLabel = text.smartLabel
     if (smartLabel == null) {
-        drawText(
-            textLayoutResult = layout,
-            topLeft = textTopLeft(
-                anchor = anchor,
-                width = layout.size.width.toFloat(),
-                height = layout.size.height.toFloat(),
-                anchorX = text.anchorX,
-                anchorY = text.anchorY,
-            ),
+        val topLeft = textTopLeft(
+            anchor = anchor,
+            width = layout.size.width.toFloat(),
+            height = layout.size.height.toFloat(),
+            anchorX = text.anchorX,
+            anchorY = text.anchorY,
         )
+        // JSXGraph 1.13.3:
+        // src/base/element.js -> addRotation;
+        // src/renderer/canvas.js -> transformRect.
+        rotate(
+            degrees = -text.rotationDegrees.toFloat(),
+            pivot = anchor,
+        ) {
+            drawText(
+                textLayoutResult = layout,
+                topLeft = topLeft,
+            )
+        }
         return
     }
 
@@ -2475,6 +3396,9 @@ internal fun textTopLeft(
 
 private fun com.swithun.jsxgraph.core.JsxGraphPoint2D.toOffset(): Offset =
     Offset(x.toFloat(), y.toFloat())
+
+private fun Offset.toJsxGraphPoint2D(): JsxGraphPoint2D =
+    JsxGraphPoint2D(x = x.toDouble(), y = y.toDouble())
 
 internal fun JsxGraphColor.toComposeColor(
     opacity: Double,

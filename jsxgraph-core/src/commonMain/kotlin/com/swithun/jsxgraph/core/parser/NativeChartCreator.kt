@@ -8,11 +8,18 @@
 package com.swithun.jsxgraph.core.parser
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphChartTableError
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Chart
+import com.swithun.jsxgraph.core.base.ChartDataArrayError
+import com.swithun.jsxgraph.core.base.ChartDataArrayUpdater
+import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.GeometryElement
 import com.swithun.jsxgraph.core.base.Legend
+import com.swithun.jsxgraph.core.base.Sector
+import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.math.Numerics
+import com.swithun.jsxgraph.core.utils.Color
 import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import kotlin.math.PI
 import kotlin.math.cos
@@ -135,12 +142,29 @@ internal object NativeChartCreator {
         creatorName: String,
         parents: List<JessieCodeRuntimeValue>,
         attributes: JessieCodeRuntimeValue.ObjectValue,
+        board: Board? = null,
     ): Int? =
         when (creatorName) {
-            "chart" -> chartSceneElementCount(
-                parents = parents,
-                attributes = effectiveChartAttributes(attributes),
-            )
+            "chart" -> {
+                val effectiveAttributes =
+                    effectiveChartAttributes(attributes)
+                val tableId = (
+                    parents.singleOrNull() as?
+                        JessieCodeRuntimeValue.StringValue
+                    )?.value
+                if (tableId != null && board != null) {
+                    tableChartSceneElementCount(
+                        board = board,
+                        tableId = tableId,
+                        attributes = effectiveAttributes,
+                    )
+                } else {
+                    chartSceneElementCount(
+                        parents = parents,
+                        attributes = effectiveAttributes,
+                    )
+                }
+            }
             "legend" -> legendSceneElementCount(attributes)
             else -> null
         }
@@ -200,6 +224,7 @@ internal object NativeChartCreator {
         parents: List<JessieCodeRuntimeValue>,
         attributes: JessieCodeRuntimeValue.ObjectValue,
         location: JessieCodeAstLocation,
+        dataArrayUpdater: ChartDataArrayUpdater? = null,
     ): NativeChartCreatorResult {
         if (parents.isEmpty()) {
             return failure(
@@ -209,6 +234,18 @@ internal object NativeChartCreator {
             )
         }
         val chartAttributes = effectiveChartAttributes(attributes)
+        val tableId = (
+            parents.singleOrNull() as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value
+        if (tableId != null) {
+            return createTableCharts(
+                board = board,
+                tableId = tableId,
+                attributes = chartAttributes,
+                location = location,
+            )
+        }
         val style = when (
             val result = stringAttribute(
                 creatorName = "chart",
@@ -301,6 +338,7 @@ internal object NativeChartCreator {
                 id = identity.id,
                 name = identity.name,
                 needsRegularUpdate = identity.needsRegularUpdate,
+                dataArrayUpdater = dataArrayUpdater,
             )
         ) {
             is GMResult.Ok -> Unit
@@ -367,33 +405,11 @@ internal object NativeChartCreator {
         data: ChartData,
         attributes: JessieCodeRuntimeValue.ObjectValue,
     ): NativeChartCreatorResult {
-        val x = when (val result = evaluateNumbers(data.x, context.location)) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return result
-        }
-        val y = when (val result = evaluateNumbers(data.y, context.location)) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return result
-        }
         val rawDegree = numberLike(attributes.properties["degree"]) ?: 1.0
         val degree = max(
             floor(rawDegree).takeIf(Double::isFinite)?.toInt() ?: 1,
             1,
         )
-        val polynomial = when (
-            val result = Numerics.regressionPolynomial(
-                degree = degree.toDouble(),
-                dataX = x,
-                dataY = y,
-            )
-        ) {
-            is GMResult.Ok -> result.value
-            is GMResult.Err -> return failure(
-                creatorName = "chart",
-                reason = "Regression polynomial failed: ${result.error}.",
-                location = context.location,
-            )
-        }
         val function = JessieCodeRuntimeValue.FunctionValue(
             name = "chart.fit",
             callable = JessieCodeCallable { arguments, callLocation ->
@@ -410,6 +426,40 @@ internal object NativeChartCreator {
                             location = callLocation,
                         ),
                     )
+                val x = when (
+                    val result =
+                        evaluateNumbers(data.x, context.location)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err ->
+                        return@JessieCodeCallable result
+                }
+                val y = when (
+                    val result =
+                        evaluateNumbers(data.y, context.location)
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err ->
+                        return@JessieCodeCallable result
+                }
+                val polynomial = when (
+                    val result = Numerics.regressionPolynomial(
+                        degree = degree.toDouble(),
+                        dataX = x,
+                        dataY = y,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err ->
+                        return@JessieCodeCallable GMResult.Err(
+                            JessieCodeRuntimeError
+                                .BuiltInInvocationFailure(
+                                    functionName = "chart.fit",
+                                    reason = result.error.toString(),
+                                    location = callLocation,
+                                ),
+                        )
+                }
                 when (val result = polynomial(input.value)) {
                     is GMResult.Ok -> GMResult.Ok(number(result.value))
                     is GMResult.Err -> GMResult.Err(
@@ -476,7 +526,8 @@ internal object NativeChartCreator {
         return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(points))
     }
 
-    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawBar.
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawBar closures
+    // makeXpFun / anchorX / anchorY.
     private fun drawBar(
         context: ChartContext,
         data: ChartData,
@@ -606,7 +657,9 @@ internal object NativeChartCreator {
         return GMResult.Ok(JessieCodeRuntimeValue.ArrayValue(polygons))
     }
 
-    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawPie.
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawPie closures
+    // makeRadPointFun / radius / highlightHandleLabel / highlightFun /
+    // noHighlightFun.
     private fun drawPie(
         context: ChartContext,
         y: List<JessieCodeRuntimeValue>,
@@ -629,6 +682,8 @@ internal object NativeChartCreator {
             name = "highlightcolors",
             fallback = emptyList(),
         )
+        val highlightBySize =
+            booleanLike(attributes.properties["highlightbysize"]) == true
         val hidden = objectValue(
             "fixed" to boolean(true),
             "withlabel" to boolean(false),
@@ -754,7 +809,21 @@ internal object NativeChartCreator {
                 is GMResult.Ok -> result.value
                 is GMResult.Err -> return result
             }
+            val sectorElement = sector.element as? Sector
+                ?: return failure(
+                    creatorName = "chart",
+                    reason = "Pie sector factory returned a non-sector.",
+                    location = context.location,
+                )
+            if (
+                booleanLike(
+                    attributes.properties["highlightonsector"],
+                ) == true
+            ) {
+                sectorElement.useHighlightOnSectorHitTest()
+            }
             sectors += elementValue(sector)
+            var renderedLabel: Text? = null
             if (name.isNotEmpty()) {
                 val middleAngle = computedNumber(
                     name = "chart.pie.labelAngle",
@@ -811,7 +880,7 @@ internal object NativeChartCreator {
                     cosine = false,
                     location = context.location,
                 )
-                when (
+                val label = when (
                     val result = context.element(
                         creatorName = "text",
                         parents = listOf(
@@ -826,10 +895,23 @@ internal object NativeChartCreator {
                         ),
                     )
                 ) {
-                    is GMResult.Ok -> Unit
+                    is GMResult.Ok -> result.value
                     is GMResult.Err -> return result
                 }
+                renderedLabel = label.element as? Text
+                    ?: return failure(
+                        creatorName = "chart",
+                        reason = "Pie label factory returned a non-text.",
+                        location = context.location,
+                    )
             }
+            if (highlightBySize) {
+                installPieHighlightBySize(
+                    sector = sectorElement,
+                    renderedLabel = renderedLabel,
+                )
+            }
+            sectorElement.fullUpdate()
         }
         return GMResult.Ok(
             objectValue(
@@ -840,7 +922,69 @@ internal object NativeChartCreator {
         )
     }
 
-    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawRadar.
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawPie closures
+    // highlightHandleLabel / highlightFun / noHighlightFun.
+    private fun installPieHighlightBySize(
+        sector: Sector,
+        renderedLabel: Text?,
+    ) {
+        val labels = listOfNotNull(
+            sector.elementLabel,
+            renderedLabel,
+        ).distinctBy(Text::id)
+        sector.installHighlightHandlers(
+            onHighlight = {
+                if (!sector.highlighted) {
+                    sector.highlighted = true
+                    sector.board.highlightedObjects[sector.id] = sector
+                    resizeHighlightedPieSector(
+                        sector = sector,
+                        labels = labels,
+                        radiusFactor = 1.1,
+                        fontSizeScale = 2.0,
+                    )
+                }
+            },
+            onNoHighlight = {
+                if (sector.highlighted) {
+                    sector.highlighted = false
+                    resizeHighlightedPieSector(
+                        sector = sector,
+                        labels = labels,
+                        radiusFactor = 0.9090909,
+                        fontSizeScale = 1.0,
+                    )
+                }
+            },
+        )
+    }
+
+    private fun resizeHighlightedPieSector(
+        sector: Sector,
+        labels: List<Text>,
+        radiusFactor: Double,
+        fontSizeScale: Double,
+    ) {
+        val center = sector.point1.coords.usrCoords
+        val radiusPoint = sector.point2.coords.usrCoords
+        val deltaX = radiusPoint[1] - center[1]
+        val deltaY = radiusPoint[2] - center[2]
+        for (label in labels) {
+            label.renderFontSizeScale = fontSizeScale
+            label.fullUpdate()
+        }
+        sector.point2.coords.setCoordinates(
+            coordType = Const.COORDS_BY_USER,
+            coordinates = doubleArrayOf(
+                center[1] + deltaX * radiusFactor,
+                center[2] + deltaY * radiusFactor,
+            ),
+        )
+        sector.fullUpdate()
+    }
+
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawRadar closures
+    // get_anchor / get_transform.
     private fun drawRadar(
         context: ChartContext,
         parents: List<JessieCodeRuntimeValue>,
@@ -1291,7 +1435,7 @@ internal object NativeChartCreator {
     }
 
     // JSXGraph 1.13.3: src/base/chart.js ->
-    // Legend.drawVerticalLegend.
+    // Legend.drawVerticalLegend closure getLabelAnchor.
     private fun createLegendInContext(
         context: ChartContext,
         parents: List<JessieCodeRuntimeValue>,
@@ -1448,6 +1592,342 @@ internal object NativeChartCreator {
         }
     }
 
+    // JSXGraph 1.13.3: src/base/chart.js -> createChart table branch;
+    // src/parser/datasource.js -> loadFromTable.
+    private fun createTableCharts(
+        board: Board,
+        tableId: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        location: JessieCodeAstLocation,
+    ): NativeChartCreatorResult {
+        val withHeaders = when (
+            val result = tableWithHeaders(attributes)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return failure(
+                creatorName = "chart",
+                reason = result.error.message,
+                location = location,
+            )
+        }
+        val selection = when (
+            val result = loadChartTableSelection(
+                board = board,
+                tableId = tableId,
+                attributes = attributes,
+                withHeaders = withHeaders,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return failure(
+                creatorName = "chart",
+                reason = result.error.message,
+                location = location,
+            )
+        }
+        if (selection.rows.isEmpty()) {
+            return GMResult.Ok(
+                JessieCodeRuntimeValue.ArrayValue(
+                    values = emptyList(),
+                    createdSceneElements = emptyList(),
+                    isSceneComposite = true,
+                ),
+            )
+        }
+
+        val series = selection.rows.map { row ->
+            MutableChartTableSeries(row.toList())
+        }
+        val controller = ChartTableController(
+            board = board,
+            tableId = tableId,
+            attributes = attributes,
+            withHeaders = withHeaders,
+            series = series,
+        )
+        val updater = ChartDataArrayUpdater(controller::refresh)
+        val chartValues = mutableListOf<JessieCodeRuntimeValue>()
+        val sceneElements =
+            mutableListOf<JessieCodeCreatedSceneElement>()
+        val seriesCount = series.size
+        for (seriesIndex in series.indices) {
+            val seriesAttributes = tableSeriesAttributes(
+                attributes = attributes,
+                selection = selection,
+                seriesIndex = seriesIndex,
+                seriesCount = seriesCount,
+                withHeaders = withHeaders,
+            )
+            val dynamicValues = series[seriesIndex].values.indices.map {
+                valueIndex ->
+                computedNumber(
+                    name = "chart.table.$tableId",
+                    location = location,
+                ) {
+                    evaluateNumber(
+                        value = series[seriesIndex].values[valueIndex],
+                        location = location,
+                    )
+                }
+            }
+            val parents =
+                if (
+                    tableChartStyle(seriesAttributes)
+                        .replace(" ", "")
+                        .split(",")
+                        .contains("bar")
+                ) {
+                    listOf(
+                        array(
+                            tableBarXValues(
+                                valueCount = dynamicValues.size,
+                                seriesIndex = seriesIndex,
+                                seriesCount = seriesCount,
+                                attributes = attributes,
+                            ),
+                        ),
+                        array(dynamicValues),
+                    )
+                } else {
+                    listOf(array(dynamicValues))
+                }
+            when (
+                val result = createChartInternal(
+                    board = board,
+                    parents = parents,
+                    attributes = seriesAttributes,
+                    location = location,
+                    dataArrayUpdater =
+                        updater.takeIf { seriesIndex == 0 },
+                )
+            ) {
+                is GMResult.Err -> return result
+                is GMResult.Ok -> {
+                    chartValues += result.value
+                    val composite = result.value as?
+                        JessieCodeRuntimeValue.ArrayValue
+                    if (composite?.isSceneComposite == true) {
+                        sceneElements += composite.createdSceneElements
+                    }
+                }
+            }
+        }
+        return GMResult.Ok(
+            JessieCodeRuntimeValue.ArrayValue(
+                values = chartValues,
+                createdSceneElements = sceneElements,
+                isSceneComposite = true,
+            ),
+        )
+    }
+
+    private fun tableWithHeaders(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): GMResult<Boolean, ChartTableLoadError> =
+        when (
+            val value = attributes.properties["withheaders"]
+        ) {
+            null,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> GMResult.Ok(false)
+            is JessieCodeRuntimeValue.BooleanValue ->
+                GMResult.Ok(value.value)
+            else -> GMResult.Err(
+                ChartTableLoadError(
+                    "Attribute 'withHeaders' must be boolean.",
+                ),
+            )
+        }
+
+    private fun loadChartTableSelection(
+        board: Board,
+        tableId: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        withHeaders: Boolean,
+    ): GMResult<ChartTableSelection, ChartTableLoadError> {
+        val provider = board.chartTableProvider
+            ?: return GMResult.Err(
+                ChartTableLoadError(
+                    "Chart table provider is unavailable for '$tableId'.",
+                ),
+            )
+        val snapshot = try {
+            provider.load(tableId)
+        } catch (exception: Exception) {
+            GMResult.Err(
+                JsxGraphChartTableError.CallbackFailed(
+                    exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                ),
+            )
+        }
+        val rows = when (snapshot) {
+            is GMResult.Ok -> snapshot.value.rows.map(List<String>::toList)
+            is GMResult.Err -> return GMResult.Err(
+                ChartTableLoadError(snapshot.error.message),
+            )
+        }
+        val header = if (withHeaders) {
+            DataSourceHeader.Embedded
+        } else {
+            DataSourceHeader.None
+        }
+        val dataSource = DataSource()
+        when (
+            val result = dataSource.loadFromArray(
+                table = rows,
+                columnHeader = header,
+                rowHeader = header,
+            )
+        ) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return GMResult.Err(
+                ChartTableLoadError(
+                    "Could not load chart table '$tableId': ${result.error}.",
+                ),
+            )
+        }
+        val selectedRows = mutableListOf<List<Any?>>()
+        val selectors = attributeArray(attributes, "rows")
+        if (selectors == null) {
+            selectedRows.addAll(dataSource.data)
+        } else {
+            for (rowIndex in dataSource.data.indices) {
+                val selected = selectors.any { selector ->
+                    when (selector) {
+                        is JessieCodeRuntimeValue.NumberValue ->
+                            selector.value == rowIndex.toDouble()
+                        is JessieCodeRuntimeValue.StringValue ->
+                            withHeaders &&
+                                selector.value ==
+                                dataSource.rowHeaders.getOrNull(rowIndex)
+                        else -> false
+                    }
+                }
+                if (selected) {
+                    selectedRows += dataSource.data[rowIndex]
+                }
+            }
+        }
+        val runtimeRows = mutableListOf<List<JessieCodeRuntimeValue>>()
+        for (row in selectedRows) {
+            val runtimeRow = mutableListOf<JessieCodeRuntimeValue>()
+            for (cell in row) {
+                when (val result = chartTableRuntimeValue(cell)) {
+                    is GMResult.Ok -> runtimeRow += result.value
+                    is GMResult.Err -> return result
+                }
+            }
+            runtimeRows += runtimeRow
+        }
+        val columnHeaders =
+            mutableListOf<JessieCodeRuntimeValue>()
+        for (headerValue in dataSource.columnHeaders) {
+            when (val result = chartTableRuntimeValue(headerValue)) {
+                is GMResult.Ok -> columnHeaders += result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(
+            ChartTableSelection(
+                rows = runtimeRows,
+                columnHeaders = columnHeaders,
+            ),
+        )
+    }
+
+    private fun chartTableRuntimeValue(
+        value: Any?,
+    ): GMResult<JessieCodeRuntimeValue, ChartTableLoadError> =
+        when (value) {
+            null -> GMResult.Ok(JessieCodeRuntimeValue.NullValue)
+            is Number -> GMResult.Ok(number(value.toDouble()))
+            is String -> GMResult.Ok(string(value))
+            else -> GMResult.Err(
+                ChartTableLoadError(
+                    "Unsupported chart table cell type " +
+                        "'${value::class.simpleName.orEmpty()}'.",
+                ),
+            )
+        }
+
+    private fun tableSeriesAttributes(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+        selection: ChartTableSelection,
+        seriesIndex: Int,
+        seriesCount: Int,
+        withHeaders: Boolean,
+    ): JessieCodeRuntimeValue.ObjectValue {
+        val values = attributes.properties.toMutableMap()
+        val names = attributeArray(attributes, "name")
+        if (names?.size == seriesCount) {
+            values["name"] = names[seriesIndex]
+        } else if (withHeaders) {
+            values["name"] =
+                selection.columnHeaders.getOrNull(seriesIndex)
+                    ?.let(::textValue)
+                    ?.let(::string)
+                    ?: JessieCodeRuntimeValue.UndefinedValue
+        }
+        val hue = ((seriesIndex + 1.0) / seriesCount) * 360.0
+        for (
+            (name, fallback) in listOf(
+                "strokecolor" to Color.hsv2rgb(hue, 0.9, 0.6),
+                "fillcolor" to Color.hsv2rgb(hue, 0.9, 1.0),
+                "highlightstrokecolor" to
+                    Color.hsv2rgb(hue, 0.9, 1.0),
+                "highlightfillcolor" to
+                    Color.hsv2rgb(hue, 0.9, 0.6),
+            )
+        ) {
+            val candidates = attributeArray(attributes, name)
+            values[name] =
+                if (candidates?.size == seriesCount) {
+                    candidates[seriesIndex]
+                } else {
+                    string(fallback)
+                }
+        }
+        if (
+            tableChartStyle(attributes)
+                .replace(" ", "")
+                .split(",")
+                .contains("bar")
+        ) {
+            val originalWidth =
+                numberLike(attributes.properties["width"])
+                    ?.takeIf { it != 0.0 } ?: 0.8
+            values["width"] = number(originalWidth / seriesCount)
+        }
+        return JessieCodeRuntimeValue.ObjectValue(values)
+    }
+
+    private fun tableChartStyle(
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): String =
+        (
+            attributes.properties["chartstyle"] as?
+                JessieCodeRuntimeValue.StringValue
+            )?.value ?: "line"
+
+    private fun tableBarXValues(
+        valueCount: Int,
+        seriesIndex: Int,
+        seriesCount: Int,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): List<JessieCodeRuntimeValue> {
+        val originalWidth =
+            numberLike(attributes.properties["width"])
+                ?.takeIf { it != 0.0 } ?: 0.8
+        val first =
+            1.0 -
+                originalWidth * 0.5 +
+                (seriesIndex + 0.5) * originalWidth / seriesCount
+        return List(valueCount) { index ->
+            number(first + index)
+        }
+    }
+
     private fun chartData(
         parents: List<JessieCodeRuntimeValue>,
         location: JessieCodeAstLocation,
@@ -1542,6 +2022,60 @@ internal object NativeChartCreator {
                 else -> 0L
             }
             count = (count + partCount)
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+        }
+        return count.toInt()
+    }
+
+    private fun tableChartSceneElementCount(
+        board: Board,
+        tableId: String,
+        attributes: JessieCodeRuntimeValue.ObjectValue,
+    ): Int? {
+        val withHeaders = when (val result = tableWithHeaders(attributes)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return null
+        }
+        val selection = when (
+            val result = loadChartTableSelection(
+                board = board,
+                tableId = tableId,
+                attributes = attributes,
+                withHeaders = withHeaders,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return null
+        }
+        var count = 0L
+        for (seriesIndex in selection.rows.indices) {
+            val seriesAttributes = tableSeriesAttributes(
+                attributes = attributes,
+                selection = selection,
+                seriesIndex = seriesIndex,
+                seriesCount = selection.rows.size,
+                withHeaders = withHeaders,
+            )
+            val row = selection.rows[seriesIndex]
+            val parents =
+                if (
+                    tableChartStyle(seriesAttributes)
+                        .replace(" ", "")
+                        .split(",")
+                        .contains("bar")
+                ) {
+                    listOf(
+                        array(List(row.size) { number(0.0) }),
+                        array(row),
+                    )
+                } else {
+                    listOf(array(row))
+                }
+            val seriesCount = chartSceneElementCount(
+                parents = parents,
+                attributes = seriesAttributes,
+            ) ?: return null
+            count = (count + seriesCount)
                 .coerceAtMost(Int.MAX_VALUE.toLong())
         }
         return count.toInt()
@@ -2026,6 +2560,67 @@ internal object NativeChartCreator {
         val name: String?,
         val needsRegularUpdate: Boolean,
     )
+
+    private data class ChartTableLoadError(
+        val message: String,
+    )
+
+    private data class ChartTableSelection(
+        val rows: List<List<JessieCodeRuntimeValue>>,
+        val columnHeaders: List<JessieCodeRuntimeValue>,
+    )
+
+    private class MutableChartTableSeries(
+        var values: List<JessieCodeRuntimeValue>,
+    )
+
+    private class ChartTableController(
+        private val board: Board,
+        private val tableId: String,
+        private val attributes: JessieCodeRuntimeValue.ObjectValue,
+        private val withHeaders: Boolean,
+        private val series: List<MutableChartTableSeries>,
+    ) {
+        fun refresh(): GMResult<Unit, ChartDataArrayError> {
+            val selection = when (
+                val result = loadChartTableSelection(
+                    board = board,
+                    tableId = tableId,
+                    attributes = attributes,
+                    withHeaders = withHeaders,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    ChartDataArrayError.Rejected(result.error.message),
+                )
+            }
+            if (selection.rows.size != series.size) {
+                return GMResult.Err(
+                    ChartDataArrayError.Rejected(
+                        "Chart table '$tableId' changed selected row count " +
+                            "from ${series.size} to ${selection.rows.size}.",
+                    ),
+                )
+            }
+            for (index in series.indices) {
+                val expected = series[index].values.size
+                val actual = selection.rows[index].size
+                if (actual != expected) {
+                    return GMResult.Err(
+                        ChartDataArrayError.Rejected(
+                            "Chart table '$tableId' changed row $index " +
+                                "width from $expected to $actual.",
+                        ),
+                    )
+                }
+            }
+            for (index in series.indices) {
+                series[index].values = selection.rows[index].toList()
+            }
+            return GMResult.Ok(Unit)
+        }
+    }
 
     private data class ChartData(
         val x: List<JessieCodeRuntimeValue>,

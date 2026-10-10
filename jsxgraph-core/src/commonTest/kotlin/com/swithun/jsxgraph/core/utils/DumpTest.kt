@@ -5,13 +5,16 @@
 package com.swithun.jsxgraph.core.utils
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.base.Axis
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.Point
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class DumpTest {
     @Test
@@ -230,6 +233,93 @@ class DumpTest {
                 "name" to "H",
             ),
             prepared["helper"],
+        )
+    }
+
+    @Test
+    fun boardTraversalCleansTemporaryMarkersOnFailure() {
+        val board = Board(
+            originX = 100.0,
+            originY = 100.0,
+            unitX = 20.0,
+            unitY = 20.0,
+            canvasWidth = 200.0,
+            canvasHeight = 200.0,
+        )
+        val first = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 2.0),
+                id = "A",
+                name = "A",
+            ),
+        ).value
+        val second = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(3.0, 4.0),
+                id = "B",
+                name = "",
+            ),
+        ).value
+        first.dumpMarkers["preserved"] = true
+        second.dumpMarkers["preserved"] = true
+
+        assertIs<GMResult.Err<DumpError.ElementLimitExceeded>>(
+            Dump.dump(
+                board = board,
+                limits = DumpLimits(maxElements = 1),
+            ),
+        )
+        assertFalse("dumped" in first.dumpMarkers)
+        assertFalse("dumped" in second.dumpMarkers)
+        assertEquals(true, first.dumpMarkers["preserved"])
+        assertEquals(true, second.dumpMarkers["preserved"])
+    }
+
+    @Test
+    fun removedAxisTicksEmitOfficialReconstructionCalls() {
+        val board = Board(
+            originX = 100.0,
+            originY = 100.0,
+            unitX = 20.0,
+            unitY = 20.0,
+            canvasWidth = 200.0,
+            canvasHeight = 200.0,
+        )
+        val first = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(0.0, 0.0),
+                id = "p1",
+                name = "",
+            ),
+        ).value
+        val second = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 0.0),
+                id = "p2",
+                name = "",
+            ),
+        ).value
+        val axis = assertIs<GMResult.Ok<com.swithun.jsxgraph.core.base.Line>>(
+            Axis.create(
+                board = board,
+                point1 = first,
+                point2 = second,
+                id = "xAxis",
+            ),
+        ).value
+        axis.removeAllTicks()
+
+        val jessie = ok(Dump.toJessie(board))
+        assertTrue("s2.removeAllTicks();" in jessie, jessie)
+        val javaScript = ok(Dump.toJavaScript(board))
+        assertTrue(
+            "board.objects[\"xAxis\"].removeTicks(" +
+                "board.objects[\"xAxis\"].defaultTicks);" in javaScript,
+            javaScript,
         )
     }
 

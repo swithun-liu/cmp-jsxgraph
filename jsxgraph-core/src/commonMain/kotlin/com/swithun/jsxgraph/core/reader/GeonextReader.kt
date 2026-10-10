@@ -14,6 +14,7 @@ import com.swithun.jsxgraph.core.base.AngleRadius
 import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.ArcError
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.BoardError
 import com.swithun.jsxgraph.core.base.BisectorLine
 import com.swithun.jsxgraph.core.base.Circle
 import com.swithun.jsxgraph.core.base.CircleError
@@ -28,6 +29,8 @@ import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.GliderError
 import com.swithun.jsxgraph.core.base.Group
 import com.swithun.jsxgraph.core.base.GroupError
+import com.swithun.jsxgraph.core.base.Image
+import com.swithun.jsxgraph.core.base.ImageError
 import com.swithun.jsxgraph.core.base.IntersectionError
 import com.swithun.jsxgraph.core.base.IntersectionIndexSource
 import com.swithun.jsxgraph.core.base.IntersectionPoint
@@ -51,17 +54,29 @@ import com.swithun.jsxgraph.core.base.Sector
 import com.swithun.jsxgraph.core.base.SectorError
 import com.swithun.jsxgraph.core.base.Text
 import com.swithun.jsxgraph.core.base.TextError
+import com.swithun.jsxgraph.core.base.Transformation
+import com.swithun.jsxgraph.core.base.TransformationDynamicParameter
+import com.swithun.jsxgraph.core.base.TransformationError
+import com.swithun.jsxgraph.core.base.TransformationParameter
 import com.swithun.jsxgraph.core.base.TriangleCenterConstructionError
+import com.swithun.jsxgraph.core.parser.JessieCodeConstantCoordinateFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.utils.Base64
+import com.swithun.jsxgraph.core.utils.Base64Error
 import com.swithun.jsxgraph.core.utils.XML
 import com.swithun.jsxgraph.core.utils.XmlElement
 import com.swithun.jsxgraph.core.utils.XmlError
 import com.swithun.jsxgraph.core.utils.XmlLimits
+import kotlin.math.atan2
 
 internal data class GeonextReaderLimits(
     val preparation: ReaderPreparationLimits = ReaderPreparationLimits(),
     val xml: XmlLimits = XmlLimits(),
     val maxElements: Int = 100_000,
     val maxProperties: Int = 10_000,
+    val maxImageCharacters: Int = 10_000_000,
 )
 
 internal sealed interface GeonextReaderError : ReaderDomainError {
@@ -91,6 +106,11 @@ internal sealed interface GeonextReaderError : ReaderDomainError {
         val elementIndex: Int,
         val elementType: String,
         val cause: GeonextPropertyError,
+    ) : GeonextReaderError
+
+    data class ImageParsingFailed(
+        val ownerId: String,
+        val cause: GeonextImageParsingError,
     ) : GeonextReaderError
 
     data class UnsupportedElements(
@@ -132,6 +152,26 @@ internal sealed interface GeonextReaderError : ReaderDomainError {
         val definitionId: String,
         val cause: GeonextCreationError,
     ) : GeonextReaderError
+
+    data class ConditionApplicationFailed(
+        val expression: String,
+        val cause: BoardError,
+    ) : GeonextReaderError
+}
+
+internal sealed interface GeonextImageParsingError {
+    data class SourceLimitExceeded(
+        val limit: Int,
+        val requested: Int,
+    ) : GeonextImageParsingError
+
+    data class Base64DecodingFailed(
+        val cause: Base64Error,
+    ) : GeonextImageParsingError
+
+    data class InvalidPng(
+        val reason: String,
+    ) : GeonextImageParsingError
 }
 
 internal sealed interface GeonextCreationError {
@@ -158,6 +198,16 @@ internal sealed interface GeonextCreationError {
     data class Group(val cause: GroupError) : GeonextCreationError
 
     data class Text(val cause: TextError) : GeonextCreationError
+
+    data class Image(val cause: ImageError) : GeonextCreationError
+
+    data class ImageTransformation(
+        val cause: TransformationError,
+    ) : GeonextCreationError
+
+    data class UnsupportedImageOwner(
+        val actualType: String,
+    ) : GeonextCreationError
 
     data class Midpoint(val cause: MidpointError) : GeonextCreationError
 
@@ -361,9 +411,26 @@ internal data class GeonextCompositionDefinition(
     override val properties: GeonextElementProperties,
 ) : GeonextDefinition
 
+internal data class GeonextEmbeddedImage(
+    val source: String,
+    val widthPixels: Int,
+    val heightPixels: Int,
+)
+
+internal data class GeonextBackgroundImage(
+    val source: String,
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double,
+)
+
 internal data class ParsedGeonext(
     val definitions: List<GeonextDefinition>,
     val diagnostics: List<GeonextReaderDiagnostic>,
+    val backgroundImage: GeonextBackgroundImage? = null,
+    val boundImages: Map<String, GeonextEmbeddedImage> = emptyMap(),
+    val conditions: String = "",
 )
 
 internal data class DrawnGeonext(
@@ -378,10 +445,10 @@ private data class CreatedGeonext(
 )
 
 /**
- * Source-mapped GEONExT reader slice for point, line, circle, arrow,
+ * Source-mapped GEONExT reader for point, CAS point, line, circle, arrow,
  * intersection, arc, angle, polygon, graph, parametercurve, slider,
- * tracecurve, group, and text. Remaining readNode branches are reported
- * explicitly.
+ * tracecurve, group, text, and active composition branches. Unsupported input
+ * outside the upstream 1.13.3 branch surface is reported explicitly.
  */
 internal class GeonextReader(
     private val data: String,
@@ -417,6 +484,28 @@ internal class GeonextReader(
                 )
             }
         }
+        val boardData = tree.getElementsByTagName(BOARD_TAG).firstOrNull()
+        val backgroundImage = when (
+            val result = parseBackgroundImage(
+                fileNode = boardData
+                    ?.directChild(BACKGROUND_TAG)
+                    ?.directChild(FILE_TAG),
+                limits = limits,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return GMResult.Err(
+                    GeonextReaderError.ImageParsingFailed(
+                        ownerId = BACKGROUND_IMAGE_OWNER,
+                        cause = result.error,
+                    ),
+                )
+            }
+        }
+        val conditions = GeonextProperties.readConditions(
+            boardData?.directChild(CONDITIONS_TAG),
+        )
         val elements = tree.getElementsByTagName(ELEMENTS_TAG).firstOrNull()
             ?: return GMResult.Err(
                 GeonextReaderError.MissingSection(ELEMENTS_TAG),
@@ -439,6 +528,7 @@ internal class GeonextReader(
         )
         val definitions = mutableListOf<GeonextDefinition>()
         val diagnostics = mutableListOf<GeonextReaderDiagnostic>()
+        val boundImages = linkedMapOf<String, GeonextEmbeddedImage>()
         for ((index, element) in elementNodes.withIndex()) {
             if (element.nodeName !in SUPPORTED_ELEMENT_TYPES) {
                 diagnostics += GeonextReaderDiagnostic.UnsupportedElement(
@@ -484,12 +574,37 @@ internal class GeonextReader(
                     )
                 }
             }
-            definitions += parseDefinition(element, properties)
+            val definition = parseDefinition(element, properties)
+            definitions += definition
+            if (element.nodeName in IMAGE_BOUND_ELEMENT_TYPES) {
+                val image = when (
+                    val result = parseImage(
+                        fileNode = element,
+                        limits = limits,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> {
+                        return GMResult.Err(
+                            GeonextReaderError.ImageParsingFailed(
+                                ownerId = definition.id,
+                                cause = result.error,
+                            ),
+                        )
+                    }
+                }
+                if (image != null) {
+                    boundImages[definition.id] = image
+                }
+            }
         }
         return GMResult.Ok(
             ParsedGeonext(
                 definitions = definitions.toList(),
                 diagnostics = diagnostics.toList(),
+                backgroundImage = backgroundImage,
+                boundImages = boundImages.toMap(),
+                conditions = conditions,
             ),
         )
     }
@@ -529,6 +644,28 @@ internal class GeonextReader(
         val objects = linkedMapOf<String, GeometryElement>()
         val groups = linkedMapOf<String, Group>()
         board.suspendUpdate()
+        parsed.backgroundImage?.let { definition ->
+            when (
+                val result = createBackgroundImage(
+                    board = board,
+                    definition = definition,
+                )
+            ) {
+                is GMResult.Ok -> {
+                    objects[result.value.id] = result.value
+                }
+                is GMResult.Err -> {
+                    rollbackBoardRead(
+                        board = board,
+                        existingIds = existingIds,
+                        existingNames = existingNames,
+                        existingGroups = existingGroups,
+                        existingGroupMemberships = existingGroupMemberships,
+                    )
+                    return result
+                }
+            }
+        }
         for (definition in parsed.definitions) {
             val created = when (
                 val result = createDefinition(
@@ -551,6 +688,69 @@ internal class GeonextReader(
             }
             objects.putAll(created.objects)
             groups.putAll(created.groups)
+            val imageDefinition = parsed.boundImages[definition.id]
+            if (imageDefinition != null) {
+                val owner = objects[definition.id]
+                    ?: board.select(definition.id)
+                if (owner == null) {
+                    rollbackBoardRead(
+                        board = board,
+                        existingIds = existingIds,
+                        existingNames = existingNames,
+                        existingGroups = existingGroups,
+                        existingGroupMemberships = existingGroupMemberships,
+                    )
+                    return GMResult.Err(
+                        GeonextReaderError.MissingReference(
+                            definitionId = definition.id,
+                            referenceId = definition.id,
+                            expectedType = "image owner",
+                        ),
+                    )
+                }
+                when (
+                    val result = createBoundImage(
+                        board = board,
+                        owner = owner,
+                        definition = imageDefinition,
+                    )
+                ) {
+                    is GMResult.Ok -> {
+                        objects[result.value.id] = result.value
+                    }
+                    is GMResult.Err -> {
+                        rollbackBoardRead(
+                            board = board,
+                            existingIds = existingIds,
+                            existingNames = existingNames,
+                            existingGroups = existingGroups,
+                            existingGroupMemberships =
+                                existingGroupMemberships,
+                        )
+                        return result
+                    }
+                }
+            }
+        }
+        if (parsed.conditions.isNotEmpty()) {
+            when (val result = board.addConditions(parsed.conditions)) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> {
+                    rollbackBoardRead(
+                        board = board,
+                        existingIds = existingIds,
+                        existingNames = existingNames,
+                        existingGroups = existingGroups,
+                        existingGroupMemberships = existingGroupMemberships,
+                    )
+                    return GMResult.Err(
+                        GeonextReaderError.ConditionApplicationFailed(
+                            expression = parsed.conditions,
+                            cause = result.error,
+                        ),
+                    )
+                }
+            }
         }
         board.unsuspendUpdate()
         return GMResult.Ok(
@@ -562,6 +762,326 @@ internal class GeonextReader(
         )
     }
 
+    // JSXGraph 1.13.3: src/reader/geonext.js -> parseImage (background).
+    private fun parseBackgroundImage(
+        fileNode: XmlElement?,
+        limits: GeonextReaderLimits,
+    ): GMResult<GeonextBackgroundImage?, GeonextImageParsingError> {
+        if (fileNode == null) {
+            return GMResult.Ok(null)
+        }
+        val sourceNode = fileNode.getElementsByTagName(SOURCE_TAG).firstOrNull()
+            ?: return GMResult.Ok(null)
+        val source = GeonextProperties.readImage(sourceNode.firstChild)
+        if (source.isEmpty()) {
+            return GMResult.Ok(null)
+        }
+        when (val result = validateImageSource(source, limits)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            GeonextBackgroundImage(
+                source = source,
+                x = GeonextProperties.jsParseFloat(
+                    textByTagName(fileNode, X_KEY),
+                ),
+                y = GeonextProperties.jsParseFloat(
+                    textByTagName(fileNode, Y_KEY),
+                ),
+                width = GeonextProperties.jsParseFloat(
+                    textByTagName(fileNode, WIDTH_TAG),
+                ),
+                height = GeonextProperties.jsParseFloat(
+                    textByTagName(fileNode, HEIGHT_TAG),
+                ),
+            ),
+        )
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/geonext.js -> parseImage / onload.
+     * Browser JSXGraph discovers the intrinsic size asynchronously through a
+     * DOM Image. CommonMain reads the PNG IHDR synchronously from the same
+     * embedded Base64 bytes.
+     */
+    private fun parseImage(
+        fileNode: XmlElement,
+        limits: GeonextReaderLimits,
+    ): GMResult<GeonextEmbeddedImage?, GeonextImageParsingError> {
+        val imageNode = fileNode.getElementsByTagName(IMAGE_TAG).firstOrNull()
+            ?: return GMResult.Ok(null)
+        val source = GeonextProperties.readImage(imageNode.firstChild)
+        if (source.isEmpty()) {
+            return GMResult.Ok(null)
+        }
+        when (val result = validateImageSource(source, limits)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        val bytes = when (val result = Base64.decodeAsArray(source)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return GMResult.Err(
+                    GeonextImageParsingError.Base64DecodingFailed(
+                        result.error,
+                    ),
+                )
+            }
+        }
+        val dimensions = when (val result = pngDimensions(bytes)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        return GMResult.Ok(
+            GeonextEmbeddedImage(
+                source = source,
+                widthPixels = dimensions.first,
+                heightPixels = dimensions.second,
+            ),
+        )
+    }
+
+    private fun validateImageSource(
+        source: String,
+        limits: GeonextReaderLimits,
+    ): GMResult<Unit, GeonextImageParsingError> =
+        if (source.length > limits.maxImageCharacters) {
+            GMResult.Err(
+                GeonextImageParsingError.SourceLimitExceeded(
+                    limit = limits.maxImageCharacters,
+                    requested = source.length,
+                ),
+            )
+        } else {
+            GMResult.Ok(Unit)
+        }
+
+    private fun pngDimensions(
+        bytes: List<Int>,
+    ): GMResult<Pair<Int, Int>, GeonextImageParsingError> {
+        if (bytes.size < PNG_HEADER_SIZE) {
+            return invalidPng("PNG header is shorter than 24 bytes")
+        }
+        if (
+            PNG_SIGNATURE.indices.any { index ->
+                bytes[index] != PNG_SIGNATURE[index]
+            }
+        ) {
+            return invalidPng("missing PNG signature")
+        }
+        if (
+            IHDR.indices.any { index ->
+                bytes[PNG_CHUNK_TYPE_OFFSET + index] != IHDR[index]
+            }
+        ) {
+            return invalidPng("first PNG chunk is not IHDR")
+        }
+        val width = unsignedInt32(bytes, PNG_WIDTH_OFFSET)
+        val height = unsignedInt32(bytes, PNG_HEIGHT_OFFSET)
+        if (
+            width !in 1..Int.MAX_VALUE.toLong() ||
+            height !in 1..Int.MAX_VALUE.toLong()
+        ) {
+            return invalidPng("PNG dimensions are outside Int range")
+        }
+        return GMResult.Ok(width.toInt() to height.toInt())
+    }
+
+    private fun unsignedInt32(
+        bytes: List<Int>,
+        offset: Int,
+    ): Long =
+        (bytes[offset].toLong() shl 24) or
+            (bytes[offset + 1].toLong() shl 16) or
+            (bytes[offset + 2].toLong() shl 8) or
+            bytes[offset + 3].toLong()
+
+    private fun <T> invalidPng(
+        reason: String,
+    ): GMResult<T, GeonextImageParsingError> =
+        GMResult.Err(GeonextImageParsingError.InvalidPng(reason))
+
+    // JSXGraph 1.13.3: src/reader/geonext.js -> parseImage (src branch).
+    private fun createBackgroundImage(
+        board: Board,
+        definition: GeonextBackgroundImage,
+    ): GMResult<Image, GeonextReaderError> {
+        val image = when (
+            val result = Image.create(
+                board = board,
+                urlTerm = imageUrl(definition.source),
+                coordinates = doubleArrayOf(definition.x, definition.y),
+                sizeTerms = listOf(
+                    dynamicNumber(value = { definition.width }),
+                    dynamicNumber(value = { definition.height }),
+                ),
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    definitionId = BACKGROUND_IMAGE_OWNER,
+                    cause = GeonextCreationError.Image(result.error),
+                )
+            }
+        }
+        image.setAttribute(mapOf("layer" to IMAGE_LAYER))
+        return GMResult.Ok(image)
+    }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/geonext.js -> parseImage
+     * line/point/circle branches and xf/yf/wf/hf closures.
+     */
+    private fun createBoundImage(
+        board: Board,
+        owner: GeometryElement,
+        definition: GeonextEmbeddedImage,
+    ): GMResult<Image, GeonextReaderError> {
+        val dependencies = mapOf(owner.id to owner)
+        val widthPixels = definition.widthPixels.toDouble()
+        val heightPixels = definition.heightPixels.toDouble()
+        val coordinates: List<JessieCodeCoordinateFunction>
+        val size: List<JessieCodeCoordinateFunction>
+        when (owner) {
+            is Line -> {
+                val width = { owner.point1.Dist(owner.point2) }
+                val height = { width() * heightPixels / widthPixels }
+                coordinates = listOf(
+                    dynamicNumber(dependencies) { owner.point1.X() },
+                    dynamicNumber(dependencies) {
+                        owner.point1.Y() - height() * 0.5
+                    },
+                )
+                size = listOf(
+                    dynamicNumber(dependencies, width),
+                    dynamicNumber(dependencies, height),
+                )
+            }
+            is Point -> {
+                val width = { widthPixels / board.unitX }
+                val height = { heightPixels / board.unitY }
+                coordinates = listOf(
+                    dynamicNumber(dependencies) {
+                        owner.X() - width() * 0.5
+                    },
+                    dynamicNumber(dependencies) {
+                        owner.Y() - height() * 0.5
+                    },
+                )
+                size = listOf(
+                    dynamicNumber(dependencies, width),
+                    dynamicNumber(dependencies, height),
+                )
+            }
+            is Circle -> {
+                val width = { 2.0 * owner.Radius() }
+                val height = { width() * heightPixels / widthPixels }
+                coordinates = listOf(
+                    dynamicNumber(dependencies) {
+                        owner.center.X() - width() * 0.5
+                    },
+                    dynamicNumber(dependencies) {
+                        owner.center.Y() - height() * 0.5
+                    },
+                )
+                size = listOf(
+                    dynamicNumber(dependencies, width),
+                    dynamicNumber(dependencies, height),
+                )
+            }
+            else -> {
+                return creationFailure(
+                    definitionId = owner.id,
+                    cause = GeonextCreationError.UnsupportedImageOwner(
+                        owner.elType.ifEmpty { "element" },
+                    ),
+                )
+            }
+        }
+        val image = when (
+            val result = Image.createConstrained(
+                board = board,
+                urlTerm = imageUrl(definition.source),
+                coordinateFunctions = coordinates,
+                sizeTerms = size,
+                id = owner.id + IMAGE_ID_SUFFIX,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                return creationFailure(
+                    definitionId = owner.id,
+                    cause = GeonextCreationError.Image(result.error),
+                )
+            }
+        }
+        image.setAttribute(
+            mapOf(
+                "anchor" to owner,
+                "layer" to IMAGE_LAYER,
+            ),
+        )
+        if (owner is Line) {
+            val rotation = when (
+                val result = Transformation.create(
+                    board = board,
+                    type = "rotate",
+                    parameters = listOf(
+                        dynamicTransformationParameter {
+                            atan2(
+                                owner.point2.Y() - owner.point1.Y(),
+                                owner.point2.X() - owner.point1.X(),
+                            )
+                        },
+                        dynamicTransformationParameter(owner.point1::X),
+                        dynamicTransformationParameter(owner.point1::Y),
+                    ),
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    board.removeObject(image)
+                    return creationFailure(
+                        definitionId = owner.id,
+                        cause = GeonextCreationError.ImageTransformation(
+                            result.error,
+                        ),
+                    )
+                }
+            }
+            rotation.bindTo(image)
+            image.prepareUpdate().update()
+        }
+        return GMResult.Ok(image)
+    }
+
+    private fun imageUrl(source: String): JessieCodeCoordinateFunction =
+        JessieCodeConstantCoordinateFunction(
+            JessieCodeRuntimeValue.StringValue(
+                PNG_DATA_URI_PREFIX + source,
+            ),
+        )
+
+    private fun dynamicNumber(
+        dependencies: Map<String, GeometryElement> = emptyMap(),
+        value: () -> Double,
+    ): JessieCodeCoordinateFunction =
+        GeonextCoordinateFunction(
+            dependencies = dependencies,
+            value = value,
+        )
+
+    private fun dynamicTransformationParameter(
+        value: () -> Double,
+    ): TransformationParameter =
+        TransformationParameter.Dynamic(
+            TransformationDynamicParameter {
+                GMResult.Ok(value())
+            },
+        )
+
     private fun parseDefinition(
         element: XmlElement,
         properties: GeonextElementProperties,
@@ -569,7 +1089,9 @@ internal class GeonextReader(
         val id = properties.text(ID_KEY).orEmpty()
         val name = properties.text(NAME_KEY).orEmpty()
         return when (element.nodeName) {
-            POINT_TAG -> GeonextPointDefinition(
+            POINT_TAG,
+            CAS_TAG,
+            -> GeonextPointDefinition(
                 id = id,
                 name = name,
                 x = GeonextProperties.jsParseFloat(
@@ -2528,6 +3050,8 @@ internal class GeonextReader(
                 "maxElements" to limits.maxElements
             limits.maxProperties < 0 ->
                 "maxProperties" to limits.maxProperties
+            limits.maxImageCharacters < 0 ->
+                "maxImageCharacters" to limits.maxImageCharacters
             else -> null
         }
         return invalid?.let { (name, value) ->
@@ -2558,9 +3082,38 @@ internal class GeonextReader(
     private fun XmlElement.childElements(): List<XmlElement> =
         childNodes.filterIsInstance<XmlElement>()
 
+    private fun XmlElement.directChild(name: String): XmlElement? =
+        childNodes
+            .filterIsInstance<XmlElement>()
+            .firstOrNull { child -> child.nodeName == name }
+
+    /*
+     * JSXGraph 1.13.3: src/reader/geonext.js -> printDebugMessage.
+     * The upstream method only writes diagnostic console output and does not
+     * affect the imported Board, so CommonMain intentionally has no runtime
+     * side effect. The unused point-branch visibility closure `v` likewise
+     * has no observable reader behavior.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun printDebugMessage(
+        outputElement: String,
+        definitionId: String,
+        nodeType: String,
+        success: String,
+    ) = Unit
+
     private companion object {
+        const val BOARD_TAG = "board"
+        const val BACKGROUND_TAG = "background"
+        const val FILE_TAG = "file"
+        const val CONDITIONS_TAG = "conditions"
+        const val SOURCE_TAG = "src"
+        const val IMAGE_TAG = "image"
+        const val WIDTH_TAG = "width"
+        const val HEIGHT_TAG = "height"
         const val ELEMENTS_TAG = "elements"
         const val POINT_TAG = "point"
+        const val CAS_TAG = "cas"
         const val LINE_TAG = "line"
         const val CIRCLE_TAG = "circle"
         const val ARROW_TAG = "arrow"
@@ -2611,6 +3164,14 @@ internal class GeonextReader(
         const val COLOR_LABEL_KEY = "colorLabel"
         const val OLD_VERSION_MARKER = "oldVersion"
         const val TYPE_KEY = "type"
+        const val BACKGROUND_IMAGE_OWNER = "<background>"
+        const val IMAGE_ID_SUFFIX = "_image"
+        const val PNG_DATA_URI_PREFIX = "data:image/png;base64,"
+        const val IMAGE_LAYER = 0
+        const val PNG_HEADER_SIZE = 24
+        const val PNG_CHUNK_TYPE_OFFSET = 12
+        const val PNG_WIDTH_OFFSET = 16
+        const val PNG_HEIGHT_OFFSET = 20
 
         const val ARROW_PARALLEL_TYPE = "210070"
         const val BISECTOR_TYPE = "210080"
@@ -2628,6 +3189,7 @@ internal class GeonextReader(
 
         val SUPPORTED_ELEMENT_TYPES = setOf(
             POINT_TAG,
+            CAS_TAG,
             LINE_TAG,
             CIRCLE_TAG,
             ARROW_TAG,
@@ -2643,6 +3205,18 @@ internal class GeonextReader(
             TEXT_TAG,
             COMPOSITION_TAG,
         )
+
+        val IMAGE_BOUND_ELEMENT_TYPES = setOf(
+            POINT_TAG,
+            CAS_TAG,
+            LINE_TAG,
+            CIRCLE_TAG,
+            SLIDER_TAG,
+        )
+
+        val PNG_SIGNATURE =
+            listOf(137, 80, 78, 71, 13, 10, 26, 10)
+        val IHDR = listOf(73, 72, 68, 82)
 
         val SUPPORTED_COMPOSITION_TYPES = setOf(
             ARROW_PARALLEL_TYPE,
@@ -2660,6 +3234,18 @@ internal class GeonextReader(
             SECTOR_TYPE,
         )
     }
+}
+
+private class GeonextCoordinateFunction(
+    override val dependencies: Map<String, GeometryElement>,
+    private val value: () -> Double,
+) : JessieCodeCoordinateFunction {
+    override val origin: String? = null
+
+    override fun evaluate(
+        arguments: List<JessieCodeRuntimeValue>,
+    ): GMResult<JessieCodeRuntimeValue, JessieCodeRuntimeError> =
+        GMResult.Ok(JessieCodeRuntimeValue.NumberValue(value()))
 }
 
 internal object GeonextReaderFactory :

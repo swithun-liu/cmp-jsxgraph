@@ -21,6 +21,32 @@ import kotlin.test.assertSame
 
 class GeogebraReaderTest {
     @Test
+    fun defaultOptionsAndElementPropertiesAreConsumedByRead() {
+        val drawn = read(BASIC_SOURCE)
+        val point = assertIs<Point>(drawn.objects.getValue("A"))
+        assertEquals("circle", point.getAttribute("face"))
+        assertEquals(3.0, point.getAttribute("size"))
+        assertEquals("#000", point.getAttribute("fillcolor"))
+        assertEquals(1.0, point.getAttribute("fillopacity"))
+        assertEquals("black", point.getAttribute("strokecolor"))
+        assertEquals(1.0, point.getAttribute("strokewidth"))
+        assertEquals(true, point.getAttribute("withlabel"))
+        assertEquals(true, point.hasLabel)
+
+        val segment = assertIs<Line>(drawn.objects.getValue("s"))
+        assertEquals("#000", segment.getAttribute("strokecolor"))
+        assertEquals(1.0, segment.getAttribute("strokewidth"))
+        assertEquals(true, segment.getAttribute("withlabel"))
+        assertEquals(true, segment.hasLabel)
+
+        val circle = assertIs<Circle>(drawn.objects.getValue("circle"))
+        assertEquals("#000", circle.getAttribute("strokecolor"))
+        assertEquals(1.0, circle.getAttribute("strokewidth"))
+        assertEquals(true, circle.getAttribute("withlabel"))
+        assertEquals(true, circle.hasLabel)
+    }
+
+    @Test
     fun commandDependenciesExpressionsAndSliderRemainDynamic() {
         val board = board()
         val drawn = read(BASIC_SOURCE, board)
@@ -442,6 +468,10 @@ class GeogebraReaderTest {
                     label="dynamicText"
                     exp="&quot;k = &quot; + k"
                 />
+                <command name="Text">
+                  <input a0="k"/>
+                  <output a0="dynamicText"/>
+                </command>
                 <element type="text" label="dynamicText">
                   <coords x="0" y="-3" z="1"/>
                 </element>

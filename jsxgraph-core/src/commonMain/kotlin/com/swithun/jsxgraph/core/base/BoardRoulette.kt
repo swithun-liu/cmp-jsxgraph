@@ -210,6 +210,8 @@ internal class BoardRoulette(
             )
         }
 
+    // JSXGraph 1.13.3: src/base/board.js ->
+    // createRoulette closures arclen / exactDist.
     private fun arcLength(
         curve: Curve,
         start: Double,

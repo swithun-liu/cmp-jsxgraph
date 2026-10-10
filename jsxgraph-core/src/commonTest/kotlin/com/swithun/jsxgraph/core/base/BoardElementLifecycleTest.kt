@@ -245,6 +245,25 @@ class BoardElementLifecycleTest {
     }
 
     @Test
+    fun elementBooleanStringNormalizationPreservesTypedValues() {
+        val element = registeredElement(board(), "element")
+
+        element.setAttribute(
+            mapOf(
+                "visible" to true,
+                "fixed" to false,
+                "strokeWidth" to 3.0,
+                "snapToGrid" to "true",
+            ),
+        )
+
+        assertEquals(true, element.getAttribute("visible"))
+        assertEquals(false, element.getAttribute("fixed"))
+        assertEquals(3.0, element.getAttribute("strokewidth"))
+        assertEquals(true, element.getAttribute("snaptogrid"))
+    }
+
+    @Test
     fun elementDynamicPropertiesUseElementAndContainFailures() {
         val element = registeredElement(board(), "element")
         element.setAttribute(
@@ -456,6 +475,95 @@ class BoardElementLifecycleTest {
         assertEquals(6.0, point.getAttribute("size"))
         assertNull(point.getAttribute("unsupported"))
         assertEquals(1, callbacks)
+        assertTrue(point.animationData.isEmpty())
+    }
+
+    @Test
+    fun elementAnimationFramesAndCompletionTickMatchOfficialFixture() {
+        var scheduledInterval = Double.NaN
+        var advance: (() -> Boolean)? = null
+        val board = Board(
+            originX = 0.0,
+            originY = 0.0,
+            unitX = 1.0,
+            unitY = 1.0,
+            animationDelay = 25.0,
+            animationScheduler = BoardAnimationScheduler { interval, step ->
+                scheduledInterval = interval
+                advance = step
+            },
+        )
+        val point = Point(
+            board = board,
+            coordinates = doubleArrayOf(0.0, 0.0),
+            id = "point",
+        )
+        registeredId(board.setId(point, Const.OBJECT_TYPE_POINT))
+        point.setAttribute(
+            mapOf(
+                "strokeColor" to "#ff0000",
+                "fillColor" to "#000000",
+                "strokeOpacity" to 0.0,
+                "strokeWidth" to 1.0,
+                "fillOpacity" to 0.25,
+                "size" to 1.0,
+            ),
+        )
+        var callbackCount = 0
+
+        assertIs<GMResult.Ok<GeometryElement>>(
+            point.animateResult(
+                targetAttributes = mapOf(
+                    "strokeColor" to "#00ff00",
+                    "fillColor" to "#ffffff",
+                    "strokeOpacity" to 1.0,
+                    "strokeWidth" to 5.0,
+                    "fillOpacity" to 0.75,
+                    "size" to 6.9,
+                ),
+                timeMilliseconds = 75.0,
+                options = GeometryElementAnimationOptions {
+                    callbackCount += 1
+                },
+            ),
+        )
+
+        assertEquals(25.0, scheduledInterval)
+        val step = advance ?: error("attribute animation was not scheduled")
+        val strokeColors = mutableListOf<String?>()
+        val fillColors = mutableListOf<String?>()
+        val strokeWidths = mutableListOf<Double>()
+        val sizes = mutableListOf<Double>()
+        val callbackCounts = mutableListOf<Int>()
+        do {
+            val keepRunning = step()
+            strokeColors += point.getAttribute("strokecolor") as? String
+            fillColors += point.getAttribute("fillcolor") as? String
+            strokeWidths +=
+                point.getAttribute("strokewidth") as Double
+            sizes += point.getAttribute("size") as Double
+            callbackCounts += callbackCount
+        } while (keepRunning)
+
+        assertEquals<List<String?>>(
+            listOf("#ffaa00", "#aaff00", "#00ff00", "#00ff00"),
+            strokeColors,
+        )
+        assertEquals<List<String?>>(
+            listOf("#555555", "#aaaaaa", "#ffffff", "#ffffff"),
+            fillColors,
+        )
+        assertEquals(
+            listOf(
+                2.333333333333333,
+                3.6666666666666665,
+                5.0,
+                5.0,
+            ),
+            strokeWidths,
+        )
+        assertEquals(listOf(2.0, 4.0, 6.0, 6.0), sizes)
+        assertEquals(listOf(0, 0, 0, 1), callbackCounts)
         assertTrue(point.animationData.isEmpty())
     }
 

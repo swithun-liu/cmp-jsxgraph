@@ -17,6 +17,7 @@ const visualParityPackage = resolve(
 const require = createRequire(visualParityPackage);
 const puppeteer = require("puppeteer");
 const executablePath =
+    process.env.CHROME_BIN ||
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const browser = await puppeteer.launch({
@@ -253,6 +254,58 @@ try {
         majorAxis = 14;
         functionBoard.update();
         const functionUpdated = snapshotEllipse(functionEllipse);
+
+        const hitBoard = createBoard();
+        const hitFocus1 = point(hitBoard, [-3, 0], "hitFocus1");
+        const hitFocus2 = point(hitBoard, [3, 0], "hitFocus2");
+        let hitMajorAxis = 10;
+        const hitEllipse = hitBoard.create(
+            "ellipse",
+            [hitFocus1, hitFocus2, () => hitMajorAxis],
+            {
+                id: "hitEllipse",
+                name: "",
+                withLabel: false,
+                doAdvancedPlot: false,
+                numberPointsHigh: 4,
+                numberPointsLow: 4
+            }
+        );
+        const hitInnerEllipse = hitBoard.create(
+            "ellipse",
+            [hitFocus1, hitFocus2, () => hitMajorAxis],
+            {
+                id: "hitInnerEllipse",
+                name: "",
+                withLabel: false,
+                doAdvancedPlot: false,
+                numberPointsHigh: 4,
+                numberPointsLow: 4
+            }
+        );
+        hitInnerEllipse.visProp.hasinnerpoints = true;
+        hitBoard.update();
+        const hit = (curve, x, y) => {
+            const screen = new JXG.Coords(
+                JXG.COORDS_BY_USER,
+                [x, y],
+                hitBoard
+            ).scrCoords;
+            return curve.hasPoint(screen[1], screen[2]);
+        };
+        const boundaryOnly = hit(hitEllipse, 3.5, 2.5);
+        const innerPoints = {
+            coarseInterior: hit(hitInnerEllipse, 3.5, 2.5),
+            boundary: hit(hitInnerEllipse, 0, 4),
+            outside: hit(hitInnerEllipse, 4, 3),
+            dynamicBefore: hit(hitInnerEllipse, 0, 3)
+        };
+        hitMajorAxis = 8;
+        innerPoints.dynamicAfter = hit(hitInnerEllipse, 0, 3);
+        const hitTesting = {
+            boundaryOnly,
+            innerPoints
+        };
 
         const referenceBoard = createBoard();
         const referenceFocus1 = point(
@@ -577,6 +630,7 @@ try {
             numericDomain,
             functionInitial,
             functionUpdated,
+            hitTesting,
             referenceForms,
             coordinateInitial,
             coordinateRemoval,

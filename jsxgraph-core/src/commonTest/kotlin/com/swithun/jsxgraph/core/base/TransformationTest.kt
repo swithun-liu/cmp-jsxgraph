@@ -524,14 +524,60 @@ class TransformationTest {
             GMResult.Err<TransformationError.DynamicParameterEvaluation>
             >(rejected.updateResult())
 
-        val target = Point(
-            board = board,
-            coordinates = doubleArrayOf(1.0, 1.0),
+        var dynamicX = 2.0
+        val dynamic = transformation(
+            Transformation.create(
+                board = board,
+                type = "translate",
+                parameters = listOf(
+                    TransformationParameter.Dynamic(
+                        TransformationDynamicParameter {
+                            GMResult.Ok(dynamicX)
+                        },
+                    ),
+                    TransformationParameter.Numeric(-1.0),
+                ),
+            ),
         )
-        assertIs<
+        assertIs<GMResult.Ok<Transformation>>(dynamic.updateResult())
+
+        val target = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 1.0),
+                id = "dynamic-melt-target",
+            ),
+        )
+        val existing = transformation("scale", 2.0, 3.0)
+        existing.bindTo(target)
+        val beforeMelt = target.transformations.toList()
+        val meltFailure = assertIs<
             GMResult.Err<TransformationError.DynamicMeltUnsupported>
-            >(rejected.meltTo(target))
-        assertTrue(target.transformations.isEmpty())
+            >(dynamic.meltTo(target))
+        assertEquals("translate", meltFailure.error.transformationType)
+        assertEquals(beforeMelt, target.transformations)
+        assertSame(existing, target.transformations.single())
+
+        val boundTarget = point(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(1.0, 1.0),
+                id = "dynamic-bind-target",
+            ),
+        )
+        dynamic.bindTo(boundTarget)
+        board.update()
+        assertVectorMatches(
+            doubleArrayOf(1.0, 3.0, 0.0),
+            boundTarget.coords.usrCoords,
+        )
+
+        dynamicX = -4.0
+        board.update()
+        assertVectorMatches(
+            doubleArrayOf(1.0, -3.0, 0.0),
+            boundTarget.coords.usrCoords,
+        )
     }
 
     @Test

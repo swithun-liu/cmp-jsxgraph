@@ -65,6 +65,7 @@ class TicksTest {
                 minimumSource = "-2",
                 maximumSource = "2",
                 sampleCount = 8,
+                plotOptions = CurvePlotOptions(doAdvancedPlot = false),
                 id = "curve",
                 name = "",
             ),

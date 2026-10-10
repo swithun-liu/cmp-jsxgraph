@@ -192,6 +192,35 @@ class LineArrowGeometryTest {
         )
     }
 
+    @Test
+    fun touchpointOffsetsShiftStrokeAndArrowAnchors() {
+        val geometry = assertNotNull(
+            lineRenderGeometry(
+                point1 = Offset.Zero,
+                point2 = Offset(100.0f, 0.0f),
+                straightFirst = false,
+                straightLast = false,
+                viewportSize = Size(200.0f, 100.0f),
+                strokeWidth = 2.0f,
+                firstArrow = arrow(type = 7),
+                lastArrow = arrow(type = 7),
+                touchFirstPointDistance = 11.0f,
+                touchLastPointDistance = 8.0f,
+            ),
+        )
+
+        assertEquals(Offset(11.0f, 0.0f), geometry.strokeStart)
+        assertEquals(Offset(92.0f, 0.0f), geometry.strokeEnd)
+        assertEquals(
+            Offset(11.0f, 0.0f),
+            geometry.firstArrow?.points?.get(3),
+        )
+        assertEquals(
+            Offset(92.0f, 0.0f),
+            geometry.lastArrow?.points?.get(3),
+        )
+    }
+
     private fun arrow(
         type: Int,
         size: Double = 6.0,

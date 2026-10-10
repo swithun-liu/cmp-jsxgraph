@@ -11,6 +11,8 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.ArcOrientation
+import com.swithun.jsxgraph.core.math.ArcSelection
 import com.swithun.jsxgraph.core.math.Geometry
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.parser.JessieCodeAstLocation
@@ -198,7 +200,7 @@ internal class Sector private constructor(
         },
     elementClass = Const.OBJECT_CLASS_CURVE,
     needsRegularUpdate = needsRegularUpdate,
-) {
+), CurveTransformationSource {
     internal val center: Point = point1
     internal val radiuspoint: Point = point2
     internal val anglepoint: Point = point3
@@ -210,6 +212,14 @@ internal class Sector private constructor(
         private set
     internal var bezierDegree: Int = 3
         private set
+    override val transformationElement: GeometryElement
+        get() = this
+    override val transformationPoints: List<Coords>
+        get() = points
+    override val transformationPointCount: Int
+        get() = numberPoints
+    override val transformationBezierDegree: Int
+        get() = bezierDegree
     internal val isAngle: Boolean
         get() = angleRadius != null
     internal val isTwoLine: Boolean
@@ -232,11 +242,16 @@ internal class Sector private constructor(
         private set
     private var fixedAngleTransformation: Transformation? = null
     private var useExternalRadiusFunction: Boolean = false
+    private var radiusOverride: AngleRadius? = null
+    private var chartHighlightOnSector: Boolean = false
 
     init {
         elType = if (isAngle) ANGLE_ELEMENT_TYPE else SECTOR_ELEMENT_TYPE
         isDraggable = true
     }
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     // JSXGraph: src/element/sector.js -> updateDataArray /
     // createAngle -> updateDataArraySector
@@ -263,11 +278,7 @@ internal class Sector private constructor(
             activeAngleDisplayType = effectiveAngleDisplayType()
             when (activeAngleDisplayType) {
                 ANGLE_TYPE_NONE -> {
-                    bezierDegree = 1
-                    setData(
-                        xCoordinates = doubleArrayOf(Double.NaN),
-                        yCoordinates = doubleArrayOf(Double.NaN),
-                    )
+                    updateDataArrayNone()
                 }
                 ANGLE_TYPE_SQUARE -> updateSquareData()
                 ANGLE_TYPE_SECTOR,
@@ -528,7 +539,8 @@ internal class Sector private constructor(
     @Suppress("FunctionName")
     internal fun Radius(): Double =
         when (
-            val radius = twoLineDefinition?.radius ?: angleRadius
+            val radius =
+                radiusOverride ?: twoLineDefinition?.radius ?: angleRadius
         ) {
             null ->
                 if (
@@ -557,6 +569,37 @@ internal class Sector private constructor(
                 }
             }
         }
+
+    // JSXGraph: src/element/sector.js -> setRadius.
+    internal fun setRadius(
+        radius: AngleRadius,
+    ): GMResult<Sector, SectorError> {
+        when (val result = evaluateRadius(radius, external = false)) {
+            is GMResult.Ok -> Unit
+            is GMResult.Err -> return result
+        }
+        radiusOverride = radius
+        radiusDependencies(radius).forEach { dependency ->
+            dependency.addChild(this)
+        }
+        if (radius is AngleRadius.Function) {
+            useExternalRadiusFunction = true
+        }
+        prepareUpdate()
+        board.update()
+        return GMResult.Ok(this)
+    }
+
+    internal fun setRadius(
+        radius: Double,
+    ): GMResult<Sector, SectorError> =
+        setRadius(AngleRadius.Fixed(radius))
+
+    internal fun setRadiusAuto(): GMResult<Sector, SectorError> =
+        setRadius(AngleRadius.Auto)
+
+    // JSXGraph: src/element/sector.js -> getRadius.
+    internal fun getRadius(): Double = Radius()
 
     // JSXGraph: src/element/sector.js -> Value,
     // createNonreflexAngle -> Value, createReflexAngle -> Value
@@ -595,6 +638,187 @@ internal class Sector private constructor(
             else -> Double.NaN
         }
     }
+
+    // JSXGraph: src/element/sector.js -> L
+    @Suppress("FunctionName")
+    internal fun L(): Double = Value("length")
+
+    // JSXGraph: src/element/sector.js -> Area
+    @Suppress("FunctionName")
+    internal fun Area(): Double {
+        val radius = Radius()
+        return 0.5 * radius * radius * Value("radians")
+    }
+
+    // JSXGraph: src/element/sector.js -> Perimeter
+    @Suppress("FunctionName")
+    internal fun Perimeter(): Double = L() + 2.0 * Radius()
+
+    // JSXGraph: src/element/sector.js -> hasPointCurve
+    internal fun hasPointCurve(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+    ): Boolean {
+        val checkPoint = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        )
+        val distance = center.coords.distance(
+            Const.COORDS_BY_USER,
+            checkPoint,
+        )
+        val userTolerance =
+            precision / min(abs(board.unitX), abs(board.unitY))
+        return abs(distance - Radius()) < userTolerance &&
+            containsArcCoordinates(checkPoint.usrCoords)
+    }
+
+    // JSXGraph: src/element/sector.js -> hasPointSector
+    internal fun hasPointSector(
+        screenX: Double,
+        screenY: Double,
+    ): Boolean {
+        val checkPoint = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        )
+        val distance = center.coords.distance(
+            Const.COORDS_BY_USER,
+            checkPoint,
+        )
+        return distance < Radius() &&
+            containsArcCoordinates(checkPoint.usrCoords)
+    }
+
+    // JSXGraph: src/element/sector.js -> hasPoint
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+        highlightOnSector: Boolean =
+            chartHighlightOnSector ||
+                evalVisProp("highlightonsector") == true,
+        hasInnerPoints: Boolean =
+            evalVisProp("hasinnerpoints") == true,
+    ): Boolean =
+        if (highlightOnSector || hasInnerPoints) {
+            hasPointSector(screenX, screenY)
+        } else {
+            hasPointCurve(screenX, screenY, precision)
+        }
+
+    // JSXGraph 1.13.3: src/base/chart.js -> Chart.drawPie
+    // `sector[i].hasPoint = sector[i].hasPointSector`.
+    internal fun useHighlightOnSectorHitTest(): Sector {
+        chartHighlightOnSector = true
+        return this
+    }
+
+    // JSXGraph: src/element/sector.js -> getTextAnchor
+    internal override fun getTextAnchor(): Coords = point1.coords
+
+    // JSXGraph: src/element/sector.js -> getLabelAnchor
+    internal override fun getLabelAnchor(): Coords =
+        getLabelAnchor(
+            position =
+                (elementLabel?.evalVisProp("position") as? String)
+                    ?: (evalVisProp("label.position") as? String)
+                    ?: "ulft",
+            distance =
+                (elementLabel?.evalVisProp("distance") as? Number)
+                    ?.toDouble()
+                    ?: (evalVisProp("label.distance") as? Number)
+                        ?.toDouble()
+                    ?: 0.0,
+            labelSize =
+                elementLabel?.size ?: doubleArrayOf(0.0, 0.0),
+        )
+
+    internal fun getLabelAnchor(
+        position: String,
+        distance: Double = 0.0,
+        labelSize: DoubleArray = doubleArrayOf(0.0, 0.0),
+    ): Coords {
+        val anchor = arcSectorLabelAnchor(
+            board = board,
+            center = center,
+            radiusPoint = radiuspoint,
+            anglePoint = anglepoint,
+            selection = selection,
+            orientation = orientation,
+            position = position,
+            distance = distance,
+            labelSize = labelSize,
+            points = points,
+            bezierDegree = bezierDegree,
+            offsetPixels = 13.0,
+        )
+        if ("right" !in position && "left" !in position) {
+            val centerCoordinates = center.coords.usrCoords
+            elementLabel?.setAttribute(
+                mapOf(
+                    "position" to Geometry.calcLabelQuadrant(
+                        Geometry.rad(
+                            doubleArrayOf(1.0, 0.0),
+                            doubleArrayOf(0.0, 0.0),
+                            doubleArrayOf(
+                                anchor.usrCoords[1] -
+                                    centerCoordinates[1],
+                                anchor.usrCoords[2] -
+                                    centerCoordinates[2],
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+        return anchor
+    }
+
+    // JSXGraph: src/element/sector.js -> updateDataArrayNone
+    private fun updateDataArrayNone() {
+        bezierDegree = 1
+        setData(
+            xCoordinates = doubleArrayOf(Double.NaN),
+            yCoordinates = doubleArrayOf(Double.NaN),
+        )
+    }
+
+    // JSXGraph: src/element/sector.js -> maxX display-specific closures.
+    internal fun minX(): Double = 0.0
+
+    internal fun maxX(): Double =
+        when {
+            isAngle && activeAngleDisplayType == ANGLE_TYPE_NONE -> 0.0
+            isAngle && activeAngleDisplayType == ANGLE_TYPE_SQUARE -> 4.0
+            else -> 6.0
+        }
+
+    private fun containsArcCoordinates(
+        coordinates: DoubleArray,
+    ): Boolean =
+        Geometry.coordsOnArc(
+            radiusPoint = radiuspoint.coords.usrCoords,
+            center = center.coords.usrCoords,
+            anglePoint = anglepoint.coords.usrCoords,
+            coordinates = coordinates,
+            selection = when (selection) {
+                Arc.SELECTION_MINOR -> ArcSelection.MINOR
+                Arc.SELECTION_MAJOR -> ArcSelection.MAJOR
+                else -> ArcSelection.AUTO
+            },
+            orientation =
+                if (orientation == Arc.ORIENTATION_CLOCKWISE) {
+                    ArcOrientation.CLOCKWISE
+                } else {
+                    ArcOrientation.COUNTERCLOCKWISE
+                },
+        )
 
     private fun valueArcRadius(): Double {
         if (!isAngle) {
@@ -638,7 +862,7 @@ internal class Sector private constructor(
         }
         val oriented =
             if (orientation == Arc.ORIENTATION_CLOCKWISE) {
-                2.0 * PI - angle
+                phiInv(angle)
             } else {
                 angle
             }
@@ -671,7 +895,7 @@ internal class Sector private constructor(
                                 orientation ==
                                 Arc.ORIENTATION_CLOCKWISE
                             ) {
-                                2.0 * PI - result.value
+                                phiInv(result.value)
                             } else {
                                 result.value
                             },
@@ -683,6 +907,9 @@ internal class Sector private constructor(
         }
         return setAngleParameter(TransformationParameter.Dynamic(oriented))
     }
+
+    // JSXGraph: src/element/sector.js -> createAngle.setAngle phiInv.
+    private fun phiInv(angle: Double): Double = 2.0 * PI - angle
 
     private fun setAngleParameter(
         angle: TransformationParameter,
@@ -780,6 +1007,7 @@ internal class Sector private constructor(
         private const val ANGLE_TYPE_SECTOR_DOT = "sectordot"
         private const val ANGLE_TYPE_SQUARE = "square"
         private const val ANGLE_TYPE_NONE = "none"
+        private const val DEFAULT_HIT_PRECISION = 4.0
         private val ANGLE_DISPLAY_TYPES = setOf(
             ANGLE_TYPE_SECTOR,
             ANGLE_TYPE_SECTOR_DOT,

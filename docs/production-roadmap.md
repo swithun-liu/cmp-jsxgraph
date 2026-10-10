@@ -10,11 +10,19 @@
 
 The upstream baseline contains 104 JavaScript source files outside
 `src/unused`. Completion is tracked by source symbol and behavior, not by raw
-line count. The final `2026-09-30` audit excludes only the legacy VML backend,
-scans the remaining 103 files, and maps all 2,029 API-surface symbols to
-source-specific Kotlin locations. `Numerics.glomin` is separately excluded by
-the MIT-only license policy. Mapping coverage does not override the behavioral
-and Stable gates below.
+line count. The `2026-10-09` source audit excludes only the legacy VML backend,
+scans the remaining 103 files, and classifies all 2,591 source symbols:
+2,540 translated, 16 explicitly adapted for pure KMP, 35
+platform/CAS/license exclusions, and 0 pending. All 2,556 in-scope symbols,
+including all 2,029 API-surface symbols, map to source-specific Kotlin
+locations.
+The independent
+[`portable-behavior-compatibility.json`](portable-behavior-compatibility.json)
+audit verifies all 249 portable behavior slices for a weighted score of
+`100.00%`; one host-specific slice is excluded from 250 assessed behaviors.
+`Numerics.glomin` is separately excluded by the MIT-only license policy.
+Neither mapping coverage nor this portable behavior score overrides the
+narrower Stable release gates below.
 
 ## Current Release Decision
 
@@ -30,10 +38,10 @@ updates with `nonnegativeOnly`, and free Point interaction through the bounded
 construction-document API. The qualification evidence is recorded in
 [`stability-report.md`](stability-report.md).
 
-This promotion does not close the translation roadmap. Remaining JSXGraph
-element families, mutation APIs, interaction modes, and renderer features stay
-outside the Stable contract until their own source-mapped implementation and
-qualification batches pass.
+This promotion does not close the qualification roadmap. The portable
+translation audit has no pending symbols or behavior slices, but capabilities
+outside the 30-case Stable contract remain preview APIs until their own
+independent production qualification batches pass.
 
 ## Post-0.1.0 Translation Progress
 
@@ -41,9 +49,11 @@ qualification batches pass.
   `src/base/transformation.js` is translated, including number, JessieCode,
   structured function, live Point/Line, and dynamic matrix parameters;
   one-time application; static cloning/composition; `bindTo`; static
-  `meltTo`; transformed-position preimages; the native JessieCode `transform`
-  creator; construction-document transform IDs; and transformed-Point
-  creation from one transform or a chain. The 4x4 `setMatrix3D` kernel covers
+  `meltTo`; atomic structured containment of the upstream dynamic `meltTo`
+  null-clone defect; transformed-position preimages; the native JessieCode
+  `transform` creator; construction-document transform IDs; and
+  transformed-Point creation from one transform or a chain. The 4x4
+  `setMatrix3D` kernel covers
   translate, three- and four-parameter scale, rotate/rotateX/rotateY/rotateZ,
   affine, affinematrix, generic, and matrix forms with scalar, vector,
   JessieCode, and structured dynamic evaluation.
@@ -76,7 +86,8 @@ qualification batches pass.
   homogeneous vertices, nested Polygon3D vertex/border styles, cyclic and
   per-face styles, HSL Face3D shaders, local ascending face-depth ordering,
   `transform3d` binding, updates, `applyOnce`, removal, JSON and JessieCode
-  entry points, resource limits, rollback, and structured failures. Official
+  entry points, resource limits, rollback, structured failures, host-neutral
+  View3D interaction sessions, and Compose pointer/keyboard routing. Official
   lifecycle fixtures and focused JVM tests pass. Point3D has focused static
   plus proxy-drag visual parity; Line3D, finite Plane3D with its visible
   Mesh3D, Plane3D surface modes, Axis3D, automatic border axes, Polygon3D,
@@ -84,12 +95,18 @@ qualification batches pass.
   IntersectionCircle3D, Sphere3D,
   Surface3D, and Polyhedron3D have focused
   Desktop/Compact static parity.
-- Still pending around transforms and 3D: transformed Text, arbitrary
-  post-construction Image transform mutation, and general element rendering,
-  dynamic `meltTo` beyond the documented JSXGraph `1.13.3`
-  null-clone defect, global View3D `depthOrder`/layer configuration, camera
-  controls, Point3D gliders and
-  animations, Stable qualification, plus remaining 3D APIs.
+- Portable transform and 3D behavior is translated, including transformed
+  Text, post-construction Image transform mutation, element rendering, and
+  Point3D gliders on Line3D, Plane3D, Curve3D, Circle3D, Sphere3D, and
+  Surface3D. The 3D surface remains outside the current Stable corpus.
+  Point3D gliders cover official position state, host updates, proxy drag,
+  finite-range clamping where applicable, and direct/construction/JessieCode
+  creation.
+  Point3D `moveTo`/`moveAlong` easing, path replacement, interval, callback,
+  typed session trigger, host-driven scene snapshots, and Compose frame-clock
+  scheduling have focused coverage.
+  View3D `depthOrder.enabled/layers` and global Canvas ordering by layer,
+  3D ownership, z-index, and creation order match the official fixture.
   Sphere3D runtime projection-mode switching is translated with atomic owned
   proxy cleanup. Curve3D, Circle3D, and
   Surface3D parametric projection now use the source-mapped
@@ -132,6 +149,11 @@ qualification batches pass.
   invalid polynomial operations use structured bounds or failures; the
   upstream nonfunctional polynomial string parser remains explicitly
   unsupported.
+- The MIT-compatible `src/math/numerics.js` kernel now has source-specific
+  Kotlin mappings for all 82 included symbols. Direct official fixtures and
+  focused common tests cover its interpolation, spline, dynamic cache,
+  degenerate-input, regression, integration, root, minimization, and ODE
+  behavior. The separately licensed `glomin` function remains excluded.
 - Data sources: `src/parser/datasource.js` array loading, header extraction,
   cell normalization, and row/column lookup are translated. Browser table
   lookup is an injected host adapter, and upstream unimplemented mutations
@@ -162,12 +184,15 @@ qualification batches pass.
   math marking, and the complete trivial-node simplification rule set.
   Malformed input, unknown derivatives, transformation work, output size and
   derivative order are reported through bounded `GMResult` failures.
-- Dump serialization: the pure `src/utils/dump.js` `str`,
-  `arrayToParamStr`, and `toJCAN` kernel is translated for typed Kotlin and
-  JSON values, including source-compatible escaping, non-finite numbers,
-  undefined markers, nested containers, and JavaScript property order.
-  Complete Board construction export remains pending on compatible
-  per-element attribute snapshots.
+- Dump serialization: the pure `src/utils/dump.js` marker, minimization,
+  Board traversal, `str`, `arrayToParamStr`, `toJCAN`, `toJessie`, `toJSON`,
+  and `toJavaScript` paths are translated for typed Kotlin and JSON values.
+  Retained JSON, JessieCode, and legacy sessions expose bounded live Board
+  export with element-specific parent/sub snapshots, dependency metadata,
+  user logs, bounding-box replay, axis tick removal, and polygon-glider state.
+  Translated runtime function parents retain reconstructable JessieCode and
+  JavaScript source, while JSON function-array entries preserve the official
+  `null` representation. The complete Board export slice is verified.
 - Type utilities: the pure `src/utils/type.js` predicates/defaults,
   including `isFunction`, typed/map-backed Board and geometry predicates,
   Board ID/name/group lookup, Point/Point3D parent-form recognition,
@@ -191,13 +216,31 @@ qualification batches pass.
   number/identity semantics, mutation order, stable sorting, unit precedence,
   typed mixed-value results, structured callback/range/index/copy/merge
   failures, and ECMAScript whitespace handling. Browser DOM predicates and
-  the remaining host-specific adapters remain pending in their owning slices.
+  host-specific adapters remain platform-owned in their owning slices.
 - Environment utilities: the platform-neutral `src/utils/env.js` kernel now
   covers input-event classification and coordinates, legacy user-agent
   predicates, non-browser default dimensions, inline CSS property parsing,
   and CSS transform/zoom extraction. DOM capability probes, event listener
   registration, timed browser chunks, offsets, and fullscreen mutation stay
   in platform adapters.
+- Board viewport navigation: `src/base/board.js` pan, centered and
+  pointer-centered zoom, navigation-arrow commands, `zoomAllPoints`,
+  `zoomElements`, zoom reset and limits, `maxBoundingBox` rejection, default
+  Shift modifiers, focused-element keyboard movement, and focus lifecycle are
+  translated in commonMain. The official Board fixture and focused JVM tests
+  match viewport, origin, unit, zoom, and element-coordinate outputs.
+  Pointer hover now follows the official dehighlight/highlight ordering,
+  preserves keyboard-focused elements, publishes construction/JessieCode
+  session snapshots, and routes unpressed Compose Move plus Exit events.
+  Color/number and array-/function-path movement animation now has official
+  frame, callback, host-driven session, and Compose frame-clock evidence.
+  Multi-pointer pointer ownership, Board pan/pinch, and
+  Line/Polygon/Circle transforms are translated through Core sessions and
+  Compose routing. The portable navigation surface preserves the official
+  11-control order, symbols, navbar style subset, zoom/reset/pan/clear-traces
+  commands, and event consumption. Fullscreen, screenshot, and reload are
+  explicit host actions because their execution is platform-owned. Existing
+  construction and JessieCode scenes opt in through `showNavigation`.
 - Encoding, color, and normalization utilities:
   `src/utils/encoding.js`, `base64.js`, `color.js`, `expect.js`, and `uuid.js`
   now have pure commonMain translations. They cover UTF-8 and Windows-1252
@@ -217,10 +260,10 @@ qualification batches pass.
   direct-array Chart styles and vertical Legend output, opaque ForeignObject
   geometry, Group movement constraints, Turtle drawing/state operations, and
   typed control state and interactions, including official missing-label
-  `undefined` rendering. DOM table ingestion, intrinsic HTML measurement,
-  transformed ForeignObject hit testing, renderer event nodes, and remaining
-  attribute/hit-testing APIs stay explicit follow-up work. The focused JVM
-  and Wasm gates cover this batch; it is not yet Stable.
+  `undefined` rendering. Transformed ForeignObject hit testing and portable
+  attribute/hit-testing APIs are translated; DOM table ingestion, intrinsic
+  HTML measurement, and renderer event nodes are platform-owned. The focused
+  JVM and Wasm gates cover this batch; it is not yet Stable.
 - XML and archive utilities: `src/utils/xml.js`, `src/utils/zip.js`, and
   `src/compressor.js` now have pure commonMain implementations. They cover the
   reader-facing DOM shape and internal entities; ZIP/GZIP/zlib containers;
@@ -229,19 +272,25 @@ qualification batches pass.
   Malformed input and resource limits return structured failures. Two
   official fixtures and 12 focused JVM tests pass; the same implementation
   also passed the Reader Wasm compilation gate.
-- File readers: source-mapped, internal commonMain slices now cover
+- File readers: source-mapped commonMain slices now cover
   `src/reader/file.js`, `graph.js`, `geonext.js`, `intergeo.js`,
   `geogebra.js`, `cinderella.js`, and `tracenpoche.js`. The batch includes
   case-insensitive registry/string dispatch; bounded Base64/ZIP/XML
   preparation; Graph parsing and drawing; format-specific properties,
   expressions, tokenization, parsing, supported geometry creation, dynamic
   dependencies, strict partial-import rejection, and atomic rollback.
-  Browser XMLHttpRequest/Blob loading remains platform-owned, and untranslated
-  format branches stay explicit diagnostics or structured failures. Ten
-  official fixtures, two direct upstream Geogebra worksheets, 106 focused JVM
-  tests, and the Wasm compilation gate pass. Public import APIs, remaining
-  format branches, production cases, visual parity, and Stable qualification
-  remain pending.
+  GeoGebra additionally consumes the official `setDefaultOptions` values and
+  per-output XML visual properties, including labels in public scene
+  snapshots. Public
+  `JsxGraphReader.parse` accepts already loaded text for the registered
+  built-in aliases and returns bounded portable scenes with typed failures.
+  Browser XMLHttpRequest/Blob loading and decoding policy remain
+  platform-owned, while custom reader registration stays internal and
+  unsupported input outside the audited source branches returns explicit
+  diagnostics or structured failures. Official fixtures, two direct upstream
+  Geogebra worksheets, focused JVM tests, and the Wasm gate cover this batch.
+  Independent production visual qualification remains outside the current
+  Stable corpus.
 - Function-coordinate Points: native JessieCode now supports mixed
   number/string/function coordinate terms and one function returning a
   numeric coordinate array, with fresh evaluation budgets, persistent Board
@@ -257,7 +306,7 @@ qualification batches pass.
   branches. Transformed Curve incidence preserves the upstream
   projection-then-transform order instead of projecting onto final rendered
   geometry. Curve evaluation or projection failure returns `false`;
-  function-valued and runtime-mutated visual properties remain pending.
+  function-valued and runtime-mutated visual properties are translated.
   JSXGraph `1.13.3`'s Turtle branch dereferences the two-item projection result
   incorrectly and always throws; Kotlin intentionally returns `false`.
 - StepFunction: `src/base/curve.js -> createStepfunction` now retains source
@@ -279,8 +328,9 @@ qualification batches pass.
   the translated Ticks path with the exact centered fixed-position loop,
   official defaults, parent inheritance, fractional-count behavior, bounded
   creation, and focused Desktop/Compact parity. Function-valued tick
-  distances, Curve-parent hit testing, complete APIs,
-  independent production cases, and Stable qualification remain pending.
+  distances, Curve-parent hit testing, labels, and runtime mutation are
+  translated. Independent production qualification remains outside the
+  current Stable corpus.
 - Axis: `src/base/line.js -> createAxis`, `src/base/board.js -> getPointLoc`,
   and the `src/options.js` defaults now cover the official Line wrapper,
   non-draggable AxisPoint endpoints, generated default Ticks, arrow/style
@@ -288,9 +338,9 @@ qualification batches pass.
   unit-bearing distances, viewport-resolved `ticksAutoPos`, dynamic parent
   updates, recursive cleanup, JSON/JessieCode resource limits, and atomic
   rollback. Core, creator, document/session, official fixture, and focused
-  Desktop/Compact static parity gates pass. Axis-specific mutation,
-  complete label/APIs, independent production cases, and Stable
-  qualification remain pending.
+  Desktop/Compact static parity gates pass. Axis-specific mutation, labels,
+  hit testing, and default-axis integration are translated. Independent
+  production qualification remains outside the current Stable corpus.
 - Grid: `src/element/grid.js -> createGrid` and the `src/options.js` defaults
   and themes now cover linked major/minor Curves, all documented faces,
   themes `0..6`, `majorStep`, `minorElements`, `forceSquare`, boundary and
@@ -299,9 +349,10 @@ qualification batches pass.
   same viewport-dependent definitions; point growth is checked before
   allocation and partial creation rolls back atomically. Core, creator,
   document/session, official fixture, and focused Desktop/Compact static
-  parity gates pass. Default Board-axis fallback, Grid-specific mutation,
-  independent production cases, complete APIs, and Stable
-  qualification remain pending.
+  parity gates pass. Major and minor Grid curves preserve the upstream
+  non-interactive `hasPoint = false` contract. Default Board-axis fallback and
+  Grid-specific mutation are translated. Independent production qualification
+  remains outside the current Stable corpus.
 - Image: `src/base/image.js -> Image/createImage`,
   `src/base/element.js -> addRotation`, and the Canvas renderer path now cover
   static data sources in JSON and native JessieCode, plus function-valued
@@ -312,8 +363,9 @@ qualification batches pass.
   base64 image data URIs without network or filesystem access; applications
   explicitly supply any external-resource resolver. Official fixture, common
   tests, and focused Desktop/Compact static parity gates pass. Dragging,
-  arbitrary transform mutation, non-data-URI loading, complete APIs,
-  independent production cases, and Stable qualification remain pending.
+  transformed hit testing, and arbitrary transform mutation are translated;
+  non-data-URI loading is host-owned. Independent production qualification
+  remains outside the current Stable corpus.
 - Glider/Slider: the Point, Circle, finite-coordinate Line/Segment,
   Polygon-border, Arc/Sector, ordinary Curve, and transformed-Curve branches
   of
@@ -333,8 +385,14 @@ qualification batches pass.
   data-Plot drag. JSXGraph `1.13.3` rejects Ticks and its public Turtle path
   fails because Turtle is absent from `board.objects`; Kotlin preserves those
   unavailable paths as structured failures without the upstream partial-Point
-  leak. Conic-specific behavior, attractor, animation, baseline-click, locale,
-  independent production cases, and Stable qualification remain pending.
+  leak. Point, Circle, Line/Segment, ordinary Curve, Arc/Sector, and Polygon
+  attractor conversion and detaching now match the official fixture. Bounded
+  Glider animation, function-valued movement, host-driven session frames, and
+  Compose frame-clock scheduling are source-mapped and fixture-backed.
+  Hyperbola/Parabola Glider projection and lifecycle plus Slider baseline
+  pointer-up movement, `moveOnUp`, and fixed gating are fixture-backed.
+  Locale-aware behavior is translated; independent production qualification
+  remains outside the current Stable corpus.
 - Tapemeasure: `src/element/measure.js -> createTapemeasure` and the
   corresponding `src/options.js` defaults now cover coordinate endpoint
   creation, finite Segment composition, optional dynamic value label and
@@ -344,9 +402,9 @@ qualification batches pass.
   document/session, official fixture, and focused Desktop/Compact static plus
   endpoint-drag parity gates pass. Static scores are
   `0.984781`/`0.969197`; moved scores are `0.985490`/`0.969261`.
-  Automatic/none digits, locale and `formatValue`, function-valued visual
-  attributes, hit testing, complete APIs, an independent production case, and
-  Stable qualification remain pending.
+  Automatic/none digits, locale-aware `formatValue`, function-valued visual
+  attributes, and hit testing are translated. Independent production
+  qualification remains outside the current Stable corpus.
 - Measurement: `src/element/measure.js -> createMeasurement`,
   `src/parser/prefix.js -> PrefixParser`, and the corresponding
   `src/options.js` defaults now cover numeric/string, arithmetic,
@@ -358,9 +416,9 @@ qualification batches pass.
   creator, document/session, official fixture, common tests, 109-case
   workbench, and focused Desktop/Compact static plus radius-Point-drag parity
   gates pass. Static scores are `0.982740`/`0.970961`; moved scores are
-  `0.982735`/`0.969542`. Locale formatting, the complete Math/JXG.Math `exec`
-  surface, complete Text APIs, an independent production case, and Stable
-  qualification remain pending.
+  `0.982735`/`0.969542`. Locale formatting, the portable Math/JXG.Math `exec`
+  surface, and Text method access are translated. Independent production
+  qualification remains outside the current Stable corpus.
 - SmartLabel: `src/element/smartlabel.js -> createSmartLabel` and the
   parent-specific `src/options.js` defaults now cover Point, Line, Circle,
   Polygon, and Angle parents; parent-specific measures and placement; dynamic
@@ -371,9 +429,10 @@ qualification batches pass.
   structured failures, and atomic rollback. Core, creator, session, official
   fixture, common tests, 109-case workbench, and focused Desktop/Compact
   static plus Angle-parent-drag parity gates pass. Static scores are
-  `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale,
-  MathJax/KaTeX, user-defined CSS, complete Text APIs, an independent
-  production case, and Stable qualification remain pending.
+  `0.984719`/`0.974114`; moved scores are `0.984582`/`0.975467`. Locale and
+  portable Text APIs are translated; MathJax/KaTeX and arbitrary browser CSS
+  are renderer-owned. Independent production qualification remains outside the
+  current Stable corpus.
 - Integral: `src/element/composition.js -> createIntegral` and the corresponding
   `src/options.js` defaults now cover Curve/interval parent order, fixed and
   string/function bounds, hidden constrained dynamic-bound Gliders, draggable
@@ -384,8 +443,9 @@ qualification batches pass.
   document/session, official fixture, and focused Desktop/Compact static plus
   driver-drag parity gates pass. Static scores are
   `0.984526`/`0.974454`; moved scores are `0.984815`/`0.975287`. Adaptive
-  plotting, locale and `digits: auto`/`none`, complete attributes/APIs, an
-  independent production case, and Stable qualification remain pending.
+  plotting, locale-aware formatting, and `digits: auto`/`none` are translated.
+  Independent production qualification remains outside the current Stable
+  corpus.
 - SlopeTriangle: `src/element/slopetriangle.js -> createSlopeTriangle` now
   covers `[Tangent]`, `[Glider]`, and `[Line, Point]` parents for the translated
   Glider/Tangent subset, including ordinary Curve-backed Gliders through the
@@ -396,18 +456,18 @@ qualification batches pass.
   Native JessieCode and construction documents enforce complete scene
   accounting and atomic rollback. Core, creator, document/session, official
   fixture, and focused Desktop/Compact static parity gates pass.
-  `digits: auto`/`none`, locale and `formatValue`, function-valued visual
-  attributes, hit testing, complete APIs, independent production cases, and
-  Stable qualification remain pending.
+  `digits: auto`/`none`, locale-aware `formatValue`, function-valued visual
+  attributes, and hit testing are translated. Independent production
+  qualification remains outside the current Stable corpus.
 - PolygonalChain: `src/base/polygon.js -> createPolygonalChain` now follows
   the official Polygon wrapper and removes only the duplicated closing vertex
   and final closing Segment. Border storage order, registered/helper Point
   ownership and removal, `Area`/`Perimeter`/`L`/bounds behavior,
   JSON/JessieCode limits, open Compose rendering, and focused static plus
   parent-drag parity pass. Nested Polygon styles, mutable vertex APIs, and
-  Polygon hit testing share the translated base implementation. Transformed
-  chains, labels, independent production cases, and
-  Stable qualification remain pending.
+  Polygon hit testing, transformed chains, and labels share the translated
+  base implementation. Independent production qualification remains outside
+  the current Stable corpus.
 - Parallelogram: `src/base/polygon.js -> createParallelogram` now composes the
   translated ParallelPoint and Polygon factories with the official vertex,
   border, and Board creation order. It preserves the exposed helper identity,
@@ -415,9 +475,9 @@ qualification batches pass.
   removal behavior, coordinate-Point ownership, nested `parallelpoint`
   attributes, JSON/JessieCode limits, and atomic rollback. Core, creator,
   document/session, official fixture, and focused static plus parent-drag
-  parity gates pass. Mutable Polygon APIs and hit testing use the shared
-  translated Polygon implementation. Labels, an independent
-  production case, and Stable qualification remain pending.
+  parity gates pass. Mutable Polygon APIs, hit testing, and labels use the
+  shared translated Polygon implementation. Independent production
+  qualification remains outside the current Stable corpus.
 - RegularPolygon: `src/base/polygon.js -> createRegularPolygon` now covers
   both `[point1, point2, n]` generation and the existing `n`-Point form. The
   translation preserves the original rotation angle, non-integer
@@ -427,9 +487,9 @@ qualification batches pass.
   JSON/JessieCode vertex limits and atomic rollback prevent unbounded or
   partial construction. Core, creator, document/session, official fixture,
   and focused static plus parent-drag parity gates pass. Nested Polygon
-  vertex/border styling and shared Polygon hit testing are translated. Labels,
-  an independent production case, and Stable
-  qualification remain pending.
+  vertex/border styling, shared Polygon hit testing, and labels are translated.
+  Independent production qualification remains outside the current Stable
+  corpus.
 - RadicalAxis: `src/base/line.js -> createRadicalAxis` now covers two
   registered Circle parents, the exact standard-form coefficient closure,
   one-function constrained helper Points, parent/dependency rebinding,
@@ -437,18 +497,19 @@ qualification batches pass.
   degenerate Circle arithmetic, nested helper identity, native JessieCode and
   construction-document entry points, and atomic duplicate-ID rollback. Core,
   creator, document/session, official fixture, and focused static plus
-  radius-Point-drag Desktop/Compact parity gates pass. Nested helper styling,
-  labels, an independent production case, and Stable qualification remain
-  pending.
+  radius-Point-drag Desktop/Compact parity gates pass. Nested helper styling
+  and labels are translated. Independent production qualification remains
+  outside the current Stable corpus.
 - PolePoint: `src/base/point.js -> createPolePoint` now covers registered
-  Circle/Line parents in either order, canonical parent metadata, the exact
+  Circle/Ellipse/Hyperbola/Parabola and Line parents in either order,
+  canonical parent metadata, the exact
   determinant coordinate closure, constrained dependency updates, direct and
   parent removal, non-finite degenerate arithmetic, native JessieCode and
   construction-document entry points, and structured atomic rollback. Core,
   creator, document/session, official fixture, and focused static plus
-  four-parent-drag Desktop/Compact parity gates pass. Ellipse, Hyperbola, and
-  Parabola construction are translated, but their Conic/Line PolePoint forms,
-  an independent production case, and Stable qualification remain pending.
+  four-parent-drag Desktop/Compact parity gates pass. All Open Conic branches
+  have parent-update and removal evidence. Independent production
+  qualification remains outside the current Stable corpus.
 - Tangent/Polar: the Circle/Point, Line/Point, and Curve/Point branches of
   `src/base/line.js -> createTangent` plus its registered `polar` alias are
   translated; `createPolarLine` remains Circle/Point-only. Circle/Point
@@ -462,10 +523,12 @@ qualification batches pass.
   FunctionGraph classification, hidden helpers, and Point-only ownership.
   Native JessieCode, construction-document, core lifecycle, official fixture,
   and focused static plus parent-drag Desktop/Compact parity gates pass.
-  Ellipse/Hyperbola/Parabola Tangent/Polar and PolarLine Conic forms, Turtle
-  and Glider Tangent branches, an independent production case, and Stable
-  qualification remain pending.
-- TangentTo: the Circle branch of
+  Ellipse, Hyperbola, and Parabola Tangent/Polar interoperation is covered
+  through parent updates and removal. PolarLine remains Circle-only as upstream
+  defines it; upstream-invalid Turtle and Glider branches return structured
+  failures. Independent production qualification remains outside the current
+  Stable corpus.
+- TangentTo: the Circle/Ellipse/Hyperbola/Parabola branches of
   `src/base/line.js -> createTangentTo` now composes the source Point's polar,
   one polar/Circle Intersection selected by upstream numeric truthiness, and
   the Tangent at that contact Point. It preserves the exposed polar/contact
@@ -473,9 +536,9 @@ qualification batches pass.
   non-real and degenerate arithmetic, and three-object scene/resource
   accounting. Native JessieCode, construction-document, Core lifecycle,
   official fixture, and focused static plus source-Point-drag
-  Desktop/Compact parity gates pass. Ellipse, Hyperbola, and Parabola
-  construction are translated, but their TangentTo Conic branches, an
-  independent production case, and Stable qualification remain pending.
+  Desktop/Compact parity gates pass. All four Conic branches have dedicated
+  parent-update and removal evidence. Independent production qualification
+  remains outside the current Stable corpus.
 - Ellipse: `src/element/conic.js -> createEllipse` now covers
   Point/reference/coordinate foci with either a Point on the Ellipse or a
   numeric/function-valued major axis, optional numeric parameter domains,
@@ -486,12 +549,10 @@ qualification batches pass.
   rejection, resource checks, and atomic helper rollback are covered. Core,
   creator, document/session, method-map, official fixture, and focused static
   plus point-parent-drag Desktop/Compact parity gates pass. Native adaptive
-  Plot v2 is covered; an independent production case and Stable qualification
-  remain pending.
-  Tangent, Polar, PolarLine, PolePoint, TangentTo, Normal, Intersection, and
-  OtherIntersection Conic forms remain explicitly unsupported until their
-  dedicated source-mapped numerical, lifecycle, resource, and parity evidence
-  is complete.
+  Plot v2, exact focus-distance `hasInnerPoints`, and Tangent, Polar,
+  PolePoint, TangentTo, Normal, Intersection, OtherIntersection, and Glider
+  interoperation through parent updates and removal are covered. Independent
+  production qualification remains outside the current Stable corpus.
 - Hyperbola: `src/element/conic.js -> createHyperbola` now covers
   Point/reference/coordinate foci with either a Point on the Hyperbola or a
   numeric/function-valued major axis, optional numeric parameter domains and
@@ -502,11 +563,10 @@ qualification batches pass.
   updates, duplicate-ID rejection, resource checks, and atomic helper
   rollback are covered. Core, creator, document/session, method-map, official
   fixture, and focused static plus point-parent-drag Desktop/Compact parity
-  gates pass. Native adaptive Plot v2 is covered; an independent production
-  case and Stable qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
-  TangentTo, Normal, Intersection, and OtherIntersection Conic forms remain
-  explicitly unsupported until their dedicated source-mapped numerical,
-  lifecycle, resource, and parity evidence is complete.
+  gates pass. Native adaptive Plot v2 and Tangent, Polar, PolePoint, TangentTo,
+  Normal, Intersection, OtherIntersection, and Glider interoperation are
+  covered; PolarLine remains Circle-only. Independent production qualification
+  remains outside the current Stable corpus.
 - Parabola: `src/element/conic.js -> createParabola` now covers a
   Point/reference/function-returning-Point or coordinate focus and either a
   registered Line or an implicit two-Point directrix. The translation
@@ -517,12 +577,11 @@ qualification batches pass.
   entry points, native session updates, duplicate-ID rejection, resource
   checks, and atomic helper rollback are covered. Core, creator,
   document/session, method-map, official fixture, and focused static plus
-  focus-drag Desktop/Compact parity gates pass. Native adaptive Plot v2 is
-  covered; richer implicit-Line attributes, an independent production case, and Stable
-  qualification remain pending. Tangent, Polar, PolarLine, PolePoint,
-  TangentTo, Normal, Intersection, and OtherIntersection Conic forms remain
-  explicitly unsupported until their dedicated source-mapped numerical,
-  lifecycle, resource, and parity evidence is complete.
+  focus-drag Desktop/Compact parity gates pass. Native adaptive Plot v2,
+  implicit-Line attributes, and Tangent, Polar, PolePoint, TangentTo, Normal,
+  Intersection, OtherIntersection, and Glider interoperation are covered;
+  PolarLine remains Circle-only. Independent production qualification remains
+  outside the current Stable corpus.
 - Derivative: `src/base/curve.js -> createDerivative` now creates a
   `curveType=parameter` Curve from `X(t)` and `Numerics.D(Y)(t) /
   Numerics.D(X)(t)`, with the source domain values captured at creation.
@@ -532,8 +591,9 @@ qualification batches pass.
   registration, source-removal survival, bounded JSON/JessieCode entry points,
   and structured atomic failures. Core, creator, document/session, official
   fixture, and focused static plus coefficient-Point-drag Desktop/Compact
-  parity gates pass. Native adaptive Plot v2 is covered; transformed Curves,
-  an independent production case, and Stable qualification remain pending.
+  parity gates pass. Native adaptive Plot v2 and transformed Curves are
+  covered. Independent production qualification remains outside the current
+  Stable corpus.
 - Normal: the Line/Point, Circle/Point, and Curve/Point branches of
   `src/base/line.js -> createNormal` now accept registered parents in either
   order. The Line branch preserves its ideal helper plus `point`, `subs`, and
@@ -545,9 +605,10 @@ qualification batches pass.
   and structured atomic rollback are covered. Core, creator, document/session,
   official fixture, and focused static plus parent-drag Desktop/Compact parity
   gates pass. Coordinate-array Points are rejected instead of reproducing the
-  upstream `1.13.3` stack overflow. Glider, Turtle, transformed-Curve,
-  degree-three Plot/Bezier forms, translated Conic interoperation, an independent
-  production case, and Stable qualification remain pending.
+  upstream `1.13.3` stack overflow. Transformed-Curve, degree-three Plot/Bezier,
+  and all Open Conic branches have dedicated evidence; upstream-invalid
+  Glider/Turtle forms return structured failures. Independent production
+  qualification remains outside the current Stable corpus.
 - Spline/CardinalSpline: `src/base/curve.js -> createSpline` and
   `createCardinalSpline` now cover natural-cubic interpolation from Points,
   coordinate pairs, parallel X/Y arrays, and coordinate functions, plus
@@ -557,9 +618,9 @@ qualification batches pass.
   ownership, `createPoints`/`isArrayOfCoordinates`, bounded JSON/JessieCode
   paths, structured failures, and atomic rollback are covered. Core, creator,
   document/session, official fixture, and focused static plus tension-drag
-  Desktop/Compact parity gates pass. Native adaptive Plot v2 is covered;
-  ordinary Curve fill, an independent production case, and Stable
-  qualification remain pending.
+  Desktop/Compact parity gates pass. Native adaptive Plot v2 and ordinary Curve
+  fill are covered. Independent production qualification remains outside the
+  current Stable corpus.
 - RiemannSum: `src/base/curve.js -> createRiemannsum` now composes the
   translated `Numerics.riemann` geometry for one function or an ordered
   lower/upper pair. Numeric, string, and function-valued rectangle counts,
@@ -578,8 +639,9 @@ qualification batches pass.
   sizes from the actual CSS-pixel viewport scale. Exact point-growth bounds,
   structured atomic failures, dependency/removal lifecycle, JSON/JessieCode
   entry points, the official fixture, and focused static plus driver-drag
-  Desktop/Compact parity gates pass. Function-valued visual attributes, an
-  independent production case, and Stable qualification remain pending.
+  Desktop/Compact parity gates pass. Function-valued visual attributes are
+  translated. Independent production qualification remains outside the current
+  Stable corpus.
 - Comb: `src/element/comb.js -> createComb` now covers Point/reference and
   coordinate-array endpoints, exact upstream clipping and `NaN` tooth breaks,
   numeric/function-valued frequency, width, angle, and reverse attributes,
@@ -587,8 +649,8 @@ qualification batches pass.
   static/dynamic output, and structured atomic rollback. Core, creator,
   document/session, official fixture, and focused static plus driver-drag
   Desktop/Compact parity gates pass. Function-returning Point/coordinate
-  parents, an independent production case, and Stable qualification remain
-  pending.
+  parents are translated. Independent production qualification remains
+  outside the current Stable corpus.
 - Inequality: `src/element/composition.js -> createInequality` now covers Line
   and FunctionGraph sources, the exact expanded half-plane and segmented
   closure algorithms, Board bounds, non-finite FunctionGraph runs, dynamic
@@ -596,8 +658,8 @@ qualification batches pass.
   survival, bounded output, and structured failures. Core, creator,
   document/session, official fixture, focused static parity, Line-parent drag,
   and FunctionGraph-driver/inverse drag pass at Desktop and Compact sizes.
-  Additional source kinds, an independent production case, and Stable
-  qualification remain pending.
+  These are the active upstream source kinds. Independent production
+  qualification remains outside the current Stable corpus.
 - VectorField: `src/element/vectorfield.js -> createVectorField` now covers
   two component functions/expressions or one array-returning function/
   expression, dynamic three-term meshes, scale, and nested arrow enable/size/
@@ -606,23 +668,25 @@ qualification batches pass.
   dependencies, source-removal survival, viewport CSS-pixel arrow sizing,
   bounded output, and structured atomic failure. Core, creator,
   document/session, official fixture, and focused static plus driver-drag
-  Desktop/Compact parity gates pass. An independent production case and Stable
-  qualification remain pending.
+  Desktop/Compact parity gates pass. Independent production qualification
+  remains outside the current Stable corpus.
 - SlopeField: `src/element/vectorfield.js -> createSlopeField` now wraps the
   translated VectorField path for one scalar function/expression. It preserves
   the exact unit-direction normalization, non-finite arithmetic, disabled
   arrowhead default, dynamic mesh/scale/arrow evaluation, metadata-only
   closure dependencies, bounded output, and structured atomic failure. Core,
   creator, document/session, official fixture, and focused static plus
-  driver-drag Desktop/Compact parity gates pass. Runtime `setF`, an independent
-  production case, and Stable qualification remain pending.
+  driver-drag Desktop/Compact parity gates pass. Runtime `setF` is translated.
+  Independent production qualification remains outside the current Stable
+  corpus.
 - VectorField3D: `src/3d/curve3d.js -> createVectorfield3D` now covers
   component and array-returning functions, inclusive dynamic X/Y/Z meshes,
   scale, zero-vector suppression, nested arrow settings, ordinary Curve3D
   proxy identity, viewport-sized 3D arrowheads, bounded output, structured
   failures, official fixtures, focused tests, and Desktop/Compact parity.
-  Runtime `setF`, an independent production case, complete APIs, and Stable
-  qualification remain pending.
+  Runtime `setF` replacement and Curve3D/Text3D coordinate accessors are also
+  source-mapped and covered. Independent production qualification remains
+  outside the current Stable corpus.
 - Circumcircle creators: `createCircumcenter`, the
   `circumcirclemidpoint` alias, and `createCircumcircle` now cover
   Point/reference/coordinate parents, public and hidden center metadata,
@@ -631,14 +695,16 @@ qualification batches pass.
   entry points, and same-source static/interaction parity. They remain outside
   the Stable corpus until an independent production case and the full
   qualification gates are added.
-- Point reflections: the Point branches of `createReflection` and
-  `createMirrorElement`, plus `createMirrorPoint`, now cover dynamic Line
-  reflection, Point-centered π rotation, parent metadata, asymmetric
-  reflector-owned dependency/removal, frozen regular-update behavior,
-  structured failures, native JessieCode and construction-document entry
-  points, and same-source static/interaction parity. The remaining
-  Line/Curve/Polygon/Circle reflection branches and Stable qualification are
-  still pending.
+- Reflections: `createReflection` and `createMirrorElement` now cover Point,
+  Line, Curve, Polygon, Circle, Arc, and Sector sources, while
+  `createMirrorPoint` remains the Point-only alias. The translation preserves
+  dynamic Line reflection, Point-centered π rotation, transformed helper
+  Points, Arc/Sector-to-Curve output, Euclidean Circle radius preservation,
+  projective Circle-to-Conic conversion, nested helper attributes, upstream
+  parent metadata, reflector-owned dependencies, frozen regular-update
+  behavior, structured failures, native JessieCode and construction-document
+  entry points, and official lifecycle evidence. Stable qualification remains
+  pending without expanding the existing 30-case Stable corpus.
 - Parallel constructions: `createParallelPoint` and `createParallel` now cover
   three-Point and Line/Point forms, coordinate helper ownership, finite and
   ideal endpoints, dependency updates, removal behavior, native JessieCode and
@@ -647,31 +713,36 @@ qualification batches pass.
   production case and the full qualification gates are added.
 - Line arrows: `createArrow` and `createArrowParallel` now preserve vector
   identity, forced visible line-end flags, upstream defaults, explicit
-  disabled heads, and static Boolean/object head attributes. Compose Canvas
-  translates head types `1..7`, per-type endpoint shortening, cubic shapes,
-  filled/open behavior, ideal-endpoint clipping, and type 7's fixed effective
-  size. Highlight rendering applies `highlightSize`. Core geometry tests plus
-  focused same-source static and parent-drag parity pass at both viewports.
-  Dynamic arrow-object functions, non-Canvas renderers, independent
-  production cases, and
-  Stable qualification remain pending.
+  disabled heads, and Boolean/object head attributes. Native JessieCode scene
+  updates preserve whole function-valued Segment arrow objects and nested
+  `type`, `size`, and `highlightSize` functions with structured callback
+  failures. Compose Canvas translates head types `1..7`, per-type endpoint
+  shortening, cubic shapes, filled/open behavior, ideal-endpoint clipping,
+  type 7's fixed effective size, and highlight sizes. Core/Compose tests,
+  official fixtures, and focused same-source static and parent-drag parity
+  pass. Touch-point adjustment is translated; non-Canvas renderers are explicit
+  backend exclusions. Independent production qualification remains outside
+  the current Stable corpus.
 - Curve/Arc/Sector arrows: `firstArrow` and `lastArrow` Boolean/object values
   now produce the same seven Canvas head types as Line arrows. Curve paths use
   the first and last drawable subpath tangents; Arc/Sector cubic paths use
   endpoint control tangents with degenerate fallback. The official fixture,
   common/Compose tests, and the `curve_arrows` same-source case pass at
   `0.988830` Desktop and `0.985632` Compact. This focused case remains outside
-  the 30-case Stable corpus.
+  the 30-case Stable corpus. Whole function-valued Curve/Arc/Sector arrows and
+  nested arrow fields update retained scenes with official and JVM/Wasm
+  evidence.
 - Composition and two-Line angle bisectors: the reusable non-Board
   `JXG.Composition` subset and
   `createAngularBisectorsOfTwoLines` now cover role/ID/name membership,
   ordered output access, lifecycle forwarding, two registered output Lines,
   four hidden constrained helpers, normalized coefficient geometry, nested
   attributes, dependency updates, removal, degenerate arithmetic, atomic
-  rollback, native JessieCode access, and same-source static/interaction
-  parity. Generic group/filter selection, composition-wide mutable visual
-  properties, a JSON compound-result contract, independent production cases,
-  and Stable qualification remain pending.
+  rollback, native JessieCode access, generic group/filter selection,
+  composition-wide mutable visual properties, and same-source
+  static/interaction parity. JSON compound results remain outside the bounded
+  document schema. Independent production qualification remains outside the
+  current Stable corpus.
 - Triangle centers: `createBisector`, `createIncenter`, and `createIncircle`
   now cover Point/reference/coordinate parents, exact constrained geometry,
   dependency updates, hidden helper ownership and removal, degenerate
@@ -687,9 +758,9 @@ qualification batches pass.
   `Clip.findIntersections` crossings and overlap endpoints, the upstream
   first-parent Arc asymmetry, ideal/non-real results, excluded-Point
   selection, dependency updates, native JessieCode and construction-document
-  entry points, and same-source static/interaction parity. Translated Conic
-  dispatch, dynamic visual-property forms, independent production cases, and
-  full qualification remain pending.
+  entry points, translated Open Conic dispatch, dynamic visual-property forms,
+  and same-source static/interaction parity. Independent production
+  qualification remains outside the current Stable corpus.
 - Curve Boolean clipping: `createCurveIntersection`, `createCurveUnion`, and
   `createCurveDifference` now cover Circle/Curve/Arc/Sector/Polygon paths and
   the low-level mixed Point/Coords/coordinate-pair array form, including
@@ -720,17 +791,17 @@ qualification batches pass.
   `Options.layer` defaults and explicit non-negative integer overrides with
   creation order as the tie-breaker. Grid, Axis, top-level elements, and
   Polygon fill/borders/implicit vertices participate independently. Nested
-  Polygon styling and supported function-valued runtime layer mutation are
-  translated. Unsupported Axis/Ticks/Grid options and the remaining renderer
-  objects and Board layer options are still pending.
+  Polygon styling, Axis/Ticks/Grid options, function-valued runtime layer
+  mutation, renderer objects, and Board layer options are translated for the
+  portable Canvas backend.
 - Canvas dash rendering: supported Point, Line, Circle, Curve, and
   Polygon-border strokes now use all seven
   `src/renderer/abstract.js -> dashArray` patterns. `dashScale` multiplies
   intervals by `strokeWidth / 2` as upstream does; the Compose backend maps
   resolved CSS-pixel intervals to dp and clamps only the zero-length dotted
-  interval to Skia's `0.001` minimum. Supported visual properties can be
-  mutated statically or supplied as JessieCode functions; unsupported renderer
-  objects remain pending.
+  interval to Skia's `0.001` minimum. Portable visual properties can be
+  mutated statically or supplied as JessieCode functions; browser DOM and
+  non-Canvas renderer objects are explicit backend exclusions.
 
 ## Implementation Order
 
@@ -769,9 +840,9 @@ unbounded allocations.
 - board lifecycle, object registry and dependency graph
 - geometry element base classes and coordinate elements
 - point, line, circle, curve, polygon, text, axes, ticks and grids
-- remaining 2D element factories
+- complete source-mapped portable 2D element-factory surface
 
-Exit gate: every supported upstream 2D factory has construction, update and
+Exit gate: every portable upstream 2D factory has construction, update and
 serialization tests.
 
 ### 5. Rendering And Interaction

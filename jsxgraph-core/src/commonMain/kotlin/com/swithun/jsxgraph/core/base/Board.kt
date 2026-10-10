@@ -8,10 +8,22 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphChartTableProvider
+import com.swithun.jsxgraph.core.JsxGraphLocaleNumberFormatter
+import com.swithun.jsxgraph.core.math.Geometry
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionCompileError
+import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.utils.AutoDigitsValue
 import com.swithun.jsxgraph.core.utils.Color
 import com.swithun.jsxgraph.core.utils.EventEmitter
 import com.swithun.jsxgraph.core.utils.EventHandler
+import com.swithun.jsxgraph.core.utils.JsNumberFormat
+import com.swithun.jsxgraph.core.utils.Type
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.max
 import kotlin.math.sign
 
@@ -25,7 +37,53 @@ internal sealed interface BoardError {
     data class UnsupportedConditionExpression(
         val expression: String,
     ) : BoardError
+
+    data class ConditionExpressionCompile(
+        val expression: String,
+        val error: JessieCodeExpressionCompileError,
+    ) : BoardError
+
+    data class ConditionExpressionEvaluation(
+        val expression: String,
+        val error: JessieCodeRuntimeError,
+    ) : BoardError
+
+    data class InvalidConditionValue(
+        val property: String,
+        val expected: String,
+        val actual: String,
+    ) : BoardError
+
+    data class ConditionColor(
+        val property: String,
+        val value: String,
+        val error: com.swithun.jsxgraph.core.utils.ColorError,
+    ) : BoardError
+
+    data class ConditionPointStyle(
+        val elementId: String,
+        val value: Int,
+        val error: PointError,
+    ) : BoardError
 }
+
+private enum class BoardConditionProperty {
+    X,
+    Y,
+    VISIBLE,
+    POSITION,
+    STROKE,
+    STYLE,
+    STROKE_WIDTH,
+    FILL,
+}
+
+private data class BoardCondition(
+    val element: GeometryElement,
+    val property: BoardConditionProperty,
+    val source: String,
+    val expression: JessieCodeExpressionFunction,
+)
 
 internal enum class BoardZoomMode {
     RESET,
@@ -43,6 +101,22 @@ internal data class BoardInputEvent(
     val inputDevice: String = "mouse",
     val deltaY: Double = 0.0,
     val key: String? = null,
+)
+
+// JSXGraph 1.13.3: src/base/board.js -> touches.targets.
+internal data class BoardTouchTarget(
+    val pointerId: Long,
+    var screenX: Double,
+    var screenY: Double,
+    var previousScreenX: Double = Double.NaN,
+    var previousScreenY: Double = Double.NaN,
+    val startPositions: List<DoubleArray> = emptyList(),
+)
+
+// JSXGraph 1.13.3: src/base/board.js -> touches.
+internal data class BoardTouchedObject(
+    val element: GeometryElement,
+    val targets: MutableList<BoardTouchTarget>,
 )
 
 internal interface BoardHostAdapter {
@@ -72,6 +146,11 @@ internal data class BoardUserLogEntry(
     var endMilliseconds: Long,
 )
 
+internal data class BoardAnimationFailure(
+    val elementId: String,
+    val reason: String,
+)
+
 internal fun interface BoardAnimationScheduler {
     fun schedule(
         intervalMilliseconds: Double,
@@ -96,11 +175,78 @@ private object ImmediateBoardAnimationScheduler : BoardAnimationScheduler {
 }
 
 /**
- * Initial translated slice of JXG.Board.
+ * Host-driven counterpart of the browser's setInterval animation loop.
  *
- * The coordinate-system state, object registry, and basic update loop are
- * present. The class remains internal until the public initBoard, renderer,
- * event, and complete element-factory contracts are translated.
+ * Production sessions advance this scheduler from their platform frame clock.
+ * Core therefore stays free of coroutine and browser runtime dependencies.
+ */
+internal class HostDrivenBoardAnimationScheduler :
+    BoardAnimationScheduler {
+    private class ScheduledAnimation(
+        val intervalMilliseconds: Double,
+        val advance: () -> Boolean,
+        var elapsedMilliseconds: Double = 0.0,
+    )
+
+    private val animations = mutableListOf<ScheduledAnimation>()
+
+    internal val hasScheduledAnimations: Boolean
+        get() = animations.isNotEmpty()
+
+    override fun schedule(
+        intervalMilliseconds: Double,
+        advance: () -> Boolean,
+    ) {
+        val effectiveInterval =
+            if (
+                intervalMilliseconds.isFinite() &&
+                intervalMilliseconds > 0.0
+            ) {
+                intervalMilliseconds
+            } else {
+                MINIMUM_INTERVAL_MILLISECONDS
+            }
+        animations += ScheduledAnimation(
+            intervalMilliseconds = effectiveInterval,
+            advance = advance,
+        )
+    }
+
+    internal fun advance(elapsedMilliseconds: Double): Boolean {
+        if (elapsedMilliseconds <= 0.0) {
+            return animations.isNotEmpty()
+        }
+        for (animation in animations.toList()) {
+            if (animation !in animations) {
+                continue
+            }
+            animation.elapsedMilliseconds += elapsedMilliseconds
+            if (
+                animation.elapsedMilliseconds <
+                animation.intervalMilliseconds
+            ) {
+                continue
+            }
+            animation.elapsedMilliseconds %=
+                animation.intervalMilliseconds
+            if (!animation.advance()) {
+                animations.remove(animation)
+            }
+        }
+        return animations.isNotEmpty()
+    }
+
+    private companion object {
+        const val MINIMUM_INTERVAL_MILLISECONDS = 1.0
+    }
+}
+
+/**
+ * Translated platform-neutral JXG.Board state and lifecycle.
+ *
+ * Browser DOM ownership stays in host adapters; coordinate state, factories,
+ * events, navigation, updates, animation, and object registries remain in
+ * commonMain.
  */
 internal class Board(
     originX: Double,
@@ -145,7 +291,31 @@ internal class Board(
     ),
     internal var maximumFrameRate: Double = DEFAULT_MAXIMUM_FRAME_RATE,
     internal val hostAdapter: BoardHostAdapter = NoBoardHostAdapter,
+    internal val localeNumberFormatter: JsxGraphLocaleNumberFormatter? = null,
+    internal val chartTableProvider: JsxGraphChartTableProvider? = null,
 ) {
+    // JSXGraph 1.13.3: src/options.js -> Board.pan / zoom / keyboard.
+    internal var panEnabled: Boolean = true
+    internal var panNeedsShift: Boolean = true
+    internal var panNeedsControl: Boolean = false
+    internal var panNeedsTwoFingers: Boolean = false
+    internal var zoomEnabled: Boolean = true
+    internal var zoomNeedsShift: Boolean = true
+    internal var zoomNeedsControl: Boolean = false
+    internal var zoomCenter: String = "auto"
+    internal var zoomPinch: Boolean = true
+    internal var zoomPinchHorizontal: Boolean = true
+    internal var zoomPinchVertical: Boolean = true
+    internal var zoomPinchSensitivity: Double = 7.0
+    internal var selectionEnabled: Boolean = false
+    internal var selectionNeedsShift: Boolean = false
+    internal var selectionNeedsControl: Boolean = true
+    internal var keyboardEnabled: Boolean = true
+    internal var keyboardDeltaX: Double = DEFAULT_KEYBOARD_DELTA
+    internal var keyboardDeltaY: Double = DEFAULT_KEYBOARD_DELTA
+    internal var keyboardPanShift: Boolean = true
+    internal var keyboardPanControl: Boolean = false
+
     private val initialZoomX = zoomX
     private val initialZoomY = zoomY
     private val initialBoundingBox = boundingBox.copyOf()
@@ -159,6 +329,10 @@ internal class Board(
     internal val attributes = linkedMapOf<String, Any?>(
         "animationdelay" to animationDelay,
         "boundingbox" to initialBoundingBox.copyOf(),
+        "intl" to linkedMapOf<String, Any?>(
+            "enabled" to false,
+            "locale" to null,
+        ),
         "keepaspectratio" to keepAspectRatio,
         "zoomx" to zoomX,
         "zoomy" to zoomY,
@@ -190,6 +364,7 @@ internal class Board(
     internal val focusObjects = mutableListOf<String>()
     internal val pointerPositions =
         linkedMapOf<Long, BoardInputEvent>()
+    internal val touches = mutableListOf<BoardTouchedObject>()
     internal var inputDevice: String = "mouse"
         private set
     internal var hasMouseHandlers: Boolean = false
@@ -236,8 +411,10 @@ internal class Board(
     internal var xmlString: String = ""
     private var touchMoveLastMilliseconds: Long = 0L
     private var touchMoveLastId: Long? = null
-    private var gestureStartDistance: Double = Double.NaN
-    private var gestureStartBoundingBox: DoubleArray? = null
+    private var gesturePreviousDistance: Double = Double.NaN
+    private var gesturePreviousScale: Double = 1.0
+    private var gesturePreviousCoordinates: Array<DoubleArray>? = null
+    private var previousGesture: String = "none"
 
     // JSXGraph: src/base/board.js -> _shiftKey / _ctrlKey.
     internal var shiftKeyPressed: Boolean = false
@@ -271,6 +448,11 @@ internal class Board(
     internal val groups = linkedMapOf<String, Group>()
     // JSXGraph 1.13.3: src/base/board.js -> Board constructor / grids.
     internal val grids = mutableListOf<Curve>()
+    // JSXGraph 1.13.3: src/jsxgraph.js -> initBoard defaultAxes;
+    // src/base/board.js -> setAttribute("axis" / "defaultaxes").
+    internal var defaultAxes: BoardDefaultAxes? = null
+    internal var defaultAxesError: BoardDefaultAxesError? = null
+        private set
     internal var numObjects: Int = 0
         private set
 
@@ -279,6 +461,9 @@ internal class Board(
     internal var inUpdate: Boolean = false
         private set
     internal var isSuspendedUpdate: Boolean = false
+        private set
+    private var conditions: List<BoardCondition> = emptyList()
+    internal var conditionError: BoardError? = null
         private set
 
     // JSXGraph: src/base/board.js -> setId
@@ -465,6 +650,22 @@ internal class Board(
             return GMResult.Err(
                 BoardError.InvalidBoundingBoxCoordinateCount(bbox.size),
             )
+        }
+        if (
+            bbox[0] <
+            maxBoundingBox[0] -
+            com.swithun.jsxgraph.core.math.Mat.eps ||
+            bbox[1] >
+            maxBoundingBox[1] +
+            com.swithun.jsxgraph.core.math.Mat.eps ||
+            bbox[2] >
+            maxBoundingBox[2] +
+            com.swithun.jsxgraph.core.math.Mat.eps ||
+            bbox[3] <
+            maxBoundingBox[3] -
+            com.swithun.jsxgraph.core.math.Mat.eps
+        ) {
+            return GMResult.Ok(this)
         }
 
         val previousUnitX = unitX
@@ -674,8 +875,19 @@ internal class Board(
                 element.visualPropertiesCalculated["visible"] == true &&
                 element.hasPoint(screenX, screenY)
             ) {
-                overObjects += element.id
+                val coordinates = Coords(
+                    method = Const.COORDS_BY_SCREEN,
+                    coordinates = doubleArrayOf(screenX, screenY),
+                    board = this,
+                    emitter = false,
+                ).usrCoords
+                highlightInfobox(
+                    userX = coordinates[1],
+                    userY = coordinates[2],
+                    element = element,
+                )
                 if (element.id !in highlightedObjects) {
+                    overObjects += element.id
                     element.highlight()
                     trigger(
                         events = listOf("mousehit", "hit"),
@@ -888,13 +1100,32 @@ internal class Board(
     internal fun _isRequiredKeyPressed(
         event: BoardInputEvent,
         action: String,
-    ): Boolean =
+    ): Boolean {
+        val enabled: Boolean
+        val needsShift: Boolean
+        val needsControl: Boolean
         when (action.lowercase()) {
-            "pan" -> !event.shiftKey && !event.controlKey
-            "zoom" -> event.controlKey
-            "selection" -> event.shiftKey
-            else -> false
+            "pan" -> {
+                enabled = panEnabled
+                needsShift = panNeedsShift
+                needsControl = panNeedsControl
+            }
+            "zoom" -> {
+                enabled = zoomEnabled
+                needsShift = zoomNeedsShift
+                needsControl = zoomNeedsControl
+            }
+            "selection" -> {
+                enabled = selectionEnabled
+                needsShift = selectionNeedsShift
+                needsControl = selectionNeedsControl
+            }
+            else -> return false
         }
+        return enabled &&
+            event.shiftKey == needsShift &&
+            event.controlKey == needsControl
+    }
 
     internal fun _isPointerRegistered(
         event: BoardInputEvent,
@@ -958,6 +1189,24 @@ internal class Board(
                     type = inputDevice,
                 )
             }
+        val pointerId = event.pointerId
+        if (selected.isNotEmpty() && pointerId != null) {
+            val target = selected.last()
+            val touched = touches.firstOrNull {
+                it.element === target
+            } ?: BoardTouchedObject(
+                element = target,
+                targets = mutableListOf(),
+            ).also(touches::add)
+            touched.targets += BoardTouchTarget(
+                pointerId = pointerId,
+                screenX = position[0],
+                screenY = position[1],
+                startPositions = saveStartPos(target),
+            )
+            dehighlightAll()
+            target.highlight(force = true)
+        }
         if (selected.isEmpty() && inputDevice != "touch") {
             mouseOriginMoveStart(
                 event,
@@ -965,6 +1214,25 @@ internal class Board(
             )
         }
         _pointerStorePosition(event)
+        if (inputDevice == "touch" && selected.isEmpty()) {
+            when {
+                pointerPositions.size == 1 &&
+                    mode == BOARD_MODE_NONE &&
+                    panEnabled &&
+                    !panNeedsTwoFingers ->
+                    initMoveOrigin(position[0], position[1])
+                pointerPositions.size == 2 &&
+                    (
+                        mode == BOARD_MODE_NONE ||
+                            mode == BOARD_MODE_MOVE_ORIGIN
+                        ) -> {
+                    if (mode == BOARD_MODE_MOVE_ORIGIN) {
+                        originMoveEnd()
+                    }
+                    gestureStartListener(pointerPositions.values.toList())
+                }
+            }
+        }
         trigger(
             events = listOf(
                 "touchstart",
@@ -984,7 +1252,7 @@ internal class Board(
         event: BoardInputEvent,
     ): Boolean {
         if (
-            inputDevice == "touch" &&
+            _getPointerInputDevice(event) == "touch" &&
             event.pointerId != null &&
             !_isPointerRegistered(event)
         ) {
@@ -993,24 +1261,37 @@ internal class Board(
         if (!checkFrameRate(event)) {
             return false
         }
+        if (mode != BOARD_MODE_DRAG) {
+            dehighlightAll()
+            displayInfobox(false)
+        }
         updateQuality = BOARD_QUALITY_LOW
         inputDevice = _getPointerInputDevice(event)
         val position = getMousePosition(event)
         when {
-            mode == BOARD_MODE_DRAG && activeDragElement != null ->
-                moveObject(
+            mode == BOARD_MODE_DRAG && event.pointerId != null ->
+                moveTouchedObject(
+                    event = event,
                     screenX = position[0],
                     screenY = position[1],
-                    element = requireNotNull(activeDragElement),
-                    event = event,
-                    type = inputDevice,
                 )
             mode == BOARD_MODE_MOVE_ORIGIN -> mouseOriginMove(event)
-            else -> highlightElements(
-                screenX = position[0],
-                screenY = position[1],
-                event = event,
-            )
+            else -> {
+                _pointerStorePosition(event)
+                if (
+                    inputDevice == "touch" &&
+                    pointerPositions.size == 2
+                ) {
+                    gestureChangeListener(
+                        pointerPositions.values.toList(),
+                    )
+                }
+                highlightElements(
+                    screenX = position[0],
+                    screenY = position[1],
+                    event = event,
+                )
+            }
         }
         _pointerStorePosition(event)
         trigger(
@@ -1034,29 +1315,138 @@ internal class Board(
             ),
             arguments = listOf(event),
         )
-        val dragged = activeDragElement
-        if (dragged != null) {
-            dragged.trigger(
-                events = listOf(
-                    "${inputDevice}up",
-                    "up",
-                ),
-                arguments = listOf(event),
-            )
-            if (dragged !is CoordsElement) {
-                dragged.snapToGrid()
-                dragged.snapToPoints()
+        val pointerId = event.pointerId
+        if (pointerId != null) {
+            val iterator = touches.iterator()
+            while (iterator.hasNext()) {
+                val touched = iterator.next()
+                touched.targets.removeAll {
+                    it.pointerId == pointerId
+                }
+                if (touched.targets.isEmpty()) {
+                    iterator.remove()
+                }
             }
         }
-        activeDragElement = null
-        downObjects.clear()
         _pointerRemoveTouches(event)
         originMoveEnd()
         update()
+        var updateNeeded = false
+        val upEvents = linkedSetOf(
+            "touchend",
+            "up",
+            "pointerup",
+            "MSPointerUp",
+            "${inputDevice}up",
+        ).toList()
+        for (index in downObjects.indices.reversed()) {
+            val element = downObjects[index]
+            val stillTouched = touches.any {
+                it.element.id == element.id
+            }
+            if (!stillTouched) {
+                element.trigger(
+                    events = upEvents,
+                    arguments = listOf(event),
+                )
+                if (element !is CoordsElement) {
+                    element.snapToGrid()
+                    element.snapToPoints()
+                    updateNeeded = true
+                }
+                downObjects.removeAt(index)
+            }
+        }
+        activeDragElement = null
         if (inputDevice != "touch") {
             dehighlightAll()
         }
+        if (updateNeeded) {
+            update()
+        }
         return true
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> pointerMoveListener,
+    // touches target loop.
+    private fun moveTouchedObject(
+        event: BoardInputEvent,
+        screenX: Double,
+        screenY: Double,
+    ) {
+        val pointerId = event.pointerId ?: return
+        for (touched in touches) {
+            val target = touched.targets.firstOrNull {
+                it.pointerId == pointerId
+            } ?: continue
+            target.screenX = screenX
+            target.screenY = screenY
+            when (touched.targets.size) {
+                1 ->
+                    if (touched.element is CoordsElement) {
+                        moveObject(
+                            screenX = screenX,
+                            screenY = screenY,
+                            element = touched.element,
+                            event = event,
+                            type = inputDevice,
+                        )
+                    } else {
+                        moveTouchedNonCoordsElement(
+                            touched = touched,
+                            target = target,
+                            event = event,
+                        )
+                    }
+                2 -> {
+                    twoFingerMove(
+                        touched = touched,
+                        movedPointerId = pointerId,
+                        event = event,
+                    )
+                    target.previousScreenX = screenX
+                    target.previousScreenY = screenY
+                }
+            }
+            return
+        }
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> moveObject,
+    // non-CoordsElement branch.
+    private fun moveTouchedNonCoordsElement(
+        touched: BoardTouchedObject,
+        target: BoardTouchTarget,
+        event: BoardInputEvent,
+    ) {
+        if (
+            target.previousScreenX.isFinite() &&
+            target.previousScreenY.isFinite()
+        ) {
+            touched.element.setPositionDirectlyBase(
+                method = Const.COORDS_BY_SCREEN,
+                coordinates = doubleArrayOf(
+                    target.screenX,
+                    target.screenY,
+                ),
+                oldCoordinates = doubleArrayOf(
+                    target.previousScreenX,
+                    target.previousScreenY,
+                ),
+            )
+        }
+        target.previousScreenX = target.screenX
+        target.previousScreenY = target.screenY
+        touched.element.trigger(
+            events = listOf("${inputDevice}drag", "drag"),
+            arguments = listOf(event),
+        )
+        update(touched.element)
+        touched.element.highlight(force = true)
+        trigger(
+            events = listOf("mousehit", "hit"),
+            arguments = listOf(event, touched.element),
+        )
     }
 
     // JSXGraph 1.13.3: src/base/board.js -> pointerLeaveListener.
@@ -1065,6 +1455,7 @@ internal class Board(
     ): Boolean {
         @Suppress("UNUSED_VARIABLE")
         val platformEvent = event
+        displayInfobox(false)
         dehighlightAll()
         return true
     }
@@ -1125,6 +1516,9 @@ internal class Board(
 
     // JSXGraph 1.13.3: src/base/board.js -> mouseWheelListener.
     internal fun mouseWheelListener(event: BoardInputEvent): Board {
+        if (!zoomEnabled || !_isRequiredKeyPressed(event, "zoom")) {
+            return this
+        }
         val user = getUsrCoordsOfMouse(event)
         if (event.deltaY < 0.0) {
             zoomIn(user[0], user[1])
@@ -1136,35 +1530,129 @@ internal class Board(
 
     // JSXGraph 1.13.3: src/base/board.js ->
     // keyDownListener / keyFocusInListener / keyFocusOutListener.
-    internal fun keyDownListener(event: BoardInputEvent): Boolean {
-        val step = KEYBOARD_PAN_FRACTION
-        when (event.key) {
-            "ArrowLeft" -> clickLeftArrow()
-            "ArrowRight" -> clickRightArrow()
-            "ArrowUp" -> clickUpArrow()
-            "ArrowDown" -> clickDownArrow()
-            "+", "=" -> zoomIn()
-            "-", "_" -> zoomOut()
-            "0" -> zoom100()
+    internal fun keyDownListener(
+        event: BoardInputEvent,
+        element: GeometryElement? =
+            focusObjects.firstOrNull()?.let(::select),
+    ): Boolean {
+        if (!keyboardEnabled || event.key == "Tab") {
+            return false
+        }
+        val panKeyPressed =
+            (keyboardPanShift && event.shiftKey) ||
+                (keyboardPanControl && event.controlKey)
+        var handled = true
+        if (panKeyPressed) {
+            when (event.key) {
+                "ArrowLeft" -> clickLeftArrow()
+                "ArrowRight" -> clickRightArrow()
+                "ArrowUp" -> clickUpArrow()
+                "ArrowDown" -> clickDownArrow()
+                "+" -> if (zoomEnabled) zoomIn() else handled = false
+                "-" -> if (zoomEnabled) zoomOut() else handled = false
+                "o", "O" ->
+                    if (zoomEnabled) zoom100() else handled = false
+                else -> handled = false
+            }
+        } else if (!event.shiftKey && !event.controlKey) {
+            handled = moveElementFromKeyboard(event, element)
+        } else {
+            handled = false
+        }
+        update()
+        return handled
+    }
+
+    private fun moveElementFromKeyboard(
+        event: BoardInputEvent,
+        element: GeometryElement?,
+    ): Boolean {
+        val target = element ?: return false
+        var deltaX = keyboardDeltaX / unitX
+        var deltaY = keyboardDeltaY / unitY
+        val coordinates = target as? CoordsElement
+        if (
+            coordinates?.evalVisProp("snaptogrid") == true
+        ) {
+            val snapSizes = coordinates.getSnapSizes()
+            deltaX = snapSizes[0]
+            deltaY = snapSizes[1]
+        } else if (
+            coordinates?.evalVisProp("attracttogrid") == true
+        ) {
+            var distance =
+                (
+                    coordinates.evalVisProp("attractordistance")
+                        as? Number
+                    )?.toDouble() ?: 0.0
+            if (
+                coordinates.evalVisProp("attractorunit")
+                    ?.toString()
+                    ?.lowercase() == "screen"
+            ) {
+                distance /= unitX
+            }
+            deltaX = max(deltaX, 1.1 * distance)
+            deltaY = max(deltaY, 1.1 * distance)
+        }
+        val direction = when (event.key) {
+            "ArrowUp" -> doubleArrayOf(0.0, deltaY)
+            "ArrowDown" -> doubleArrayOf(0.0, -deltaY)
+            "ArrowLeft" -> doubleArrayOf(-deltaX, 0.0)
+            "ArrowRight" -> doubleArrayOf(deltaX, 0.0)
             else -> return false
         }
-        @Suppress("UNUSED_VARIABLE")
-        val upstreamStep = step
-        trigger(listOf("keymove"), listOf(event, mode))
+        if (
+            !target.isDraggable ||
+            target.visualPropertiesCalculated["visible"] != true ||
+            target.evalVisProp("fixed") == true ||
+            (
+                geonextCompatibilityMode &&
+                    target !is Point &&
+                    target !is Text
+                )
+        ) {
+            return true
+        }
+        mode = BOARD_MODE_DRAG
+        if (coordinates != null) {
+            coordinates.setPosition(
+                method = Const.COORDS_BY_USER,
+                coordinates = doubleArrayOf(
+                    coordinates.X() + direction[0],
+                    coordinates.Y() + direction[1],
+                ),
+            )
+            updateInfobox(coordinates)
+        } else {
+            displayInfobox(false)
+            target.setPositionDirectlyBase(
+                method = Const.COORDS_BY_USER,
+                coordinates = direction,
+                oldCoordinates = doubleArrayOf(0.0, 0.0),
+            )
+        }
+        trigger(listOf("keymove", "move"), listOf(event, mode))
+        target.trigger(listOf("keydrag", "drag"), listOf(event))
+        mode = BOARD_MODE_NONE
         return true
     }
 
     internal fun keyFocusInListener(element: GeometryElement): Board {
-        if (element.id !in focusObjects) {
-            focusObjects += element.id
-        }
+        focusObjects.clear()
+        focusObjects += element.id
         element.highlight(force = true)
+        element.trigger(listOf("hit"), emptyList())
+        updateInfobox(element)
         return this
     }
 
     internal fun keyFocusOutListener(element: GeometryElement): Board {
-        focusObjects.remove(element.id)
-        element.noHighlight()
+        @Suppress("UNUSED_VARIABLE")
+        val upstreamTarget = element
+        focusObjects.clear()
+        dehighlightAll()
+        displayInfobox(false)
         return this
     }
 
@@ -1258,113 +1746,442 @@ internal class Board(
         }
         val first = getMousePosition(events[0])
         val second = getMousePosition(events[1])
-        gestureStartDistance = com.swithun.jsxgraph.core.math.Mat.hypot(
-            second[0] - first[0],
-            second[1] - first[1],
+        gesturePreviousDistance =
+            com.swithun.jsxgraph.core.math.Mat.hypot(
+                second[0] - first[0],
+                second[1] - first[1],
+            )
+        gesturePreviousScale = 1.0
+        gesturePreviousCoordinates = arrayOf(
+            first.copyOf(),
+            second.copyOf(),
         )
-        gestureStartBoundingBox = getBoundingBox()
+        previousGesture = "none"
+        initMoveOrigin(first[0], first[1])
         mode = BOARD_MODE_ZOOM
-        return gestureStartDistance.isFinite() &&
-            gestureStartDistance > 0.0
+        return gesturePreviousDistance.isFinite() &&
+            gesturePreviousDistance > 0.0
     }
 
     internal fun gestureChangeListener(
         events: List<BoardInputEvent>,
     ): Boolean {
-        val startBox = gestureStartBoundingBox ?: return false
-        if (events.size < 2 || !gestureStartDistance.isFinite()) {
+        if (mode != BOARD_MODE_ZOOM || events.size < 2) {
             return false
         }
         val first = getMousePosition(events[0])
         val second = getMousePosition(events[1])
+        val previous = gesturePreviousCoordinates ?: return false
         val distance = com.swithun.jsxgraph.core.math.Mat.hypot(
             second[0] - first[0],
             second[1] - first[1],
         )
-        if (!distance.isFinite() || distance <= 0.0) {
+        if (
+            !distance.isFinite() ||
+            distance <= 0.0 ||
+            !gesturePreviousDistance.isFinite() ||
+            gesturePreviousDistance <= 0.0
+        ) {
             return false
         }
-        val scale = gestureStartDistance / distance
-        val centerXScreen = 0.5 * (first[0] + second[0])
-        val centerYScreen = 0.5 * (first[1] + second[1])
-        val center = Coords(
+        val firstDirection = doubleArrayOf(
+            first[0] - previous[0][0],
+            first[1] - previous[0][1],
+        )
+        val secondDirection = doubleArrayOf(
+            second[0] - previous[1][0],
+            second[1] - previous[1][1],
+        )
+        if (
+            firstDirection.squaredLength() <
+            MINIMUM_GESTURE_MOVEMENT_SQUARED &&
+            secondDirection.squaredLength() <
+            MINIMUM_GESTURE_MOVEMENT_SQUARED
+        ) {
+            return false
+        }
+        var isPinch = false
+        val angle = Geometry.rad(
+            firstDirection,
+            doubleArrayOf(0.0, 0.0),
+            secondDirection,
+        )
+        if (
+            previousGesture != "pan" &&
+            abs(angle) > PI * 0.2 &&
+            abs(angle) < PI * 1.8
+        ) {
+            isPinch = true
+        }
+        val scale = distance / gesturePreviousDistance
+        if (
+            previousGesture != "pan" &&
+            !isPinch &&
+            (abs(scale) < 0.77 || abs(scale) > 1.3)
+        ) {
+            isPinch = true
+        }
+        val factor = scale / gesturePreviousScale
+        gesturePreviousScale = scale
+        gesturePreviousCoordinates = arrayOf(
+            first.copyOf(),
+            second.copyOf(),
+        )
+        val firstCoordinates = Coords(
             method = Const.COORDS_BY_SCREEN,
-            coordinates = doubleArrayOf(centerXScreen, centerYScreen),
+            coordinates = first,
             board = this,
             emitter = false,
-        ).usrCoords
-        val leftRatio =
-            (center[1] - startBox[0]) / (startBox[2] - startBox[0])
-        val topRatio =
-            (startBox[1] - center[2]) / (startBox[1] - startBox[3])
-        val width = (startBox[2] - startBox[0]) * scale
-        val height = (startBox[1] - startBox[3]) * scale
-        setBoundingBox(
-            bbox = doubleArrayOf(
-                center[1] - width * leftRatio,
-                center[2] + height * topRatio,
-                center[1] + width * (1.0 - leftRatio),
-                center[2] - height * (1.0 - topRatio),
-            ),
-            keepAspectRatio = keepAspectRatio,
-            setZoom = BoardZoomMode.UPDATE,
         )
-        applyZoom()
+        if (panEnabled && panNeedsTwoFingers && !isPinch) {
+            previousGesture = "pan"
+            moveOrigin(first[0], first[1], diff = true)
+            mode = BOARD_MODE_ZOOM
+            return true
+        }
+        if (!zoomEnabled || abs(factor - 1.0) >= 0.5) {
+            return false
+        }
+        var factorX = 1.0
+        var factorY = 1.0
+        var centerX = 0.0
+        var centerY = 0.0
+        var doZoom = false
+        val deltaX = abs(first[0] - second[0])
+        val deltaY = abs(first[1] - second[1])
+        val theta = abs(atan2(deltaY, deltaX))
+        val bound = PI * zoomPinchSensitivity / 90.0
+        when {
+            !keepAspectRatio &&
+                zoomPinchHorizontal &&
+                theta < bound -> {
+                factorX = factor
+                doZoom = true
+            }
+            !keepAspectRatio &&
+                zoomPinchVertical &&
+                abs(theta - PI * 0.5) < bound -> {
+                factorY = factor
+                doZoom = true
+            }
+            zoomPinch -> {
+                factorX = factor
+                factorY = factor
+                centerX = firstCoordinates.usrCoords[1]
+                centerY = firstCoordinates.usrCoords[2]
+                doZoom = true
+            }
+        }
+        if (!doZoom) {
+            return false
+        }
+        val previousFactorX = zoomFactorX
+        val previousFactorY = zoomFactorY
+        zoomFactorX = factorX
+        zoomFactorY = factorY
+        if (zoomCenter == "board") {
+            zoomIn()
+        } else {
+            zoomIn(centerX, centerY)
+        }
+        zoomFactorX = previousFactorX
+        zoomFactorY = previousFactorY
+        mode = BOARD_MODE_ZOOM
         return true
     }
 
     // JSXGraph 1.13.3: src/base/board.js ->
-    // twoFingerMove / twoFingerTouchObject / twoFingerTouchCircle.
+    // twoFingerMove / getTwoFingerTransform /
+    // twoFingerTouchObject / twoFingerTouchCircle.
     internal fun twoFingerMove(
-        element: GeometryElement,
-        first: BoardInputEvent,
-        second: BoardInputEvent,
+        touched: BoardTouchedObject,
+        movedPointerId: Long,
+        event: BoardInputEvent? = null,
     ): Board {
-        if (element is Circle) {
-            return twoFingerTouchCircle(element, first, second)
+        val element = touched.element
+        when (element) {
+            is Line, is Polygon ->
+                twoFingerTouchObject(
+                    targets = touched.targets,
+                    element = element,
+                )
+            is Circle ->
+                twoFingerTouchCircle(
+                    targets = touched.targets,
+                    circle = element,
+                    movedPointerId = movedPointerId,
+                )
         }
-        return twoFingerTouchObject(element, first, second)
+        if (event != null) {
+            element.trigger(
+                events = listOf("touchdrag", "drag"),
+                arguments = listOf(event),
+            )
+        }
+        return this
+    }
+
+    internal fun getTwoFingerTransform(
+        first: BoardTouchTarget,
+        second: BoardTouchTarget,
+        scalable: Boolean,
+        rotatable: Boolean,
+    ): DoubleArray {
+        val previousFirst = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(
+                first.previousScreenX,
+                first.previousScreenY,
+            ),
+            this,
+        ).usrCoords
+        val previousSecond = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(
+                second.previousScreenX,
+                second.previousScreenY,
+            ),
+            this,
+        ).usrCoords
+        val currentFirst = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(first.screenX, first.screenY),
+            this,
+        ).usrCoords
+        val currentSecond = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(second.screenX, second.screenY),
+            this,
+        ).usrCoords
+        val deltaX = previousSecond[1] - previousFirst[1]
+        val deltaY = previousSecond[2] - previousFirst[2]
+        val currentDeltaX = currentSecond[1] - currentFirst[1]
+        val currentDeltaY = currentSecond[2] - currentFirst[2]
+        val squaredLength = deltaX * deltaX + deltaY * deltaY
+        var cosine = (
+            currentDeltaX * deltaX +
+                currentDeltaY * deltaY
+            ) / squaredLength
+        var sine = (
+            currentDeltaY * deltaX -
+                currentDeltaX * deltaY
+            ) / squaredLength
+        if (!scalable) {
+            val scale =
+                com.swithun.jsxgraph.core.math.Mat.hypot(cosine, sine)
+            cosine /= scale
+            sine /= scale
+        }
+        if (!rotatable) {
+            sine = 0.0
+        }
+        val translateX = 0.5 * (
+            currentFirst[1] +
+                currentSecond[1] -
+                cosine * (previousFirst[1] + previousSecond[1]) +
+                sine * (previousFirst[2] + previousSecond[2])
+            )
+        val translateY = 0.5 * (
+            currentFirst[2] +
+                currentSecond[2] -
+                sine * (previousFirst[1] + previousSecond[1]) -
+                cosine * (previousFirst[2] + previousSecond[2])
+            )
+        return doubleArrayOf(
+            1.0, 0.0, 0.0,
+            translateX, cosine, -sine,
+            translateY, sine, cosine,
+        )
     }
 
     internal fun twoFingerTouchObject(
+        targets: List<BoardTouchTarget>,
         element: GeometryElement,
-        first: BoardInputEvent,
-        second: BoardInputEvent,
     ): Board {
-        val firstPosition = getMousePosition(first)
-        val secondPosition = getMousePosition(second)
-        val midpoint = doubleArrayOf(
-            0.5 * (firstPosition[0] + secondPosition[0]),
-            0.5 * (firstPosition[1] + secondPosition[1]),
+        if (
+            targets.size < 2 ||
+            targets.take(2).any {
+                !it.previousScreenX.isFinite() ||
+                    !it.previousScreenY.isFinite()
+            }
+        ) {
+            return this
+        }
+        val matrix = getTwoFingerTransform(
+            first = targets[0],
+            second = targets[1],
+            scalable =
+                (element.evalVisProp("scalable") as? Boolean) ?: true,
+            rotatable =
+                (element.evalVisProp("rotatable") as? Boolean) ?: true,
         )
-        element.setPosition(
-            method = Const.COORDS_BY_SCREEN,
-            coordinates = midpoint,
-        )
-        update(element)
+        val transformation = when (
+            val result = Transformation.create(
+                type = "generic",
+                parameters = matrix,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return this
+        }
+        when (element) {
+            is Line -> {
+                when (
+                    transformation.applyOnce(
+                        listOf(element.point1, element.point2)
+                            .filter(Point::draggable),
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> return this
+                }
+            }
+            is Polygon -> {
+                val vertices = element.vertices.dropLast(1)
+                val snap =
+                    element.evalVisProp("snaptogrid") == true ||
+                        element.evalVisProp("snaptopoints") == true ||
+                        vertices.any {
+                            it.evalVisProp("snaptogrid") == true ||
+                                it.evalVisProp("snaptopoints") == true ||
+                                !it.draggable()
+                        }
+                if (!snap) {
+                    when (
+                        transformation.applyOnce(
+                            vertices.filter(Point::draggable),
+                        )
+                    ) {
+                        is GMResult.Ok -> Unit
+                        is GMResult.Err -> return this
+                    }
+                }
+            }
+            else -> return this
+        }
+        update()
         element.highlight(force = true)
         return this
     }
 
     internal fun twoFingerTouchCircle(
+        targets: List<BoardTouchTarget>,
         circle: Circle,
-        first: BoardInputEvent,
-        second: BoardInputEvent,
+        movedPointerId: Long,
     ): Board {
-        val firstPosition = getMousePosition(first)
-        val secondPosition = getMousePosition(second)
-        val center = doubleArrayOf(
-            0.5 * (firstPosition[0] + secondPosition[0]),
-            0.5 * (firstPosition[1] + secondPosition[1]),
-        )
-        circle.setPosition(
-            method = Const.COORDS_BY_SCREEN,
-            coordinates = center,
-        )
+        if (
+            circle.method == "pointCircle" ||
+            circle.method == "pointLine" ||
+            targets.size < 2 ||
+            targets.take(2).any {
+                !it.previousScreenX.isFinite() ||
+                    !it.previousScreenY.isFinite()
+            }
+        ) {
+            return this
+        }
+        val movingIndex =
+            if (targets[0].pointerId == movedPointerId) 0 else 1
+        val fixedIndex = 1 - movingIndex
+        val fixedTarget = targets[fixedIndex]
+        val movingTarget = targets[movingIndex]
+        val fixed = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(
+                fixedTarget.previousScreenX,
+                fixedTarget.previousScreenY,
+            ),
+            this,
+        ).usrCoords.copyOfRange(1, 3)
+        val previous = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(
+                movingTarget.previousScreenX,
+                movingTarget.previousScreenY,
+            ),
+            this,
+        ).usrCoords.copyOfRange(1, 3)
+        val current = Coords(
+            Const.COORDS_BY_SCREEN,
+            doubleArrayOf(
+                movingTarget.screenX,
+                movingTarget.screenY,
+            ),
+            this,
+        ).usrCoords.copyOfRange(1, 3)
+        val angle = Geometry.rad(previous, fixed, current)
+        val translateToOrigin = transformation(
+            type = "translate",
+            parameters = doubleArrayOf(-fixed[0], -fixed[1]),
+        ) ?: return this
+        val rotate = transformation(
+            type = "rotate",
+            parameters = doubleArrayOf(angle),
+        ) ?: return this
+        if (translateToOrigin.melt(rotate) is GMResult.Err) {
+            return this
+        }
+        var scale = Double.NaN
+        val scalable =
+            (circle.evalVisProp("scalable") as? Boolean) ?: true
+        if (scalable) {
+            scale =
+                Geometry.distance(fixed, current) /
+                    Geometry.distance(fixed, previous)
+            val scaleTransformation = transformation(
+                type = "scale",
+                parameters = doubleArrayOf(scale, scale),
+            ) ?: return this
+            if (
+                translateToOrigin.melt(scaleTransformation)
+                is GMResult.Err
+            ) {
+                return this
+            }
+        }
+        val translateBack = transformation(
+            type = "translate",
+            parameters = fixed,
+        ) ?: return this
+        if (translateToOrigin.melt(translateBack) is GMResult.Err) {
+            return this
+        }
+        if (
+            circle.center.draggable() &&
+            translateToOrigin.applyOnce(circle.center) is GMResult.Err
+        ) {
+            return this
+        }
+        when (circle.method) {
+            "twoPoints" -> {
+                val point = circle.point2
+                if (
+                    point != null &&
+                    point.draggable() &&
+                    translateToOrigin.applyOnce(point) is GMResult.Err
+                ) {
+                    return this
+                }
+            }
+            "pointRadius" ->
+                circle.scaleStaticRadiusForTwoFinger(scale)
+        }
         update(circle.center)
         circle.highlight(force = true)
         return this
     }
+
+    private fun transformation(
+        type: String,
+        parameters: DoubleArray,
+    ): Transformation? =
+        when (val result = Transformation.create(type, parameters)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> null
+        }
+
+    private fun DoubleArray.squaredLength(): Double =
+        sumOf { it * it }
 
     // JSXGraph 1.13.3: src/base/board.js ->
     // startSelectionMode / stopSelectionMode / _startSelecting /
@@ -1787,11 +2604,43 @@ internal class Board(
         userY: Double,
         element: GeometryElement,
     ): Board {
-        @Suppress("UNUSED_VARIABLE")
-        val upstreamCoordinates = userX to userY
-        updateInfobox(element)
-        infoboxVisible = true
-        return this
+        // JSXGraph 1.13.3: src/3d/view3d.js -> highlightInfobox.
+        val point3D = when (val source = element.evalVisProp("element3d")) {
+            is Point3D -> source
+            else -> element as? Point3D
+        }
+        if (point3D == null) {
+            return highlightCustomInfobox(
+                "(${JsNumberFormat.compact(userX)}, " +
+                    "${JsNumberFormat.compact(userY)})",
+                element,
+            )
+        }
+        val foot = doubleArrayOf(1.0, 0.0, 0.0, point3D.Z())
+        val projected = point3D.view.project2DTo3DPlane(
+            coordinates2D = doubleArrayOf(1.0, userX, userY),
+            normal = doubleArrayOf(1.0, 0.0, 0.0, 1.0),
+            foot = foot,
+        )
+        if (!point3D.view.isInCube(projected)) {
+            return highlightCustomInfobox("", point3D)
+        }
+        val prefix =
+            if (mode == BOARD_MODE_DRAG) {
+                if (point3D.view.isVerticalDrag()) {
+                    "\u21C5 "
+                } else {
+                    "\u21C4 "
+                }
+            } else {
+                ""
+            }
+        val digits = point3D.evalVisProp("infoboxdigits")
+        val values = listOf(point3D.X(), point3D.Y(), point3D.Z())
+            .joinToString(separator = " | ") {
+                formatInfoboxCoordinate(point3D, it, digits)
+            }
+        return highlightCustomInfobox("$prefix($values)", point3D)
     }
 
     internal fun highlightCustomInfobox(
@@ -1803,6 +2652,34 @@ internal class Board(
         infoboxVisible = true
         return this
     }
+
+    private fun formatInfoboxCoordinate(
+        element: GeometryElement,
+        value: Double,
+        digits: Any?,
+    ): String =
+        if (element.useLocale()) {
+            element.formatNumberLocaleText(
+                value,
+                (digits as? Number)?.toInt(),
+            )
+        } else if (digits == null || digits == "auto") {
+            when (val formatted = Type.autoDigits(value)) {
+                is AutoDigitsValue.Formatted -> formatted.value
+                is AutoDigitsValue.Raw ->
+                    JsNumberFormat.compact(formatted.value)
+            }
+        } else {
+            val precision = (digits as? Number)?.toInt()
+            if (precision == null) {
+                JsNumberFormat.compact(value)
+            } else {
+                when (val formatted = Type.toFixed(value, precision)) {
+                    is GMResult.Ok -> formatted.value
+                    is GMResult.Err -> JsNumberFormat.compact(value)
+                }
+            }
+        }
 
     // JSXGraph 1.13.3: src/base/board.js -> updateCSSTransforms.
     // Compose supplies pointer positions in the board's local coordinate
@@ -1832,12 +2709,366 @@ internal class Board(
     // addConditions / updateConditions.
     internal fun addConditions(
         expression: String,
-    ): GMResult<Board, BoardError> =
+    ): GMResult<Board, BoardError> {
+        var remaining = expression
+        var start = remaining.indexOf(CONDITION_OPEN_TAG)
+        if (start < 0) {
+            return GMResult.Ok(this)
+        }
+        val compiled = mutableListOf<BoardCondition>()
+        while (start >= 0) {
+            val end = remaining.indexOf(
+                string = CONDITION_CLOSE_TAG,
+                startIndex = start + CONDITION_OPEN_TAG.length,
+            )
+            if (end < 0) {
+                return GMResult.Err(
+                    BoardError.UnsupportedConditionExpression(expression),
+                )
+            }
+            val term = remaining.substring(
+                startIndex = start + CONDITION_OPEN_TAG.length,
+                endIndex = end,
+            )
+            val assignment = term.indexOf('=')
+            if (assignment <= 0) {
+                return GMResult.Err(
+                    BoardError.UnsupportedConditionExpression(term),
+                )
+            }
+            val left = term.substring(0, assignment)
+            val propertySeparator = left.indexOf('.')
+            if (propertySeparator <= 0) {
+                return GMResult.Err(
+                    BoardError.UnsupportedConditionExpression(term),
+                )
+            }
+            val name = left.substring(0, propertySeparator)
+            val element = elementsByName[Type.unescapeHTML(name)]
+            val propertyName = left
+                .substring(propertySeparator + 1)
+                .filterNot(Char::isWhitespace)
+                .lowercase()
+            val property = conditionProperty(propertyName)
+            if (element != null && property != null) {
+                val source = term.substring(assignment + 1)
+                val function = when (
+                    val result = JessieCodeExpressionFunction.compile(
+                        source = source,
+                        board = this,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return GMResult.Err(
+                        BoardError.ConditionExpressionCompile(
+                            expression = source,
+                            error = result.error,
+                        ),
+                    )
+                }
+                compiled += BoardCondition(
+                    element = element,
+                    property = property,
+                    source = source,
+                    expression = function,
+                )
+            }
+            remaining = remaining.substring(
+                end + CONDITION_CLOSE_TAG.length,
+            )
+            start = remaining.indexOf(CONDITION_OPEN_TAG)
+        }
+        conditions = compiled.toList()
+        return when (val result = updateConditionsResult()) {
+            is GMResult.Ok -> GMResult.Ok(this)
+            is GMResult.Err -> result
+        }
+    }
+
+    internal fun updateConditions(): Boolean =
+        when (updateConditionsResult()) {
+            is GMResult.Ok -> conditions.isNotEmpty()
+            is GMResult.Err -> false
+        }
+
+    internal fun takeConditionError(): BoardError? {
+        val error = conditionError
+        conditionError = null
+        return error
+    }
+
+    private fun updateConditionsResult(): GMResult<Boolean, BoardError> {
+        if (conditions.isEmpty()) {
+            conditionError = null
+            return GMResult.Ok(false)
+        }
+        for (condition in conditions) {
+            val value = when (
+                val result = condition.expression.evaluate(emptyList())
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> {
+                    val error = BoardError.ConditionExpressionEvaluation(
+                        expression = condition.source,
+                        error = result.error,
+                    )
+                    conditionError = error
+                    return GMResult.Err(error)
+                }
+            }
+            when (
+                val result = applyCondition(
+                    condition = condition,
+                    value = value,
+                )
+            ) {
+                is GMResult.Ok -> Unit
+                is GMResult.Err -> {
+                    conditionError = result.error
+                    return result
+                }
+            }
+        }
+        prepareUpdate().updateElements()
+        conditionError = null
+        return GMResult.Ok(true)
+    }
+
+    private fun applyCondition(
+        condition: BoardCondition,
+        value: JessieCodeRuntimeValue,
+    ): GMResult<Unit, BoardError> =
+        when (condition.property) {
+            BoardConditionProperty.X ->
+                xyFun(condition, value, coordinateIndex = 2)
+            BoardConditionProperty.Y ->
+                xyFun(condition, value, coordinateIndex = 1)
+            BoardConditionProperty.VISIBLE ->
+                visFun(condition, value)
+            BoardConditionProperty.STROKE ->
+                colFun(condition, value, prefix = "stroke")
+            BoardConditionProperty.POSITION ->
+                posFun(condition, value)
+            BoardConditionProperty.STYLE ->
+                styleFun(condition, value)
+            BoardConditionProperty.STROKE_WIDTH ->
+                colFun(condition, value, prefix = "strokewidth")
+            BoardConditionProperty.FILL ->
+                colFun(condition, value, prefix = "fill")
+        }
+
+    // JSXGraph 1.13.3: src/base/board.js -> xyFun.
+    private fun xyFun(
+        condition: BoardCondition,
+        value: JessieCodeRuntimeValue,
+        coordinateIndex: Int,
+    ): GMResult<Unit, BoardError> {
+        val element = condition.element as? CoordsElement
+            ?: return invalidConditionValue(
+                condition = condition,
+                expected = "coordinate element",
+                value = value,
+            )
+        val coordinate = conditionNumber(value)
+        val other = element.coords.usrCoords[coordinateIndex]
+        val coordinates =
+            if (coordinateIndex == 2) {
+                doubleArrayOf(coordinate, other)
+            } else {
+                doubleArrayOf(other, coordinate)
+            }
+        element
+            .setPositionDirectly(Const.COORDS_BY_USER, coordinates)
+            .prepareUpdate()
+            .update()
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> visFun.
+    private fun visFun(
+        condition: BoardCondition,
+        value: JessieCodeRuntimeValue,
+    ): GMResult<Unit, BoardError> {
+        condition.element.setAttribute(
+            mapOf("visible" to conditionTruthy(value)),
+        )
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> colFun.
+    private fun colFun(
+        condition: BoardCondition,
+        value: JessieCodeRuntimeValue,
+        prefix: String,
+    ): GMResult<Unit, BoardError> {
+        if (prefix == "strokewidth") {
+            condition.element.setAttribute(
+                mapOf("strokewidth" to conditionNumber(value)),
+            )
+            return GMResult.Ok(Unit)
+        }
+        val color = (value as? JessieCodeRuntimeValue.StringValue)?.value
+            ?: return invalidConditionValue(
+                condition = condition,
+                expected = "color string",
+                value = value,
+            )
+        val split = when (val result = Color.rgba2rgbo(color)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                BoardError.ConditionColor(
+                    property = prefix,
+                    value = color,
+                    error = result.error,
+                ),
+            )
+        }
+        condition.element.setAttribute(
+            mapOf(
+                "${prefix}color" to split.rgb,
+                "${prefix}opacity" to split.opacity,
+            ),
+        )
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> posFun.
+    private fun posFun(
+        condition: BoardCondition,
+        value: JessieCodeRuntimeValue,
+    ): GMResult<Unit, BoardError> {
+        val element = condition.element as? CoordsElement
+            ?: return invalidConditionValue(
+                condition = condition,
+                expected = "coordinate element",
+                value = value,
+            )
+        element.position = conditionNumber(value)
+        return GMResult.Ok(Unit)
+    }
+
+    // JSXGraph 1.13.3: src/base/board.js -> styleFun.
+    private fun styleFun(
+        condition: BoardCondition,
+        value: JessieCodeRuntimeValue,
+    ): GMResult<Unit, BoardError> {
+        val point = condition.element as? Point
+            ?: return invalidConditionValue(
+                condition = condition,
+                expected = "point",
+                value = value,
+            )
+        val number = conditionNumber(value)
+        if (!number.isFinite() || number != number.toInt().toDouble()) {
+            return invalidConditionValue(
+                condition = condition,
+                expected = "integer point style",
+                value = value,
+            )
+        }
+        val style = number.toInt()
+        return when (val result = point.setStyle(style)) {
+            is GMResult.Ok -> GMResult.Ok(Unit)
+            is GMResult.Err -> GMResult.Err(
+                BoardError.ConditionPointStyle(
+                    elementId = point.id,
+                    value = style,
+                    error = result.error,
+                ),
+            )
+        }
+    }
+
+    private fun invalidConditionValue(
+        condition: BoardCondition,
+        expected: String,
+        value: JessieCodeRuntimeValue,
+    ): GMResult.Err<BoardError.InvalidConditionValue> =
         GMResult.Err(
-            BoardError.UnsupportedConditionExpression(expression),
+            BoardError.InvalidConditionValue(
+                property = condition.property.name.lowercase(),
+                expected = expected,
+                actual = conditionValueType(value),
+            ),
         )
 
-    internal fun updateConditions(): Boolean = false
+    private fun conditionProperty(
+        property: String,
+    ): BoardConditionProperty? =
+        when (property) {
+            "x" -> BoardConditionProperty.X
+            "y" -> BoardConditionProperty.Y
+            "visible" -> BoardConditionProperty.VISIBLE
+            "position" -> BoardConditionProperty.POSITION
+            "stroke" -> BoardConditionProperty.STROKE
+            "style" -> BoardConditionProperty.STYLE
+            "strokewidth" -> BoardConditionProperty.STROKE_WIDTH
+            "fill" -> BoardConditionProperty.FILL
+            else -> null
+        }
+
+    private fun conditionNumber(value: JessieCodeRuntimeValue): Double =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue -> value.value
+            is JessieCodeRuntimeValue.BooleanValue ->
+                if (value.value) 1.0 else 0.0
+            is JessieCodeRuntimeValue.StringValue ->
+                if (value.value.trim().isEmpty()) {
+                    0.0
+                } else {
+                    value.value.toDoubleOrNull() ?: Double.NaN
+                }
+            JessieCodeRuntimeValue.NullValue -> 0.0
+            JessieCodeRuntimeValue.UndefinedValue,
+            is JessieCodeRuntimeValue.ArrayValue,
+            is JessieCodeRuntimeValue.ObjectValue,
+            is JessieCodeRuntimeValue.FunctionValue,
+            is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.TransformationReference,
+            is JessieCodeRuntimeValue.CompositionReference,
+            is JessieCodeRuntimeValue.ElementReference,
+            -> Double.NaN
+        }
+
+    private fun conditionTruthy(value: JessieCodeRuntimeValue): Boolean =
+        when (value) {
+            JessieCodeRuntimeValue.NullValue,
+            JessieCodeRuntimeValue.UndefinedValue,
+            -> false
+            is JessieCodeRuntimeValue.BooleanValue -> value.value
+            is JessieCodeRuntimeValue.NumberValue ->
+                value.value != 0.0 && !value.value.isNaN()
+            is JessieCodeRuntimeValue.StringValue ->
+                value.value.isNotEmpty()
+            is JessieCodeRuntimeValue.ArrayValue,
+            is JessieCodeRuntimeValue.ObjectValue,
+            is JessieCodeRuntimeValue.FunctionValue,
+            is JessieCodeRuntimeValue.BoardReference,
+            is JessieCodeRuntimeValue.TransformationReference,
+            is JessieCodeRuntimeValue.CompositionReference,
+            is JessieCodeRuntimeValue.ElementReference,
+            -> true
+        }
+
+    private fun conditionValueType(
+        value: JessieCodeRuntimeValue,
+    ): String =
+        when (value) {
+            is JessieCodeRuntimeValue.NumberValue -> "number"
+            is JessieCodeRuntimeValue.BooleanValue -> "boolean"
+            is JessieCodeRuntimeValue.StringValue -> "string"
+            JessieCodeRuntimeValue.NullValue -> "null"
+            JessieCodeRuntimeValue.UndefinedValue -> "undefined"
+            is JessieCodeRuntimeValue.ArrayValue -> "array"
+            is JessieCodeRuntimeValue.ObjectValue -> "object"
+            is JessieCodeRuntimeValue.FunctionValue -> "function"
+            is JessieCodeRuntimeValue.BoardReference -> "board"
+            is JessieCodeRuntimeValue.TransformationReference ->
+                "transformation"
+            is JessieCodeRuntimeValue.CompositionReference ->
+                "composition"
+            is JessieCodeRuntimeValue.ElementReference -> "element"
+        }
 
     // JSXGraph 1.13.3: src/base/board.js ->
     // _set / setAttribute.
@@ -1874,6 +3105,38 @@ internal class Board(
                 continue
             }
             when (key) {
+                "axis" -> {
+                    val axes = defaultAxes
+                    if (axes != null) {
+                        axes.x.setAttribute(mapOf("visible" to value))
+                        axes.y.setAttribute(mapOf("visible" to value))
+                        _set(key, value)
+                        defaultAxesError = null
+                    } else if (value == true) {
+                        when (val result = createDefaultAxes(this)) {
+                            is GMResult.Ok -> {
+                                defaultAxes = result.value
+                                defaultAxesError = null
+                                _set(key, true)
+                            }
+                            is GMResult.Err ->
+                                defaultAxesError = result.error
+                        }
+                    }
+                }
+                "defaultaxes" -> {
+                    val axes = defaultAxes
+                    val axisAttributes = attributeMap(value)
+                    if (axes != null) {
+                        attributeMap(axisAttributes["x"])
+                            .takeIf { it.isNotEmpty() }
+                            ?.let(axes.x::setAttribute)
+                        attributeMap(axisAttributes["y"])
+                            .takeIf { it.isNotEmpty() }
+                            ?.let(axes.y::setAttribute)
+                        defaultAxesError = null
+                    }
+                }
                 "animationdelay" -> {
                     (value as? Number)?.toDouble()?.let {
                         if (it.isFinite() && it > 0.0) {
@@ -1937,10 +3200,19 @@ internal class Board(
 
     // JSXGraph 1.13.3: src/base/board.js -> dehighlightAll.
     internal fun dehighlightAll(): Board {
-        for (element in highlightedObjects.values.toList()) {
-            element.noHighlight()
+        val stillHighlighted =
+            linkedMapOf<String, GeometryElement>()
+        for ((id, element) in highlightedObjects.toMap()) {
+            if (id in focusObjects) {
+                stillHighlighted[id] = element
+            } else {
+                // Browser JSXGraph guards renderer work with its registered
+                // handler flags. Native hosts call this kernel directly.
+                element.noHighlight()
+            }
         }
         highlightedObjects.clear()
+        highlightedObjects.putAll(stillHighlighted)
         return this
     }
 
@@ -2419,6 +3691,30 @@ internal class Board(
         return this
     }
 
+    internal fun takeAnimationFailure(): BoardAnimationFailure? {
+        for (element in objectsList) {
+            val movementError = when (element) {
+                is Point3D -> element.takeMovementError()
+                is CoordsElement -> element.takeMovementError()
+                else -> null
+            }
+            if (movementError != null) {
+                return BoardAnimationFailure(
+                    elementId = element.id,
+                    reason = movementError.toString(),
+                )
+            }
+            val propertyError = element.takeAnimationError()
+            if (propertyError != null) {
+                return BoardAnimationFailure(
+                    elementId = element.id,
+                    reason = propertyError.toString(),
+                )
+            }
+        }
+        return null
+    }
+
     // JSXGraph 1.13.3: src/base/board.js -> updateCoords.
     internal fun updateCoords(): Board {
         for (element in objectsList) {
@@ -2729,9 +4025,12 @@ internal class Board(
         }
         inUpdate = true
         try {
-            prepareUpdate()
-                .updateElements(draggedElement)
-                .updateRenderer()
+            for (chart in objectsList.filterIsInstance<Chart>()) {
+                chart.prepareDataArrayUpdate()
+            }
+            prepareUpdate().updateElements(draggedElement)
+            updateConditions()
+            updateRenderer()
             trigger(listOf("update"))
             for (dependent in dependentBoards.toList()) {
                 if (dependent !== this) {
@@ -2833,6 +4132,15 @@ internal class Board(
             else -> value
         }
 
+    private fun attributeMap(value: Any?): Map<String, Any?> {
+        val source = value as? Map<*, *> ?: return emptyMap()
+        return source.entries.associateTo(linkedMapOf()) {
+            (key, nestedValue) ->
+            normalizeAttributeKey(key.toString()) to
+                copyAttributeValue(nestedValue)
+        }
+    }
+
     private fun numberArray(value: Any?): DoubleArray? =
         when (value) {
             is DoubleArray -> value.copyOf()
@@ -2853,6 +4161,10 @@ internal class Board(
             defaultCurveMinimum: Double,
             defaultCurveMaximum: Double,
             maxCurvePoints: Int = 10_000,
+            animationScheduler: BoardAnimationScheduler =
+                ImmediateBoardAnimationScheduler,
+            localeNumberFormatter: JsxGraphLocaleNumberFormatter? = null,
+            chartTableProvider: JsxGraphChartTableProvider? = null,
         ): Board {
             var unitX =
                 canvasWidth / (boundingBox[2] - boundingBox[0])
@@ -2889,6 +4201,9 @@ internal class Board(
                 defaultCurveMinimum = defaultCurveMinimum,
                 defaultCurveMaximum = defaultCurveMaximum,
                 maxCurvePoints = maxCurvePoints,
+                animationScheduler = animationScheduler,
+                localeNumberFormatter = localeNumberFormatter,
+                chartTableProvider = chartTableProvider,
             )
         }
 
@@ -2902,17 +4217,20 @@ internal class Board(
         const val BOUNDING_BOX_COORDINATE_COUNT = 4
         const val DEFAULT_ANIMATION_DELAY = 35.0
         const val DEFAULT_ZOOM_FACTOR = 1.25
-        const val DEFAULT_MINIMUM_ZOOM = 0.001
-        const val DEFAULT_MAXIMUM_ZOOM = 100_000.0
+        const val DEFAULT_MINIMUM_ZOOM = 0.0001
+        const val DEFAULT_MAXIMUM_ZOOM = 10_000.0
         const val DEFAULT_MAXIMUM_FRAME_RATE = 40.0
+        const val DEFAULT_KEYBOARD_DELTA = 10.0
         const val MAXIMUM_SNAP_PIXEL_DISTANCE = 25.0
         const val ZOOM_ALL_BORDER_PIXELS = 50.0
         const val USER_LOG_MERGE_WINDOW_MILLISECONDS = 500L
-        const val KEYBOARD_PAN_FRACTION = 0.1
         const val BOARD_MODE_NONE = 0
         const val BOARD_MODE_DRAG = 1
         const val BOARD_MODE_MOVE_ORIGIN = 2
         const val BOARD_MODE_ZOOM = 5
+        private const val MINIMUM_GESTURE_MOVEMENT_SQUARED = 100.0
+        private const val CONDITION_OPEN_TAG = "<data>"
+        private const val CONDITION_CLOSE_TAG = "</data>"
         const val GENERATED_BOARD_ID_PREFIX = "jxgBoard"
 
         private var nextGeneratedBoardId: Long = 1L

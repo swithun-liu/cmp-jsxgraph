@@ -49,6 +49,7 @@ internal sealed interface View3DProjectionSource {
 internal data class View3DAxisNavigationAttributes(
     val pointerEnabled: Boolean = true,
     val pointerSpeed: Double = 1.0,
+    val pointerOutside: Boolean = true,
     val pointerButton: Int = -1,
     val pointerKey: String = "none",
     val keyboardEnabled: Boolean = true,
@@ -61,6 +62,7 @@ internal data class View3DAxisNavigationAttributes(
 
 internal data class View3DTrackballAttributes(
     val enabled: Boolean = false,
+    val pointerOutside: Boolean = true,
     val pointerButton: Int = -1,
     val pointerKey: String = "none",
 )
@@ -75,6 +77,7 @@ internal data class View3DNavigationEvent(
     val key: String? = null,
     val shiftKey: Boolean = false,
     val controlKey: Boolean = false,
+    val insideBoard: Boolean = true,
 )
 
 internal fun interface View3DAzimuthAnimationScheduler {
@@ -116,9 +119,8 @@ internal sealed interface View3DError {
 /**
  * Source-mapped camera and projection kernel of JXG.View3D.
  *
- * Axes, sliders, keyboard/pointer camera navigation, shaders, and depth
- * ordering are separate upstream phases and intentionally remain outside this
- * first lifecycle slice.
+ * Browser event registration and slider widgets stay in host adapters. The
+ * camera, navigation, shader, and depth-order kernels remain portable here.
  */
 internal class View3D private constructor(
     board: Board,
@@ -139,8 +141,8 @@ internal class View3D private constructor(
     private val bankNavigation: View3DAxisNavigationAttributes,
     private val trackballAttributes: View3DTrackballAttributes,
     private val storedViews: List<DoubleArray>,
-    private val depthOrderEnabled: Boolean,
-    private val depthOrderLayers: IntArray,
+    internal val depthOrderEnabled: Boolean,
+    internal val depthOrderLayers: IntArray,
     private val azimuthAnimationScheduler:
         View3DAzimuthAnimationScheduler?,
     id: String,
@@ -223,6 +225,28 @@ internal class View3D private constructor(
     )
     internal var evaluationError: View3DError? = null
         private set
+
+    internal val pointerNavigationEnabled: Boolean
+        get() =
+            trackballAttributes.enabled ||
+                azimuthNavigation.pointerEnabled ||
+                elevationNavigation.pointerEnabled ||
+                bankNavigation.pointerEnabled
+
+    internal val keyboardNavigationEnabled: Boolean
+        get() =
+            azimuthNavigation.keyboardEnabled ||
+                elevationNavigation.keyboardEnabled ||
+                bankNavigation.keyboardEnabled ||
+                storedViews.isNotEmpty()
+
+    internal val pointerNavigationActive: Boolean
+        get() =
+            hasMoveAzimuthElevation ||
+                hasMoveAzimuth ||
+                hasMoveElevation ||
+                hasMoveBank ||
+                hasMoveTrackball
 
     init {
         elType = VIEW_3D_ELEMENT_TYPE
@@ -1642,6 +1666,101 @@ internal class View3D private constructor(
         return this
     }
 
+    // JSXGraph: src/3d/view3d.js -> pointermove handlers registered by
+    // pointerDownHandler.
+    internal fun pointerMoveHandler(
+        event: View3DNavigationEvent,
+    ): Boolean {
+        if (
+            hasMoveTrackball &&
+            (trackballAttributes.pointerOutside || event.insideBoard)
+        ) {
+            trackballHandler(event)
+            return true
+        }
+        if (
+            hasMoveAzimuthElevation &&
+            (azimuthNavigation.pointerOutside || event.insideBoard)
+        ) {
+            azimuthElevationEventHandler(event)
+            return true
+        }
+        var handled = false
+        if (
+            hasMoveAzimuth &&
+            (azimuthNavigation.pointerOutside || event.insideBoard)
+        ) {
+            azimuthEventHandler(event)
+            handled = true
+        }
+        if (
+            hasMoveElevation &&
+            (elevationNavigation.pointerOutside || event.insideBoard)
+        ) {
+            elevationEventHandler(event)
+            handled = true
+        }
+        return handled
+    }
+
+    // JSXGraph: src/3d/view3d.js -> wheel listener registered by
+    // pointerDownHandler.
+    internal fun wheelHandler(
+        event: View3DNavigationEvent,
+    ): Boolean {
+        if (
+            !hasMoveBank ||
+            (!bankNavigation.pointerOutside && !event.insideBoard)
+        ) {
+            return false
+        }
+        bankEventHandler(event)
+        return true
+    }
+
+    // JSXGraph: src/3d/view3d.js -> createView3D keydown listener.
+    internal fun keyDownHandler(
+        event: View3DNavigationEvent,
+    ): Boolean {
+        val key = event.key ?: return false
+        var handled = false
+        if (
+            elevationNavigation.keyboardEnabled &&
+            key in setOf("ArrowUp", "ArrowDown") &&
+            modifierMatches(event, elevationNavigation.keyboardKey)
+        ) {
+            elevationEventHandler(event)
+            handled = true
+        }
+        if (
+            azimuthNavigation.keyboardEnabled &&
+            key in setOf("ArrowLeft", "ArrowRight") &&
+            modifierMatches(event, azimuthNavigation.keyboardKey)
+        ) {
+            azimuthEventHandler(event)
+            handled = true
+        }
+        if (
+            bankNavigation.keyboardEnabled &&
+            key in setOf(",", "<", ".", ">") &&
+            modifierMatches(event, bankNavigation.keyboardKey)
+        ) {
+            bankEventHandler(event)
+            handled = true
+        }
+        when (key) {
+            "PageUp" -> {
+                nextView()
+                handled = true
+            }
+            "PageDown" -> {
+                previousView()
+                handled = true
+            }
+        }
+        return handled
+    }
+
     // JSXGraph: src/3d/view3d.js -> pointerDownHandler.
     internal fun pointerDownHandler(
         event: View3DNavigationEvent,
@@ -1651,19 +1770,24 @@ internal class View3D private constructor(
         hasMoveElevation = false
         hasMoveBank = false
         hasMoveTrackball = false
+        if (board.mode != Board.BOARD_MODE_NONE) {
+            navigationActive = false
+            return this
+        }
         navigationActive = true
         lastPointerX = event.screenX
         lastPointerY = event.screenY
 
-        if (
-            trackballEnabled &&
-            eventMatches(
-                event,
-                trackballAttributes.pointerButton,
-                trackballAttributes.pointerKey,
-            )
-        ) {
-            hasMoveTrackball = true
+        if (trackballEnabled) {
+            if (
+                eventMatches(
+                    event,
+                    trackballAttributes.pointerButton,
+                    trackballAttributes.pointerKey,
+                )
+            ) {
+                hasMoveTrackball = true
+            }
             return this
         }
         if (
@@ -1673,6 +1797,8 @@ internal class View3D private constructor(
             elevationNavigation.pointerButton &&
             azimuthNavigation.pointerKey ==
             elevationNavigation.pointerKey &&
+            azimuthNavigation.pointerOutside ==
+            elevationNavigation.pointerOutside &&
             eventMatches(
                 event,
                 azimuthNavigation.pointerButton,
@@ -1845,6 +1971,20 @@ internal class View3D private constructor(
                         event.controlKey
                     )
         return buttonMatches && keyMatches
+    }
+
+    private fun modifierMatches(
+        event: View3DNavigationEvent,
+        neededKey: String,
+    ): Boolean {
+        val normalizedKey = neededKey.lowercase()
+        return normalizedKey == "none" ||
+            ("shift" in normalizedKey && event.shiftKey) ||
+            (
+                ("ctrl" in normalizedKey ||
+                    "control" in normalizedKey) &&
+                    event.controlKey
+                )
     }
 
     private fun isVisible(element: GeometryElement?): Boolean =
@@ -2025,6 +2165,8 @@ internal class View3D private constructor(
                 Double.NaN,
             )
 
+        // JSXGraph 1.13.3: src/3d/view3d.js ->
+        // updateAngleSliderBounds closure el_interval_loss.
         private fun intervalLoss(
             value: Double,
             minimum: Double,

@@ -747,6 +747,86 @@ class JsxGraphEngine3DTest {
     }
 
     @Test
+    fun lineHostedPoint3DSessionProjectsAndClampsDrag() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(LINE_GLIDER_SOURCE),
+        ).value
+        val initialState = session.captureInteractionState()
+        val initial = assertIs<JsxGraphSceneElement.Point>(
+            session.scene.elements.single { it.id == "glider" },
+        )
+
+        assertPoint(
+            expectedX = -2.066348496841048,
+            expectedY = -4.017821966498767,
+            actual = initial.coordinates,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "glider",
+                coordinates = JsxGraphPoint2D(-0.25, 0.75),
+            ),
+        ).value
+
+        assertPoint(
+            expectedX = -1.4866885851666471,
+            expectedY = -0.5980274110263457,
+            actual = assertIs<JsxGraphSceneElement.Point>(
+                moved.elements.single { it.id == "glider" },
+            ).coordinates,
+        )
+
+        val restored = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.restoreInteractionState(initialState),
+        ).value
+        assertPoint(
+            expectedX = -2.066348496841048,
+            expectedY = -4.017821966498767,
+            actual = assertIs<JsxGraphSceneElement.Point>(
+                restored.elements.single { it.id == "glider" },
+            ).coordinates,
+        )
+    }
+
+    @Test
+    fun sphereHostedPoint3DSessionUsesGeneric3DSlide() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(SPHERE_GLIDER_SOURCE),
+        ).value
+        val initial = assertIs<JsxGraphSceneElement.Point>(
+            session.scene.elements.single { it.id == "glider" },
+        )
+
+        assertPoint(
+            expectedX = -1.4886625883648112,
+            expectedY = -1.1148642540484788,
+            actual = initial.coordinates,
+        )
+
+        val moved = assertIs<GMResult.Ok<JsxGraphScene>>(
+            session.movePoint(
+                id = "glider",
+                coordinates = JsxGraphPoint2D(-0.25, 0.75),
+            ),
+        ).value
+
+        val movedCoordinates = assertIs<JsxGraphSceneElement.Point>(
+            moved.elements.single { it.id == "glider" },
+        ).coordinates
+        assertEquals(
+            -0.8790135817071122,
+            movedCoordinates.x,
+            2.0e-7,
+        )
+        assertEquals(
+            -0.509830661143204,
+            movedCoordinates.y,
+            2.0e-7,
+        )
+    }
+
+    @Test
     fun defaultCenterAxesExpandHiddenOfficialOrigin() {
         val result = JsxGraphEngine.parse(
             """
@@ -1043,6 +1123,329 @@ class JsxGraphEngine3DTest {
         assertTrue(error.reason.contains("InvalidAttributeType"))
     }
 
+    @Test
+    fun documentAppliesView3DDepthOrderToCanvasScene() {
+        val scene = assertIs<GMResult.Ok<JsxGraphScene>>(
+            JsxGraphEngine.parse(
+                """
+                {
+                  "boundingBox": [-5, 4, 5, -4],
+                  "objects": [
+                    {
+                      "id": "view",
+                      "type": "view3d",
+                      "parents": [
+                        [-4, -3],
+                        [8, 6],
+                        [[-5, 5], [-5, 5], [-5, 5]]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "projection": "parallel",
+                        "az": {
+                          "slider": {
+                            "start": 1.5707963267948966
+                          }
+                        },
+                        "el": {"slider": {"start": 0}},
+                        "depthOrder": {
+                          "enabled": true,
+                          "layers": [12, 13]
+                        },
+                        $HIDDEN_DEFAULT_AXES_JSON
+                      }
+                    },
+                    {
+                      "id": "near",
+                      "type": "point3d",
+                      "parents": ["view", 2, 0, 0],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "layer": 12
+                      }
+                    },
+                    {
+                      "id": "ordinary",
+                      "type": "point",
+                      "parents": [0, 0],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "layer": 12
+                      }
+                    },
+                    {
+                      "id": "far",
+                      "type": "point3d",
+                      "parents": ["view", -2, 0, 0],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "layer": 12
+                      }
+                    },
+                    {
+                      "id": "upperLayer",
+                      "type": "point3d",
+                      "parents": ["view", -4, 0, 0],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "layer": 13
+                      }
+                    },
+                    {
+                      "id": "middle",
+                      "type": "point3d",
+                      "parents": ["view", 0, 0, 0],
+                      "attributes": {
+                        "name": "",
+                        "withLabel": false,
+                        "layer": 12
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+
+        val targetIds = setOf(
+            "far",
+            "middle",
+            "near",
+            "ordinary",
+            "upperLayer",
+        )
+        assertEquals(
+            listOf("far", "middle", "near", "ordinary", "upperLayer"),
+            scene.elements.map(JsxGraphSceneElement::id)
+                .filter(targetIds::contains),
+        )
+    }
+
+    @Test
+    fun publicSessionRoutesView3DCameraControlsWithOfficialValues() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                """
+                {
+                  "boundingBox": [-5, 4, 5, -4],
+                  "objects": [
+                    {
+                      "id": "view",
+                      "type": "view3d",
+                      "parents": [
+                        [-4, -3],
+                        [8, 6],
+                        [[-5, 5], [-5, 5], [-5, 5]]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "az": {"slider": {"start": 1.2}},
+                        "el": {"slider": {"start": 0.7}},
+                        "bank": {"slider": {"start": 0}},
+                        $HIDDEN_DEFAULT_AXES_JSON
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+        val viewport = JsxGraphViewportSize(500.0, 400.0)
+
+        assertEquals(
+            JsxGraphPoint2D(-4.0, -3.0),
+            session.scene.views3D.single().lowerLeftCorner,
+        )
+        assertTrue(
+            assertIs<GMResult.Ok<JsxGraphView3DInteractionResult>>(
+                session.interactView3D(
+                    JsxGraphView3DInteraction.KeyDown(
+                        viewId = "view",
+                        key = JsxGraphView3DKey.ARROW_RIGHT,
+                        controlKey = true,
+                    ),
+                ),
+            ).value.consumed,
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.KeyDown(
+                viewId = "view",
+                key = JsxGraphView3DKey.ARROW_UP,
+                controlKey = true,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.KeyDown(
+                viewId = "view",
+                key = JsxGraphView3DKey.GREATER_THAN,
+                controlKey = true,
+            ),
+        )
+        assertView3DAngles(
+            view = session.scene.views3D.single(),
+            azimuth = 1.374532925199433,
+            elevation = 0.525467074800567,
+            bank = 0.1745329251994332,
+        )
+
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerDown(
+                viewId = "view",
+                position = JsxGraphPoint2D(-3.0, 2.0),
+                viewportSize = viewport,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerMove(
+                viewId = "view",
+                position = JsxGraphPoint2D(-2.0, 1.6),
+                viewportSize = viewport,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerUp("view"),
+        )
+        assertView3DAngles(
+            view = session.scene.views3D.single(),
+            azimuth = 2.0028514559173916,
+            elevation = 0.7767944870877505,
+            bank = 0.1745329251994332,
+        )
+
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerDown(
+                viewId = "view",
+                position = JsxGraphPoint2D(-2.0, 1.6),
+                viewportSize = viewport,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.Wheel(
+                viewId = "view",
+                position = JsxGraphPoint2D(-2.0, 1.6),
+                viewportSize = viewport,
+                deltaY = 25.0,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerUp("view"),
+        )
+        assertView3DAngles(
+            view = session.scene.views3D.single(),
+            azimuth = 2.0028514559173916,
+            elevation = 0.7767944870877505,
+            bank = 0.20594885173533095,
+        )
+    }
+
+    @Test
+    fun publicSessionRoutesTrackballAndRejectsInvalidViewport() {
+        val session = assertIs<GMResult.Ok<JsxGraphSession>>(
+            JsxGraphEngine.createSession(
+                """
+                {
+                  "boundingBox": [-5, 4, 5, -4],
+                  "objects": [
+                    {
+                      "id": "view",
+                      "type": "view3d",
+                      "parents": [
+                        [-4, -3],
+                        [8, 6],
+                        [[-5, 5], [-5, 5], [-5, 5]]
+                      ],
+                      "attributes": {
+                        "name": "",
+                        "trackball": {"enabled": true},
+                        $HIDDEN_DEFAULT_AXES_JSON
+                      }
+                    }
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        ).value
+        val viewport = JsxGraphViewportSize(500.0, 400.0)
+
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerDown(
+                viewId = "view",
+                position = JsxGraphPoint2D(-3.0, 2.0),
+                viewportSize = viewport,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerMove(
+                viewId = "view",
+                position = JsxGraphPoint2D(-2.4, 1.7),
+                viewportSize = viewport,
+            ),
+        )
+        session.interactView3D(
+            JsxGraphView3DInteraction.PointerUp("view"),
+        )
+        assertView3DAngles(
+            view = session.scene.views3D.single(),
+            azimuth = 1.2071850704924463,
+            elevation = 0.4024113197793909,
+            bank = 0.09787457829086581,
+        )
+
+        assertIs<
+            GMResult.Err<
+                JsxGraphInteractionError.InvalidView3DViewport,
+                >
+            >(
+            session.interactView3D(
+                JsxGraphView3DInteraction.PointerDown(
+                    viewId = "view",
+                    position = JsxGraphPoint2D(0.0, 0.0),
+                    viewportSize = JsxGraphViewportSize(0.0, 400.0),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun malformedView3DDepthLayersReturnStructuredError() {
+        val result = JsxGraphEngine.parse(
+            """
+            {
+              "boundingBox": [-5, 4, 5, -4],
+              "objects": [
+                {
+                  "id": "view",
+                  "type": "view3d",
+                  "parents": [
+                    [-4, -3],
+                    [8, 6],
+                    [[-5, 5], [-5, 5], [-5, 5]]
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "depthOrder": {
+                      "enabled": true,
+                      "layers": [12, 12.5]
+                    },
+                    $HIDDEN_DEFAULT_AXES_JSON
+                  }
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        val error = assertIs<
+            GMResult.Err<JsxGraphDocumentError.ElementCreation>
+            >(result).error
+        assertEquals("view3d", error.type)
+        assertTrue(error.reason.contains("depthorder.layers[1]"))
+    }
+
     private fun assertPoint(
         expectedX: Double,
         expectedY: Double,
@@ -1050,6 +1453,17 @@ class JsxGraphEngine3DTest {
     ) {
         assertEquals(expectedX, actual.x, TOLERANCE)
         assertEquals(expectedY, actual.y, TOLERANCE)
+    }
+
+    private fun assertView3DAngles(
+        view: JsxGraphView3D,
+        azimuth: Double,
+        elevation: Double,
+        bank: Double,
+    ) {
+        assertEquals(azimuth, view.azimuth, TOLERANCE)
+        assertEquals(elevation, view.elevation, TOLERANCE)
+        assertEquals(bank, view.bank, TOLERANCE)
     }
 
     private companion object {
@@ -1241,6 +1655,94 @@ class JsxGraphEngine3DTest {
                     "withLabel": false,
                     "fixed": true
                   }
+                }
+              ]
+            }
+            """.trimIndent()
+
+        val LINE_GLIDER_SOURCE =
+            """
+            {
+              "boundingBox": [-8, 8, 8, -8],
+              "objects": [
+                {
+                  "id": "view",
+                  "type": "view3d",
+                  "parents": [
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "projection": "parallel",
+                    "az": {"slider": {"start": 1}},
+                    "el": {"slider": {"start": 0.3}},
+                    "bank": {"slider": {"start": 0}},
+                    $HIDDEN_DEFAULT_AXES_JSON
+                  }
+                },
+                {
+                  "id": "anchor",
+                  "type": "point3d",
+                  "parents": ["view", 0, 0, 0],
+                  "attributes": {"name": "", "withLabel": false}
+                },
+                {
+                  "id": "host",
+                  "type": "line3d",
+                  "parents": ["view", "anchor", [2, 1, -1], [-1, 2]],
+                  "attributes": {"name": "", "withLabel": false}
+                },
+                {
+                  "id": "glider",
+                  "type": "point3d",
+                  "parents": ["view", 4, 5, 2, "host"],
+                  "attributes": {"name": "", "withLabel": false}
+                }
+              ]
+            }
+            """.trimIndent()
+
+        val SPHERE_GLIDER_SOURCE =
+            """
+            {
+              "boundingBox": [-8, 8, 8, -8],
+              "objects": [
+                {
+                  "id": "view",
+                  "type": "view3d",
+                  "parents": [
+                    [-5, -4],
+                    [8, 7],
+                    [[-5, 5], [-4, 6], [-3, 7]]
+                  ],
+                  "attributes": {
+                    "name": "",
+                    "projection": "parallel",
+                    "az": {"slider": {"start": 1}},
+                    "el": {"slider": {"start": 0.3}},
+                    "bank": {"slider": {"start": 0}},
+                    $HIDDEN_DEFAULT_AXES_JSON
+                  }
+                },
+                {
+                  "id": "center",
+                  "type": "point3d",
+                  "parents": ["view", 0, 0, 0],
+                  "attributes": {"name": "", "withLabel": false}
+                },
+                {
+                  "id": "sphere",
+                  "type": "sphere3d",
+                  "parents": ["view", "center", 2],
+                  "attributes": {"name": ""}
+                },
+                {
+                  "id": "glider",
+                  "type": "point3d",
+                  "parents": ["view", 1.4, 1.4, 0.2, "sphere"],
+                  "attributes": {"name": "", "withLabel": false}
                 }
               ]
             }

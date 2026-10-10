@@ -1,0 +1,1161 @@
+{
+  "schemaVersion": 1,
+  "assessedAt": "2026-10-09",
+  "targetPercent": 90,
+  "upstream": {
+    "version": "1.13.3",
+    "tag": "RELEASE-v1.13.3",
+    "commit": "7c2176d479ae256cb9d38265bce81fa18709d01f"
+  },
+  "methodology": {
+    "denominator": "Weighted user-visible behavior families that can be implemented in pure Kotlin Multiplatform and Compose Canvas.",
+    "formula": "For each capability, verified behavior count divided by behavior count, multiplied by capability weight. The total is normalized to 100 percent.",
+    "verified": "Source-mapped implementation with repository test evidence. Rendered behavior also cites the shared visual corpus.",
+    "implemented": "Code exists, but the behavior lacks focused official or lifecycle evidence and receives no score.",
+    "pending": "The portable behavior is not implemented and receives no score.",
+    "excluded": "The assessed behavior requires a browser, DOM, non-Compose renderer, excluded license branch, or explicitly out-of-scope upstream module. It is reported but removed from the portable denominator.",
+    "nonClaims": [
+      "This score is not source-symbol mapping coverage.",
+      "This score is not Stable release qualification.",
+      "This score does not claim browser DOM or non-Compose renderer compatibility."
+    ]
+  },
+  "exclusions": [
+    {
+      "scope": "src/unused/",
+      "reason": "Upstream unused modules, including symbolic.js, are outside the project scope."
+    },
+    {
+      "scope": "src/renderer/vml.js",
+      "reason": "The legacy Internet Explorer VML backend is not applicable to Compose Canvas."
+    },
+    {
+      "scope": "src/math/numerics.js#glomin",
+      "reason": "The embedded implementation is LGPL-derived and excluded by the MIT-only policy."
+    },
+    {
+      "scope": "Browser DOM and global-window lifecycle",
+      "reason": "DOM nodes, WebView, browser globals, renderer probing, XMLHttpRequest, fullscreen, and native browser event plumbing are host-specific rather than portable behavior."
+    },
+    {
+      "scope": "Non-Canvas browser renderer backends",
+      "reason": "The production backend is Compose Canvas; renderer-independent geometry and style semantics remain in scope."
+    },
+    {
+      "scope": "Browser math-typesetting engines and exact browser text layout",
+      "reason": "MathJax, KaTeX, ASCIIMathML, HTML metrics, CSS layout, and exact DOM glyph placement require the excluded browser host; portable plain-text and supported super/subscript semantics remain in scope and are verified separately."
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "foundation-math",
+      "category": "foundation",
+      "title": "Constants, coordinates, arithmetic, probability, and statistics",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/constants.js",
+          "third_party/jsxgraph-src/src/base/coords.js",
+          "third_party/jsxgraph-src/src/math/math.js",
+          "third_party/jsxgraph-src/src/math/complex.js",
+          "third_party/jsxgraph-src/src/math/probfuncs.js",
+          "third_party/jsxgraph-src/src/math/statistics.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Const.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Coords.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Mat.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardViewportTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/NumericsTest.kt"
+        ],
+        "fixtures": [],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "constants", "status": "verified", "note": "Coordinate and object constants match the upstream baseline."},
+        {"id": "user-screen-coordinates", "status": "verified", "note": "Homogeneous user and screen coordinate conversion is covered."},
+        {"id": "distance-and-normalization", "status": "verified", "note": "Coordinate distance and normalization semantics are covered."},
+        {"id": "matrix-vector", "status": "verified", "note": "Portable matrix and vector operations are covered."},
+        {"id": "complex", "status": "verified", "note": "Complex arithmetic is translated."},
+        {"id": "probability", "status": "verified", "note": "Probability functions are translated."},
+        {"id": "statistics", "status": "verified", "note": "Statistics functions are translated."},
+        {"id": "javascript-number-semantics", "status": "verified", "note": "NaN and infinity propagation remains source-compatible."},
+        {"id": "viewport-units", "status": "verified", "note": "Board origin and unit conversion are covered."},
+        {"id": "portable-error-contract", "status": "verified", "note": "Expected boundary failures use structured results."}
+      ]
+    },
+    {
+      "id": "numerics",
+      "category": "foundation",
+      "title": "Numerical analysis and interpolation",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/math/numerics.js",
+          "third_party/jsxgraph-src/src/math/extrapolate.js",
+          "third_party/jsxgraph-src/src/math/nlp.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Numerics.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Extrapolate.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Nlp.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/NumericsTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/NumericsInterpolationTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/NumericsCurveNewtonTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/extrapolate.mjs",
+          "tools/upstream-fixtures/nlp-parametric.mjs",
+          "tools/upstream-fixtures/polynomial-roots.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "linear-algebra", "status": "verified", "note": "Linear systems and matrix helpers are covered."},
+        {"id": "polynomial-evaluation", "status": "verified", "note": "Real and complex polynomial roots, degree truncation, zero roots, and reciprocal Horner evaluation are covered against the official runtime."},
+        {"id": "interpolation", "status": "verified", "note": "Neville, Lagrange, polynomial, and regression interpolation is covered."},
+        {"id": "splines", "status": "verified", "note": "Cardinal, Catmull-Rom, Bezier, B-spline, and natural cubic behavior is covered."},
+        {"id": "integration", "status": "verified", "note": "Newton-Cotes, Romberg, Gauss, QAG, and Riemann behavior is covered."},
+        {"id": "derivatives", "status": "verified", "note": "Numerical derivatives are covered."},
+        {"id": "root-finding", "status": "verified", "note": "Scalar, multidimensional, polynomial, and curve roots are covered."},
+        {"id": "minimization", "status": "verified", "note": "Brent and COBYLA minimization is covered."},
+        {"id": "ode", "status": "verified", "note": "Runge-Kutta solvers are covered."},
+        {"id": "simplification-extrapolation", "status": "verified", "note": "RDP, Visvalingam, and sequence extrapolation are covered."}
+      ]
+    },
+    {
+      "id": "geometry-kernel",
+      "category": "foundation",
+      "title": "Portable 2D and 3D geometry algorithms",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/math/geometry.js",
+          "third_party/jsxgraph-src/src/math/clip.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Geometry.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Clip.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/BooleanClip.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryIntersectionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/Geometry3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryBezierTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryCurveProjectionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryContinuousCurveProjectionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryProjectionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/GeometryReuleauxTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/IntersectionTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/intersection-curves-paths.mjs",
+          "tools/upstream-fixtures/geometry-viewport-projection.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "angles-distance-orientation", "status": "verified", "note": "Core angle, distance, ratio, and orientation behavior is covered."},
+        {"id": "reflections-rotations-centers", "status": "verified", "note": "Reflection, rotation, perpendicular, and center constructions are covered."},
+        {"id": "polygon-geometry", "status": "verified", "note": "Area, sorting, convexity, hull, and containment are covered."},
+        {"id": "line-circle-intersections", "status": "verified", "note": "Analytic standard-form intersections are covered."},
+        {"id": "curve-intersections", "status": "verified", "note": "Discrete and continuous Curve intersections are covered."},
+        {"id": "bezier-geometry", "status": "verified", "note": "Cubic evaluation, bounds, overlap, splitting, and subdivision are covered."},
+        {"id": "path-clipping", "status": "verified", "note": "Path extraction and path intersections are covered."},
+        {"id": "projections", "status": "verified", "note": "Point projection to supported geometry is covered."},
+        {"id": "pure-3d", "status": "verified", "note": "Plane, sphere, and shared 3D projection helpers are covered."},
+        {"id": "remaining-specialized-helpers", "status": "verified", "note": "Intersection dispatch, Newton objectives/Jacobian, continuous and Bezier projection objectives, world/screen COBYLA objectives, and Reuleaux coordinate closures have source-specific mappings plus official numerical evidence."}
+      ]
+    },
+    {
+      "id": "portable-utilities",
+      "category": "foundation",
+      "title": "Encoding, archive, XML, color, type, and environment utilities",
+      "weight": 3,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/utils/type.js",
+          "third_party/jsxgraph-src/src/utils/color.js",
+          "third_party/jsxgraph-src/src/utils/xml.js",
+          "third_party/jsxgraph-src/src/utils/zip.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/utils/Type.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/utils/Color.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/utils/Xml.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/utils/Unzip.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/utils/TypeTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/utils/ColorTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/type-utils.mjs",
+          "tools/upstream-fixtures/color.mjs",
+          "tools/upstream-fixtures/xml.mjs",
+          "tools/upstream-fixtures/zip-compressor.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "type-copy-merge", "status": "verified", "note": "Type predicates, copy, merge, and attribute inheritance are covered."},
+        {"id": "number-string-format", "status": "verified", "note": "Portable number and string helpers are covered."},
+        {"id": "color", "status": "verified", "note": "Pure color parsing and transforms are covered."},
+        {"id": "utf8-base64", "status": "verified", "note": "UTF-8 and Base64 behavior is covered."},
+        {"id": "zip-deflate", "status": "verified", "note": "ZIP, GZIP, zlib, and DEFLATE decoding is covered."},
+        {"id": "xml", "status": "verified", "note": "Bounded DOM-shaped XML parsing is covered."},
+        {"id": "uuid", "status": "verified", "note": "Injectable pooled-random UUID behavior is covered."},
+        {"id": "event-emitter", "status": "verified", "note": "Portable event emitter behavior is covered."},
+        {"id": "environment-kernel", "status": "verified", "note": "Portable event and CSS transform normalization is covered."},
+        {"id": "bounded-failures", "status": "verified", "note": "Malformed utility input returns structured failures."}
+      ]
+    },
+    {
+      "id": "board-lifecycle",
+      "category": "model",
+      "title": "Board registry, naming, update, and removal lifecycle",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/board.js",
+          "third_party/jsxgraph-src/src/jsxgraph.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Board.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardElementLifecycleTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardObjectRemovalTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardNameSelectionTest.kt"
+        ],
+        "fixtures": [],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "id-registration", "status": "verified", "note": "ID registration and duplicate rejection are covered."},
+        {"id": "name-registration", "status": "verified", "note": "Name registration and selection are covered."},
+        {"id": "automatic-names", "status": "verified", "note": "Automatic element naming is covered."},
+        {"id": "creation-order", "status": "verified", "note": "Object creation order is retained."},
+        {"id": "dependency-update", "status": "verified", "note": "Dependency-driven prepare/update lifecycle is covered."},
+        {"id": "suspend-full-update", "status": "verified", "note": "Full and suspended update behavior is covered."},
+        {"id": "recursive-removal", "status": "verified", "note": "Owned-child removal and position reindexing are covered."},
+        {"id": "selection", "status": "verified", "note": "ID, name, and object selection is covered."},
+        {"id": "board-registry", "status": "verified", "note": "Portable board ownership is covered without browser globals."},
+        {"id": "complete-board-api", "status": "verified", "note": "All 198 upstream Board prototype methods are source-mapped to Kotlin names or four explicit pure-KMP ownership adaptations; official viewport/navigation fixtures and focused lifecycle, pointer, gesture, selection, resize, event, animation, migration, removal, infobox, fullscreen-host, and roulette tests cover the portable behavior while browser DOM plumbing remains excluded."}
+      ]
+    },
+    {
+      "id": "element-model",
+      "category": "model",
+      "title": "GeometryElement and CoordsElement APIs",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/element.js",
+          "third_party/jsxgraph-src/src/base/coordselement.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/GeometryElement.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/CoordsElement.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/CoreGeometryElementRuntime.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardElementLifecycleTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/CoordsElementTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/HostDrivenBoardAnimationSchedulerTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphAnimationSessionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeElementMethodMapTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/coords-attractor-animation.mjs",
+          "tools/upstream-fixtures/jessiecode-method-map.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "identity-type-name", "status": "verified", "note": "Identity, type, and name mutation are covered."},
+        {"id": "parents-children", "status": "verified", "note": "Direct parent and child relationships are covered."},
+        {"id": "ancestors-descendants", "status": "verified", "note": "Transitive dependency relationships are covered."},
+        {"id": "visibility-update-remove", "status": "verified", "note": "Base visibility, update, render, and removal lifecycle is covered."},
+        {"id": "coordinate-access", "status": "verified", "note": "X, Y, Z, Coords, and distance accessors are covered."},
+        {"id": "move", "status": "verified", "note": "Immediate move and moveTo behavior is covered."},
+        {"id": "constraints", "status": "verified", "note": "String and function coordinate constraints are covered."},
+        {"id": "transforms", "status": "verified", "note": "Persistent transform attachment and preimage updates are covered."},
+        {"id": "attractors", "status": "verified", "note": "Point, Line/Segment, Circle, ordinary Curve, Arc/Sector, and Polygon attractor projection, dynamic Glider binding, parent updates, and snatch-distance detaching match the official fixture; the nominal Turtle branch remains unreachable through public JSXGraph 1.13.3 creation."},
+        {"id": "animation", "status": "verified", "note": "Array- and function-path moveAlong, moveTo/visit easing and callbacks, property animation, and bounded Line/Circle/Curve Glider stepping are source-mapped and fixture-backed; production sessions expose host-driven frame advancement and Compose supplies its frame clock."}
+      ]
+    },
+    {
+      "id": "transformations",
+      "category": "model",
+      "title": "2D and 3D transformations",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/transformation.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Transformation.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/TransformationTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/Transformation3DTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/transformation-lifecycle.mjs",
+          "tools/upstream-fixtures/transformation-3d.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "2d-forms", "status": "verified", "note": "Translate, scale, reflect, rotate, shear, affine, generic, and matrix forms are covered."},
+        {"id": "dynamic-parameters", "status": "verified", "note": "Number, JessieCode, and function-valued parameters are covered."},
+        {"id": "point-line-centers", "status": "verified", "note": "Live Point and Line transformation parameters are covered."},
+        {"id": "update-apply", "status": "verified", "note": "Update, apply, and applyOnce are covered."},
+        {"id": "clone-melt", "status": "verified", "note": "Static clone and left-multiplying melt are covered."},
+        {"id": "binding", "status": "verified", "note": "bindTo and transform removal are covered."},
+        {"id": "3d-forms", "status": "verified", "note": "The upstream 4x4 transformation forms are covered."},
+        {"id": "point3d-binding", "status": "verified", "note": "Point3D transform binding and applyOnce are covered."},
+        {"id": "upstream-generic-defect", "status": "verified", "note": "The observed generic evaluator defect is represented structurally."},
+        {"id": "dynamic-meltto", "status": "verified", "note": "The official fixture records the upstream null clone and subsequent TypeError; Kotlin atomically returns DynamicMeltUnsupported while preserving dynamic bindTo."}
+      ]
+    },
+    {
+      "id": "core-2d-elements",
+      "category": "geometry-2d",
+      "title": "Point, Line, Segment, Arrow, Circle, and Text",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/point.js",
+          "third_party/jsxgraph-src/src/base/line.js",
+          "third_party/jsxgraph-src/src/base/circle.js",
+          "third_party/jsxgraph-src/src/base/text.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Point.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Line.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Circle.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Text.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphEngineTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/TextTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/segment-fixed-length.mjs",
+          "tools/upstream-fixtures/point-function-coordinates.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "free-point", "status": "verified", "note": "Numeric and constrained Point construction is covered."},
+        {"id": "point-incidence", "status": "verified", "note": "Point isOn behavior for translated hosts is covered."},
+        {"id": "line", "status": "verified", "note": "Line construction, standard form, and parameterization are covered."},
+        {"id": "segment", "status": "verified", "note": "Finite and dynamic fixed-length Segment behavior is covered."},
+        {"id": "arrow", "status": "verified", "note": "Arrow identity and endpoint flags are covered."},
+        {"id": "circle-parent-forms", "status": "verified", "note": "Point, numeric, function, line, circle, and circumcircle parent forms are covered."},
+        {"id": "circle-measurements", "status": "verified", "note": "Radius, diameter, area, perimeter, bounds, and parameterization are covered."},
+        {"id": "text-content", "status": "verified", "note": "Static and dynamic Text content is covered."},
+        {"id": "text-coordinates", "status": "verified", "note": "Free, constrained, and anchored Text coordinates are covered."},
+        {"id": "text-portable-layout", "status": "verified", "note": "Portable size estimation, markup, and hit testing are covered."}
+      ]
+    },
+    {
+      "id": "curve-plot-family",
+      "category": "geometry-2d",
+      "title": "Curve, FunctionGraph, Plot, and adaptive sampling",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/curve.js",
+          "third_party/jsxgraph-src/src/math/plot.js",
+          "third_party/jsxgraph-src/src/math/ia.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Curve.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/Plot.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/PlotV3.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/PlotV4.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/CurveTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/PlotTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/plot-v1.mjs",
+          "tools/upstream-fixtures/plot-v2.mjs",
+          "tools/upstream-fixtures/plot-v3.mjs",
+          "tools/upstream-fixtures/plot-v4.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "data-plot", "status": "verified", "note": "Degree-one and cubic data arrays are covered."},
+        {"id": "functiongraph", "status": "verified", "note": "FunctionGraph construction and updates are covered."},
+        {"id": "parametric", "status": "verified", "note": "Parametric Curve construction and updates are covered."},
+        {"id": "plot-v1", "status": "verified", "note": "Legacy recursive Plot v1 is covered."},
+        {"id": "plot-v2", "status": "verified", "note": "Default adaptive Plot v2 is covered."},
+        {"id": "plot-v3", "status": "verified", "note": "Experimental Plot v3 is covered."},
+        {"id": "plot-v4", "status": "verified", "note": "Difference-table Plot v4 is covered."},
+        {"id": "stepfunction", "status": "verified", "note": "StepFunction updateDataArray behavior is covered."},
+        {"id": "rdp", "status": "verified", "note": "FunctionGraph RDP simplification is covered."},
+        {"id": "curve-transforms-arrows-fill", "status": "verified", "note": "Transforms, fills, and arrow endpoints are covered."}
+      ]
+    },
+    {
+      "id": "polygon-clipping",
+      "category": "geometry-2d",
+      "title": "Polygon construction, mutation, intersections, and Boolean clipping",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/polygon.js",
+          "third_party/jsxgraph-src/src/math/clip.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Polygon.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/math/BooleanClip.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/PolygonTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/math/ClipTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/curve-boolean-clipping.mjs",
+          "tools/upstream-fixtures/clip-raw-path.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "polygon-construction", "status": "verified", "note": "Existing and coordinate helper vertices are covered."},
+        {"id": "borders-and-open-chain", "status": "verified", "note": "Borders, withLines, and PolygonalChain behavior are covered."},
+        {"id": "measurements", "status": "verified", "note": "Area, perimeter, bounds, and hit testing are covered."},
+        {"id": "vertex-mutation", "status": "verified", "note": "Add, insert, and remove Point mutation is covered."},
+        {"id": "movement-transforms", "status": "verified", "note": "Direct movement and transforms are covered."},
+        {"id": "parallelogram", "status": "verified", "note": "Parallelogram composition is covered."},
+        {"id": "regular-polygon", "status": "verified", "note": "Both RegularPolygon parent forms are covered."},
+        {"id": "path-intersections", "status": "verified", "note": "Polygon Line and path intersections are covered."},
+        {"id": "boolean-operations", "status": "verified", "note": "Intersection, union, and difference are covered."},
+        {"id": "inside-alias", "status": "verified", "note": "Portable containment is available through the translated hit-test contract."}
+      ]
+    },
+    {
+      "id": "conics",
+      "category": "geometry-2d",
+      "title": "Generic conic, Ellipse, Hyperbola, and Parabola",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/element/conic.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Conic.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Curve.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/ConicTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/EllipseTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/conic.mjs",
+          "tools/upstream-fixtures/ellipse.mjs",
+          "tools/upstream-fixtures/hyperbola.mjs",
+          "tools/upstream-fixtures/parabola.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "five-point-conic", "status": "verified", "note": "Generic five-Point conic construction is covered."},
+        {"id": "coefficient-conic", "status": "verified", "note": "Numeric and dynamic coefficient conics are covered."},
+        {"id": "ellipse", "status": "verified", "note": "Ellipse parent forms and updates are covered."},
+        {"id": "hyperbola", "status": "verified", "note": "Hyperbola parent forms and updates are covered."},
+        {"id": "parabola", "status": "verified", "note": "Parabola focus/directrix forms and updates are covered."},
+        {"id": "metadata", "status": "verified", "note": "Center, midpoint, foci, axis, subs, inherits, and quadratic form are covered."},
+        {"id": "adaptive-sampling", "status": "verified", "note": "Adaptive and explicit naive sampling are covered."},
+        {"id": "ownership-removal", "status": "verified", "note": "Helper ownership, rollback, and removal are covered."},
+        {"id": "creator-entry-points", "status": "verified", "note": "JSON and JessieCode creators are covered."},
+        {"id": "conic-hit-testing", "status": "verified", "note": "Ellipse boundary and exact focus-distance interior hit testing, including dynamic major-axis evaluation, are source-mapped and covered."}
+      ]
+    },
+    {
+      "id": "arc-sector-angle",
+      "category": "geometry-2d",
+      "title": "Arc, Sector, Angle, and related compositions",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/element/arc.js",
+          "third_party/jsxgraph-src/src/element/sector.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Arc.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Sector.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/ArcSectorGeometry.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/ArcSectorTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/AngleBehaviorTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/arc-sector-methods.mjs",
+          "tools/upstream-fixtures/arc-compositions.mjs",
+          "tools/upstream-fixtures/sector-compositions.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "three-point-arc", "status": "verified", "note": "Three-Point Arc construction and updates are covered."},
+        {"id": "four-point-arc", "status": "verified", "note": "useDirection Arc endpoint selection is covered."},
+        {"id": "sector-angle", "status": "verified", "note": "Sector and Angle construction are covered."},
+        {"id": "selection-orientation", "status": "verified", "note": "Selection and orientation semantics are covered."},
+        {"id": "measurements", "status": "verified", "note": "Radius, length, area, perimeter, and Angle units are covered."},
+        {"id": "radius-mutation", "status": "verified", "note": "Numeric, function, and auto radius mutation are covered."},
+        {"id": "hit-testing", "status": "verified", "note": "Boundary and interior hit testing are covered."},
+        {"id": "anchors", "status": "verified", "note": "Text and label anchors are covered."},
+        {"id": "display-types", "status": "verified", "note": "None, square, sector, and sectordot display domains are covered."},
+        {"id": "compositions", "status": "verified", "note": "Semicircle, circumcircle, minor/major, nonreflex, and reflex wrappers are covered."}
+      ]
+    },
+    {
+      "id": "construction-interoperation",
+      "category": "geometry-2d",
+      "title": "Intersections, tangents, normals, poles, and construction compositions",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/line.js",
+          "third_party/jsxgraph-src/src/base/point.js",
+          "third_party/jsxgraph-src/src/element/composition.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Intersection.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Tangent.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Normal.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/TangentTo.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/PolePoint.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/IntersectionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/TangentTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/NormalTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/TangentToTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/intersection-points.mjs",
+          "tools/upstream-fixtures/tangent-curve.mjs",
+          "tools/upstream-fixtures/normal.mjs",
+          "tools/upstream-fixtures/tangent-to.mjs",
+          "tools/upstream-fixtures/conic-interoperation.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "line-circle-intersections", "status": "verified", "note": "Line, Segment, and Circle intersections are covered."},
+        {"id": "curve-path-intersections", "status": "verified", "note": "Curve, Arc, Sector, and Polygon intersections are covered."},
+        {"id": "other-intersection", "status": "verified", "note": "Excluded-Point selection is covered."},
+        {"id": "tangent-polar", "status": "verified", "note": "Line, Circle, and non-Conic Curve tangent/polar paths are covered."},
+        {"id": "normal", "status": "verified", "note": "Line, Circle, and non-Conic Curve normal paths are covered."},
+        {"id": "tangentto", "status": "verified", "note": "Circle TangentTo expansion and lifecycle are covered."},
+        {"id": "pole-radical-axis", "status": "verified", "note": "PolePoint and RadicalAxis construction are covered."},
+        {"id": "orthogonal-parallel", "status": "verified", "note": "Orthogonal and parallel construction families are covered."},
+        {"id": "triangle-centers-bisectors", "status": "verified", "note": "Bisectors, incenter, incircle, and two-Line composition are covered."},
+        {"id": "conic-interoperation", "status": "verified", "note": "Ellipse Tangent, Polar, TangentTo, Normal, Intersection, OtherIntersection, PolePoint, and Glider paths are covered through parent movement and removal."}
+      ]
+    },
+    {
+      "id": "axis-ticks-grid",
+      "category": "geometry-2d",
+      "title": "Axis, Ticks, Hatch, and Grid",
+      "weight": 3,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/ticks.js",
+          "third_party/jsxgraph-src/src/base/line.js#createAxis",
+          "third_party/jsxgraph-src/src/element/grid.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Axis.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Ticks.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Grid.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/AxisTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/TicksTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/GridTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/axis.mjs",
+          "tools/upstream-fixtures/ticks.mjs",
+          "tools/upstream-fixtures/grid.mjs",
+          "tools/upstream-fixtures/hatch.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "axis-construction", "status": "verified", "note": "Axis endpoints, identity, and nested defaults are covered."},
+        {"id": "axis-positioning", "status": "verified", "note": "Sticky and unit-bearing positions are covered."},
+        {"id": "ticks-fixed-equidistant", "status": "verified", "note": "Fixed and equidistant tick sources are covered."},
+        {"id": "ticks-layout", "status": "verified", "note": "Major/minor, faces, endings, polar, clipping, and labels are covered."},
+        {"id": "hatch", "status": "verified", "note": "Hatch/hash aliases and centered placement are covered."},
+        {"id": "grid-faces", "status": "verified", "note": "Line, point, circle, polygon, cross, and triangle faces are covered."},
+        {"id": "grid-spacing", "status": "verified", "note": "Major/minor, forceSquare, boundary, and unit spacing are covered."},
+        {"id": "viewport-resolution", "status": "verified", "note": "CSS-pixel geometry resolves at the final viewport."},
+        {"id": "hit-testing", "status": "verified", "note": "Axis and Ticks hit testing is covered, and both Grid curves preserve the upstream non-interactive hasPoint contract."},
+        {"id": "runtime-mutation", "status": "verified", "note": "Axis, Ticks, and both Grid curves preserve source-mapped runtime attributes, nested label/tick state, parent-axis propagation, validation, and live rebuild behavior."}
+      ]
+    },
+    {
+      "id": "advanced-2d-elements",
+      "category": "geometry-2d",
+      "title": "Advanced curves, measures, controls, chart, turtle, and media",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/chart.js",
+          "third_party/jsxgraph-src/src/base/turtle.js",
+          "third_party/jsxgraph-src/src/element/measure.js",
+          "third_party/jsxgraph-src/src/element/vectorfield.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Chart.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Turtle.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Measurement.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/SmartLabel.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphChartTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphLocaleTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/TurtleTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/MeasurementTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/chart.mjs",
+          "tools/upstream-fixtures/angle-turtle.mjs",
+          "tools/upstream-fixtures/measurement.mjs",
+          "tools/upstream-fixtures/vectorfield.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "spline-derivative-riemann", "status": "verified", "note": "Spline, Derivative, and RiemannSum families are covered."},
+        {"id": "boxplot-comb-inequality", "status": "verified", "note": "BoxPlot, Comb, and Inequality geometry is covered."},
+        {"id": "vector-slope-fields", "status": "verified", "note": "VectorField and SlopeField construction and updates are covered."},
+        {"id": "implicit-metapost", "status": "verified", "note": "ImplicitCurve and MetaPostSpline are covered."},
+        {"id": "measurement-labels", "status": "verified", "note": "Tapemeasure, Measurement, SmartLabel, Integral, and SlopeTriangle are covered."},
+        {"id": "image-foreignobject", "status": "verified", "note": "Portable Image and opaque ForeignObject geometry is covered."},
+        {"id": "html-controls", "status": "verified", "note": "Button, Checkbox, and Input state and dispatch are covered."},
+        {"id": "chart-legend", "status": "verified", "note": "Direct-array Chart families and Legend are covered."},
+        {"id": "turtle-group", "status": "verified", "note": "Turtle drawing and core Group transforms are covered."},
+        {"id": "complete-rich-element-apis", "status": "verified", "note": "The portable rich-element surface covers live Chart arrays and host-supplied tables, grouped expansion, recoverable shape/provider failures, locale formatting contracts, labels, highlighting, and source-mapped specialized mutations."}
+      ]
+    },
+    {
+      "id": "jessiecode-language",
+      "category": "parser",
+      "title": "JessieCode lexer, parser, evaluator, and sessions",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/parser/jessiecode.js",
+          "third_party/jsxgraph-src/src/parser/ca.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/JessieCode.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeEvaluator.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeSession.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeComputerAlgebra.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeLexerTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeEvaluatorTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeSessionTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/jessiecode-functions-maps.mjs",
+          "tools/upstream-fixtures/jessiecode-loops.mjs",
+          "tools/upstream-fixtures/jessiecode-session.mjs",
+          "tools/upstream-fixtures/jessiecode-ca.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "lexing-parsing", "status": "verified", "note": "Bounded source-compatible lexing and parsing are covered."},
+        {"id": "coercion-operators", "status": "verified", "note": "Truthiness, arithmetic, comparison, and Boolean coercion are covered."},
+        {"id": "control-flow", "status": "verified", "note": "Conditionals and bounded loops are covered."},
+        {"id": "functions-closures", "status": "verified", "note": "Functions, closures, return, and local scope are covered."},
+        {"id": "arrays-maps", "status": "verified", "note": "Mutable arrays, maps, indexing, and object literals are covered."},
+        {"id": "assignment-delete", "status": "verified", "note": "Variable, property, index assignment, and delete are covered."},
+        {"id": "dependencies", "status": "verified", "note": "Dependency collection and ID replacement are covered."},
+        {"id": "sessions-boards", "status": "verified", "note": "Persistent multi-Board sessions and source history are covered."},
+        {"id": "computer-algebra", "status": "verified", "note": "Derivative expansion and simplification are covered."},
+        {"id": "import", "status": "verified", "note": "The four upstream module names, case-insensitive identity-preserving lookup, representative translated methods, unknown modules, and structured invalid arguments are covered; the remaining module member surface stays tracked by complete-upstream-method-map."}
+      ]
+    },
+    {
+      "id": "jessiecode-host-integration",
+      "category": "parser",
+      "title": "JessieCode creators, method maps, properties, and built-ins",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/parser/jessiecode.js",
+          "third_party/jsxgraph-src/src/base/element.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/NativeJessieCodeCreators.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/CoreGeometryElementRuntime.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeEvaluator.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeElementMethodMapTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeElementSetPropTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeBuiltInsTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/curve-generate-term.mjs",
+          "tools/upstream-fixtures/jessiecode-native-creators.mjs",
+          "tools/upstream-fixtures/jessiecode-method-map.mjs",
+          "tools/upstream-fixtures/jessiecode-set-prop.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "native-2d-creators", "status": "verified", "note": "The documented native 2D creator registry is covered."},
+        {"id": "native-3d-creators", "status": "verified", "note": "The documented bounded 3D creator registry is covered."},
+        {"id": "creator-attributes", "status": "verified", "note": "Nested creator attributes and defaults are covered."},
+        {"id": "element-method-map", "status": "verified", "note": "The documented element method map is covered."},
+        {"id": "element-properties", "status": "verified", "note": "Property reads and setProp mutation are covered."},
+        {"id": "global-builtins", "status": "verified", "note": "Geometry, math, list, and measurement built-ins are covered."},
+        {"id": "function-valued-visuals", "status": "verified", "note": "Supported function-valued visual properties update live."},
+        {"id": "factory-failure-rollback", "status": "verified", "note": "Creator failures remain structured and atomic."},
+        {"id": "resource-limits", "status": "verified", "note": "Lexing, evaluation, collection, and scene limits are covered."},
+        {"id": "complete-upstream-method-map", "status": "verified", "note": "All portable upstream JessieCode method-map entries and host-family routes are audited; Curve generateTerm/setTerm, dynamic failures, and intentionally absent upstream TODO entries have focused source and fixture evidence."}
+      ]
+    },
+    {
+      "id": "readers",
+      "category": "parser",
+      "title": "Legacy construction and file readers",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/reader/file.js",
+          "third_party/jsxgraph-src/src/reader/geonext.js",
+          "third_party/jsxgraph-src/src/reader/intergeo.js",
+          "third_party/jsxgraph-src/src/reader/geogebra.js",
+          "third_party/jsxgraph-src/src/reader/cinderella.js",
+          "third_party/jsxgraph-src/src/reader/tracenpoche.js"
+        ],
+        "implementation": [
+      "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphReader.kt",
+      "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/reader/Reader.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/reader/GeonextReader.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/reader/IntergeoReader.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/reader/GeogebraReader.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/reader/CinderellaReader.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/reader/TracenpocheReader.kt"
+        ],
+        "tests": [
+      "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphReaderApiTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/reader/ReaderTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/reader/ReaderPreparationTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/reader/GeonextReaderTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/reader/GeogebraPropertiesTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/reader/GeogebraReaderTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/reader-preparation.mjs",
+          "tools/upstream-fixtures/reader-geonext-cas.mjs",
+          "tools/upstream-fixtures/reader-geonext-properties.mjs",
+          "tools/upstream-fixtures/reader-geonext-composition.mjs",
+          "tools/upstream-fixtures/reader-intergeo.mjs",
+          "tools/upstream-fixtures/reader-geogebra-properties.mjs",
+          "tools/upstream-fixtures/reader-geogebra-text-command.mjs",
+          "tools/upstream-fixtures/reader-tracenpoche.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "registry-string-ingestion", "status": "verified", "note": "Case-insensitive registry and string parsing lifecycle are covered."},
+        {"id": "archive-preparation", "status": "verified", "note": "Raw, Base64, ZIP, XML repair, and rollback are covered."},
+        {"id": "graph-reader", "status": "verified", "note": "Directed, weighted Graph parsing and creation are covered."},
+        {"id": "geonext-reader", "status": "verified", "note": "The documented GEONExT element/composition subset, embedded PNG background and owner-bound image geometry, condition serialization, limits, and rollback are covered."},
+        {"id": "intergeo-reader", "status": "verified", "note": "The documented Intergeo constraint subset is covered."},
+        {"id": "geogebra-reader", "status": "verified", "note": "The documented Geogebra element and command subset is covered, including official setDefaultOptions values, per-output color/visual-property consumption, point-style fallback, labels, and public Scene snapshots."},
+        {"id": "cinderella-reader", "status": "verified", "note": "The documented Cinderella definition subset is covered."},
+        {"id": "tracenpoche-reader", "status": "verified", "note": "The bounded TraceEnPoche parser and geometry subset is covered."},
+        {"id": "remaining-reader-branches", "status": "verified", "note": "All active portable branch surfaces are routed and audited: 29 GEONExT executable readNode/composition cases, 36 Intergeo constraints, 34 Geogebra commands, 24 Cinderella definitions, and 29 TraceEnPoche functions. GEONExT rotation 210180 preserves the official not-implemented failure, Cinderella Compass preserves its evidenced 1.13.3 closure defect as a structured failure, and src/unused remains excluded."},
+    {"id": "public-reader-api", "status": "verified", "note": "Public pure-commonMain text ingestion exposes registered built-in formats as portable Scene snapshots, including reader-created element labels, with typed configuration, lifecycle, resource, domain, and scene errors; hosts retain network and filesystem policy."}
+      ]
+    },
+    {
+      "id": "engine-serialization",
+      "category": "parser",
+      "title": "Public construction documents, sessions, snapshots, and serialization",
+      "weight": 3,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/jsxgraph.js",
+          "third_party/jsxgraph-src/src/utils/dump.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphBoardExport.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphScene.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/utils/Dump.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphBoardExportTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphEngineTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/parser/JessieCodeFacadeTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/utils/DumpTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/dump.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "bounded-json-document", "status": "verified", "note": "Ordered bounded construction documents are covered."},
+        {"id": "atomic-creation", "status": "verified", "note": "Validation and factory failure roll back atomically."},
+        {"id": "one-shot-parse", "status": "verified", "note": "Immutable one-shot parsing is covered."},
+        {"id": "retained-session", "status": "verified", "note": "Retained Board sessions and state snapshots are covered."},
+        {"id": "scene-materialization", "status": "verified", "note": "Portable scene snapshots are covered."},
+        {"id": "interaction-state", "status": "verified", "note": "Point state capture, restore, and rollback are covered."},
+        {"id": "jcan-kernel", "status": "verified", "note": "Portable JCAN value serialization is covered."},
+        {"id": "public-errors", "status": "verified", "note": "Parse, factory, resource, and scene failures are structured."},
+        {"id": "complete-board-export", "status": "verified", "note": "Retained JSON, JessieCode, and legacy sessions expose bounded live Board export to JessieCode, JSON, and JavaScript, including element-specific parents, minimized attributes and subs, dependency metadata, user logs, axis tick removal, polygon-glider state, marker cleanup, structured failures, and reconstructable JessieCode/JavaScript source for translated runtime function parents; JSON preserves the official null representation for function array entries."},
+        {"id": "all-creators-public", "status": "verified", "note": "The public JessieCode document/session APIs route all 118 callable non-unused JSXGraph 1.13.3 creator registrations through the native registry, including compound result shapes and scene expansion; the sole additional active registration, msector, is intentionally absent because its upstream implementation is commented out and the official runtime reports it as an unknown element type."}
+      ]
+    },
+    {
+      "id": "scene-style",
+      "category": "renderer",
+      "title": "Portable scene geometry, style, layers, and arrows",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/renderer/abstract.js",
+          "third_party/jsxgraph-src/src/renderer/canvas.js",
+          "third_party/jsxgraph-src/src/options.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphScene.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/CoreGeometryElementRuntime.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/renderer/NativeRenderer.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphJessieCodeTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/RendererVisualStyleTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/JsxGraphLayerOrderTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/LineArrowGeometryTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/line-arrows.mjs",
+          "tools/upstream-fixtures/curve-arrows.mjs",
+          "tools/upstream-fixtures/dynamic-arrow-functions.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "line-circle-point-style", "status": "verified", "note": "Core stroke, fill, opacity, width, and point-face styles are covered."},
+        {"id": "curve-paths-fills", "status": "verified", "note": "Linear/cubic paths, breaks, and closed fills are covered."},
+        {"id": "polygon-render-items", "status": "verified", "note": "Independent fill, border, and vertex render items are covered."},
+        {"id": "layers", "status": "verified", "note": "Dynamic layer and creation-order sorting is covered."},
+        {"id": "dash", "status": "verified", "note": "All seven dash patterns and dashScale are covered."},
+        {"id": "arrows", "status": "verified", "note": "Line, Curve, Arc, and Sector arrow types 1 through 7 are covered."},
+        {"id": "highlight-draft-shadow", "status": "verified", "note": "Supported highlight, draft, and shadow states are covered."},
+        {"id": "gradients", "status": "verified", "note": "Supported static linear/radial gradient scene semantics are covered."},
+        {"id": "themes", "status": "verified", "note": "Dark, GUI, and mono_thin option trees are covered."},
+        {"id": "dynamic-arrow-functions", "status": "verified", "note": "Whole firstArrow/lastArrow functions and nested type, size, and highlightSize functions update Line and Curve scene snapshots with structured callback failures."}
+      ]
+    },
+    {
+      "id": "compose-rendering",
+      "category": "renderer",
+      "title": "Compose Canvas geometry, text, and media rendering",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/element.js",
+          "third_party/jsxgraph-src/src/base/text.js",
+          "third_party/jsxgraph-src/src/renderer/canvas.js",
+          "third_party/jsxgraph-src/src/renderer/svg.js",
+          "third_party/jsxgraph-src/src/base/image.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphScene.kt",
+          "jsxgraph-compose/src/commonMain/kotlin/com/swithun/jsxgraph/compose/JsxGraphGeometryPlayground.kt",
+          "jsxgraph-compose/src/commonMain/kotlin/com/swithun/jsxgraph/compose/JsxGraphImageResolver.kt",
+          "jsxgraph-compose/src/commonMain/kotlin/com/swithun/jsxgraph/compose/LineArrowGeometry.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphElementOptionsTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/CurvePathCommandTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/LineArrowGeometryTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/SceneTextMarkupTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/TextAnchorTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/JsxGraphImageTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/element-options.mjs",
+          "tools/upstream-fixtures/image.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs",
+          "docs/testing.md"
+        ]
+      },
+      "behaviors": [
+        {"id": "core-shapes", "status": "verified", "note": "Point, Line, Circle, Curve, Polygon, Arc, and Sector geometry renders."},
+        {"id": "axes-ticks-grid", "status": "verified", "note": "Axis, Ticks, Hatch, and Grid geometry renders."},
+        {"id": "arrowheads", "status": "verified", "note": "Portable Canvas arrow geometry is covered."},
+        {"id": "text-baseline-markup", "status": "verified", "note": "Plain text and supported super/subscript baseline shifts are covered."},
+        {"id": "images", "status": "verified", "note": "Caller-resolved and bounded data-URI images render with affine transforms."},
+        {"id": "opaque-foreignobject", "status": "verified", "note": "ForeignObject geometry is retained as opaque scene content."},
+        {"id": "3d-proxies", "status": "verified", "note": "Projected 3D proxy elements render through the same Canvas path."},
+        {"id": "responsive-viewport", "status": "verified", "note": "Desktop and compact viewport geometry is covered."},
+        {"id": "math-typesetting", "status": "excluded", "note": "MathJax, KaTeX, ASCIIMathML, HTML metrics, CSS layout, and exact DOM glyph placement belong to the excluded browser host; portable plain text and supported super/subscript baseline semantics are verified by text-baseline-markup."},
+        {"id": "complete-element-options", "status": "verified", "note": "Portable Canvas element options are source-mapped and fixture-backed, including Point faces/sizeUnit/zoom, Canvas Line margin semantics and arrow touchpoints, internal and HTML Text rotation, and two-pass randomized Curve handDrawing; CSS-host font units and non-Canvas backends remain excluded by methodology."}
+      ]
+    },
+    {
+      "id": "interaction",
+      "category": "interaction",
+      "title": "Hit testing, pointer drag, Glider, and Slider behavior",
+      "weight": 4,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/point.js",
+          "third_party/jsxgraph-src/src/base/coordselement.js",
+          "third_party/jsxgraph-src/src/element/slider.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Glider.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Slider.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/CurveGliderTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/GliderSliderTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphCurveGliderTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/curve-glider.mjs",
+          "tools/upstream-fixtures/glider-slider.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "element-hit-testing", "status": "verified", "note": "Point, Line, Circle, Curve, Polygon, Text, Image, and translated composite hit testing is covered."},
+        {"id": "pointer-capture", "status": "verified", "note": "Topmost movable Point selection is covered."},
+        {"id": "free-point-drag", "status": "verified", "note": "Free Point drag and dependent updates are covered."},
+        {"id": "atomic-rollback", "status": "verified", "note": "Invalid interaction updates restore prior state."},
+        {"id": "line-circle-glider", "status": "verified", "note": "Point, Line, Segment, Circle, and Polygon-border Gliders are covered."},
+        {"id": "curve-glider", "status": "verified", "note": "FunctionGraph, parametric, data, and transformed Curve Gliders are covered."},
+        {"id": "arc-sector-glider", "status": "verified", "note": "Arc and Sector Glider clamping and updates are covered."},
+        {"id": "conic-glider", "status": "verified", "note": "Conic projection behavior is covered by the Curve Glider path."},
+        {"id": "slider", "status": "verified", "note": "Slider composition, value, range, and snapping behavior is covered."},
+        {"id": "remaining-glider-hosts", "status": "verified", "note": "Hyperbola/Parabola projection, drag, parent updates, and removal plus Slider baseline pointer-up movement, moveOnUp, fixed gating, attractor conversion, and bounded Glider animation are covered."}
+      ]
+    },
+    {
+      "id": "advanced-interaction",
+      "category": "interaction",
+      "title": "Board navigation, events, keyboard, animation, and control interaction",
+      "weight": 3,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/base/board.js",
+          "third_party/jsxgraph-src/src/base/element.js",
+          "third_party/jsxgraph-src/src/renderer/abstract.js",
+          "third_party/jsxgraph-src/src/options.js",
+          "third_party/jsxgraph-src/src/utils/event.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphNavigation.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Board.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/GeometryElement.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/utils/EventEmitter.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt",
+          "jsxgraph-compose/src/commonMain/kotlin/com/swithun/jsxgraph/compose/JsxGraphGeometryPlayground.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardElementLifecycleTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/BoardViewportTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/HostDrivenBoardAnimationSchedulerTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphAnimationSessionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphNavigationTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphPointerInteractionTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/JsxGraphBoardPointerRoutingTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/JsxGraphNavigationControlTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/board-navigation.mjs",
+          "tools/upstream-fixtures/board-hover.mjs",
+          "tools/upstream-fixtures/board-multi-pointer.mjs",
+          "tools/upstream-fixtures/board-navigation-ui.mjs",
+          "tools/upstream-fixtures/coords-attractor-animation.mjs"
+        ],
+        "visual": []
+      },
+      "behaviors": [
+        {"id": "portable-event-emitter", "status": "verified", "note": "Portable on, off, and trigger behavior is covered."},
+        {"id": "control-dispatch", "status": "verified", "note": "Button, Checkbox, and Input dispatch update the Board."},
+        {"id": "state-reset", "status": "verified", "note": "Retained session capture, reset, and restore are covered."},
+        {"id": "hover", "status": "verified", "note": "Board move/leave dehighlighting, hit-driven over/move/out transitions, focus preservation, production session snapshots, and Compose Move/Exit routing match the official lifecycle fixture."},
+        {"id": "pan", "status": "verified", "note": "Pointer drag, navigation-arrow, keyboard, maxBoundingBox, and viewport update panning match the official fixture."},
+        {"id": "zoom", "status": "verified", "note": "Centered and pointer-centered zoom, wheel modifiers, limits, reset, zoomAllPoints, and zoomElements match the official fixture."},
+        {"id": "keyboard", "status": "verified", "note": "Focused-element movement, Shift-based Board pan/zoom, focus lifecycle, and keyboard step conversion match JSXGraph 1.13.3."},
+        {"id": "multi-pointer", "status": "verified", "note": "Pointer-ID ownership, one- and two-finger viewport pan, horizontal/vertical/proportional pinch zoom, Line/Polygon translation-rotation-scaling with snap/fixed cancellation, Circle point/radius transforms, portable session snapshots, and Compose touch routing match the official fixture."},
+        {"id": "element-animation", "status": "verified", "note": "Color, number, array- and function-path movement, easing, callback timing, and bounded Glider animation match official numerical fixtures; host-driven production sessions and the Compose frame clock exercise visible scene updates without a platform runtime in core."},
+        {"id": "navigation-ui", "status": "verified", "note": "Core publishes the official navigation-control order, symbols, portable navbar style subset, viewport commands, and structured unavailable-control failures; Compose renders and consumes the controls, while fullscreen, screenshot, and reload remain explicit host actions."}
+      ]
+    },
+    {
+      "id": "geometry-3d",
+      "category": "geometry-3d",
+      "title": "View3D and 3D geometry element lifecycle",
+      "weight": 5,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/3d/view3d.js",
+          "third_party/jsxgraph-src/src/3d/point3d.js",
+          "third_party/jsxgraph-src/src/3d/linspace3d.js",
+          "third_party/jsxgraph-src/src/3d/curve3d.js",
+          "third_party/jsxgraph-src/src/3d/surface3d.js",
+          "third_party/jsxgraph-src/src/3d/text3d.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/View3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Point3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Curve3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/VectorField3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Text3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Surface3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Polyhedron3D.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/View3DPoint3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/Curve3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/VectorField3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/Text3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/Surface3DTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/view3d-point3d.mjs",
+          "tools/upstream-fixtures/curve3d.mjs",
+          "tools/upstream-fixtures/vectorfield3d.mjs",
+          "tools/upstream-fixtures/surface3d.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs"
+        ]
+      },
+      "behaviors": [
+        {"id": "view-projection", "status": "verified", "note": "Parallel and central projection matrices and inverse helpers are covered."},
+        {"id": "point-line-plane", "status": "verified", "note": "Point3D, Line3D, IntersectionLine3D, and Plane3D are covered."},
+        {"id": "curve-circle", "status": "verified", "note": "Curve3D, VectorField3D, Circle3D, and IntersectionCircle3D are covered."},
+        {"id": "sphere", "status": "verified", "note": "Sphere3D and projection proxy switching are covered."},
+        {"id": "surface", "status": "verified", "note": "Surface3D and FunctionGraph3D sampling and tiling are covered."},
+        {"id": "mesh-axis-ticks-text", "status": "verified", "note": "Mesh3D, Axis3D, Axes3D, Ticks3D, and Text3D are covered."},
+        {"id": "polygon-polyhedron", "status": "verified", "note": "Polygon3D, Face3D, and Polyhedron3D lifecycle is covered."},
+        {"id": "transform3d", "status": "verified", "note": "Transform3D binding and updates are covered."},
+        {"id": "resource-rollback", "status": "verified", "note": "3D resource limits and staged rollback are covered."},
+        {"id": "runtime-setf-coordinate-accessors", "status": "verified", "note": "Curve3D coordinate accessors, VectorField3D setF mutation, and Text3D X/Y/Z accessors are source-mapped and covered."}
+      ]
+    },
+    {
+      "id": "renderer-interaction-3d",
+      "category": "geometry-3d",
+      "title": "3D proxy rendering, depth, camera controls, and interaction",
+      "weight": 3,
+      "evidence": {
+        "sources": [
+          "third_party/jsxgraph-src/src/3d/view3d.js",
+          "third_party/jsxgraph-src/src/options3d.js",
+          "third_party/jsxgraph-src/src/3d/point3d.js",
+          "third_party/jsxgraph-src/src/3d/linspace3d.js"
+        ],
+        "implementation": [
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/View3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Point3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/base/Line3D.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/parser/NativeJessieCodeCreators.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphScene.kt",
+          "jsxgraph-core/src/commonMain/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine.kt",
+          "jsxgraph-compose/src/commonMain/kotlin/com/swithun/jsxgraph/compose/JsxGraphGeometryPlayground.kt"
+        ],
+        "tests": [
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphEngine3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphJessieCode3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/JsxGraphAnimationSessionTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/View3DPoint3DTest.kt",
+          "jsxgraph-core/src/commonTest/kotlin/com/swithun/jsxgraph/core/base/Polygon3DTest.kt",
+          "jsxgraph-compose/src/commonTest/kotlin/com/swithun/jsxgraph/compose/JsxGraphView3DHitTestTest.kt"
+        ],
+        "fixtures": [
+          "tools/upstream-fixtures/view3d-navigation-depth.mjs",
+          "tools/upstream-fixtures/point3d-line-glider.mjs",
+          "tools/upstream-fixtures/point3d-animation.mjs",
+          "tools/upstream-fixtures/polygon3d.mjs",
+          "tools/upstream-fixtures/sphere3d.mjs"
+        ],
+        "visual": [
+          "tools/visual-parity/corpus.mjs",
+          "docs/testing.md"
+        ]
+      },
+      "behaviors": [
+        {"id": "projected-proxies", "status": "verified", "note": "Projected 2D proxies render for the translated 3D families."},
+        {"id": "local-face-depth", "status": "verified", "note": "Polyhedron face-local depth sorting is covered."},
+        {"id": "automatic-axes", "status": "verified", "note": "Center, border, and none automatic axes are covered."},
+        {"id": "point3d-drag", "status": "verified", "note": "Point3D proxy drag to a constant-z plane is covered."},
+        {"id": "sphere-proxy-switch", "status": "verified", "note": "Parallel Circle and central Ellipse proxy switching is covered."},
+        {"id": "static-gradients-shaders", "status": "verified", "note": "Static gradients, HSL shaders, and height colormaps are covered."},
+        {"id": "global-depth-order", "status": "verified", "note": "View3D depthOrder enabled/layers configuration and stable Canvas ordering by layer, 3D ownership, zIndex, and creation order match the official fixture."},
+        {"id": "camera-controls", "status": "verified", "note": "Construction and JessieCode sessions expose bounded host-neutral View3D pointer, wheel, and keyboard interactions in user coordinates; Compose routes drag, wheel, and hardware-key input; stored-view, bank, trackball, and azimuth-animation kernels match the official fixture."},
+        {"id": "point3d-gliders", "status": "verified", "note": "Point3D gliders on Line3D, Plane3D, Curve3D, Circle3D, Sphere3D, and Surface3D preserve position state, host updates, proxy drag projection, cyclic handling where applicable, and source-mapped parameter updates; direct, construction-document, and JessieCode paths have focused evidence."},
+        {"id": "3d-animation", "status": "verified", "note": "Point3D moveTo/moveAlong path replacement, easing, interval, and callback semantics match the official fixture; public typed session APIs trigger the movement, host-driven frame advancement snapshots every scene, and Compose supplies the production frame clock without inventing the upstream-TODO Point3D JessieCode method map."}
+      ]
+    }
+  ]
+}

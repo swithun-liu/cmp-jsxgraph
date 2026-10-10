@@ -44,6 +44,8 @@ class NativeRendererTest {
                     coordinates = JsxGraphPoint2D(1.0, 2.0),
                     size = 4.0,
                     face = "cross",
+                    sizeUnit = "user",
+                    zoomScale = 1.5,
                 ),
                 JsxGraphSceneElement.Line(
                     id = "line",
@@ -63,6 +65,8 @@ class NativeRendererTest {
                         size = 10.0,
                         highlightSize = 12.0,
                     ),
+                    touchFirstPointDistance = 5.0,
+                    touchLastPointDistance = 7.0,
                 ),
                 JsxGraphSceneElement.Curve(
                     id = "curve",
@@ -106,8 +110,91 @@ class NativeRendererTest {
         assertEquals(6, snapshot.nodes[0].lastArrow?.type)
         assertEquals(2, snapshot.nodes[1].firstArrow?.type)
         assertEquals(7, snapshot.nodes[1].lastArrow?.type)
+        val lineGeometry = assertIs<NativeRendererGeometry.Line>(
+            snapshot.nodes[1].geometry,
+        )
+        assertEquals(5.0, lineGeometry.touchFirstPointDistance)
+        assertEquals(7.0, lineGeometry.touchLastPointDistance)
         assertEquals("path", snapshot.nodes[2].primitive)
+        val pointGeometry = assertIs<NativeRendererGeometry.Point>(
+            snapshot.nodes[2].geometry,
+        )
+        assertEquals("user", pointGeometry.sizeUnit)
+        assertEquals(1.5, pointGeometry.zoomScale)
         assertFalse(snapshot.redrawSuspended)
+    }
+
+    @Test
+    fun textSnapshotPreservesRotation() {
+        val renderer = CanvasRenderer(
+            containerId = "box",
+            dimensions = EnvDimensions(320.0, 240.0),
+        )
+        val scene = JsxGraphScene(
+            boundingBox = JsxGraphBoundingBox(-5.0, 5.0, 5.0, -5.0),
+            axis = false,
+            grid = false,
+            keepAspectRatio = false,
+            elements = listOf(
+                JsxGraphSceneElement.Text(
+                    id = "text",
+                    name = "",
+                    style = style(layer = 9),
+                    coordinates = JsxGraphPoint2D(1.0, 2.0),
+                    content = "rotated",
+                    fontSize = 12.0,
+                    anchorX = "middle",
+                    anchorY = "middle",
+                    rotationDegrees = 90.0,
+                ),
+            ),
+        )
+
+        val snapshot = assertIs<GMResult.Ok<NativeRendererSnapshot>>(
+            renderer.render(scene),
+        ).value
+        val geometry = assertIs<NativeRendererGeometry.Text>(
+            snapshot.nodes.single().geometry,
+        )
+        assertEquals(90.0, geometry.rotationDegrees)
+    }
+
+    @Test
+    fun handDrawingCurveSnapshotUsesCubicRoundStrokeSemantics() {
+        val renderer = CanvasRenderer(
+            containerId = "box",
+            dimensions = EnvDimensions(320.0, 240.0),
+        )
+        val scene = JsxGraphScene(
+            boundingBox = JsxGraphBoundingBox(-5.0, 5.0, 5.0, -5.0),
+            axis = false,
+            grid = false,
+            keepAspectRatio = false,
+            elements = listOf(
+                JsxGraphSceneElement.Curve(
+                    id = "curve",
+                    name = "",
+                    style = style(layer = 5),
+                    points = listOf(
+                        JsxGraphPoint2D(-1.0, 0.0),
+                        JsxGraphPoint2D(1.0, 0.0),
+                    ),
+                    bezierDegree = 1,
+                    lineCap = "square",
+                    handDrawing = true,
+                ),
+            ),
+        )
+
+        val snapshot = assertIs<GMResult.Ok<NativeRendererSnapshot>>(
+            renderer.render(scene),
+        ).value
+        val node = snapshot.nodes.single()
+        val geometry = assertIs<NativeRendererGeometry.Path>(node.geometry)
+        assertEquals(listOf(2), geometry.subpaths.map(List<*>::size))
+        assertEquals(3, geometry.bezierDegree)
+        assertTrue(geometry.handDrawing)
+        assertEquals("round", node.visual.lineCap)
     }
 
     @Test

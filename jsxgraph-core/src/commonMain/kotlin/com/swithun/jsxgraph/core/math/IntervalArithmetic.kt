@@ -46,6 +46,9 @@ internal sealed interface IntervalArithmeticError {
 }
 
 // JSXGraph 1.13.3: src/math/ia.js -> DoubleBits.
+// The raw-bit KMP implementation is endian-neutral and replaces the upstream
+// doubleBitsLE/toDoubleLE/lowUintLE/highUintLE and
+// doubleBitsBE/toDoubleBE/lowUintBE/highUintBE typed-array closures.
 internal object DoubleBits {
     // JSXGraph 1.13.3: src/math/ia.js ->
     // DoubleBits.doubleBits.

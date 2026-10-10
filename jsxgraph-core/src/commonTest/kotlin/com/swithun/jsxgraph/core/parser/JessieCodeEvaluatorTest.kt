@@ -867,6 +867,88 @@ class JessieCodeEvaluatorTest {
     }
 
     @Test
+    fun importedMathModulesMatchOfficialLookupAndRepresentativeMethods() {
+        assertEquals(
+            JessieCodeRuntimeValue.NumberValue(0.000001),
+            evaluate("import(\"math\").eps;"),
+        )
+        val fixtures = mapOf(
+            "import(\"MaTh\").clamp(9, 1, 4);" to "number:4.0",
+            "import(\"math/geometry\").distance([0,0],[3,4]);" to
+                "number:5.0",
+            "import(\"math/statistics\").mean([1,3,5]);" to
+                "number:3.0",
+            "import(\"math/numerics\").det([[1,2],[3,4]]);" to
+                "number:-2.0",
+            "import(\"missing\");" to "undefined",
+            "import(\"math\") == import(\"MATH\");" to
+                "boolean:true",
+        )
+        for ((source, expected) in fixtures) {
+            assertEquals(expected, describe(evaluate(source)), source)
+        }
+        assertTrue(
+            assertIs<JessieCodeRuntimeValue.NumberValue>(
+                evaluate(
+                    "import(\"math/geometry\")" +
+                        ".distance([0,0],[3,4],3);",
+                ),
+            ).value.isNaN(),
+        )
+
+        val parser = JessieCodeExpressionParser()
+        val session = JessieCodeEvaluationSession()
+        val firstAst = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            parser.parse("import(\"math/geometry\");"),
+        ).value
+        val secondAst = assertIs<GMResult.Ok<JessieCodeAstNode>>(
+            parser.parse("import(\"MATH/GEOMETRY\");"),
+        ).value
+        val first = assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+            session.evaluate(firstAst),
+        ).value
+        val second = assertIs<GMResult.Ok<JessieCodeRuntimeValue>>(
+            session.evaluate(secondAst),
+        ).value
+        assertSame(first, second)
+
+        val invalidModuleName = assertIs<
+            JessieCodeRuntimeError.InvalidArgumentType
+            >(evaluateError("import(1);"))
+        assertEquals("import", invalidModuleName.functionName)
+        assertEquals("string", invalidModuleName.expected)
+
+        val missingModuleName = assertIs<
+            JessieCodeRuntimeError.InvalidArgumentCount
+            >(evaluateError("import();"))
+        assertEquals("import", missingModuleName.functionName)
+
+        val invalidMatrix = assertIs<
+            JessieCodeRuntimeError.InvalidArgumentType
+            >(
+                evaluateError(
+                    "import(\"math/numerics\").det([[1],[2,3]]);",
+                ),
+            )
+        assertEquals("det", invalidMatrix.functionName)
+        assertEquals(
+            "non-empty square number matrix",
+            invalidMatrix.expected,
+        )
+
+        val invalidLength = assertIs<
+            JessieCodeRuntimeError.InvalidArgumentType
+            >(
+                evaluateError(
+                    "import(\"math/geometry\")" +
+                        ".distance([0],[1],Infinity);",
+                ),
+            )
+        assertEquals("distance", invalidLength.functionName)
+        assertEquals("finite non-negative number", invalidLength.expected)
+    }
+
+    @Test
     fun expectedRuntimeFailuresAreStructured() {
         val nullAddition = evaluateError("null + \"x\";")
         assertIs<JessieCodeRuntimeError.UnsupportedOperation>(

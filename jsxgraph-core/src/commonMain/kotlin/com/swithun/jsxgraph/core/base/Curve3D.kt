@@ -110,6 +110,8 @@ internal sealed interface Curve3DError {
         val error: CurveError,
     ) : Curve3DError
 
+    data object NotVectorField : Curve3DError
+
     data class ParametricProjection(
         val error: ParametricProjectionError<Curve3DError>,
     ) : Curve3DError
@@ -219,7 +221,8 @@ internal class Curve3D private constructor(
         return GMResult.Ok(this)
     }
 
-    // JSXGraph: src/3d/curve3d.js -> evalF / F / X / Y / Z.
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> constructor closures
+    // _F / _X / _Y / _Z, then evalF / F / X / Y / Z.
     internal fun evalFResult(
         parameter: Double,
     ): GMResult<DoubleArray, Curve3DError> {
@@ -268,6 +271,7 @@ internal class Curve3D private constructor(
     }
 
     @Suppress("FunctionName")
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> F.
     internal fun F(parameter: Double): DoubleArray =
         when (val result = evalFResult(parameter)) {
             is GMResult.Ok -> result.value
@@ -275,13 +279,27 @@ internal class Curve3D private constructor(
         }
 
     @Suppress("FunctionName")
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> X.
     internal fun X(parameter: Double): Double = F(parameter)[0]
 
     @Suppress("FunctionName")
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> Y.
     internal fun Y(parameter: Double): Double = F(parameter)[1]
 
     @Suppress("FunctionName")
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> Z.
     internal fun Z(parameter: Double): Double = F(parameter)[2]
+
+    // JSXGraph 1.13.3: src/3d/curve3d.js -> createVectorfield3D.setF.
+    internal fun setF(
+        field: Curve3DVectorFieldFunction,
+    ): GMResult<Curve3D, Curve3DError> {
+        val definition = vectorFieldDefinition
+            ?: return GMResult.Err(Curve3DError.NotVectorField)
+        definition.field = field
+        prepareUpdate()
+        return GMResult.Ok(this)
+    }
 
     // JSXGraph: src/3d/curve3d.js -> updateDataArray2D.
     internal fun updateDataArray2D(): CurveDataUpdate {

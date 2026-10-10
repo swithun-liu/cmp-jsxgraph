@@ -108,7 +108,8 @@ internal class TapemeasureDefinition(
     internal var labelUpdateError: TextError? = null
         private set
 
-    // JSXGraph 1.13.3: src/element/measure.js -> li.Value.
+    // JSXGraph 1.13.3: src/element/measure.js ->
+    // li.Value / li.getParents.
     @Suppress("FunctionName")
     internal fun Value(): Double = point1.Dist(point2)
 
@@ -124,7 +125,12 @@ internal class TapemeasureDefinition(
         )
         when (
             val result = text.setText(
-                labelPrefix + JsNumberFormat.fixed(Value(), labelDigits),
+                labelPrefix +
+                    if (text.useLocale()) {
+                        text.formatNumberLocaleText(Value(), labelDigits)
+                    } else {
+                        JsNumberFormat.fixed(Value(), labelDigits)
+                    },
             )
         ) {
             is GMResult.Ok -> labelUpdateError = null

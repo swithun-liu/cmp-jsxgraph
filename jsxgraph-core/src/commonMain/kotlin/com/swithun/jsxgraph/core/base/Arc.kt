@@ -8,8 +8,12 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.math.ArcOrientation
+import com.swithun.jsxgraph.core.math.ArcSelection
 import com.swithun.jsxgraph.core.math.Geometry
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.min
 
 internal sealed interface ArcError {
     data class ParentBoardMismatch(
@@ -78,7 +82,7 @@ internal class Arc private constructor(
     type = Const.OBJECT_TYPE_ARC,
     elementClass = Const.OBJECT_CLASS_CURVE,
     needsRegularUpdate = needsRegularUpdate,
-) {
+), CurveTransformationSource {
     internal var radiuspoint: Point = radiuspoint
         private set
     internal var anglepoint: Point = anglepoint
@@ -89,6 +93,14 @@ internal class Arc private constructor(
     internal var numberPoints: Int = 0
         private set
     internal val bezierDegree: Int = 3
+    override val transformationElement: GeometryElement
+        get() = this
+    override val transformationPoints: List<Coords>
+        get() = points
+    override val transformationPointCount: Int
+        get() = numberPoints
+    override val transformationBezierDegree: Int
+        get() = bezierDegree
     internal var midpoint: MidpointPoint? = null
         private set
     internal val subs = linkedMapOf<String, GeometryElement>()
@@ -104,6 +116,9 @@ internal class Arc private constructor(
         elType = ARC_ELEMENT_TYPE
         isDraggable = true
     }
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     internal fun configureVisualArrows(
         firstArrow: Boolean,
@@ -211,16 +226,25 @@ internal class Arc private constructor(
         )
     }
 
+    // JSXGraph: src/element/arc.js -> getRadius
+    internal fun getRadius(): Double = Radius()
+
     // JSXGraph: src/element/arc.js -> Value
     @Suppress("FunctionName")
-    internal fun Value(unit: String = "length"): Double {
-        var radians = Geometry.rad(
+    internal fun Value(
+        unit: String = "length",
+        radiansOverride: Double? = null,
+    ): Double {
+        var radians = radiansOverride ?: Geometry.rad(
             radiuspoint.Coords(),
             center.Coords(),
             anglepoint.Coords(),
-        )
-        if (orientation == ORIENTATION_CLOCKWISE) {
-            radians = 2.0 * PI - radians
+        ).let { value ->
+            if (orientation == ORIENTATION_CLOCKWISE) {
+                2.0 * PI - value
+            } else {
+                value
+            }
         }
         return when {
             unit.isEmpty() || unit.lowercase().startsWith("len") ->
@@ -232,6 +256,144 @@ internal class Arc private constructor(
             else -> Double.NaN
         }
     }
+
+    // JSXGraph: src/element/arc.js -> L
+    @Suppress("FunctionName")
+    internal fun L(): Double = Value("length")
+
+    // Arc is an upstream Curve with cubic data-array interpolation.
+    internal fun minX(): Double = 0.0
+
+    internal fun maxX(): Double =
+        (numberPoints - 1).toDouble() / bezierDegree
+
+    // JSXGraph: src/element/arc.js -> hasPoint
+    internal fun hasPoint(
+        screenX: Double,
+        screenY: Double,
+        precision: Double = DEFAULT_HIT_PRECISION,
+        hasInnerPoints: Boolean =
+            evalVisProp("hasinnerpoints") == true,
+    ): Boolean {
+        if (hasInnerPoints) {
+            return hasPointSector(screenX, screenY)
+        }
+        val checkPoint = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        )
+        val distance = center.coords.distance(
+            Const.COORDS_BY_USER,
+            checkPoint,
+        )
+        val userTolerance =
+            precision / min(abs(board.unitX), abs(board.unitY))
+        return abs(distance - Radius()) < userTolerance &&
+            containsArcCoordinates(checkPoint.usrCoords)
+    }
+
+    // JSXGraph: src/element/arc.js -> hasPointSector
+    internal fun hasPointSector(
+        screenX: Double,
+        screenY: Double,
+    ): Boolean {
+        val checkPoint = Coords(
+            method = Const.COORDS_BY_SCREEN,
+            coordinates = doubleArrayOf(screenX, screenY),
+            board = board,
+            emitter = false,
+        )
+        val distance = center.coords.distance(
+            Const.COORDS_BY_USER,
+            checkPoint,
+        )
+        return distance < Radius() &&
+            containsArcCoordinates(checkPoint.usrCoords)
+    }
+
+    // JSXGraph: src/element/arc.js -> getTextAnchor
+    internal override fun getTextAnchor(): Coords = center.coords
+
+    // JSXGraph: src/element/arc.js -> getLabelAnchor
+    internal override fun getLabelAnchor(): Coords =
+        getLabelAnchor(
+            position =
+                (elementLabel?.evalVisProp("position") as? String)
+                    ?: (evalVisProp("label.position") as? String)
+                    ?: "ulft",
+            distance =
+                (elementLabel?.evalVisProp("distance") as? Number)
+                    ?.toDouble()
+                    ?: (evalVisProp("label.distance") as? Number)
+                        ?.toDouble()
+                    ?: 0.0,
+            labelSize =
+                elementLabel?.size ?: doubleArrayOf(0.0, 0.0),
+        )
+
+    internal fun getLabelAnchor(
+        position: String,
+        distance: Double = 0.0,
+        labelSize: DoubleArray = doubleArrayOf(0.0, 0.0),
+    ): Coords {
+        val anchor = arcSectorLabelAnchor(
+            board = board,
+            center = center,
+            radiusPoint = radiuspoint,
+            anglePoint = anglepoint,
+            selection = selection,
+            orientation = orientation,
+            position = position,
+            distance = distance,
+            labelSize = labelSize,
+            points = points,
+            bezierDegree = bezierDegree,
+            offsetPixels = 10.0,
+        )
+        if ("right" !in position && "left" !in position) {
+            val centerCoordinates = center.coords.usrCoords
+            elementLabel?.setAttribute(
+                mapOf(
+                    "position" to Geometry.calcLabelQuadrant(
+                        Geometry.rad(
+                            doubleArrayOf(1.0, 0.0),
+                            doubleArrayOf(0.0, 0.0),
+                            doubleArrayOf(
+                                anchor.usrCoords[1] -
+                                    centerCoordinates[1],
+                                anchor.usrCoords[2] -
+                                    centerCoordinates[2],
+                            ),
+                        ),
+                    ),
+                ),
+            )
+        }
+        return anchor
+    }
+
+    private fun containsArcCoordinates(
+        coordinates: DoubleArray,
+    ): Boolean =
+        Geometry.coordsOnArc(
+            radiusPoint = radiuspoint.coords.usrCoords,
+            center = center.coords.usrCoords,
+            anglePoint = anglepoint.coords.usrCoords,
+            coordinates = coordinates,
+            selection = when (selection) {
+                SELECTION_MINOR -> ArcSelection.MINOR
+                SELECTION_MAJOR -> ArcSelection.MAJOR
+                else -> ArcSelection.AUTO
+            },
+            orientation =
+                if (orientation == ORIENTATION_CLOCKWISE) {
+                    ArcOrientation.CLOCKWISE
+                } else {
+                    ArcOrientation.COUNTERCLOCKWISE
+                },
+        )
 
     private fun setData(
         dataX: DoubleArray,
@@ -258,6 +420,7 @@ internal class Arc private constructor(
 
         private const val ARC_ID_PREFIX = "G"
         private const val ARC_ELEMENT_TYPE = "arc"
+        private const val DEFAULT_HIT_PRECISION = 4.0
         private val SELECTIONS =
             setOf(SELECTION_AUTO, SELECTION_MINOR, SELECTION_MAJOR)
         private val ORIENTATIONS =

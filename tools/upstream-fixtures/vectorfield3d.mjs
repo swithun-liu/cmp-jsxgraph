@@ -15,6 +15,7 @@ const require = createRequire(
 );
 const puppeteer = require("puppeteer");
 const executablePath =
+    process.env.CHROME_BIN ||
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 const browser = await puppeteer.launch({
@@ -107,6 +108,10 @@ try {
         board.update();
         const updated = snapshot(field);
 
+        field.setF((x, y, z) => [0, 2, 0], "x, y, z");
+        board.update();
+        const replacedField = snapshot(field);
+
         let malformed;
         try {
             view.create(
@@ -169,6 +174,7 @@ try {
             unitY: board.unitY,
             initial,
             updated,
+            replacedField,
             zero: zeroSnapshot,
             malformed
         };

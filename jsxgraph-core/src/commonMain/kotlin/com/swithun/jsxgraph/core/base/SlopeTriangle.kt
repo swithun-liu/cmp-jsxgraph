@@ -138,6 +138,8 @@ internal class SlopeTriangleDefinition(
     @Suppress("FunctionName")
     internal fun Direction(): DoubleArray = tangent.Direction()
 
+    // JSXGraph 1.13.3: src/options.js -> slopetriangle.label closures
+    // digits / showPrefix / showSuffix / suffix.
     // JSXGraph: src/element/slopetriangle.js -> label.setText callback;
     // src/base/line.js -> getLabelAnchor, default midpoint and offset.
     internal fun updateLabel() {
@@ -148,7 +150,12 @@ internal class SlopeTriangleDefinition(
                 (glider.Y() + topPoint.Y()) * 0.5,
             ),
         )
-        val value = JsNumberFormat.fixed(Slope(), digits)
+        val value =
+            if (label.useLocale()) {
+                label.formatNumberLocaleText(Slope(), digits)
+            } else {
+                JsNumberFormat.fixed(Slope(), digits)
+            }
         val text =
             (if (showPrefix) prefix else "") +
                 value +

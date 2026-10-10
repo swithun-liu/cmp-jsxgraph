@@ -50,6 +50,10 @@ internal sealed interface ForeignObjectError {
         val actualType: String,
     ) : ForeignObjectError
 
+    data class Anchor(
+        val error: CoordsElementAnchorError,
+    ) : ForeignObjectError
+
     data class Registration(
         val error: BoardError,
     ) : ForeignObjectError
@@ -242,7 +246,8 @@ internal class ForeignObject private constructor(
      * The implementations are shared by CoordsElement.
      */
 
-    // JSXGraph: src/base/foreignobject.js -> ForeignObject.getParents.
+    // JSXGraph 1.13.3: src/base/foreignobject.js ->
+    // ForeignObject.getParents.
     internal fun parentDefinitions(): List<Any?> =
         if (parents.isNotEmpty()) {
             parents.toList()
@@ -253,6 +258,10 @@ internal class ForeignObject private constructor(
                 usrSize?.copyOf(),
             )
         }
+
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(parentDefinitions())
 
     private fun pixelSize(userSize: DoubleArray): DoubleArray =
         doubleArrayOf(
@@ -277,6 +286,7 @@ internal class ForeignObject private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = false,
             evaluateOnlyOnce: Boolean = false,
+            anchor: GeometryElement? = null,
         ): GMResult<ForeignObject, ForeignObjectError> =
             createResolved(
                 board = board,
@@ -288,6 +298,7 @@ internal class ForeignObject private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 evaluateOnlyOnce = evaluateOnlyOnce,
+                anchor = anchor,
             )
 
         internal fun createConstrained(
@@ -299,6 +310,7 @@ internal class ForeignObject private constructor(
             name: String? = null,
             needsRegularUpdate: Boolean = false,
             evaluateOnlyOnce: Boolean = false,
+            anchor: GeometryElement? = null,
         ): GMResult<ForeignObject, ForeignObjectError> {
             if (
                 coordinateFunctions.size !in 1..3 ||
@@ -329,6 +341,7 @@ internal class ForeignObject private constructor(
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
                 evaluateOnlyOnce = evaluateOnlyOnce,
+                anchor = anchor,
             )
         }
 
@@ -342,6 +355,7 @@ internal class ForeignObject private constructor(
             name: String?,
             needsRegularUpdate: Boolean,
             evaluateOnlyOnce: Boolean,
+            anchor: GeometryElement?,
         ): GMResult<ForeignObject, ForeignObjectError> {
             if (coordinates.size !in 2..3) {
                 return GMResult.Err(
@@ -410,6 +424,28 @@ internal class ForeignObject private constructor(
             foreignObject.addParentsFromJCFunctions(
                 coordinateFunctions + sizeTerms,
             )
+            foreignObject.addParents(
+                coordinateFunctions.flatMap {
+                    it.coordinateParents
+                },
+            )
+            if (anchor != null) {
+                when (
+                    val anchored = foreignObject.addAnchor(
+                        anchor = anchor,
+                        coordinates = coordinates,
+                        isLabel = false,
+                    )
+                ) {
+                    is GMResult.Ok -> Unit
+                    is GMResult.Err -> {
+                        board.removeObject(foreignObject)
+                        return GMResult.Err(
+                            ForeignObjectError.Anchor(anchored.error),
+                        )
+                    }
+                }
+            }
             foreignObject.update()
             return GMResult.Ok(foreignObject)
         }

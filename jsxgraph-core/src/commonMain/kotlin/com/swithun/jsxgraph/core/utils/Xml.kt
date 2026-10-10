@@ -320,6 +320,8 @@ object XML {
     }
 
     // JSXGraph 1.13.3: src/utils/xml.js -> JXG.XML.parse.
+    // The pure-KMP parser replaces the browser/ActiveX DP constructor and
+    // parseFromString closure while preserving the XML tree contract.
     fun parse(
         input: String,
         limits: XmlLimits = XmlLimits(),

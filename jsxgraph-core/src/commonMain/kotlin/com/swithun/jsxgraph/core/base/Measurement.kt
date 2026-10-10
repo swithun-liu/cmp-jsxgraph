@@ -215,6 +215,8 @@ internal class MeasurementDefinition(
         return GMResult.Ok(JessieCodeRuntimeValue.StringValue(unit))
     }
 
+    // JSXGraph 1.13.3: src/element/measure.js ->
+    // createMeasurement closures getTerm / getMethod / toPrefix / getParents.
     internal fun getTerm(): JessieCodeRuntimeValue = term
 
     internal fun getMethod(): GMResult<String, MeasurementError> {
@@ -332,6 +334,8 @@ internal class MeasurementDefinition(
         return GMResult.Ok(prefix + formatted.text + unit + suffix)
     }
 
+    // JSXGraph 1.13.3: src/options.js ->
+    // measurement.formatCoords / formatDirection.
     private fun formatCoordinates(
         prefix: String,
         suffix: String,
@@ -497,9 +501,18 @@ internal class MeasurementDefinition(
     ): String =
         when (digits) {
             MeasurementDigits.None -> JsNumberFormat.compact(value)
-            MeasurementDigits.Auto -> autoDigits(value)
+            MeasurementDigits.Auto ->
+                if (text.useLocale()) {
+                    text.formatNumberLocaleText(value)
+                } else {
+                    autoDigits(value)
+                }
             is MeasurementDigits.Fixed ->
-                JsNumberFormat.fixed(value, digits.value)
+                if (text.useLocale()) {
+                    text.formatNumberLocaleText(value, digits.value)
+                } else {
+                    JsNumberFormat.fixed(value, digits.value)
+                }
         }
 
     private fun autoDigits(value: Double): String =

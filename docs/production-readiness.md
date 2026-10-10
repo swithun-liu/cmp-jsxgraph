@@ -11,6 +11,10 @@ rated Stable. A successful build or a single visual demo is not sufficient.
   geometry model, scene snapshots, and Compose Canvas rendering
 - Official JSXGraph usage: isolated in `jsxgraph-debug-ui`
 - Release status: **Stable for the documented support scope**
+- Portable behavior audit: 249/249 portable slices; `100.00%` weighted
+  (1 excluded of 250 assessed)
+- Source-symbol audit: 2,540 translated + 16 KMP-adapted + 35 excluded =
+  2,591 classified; 0 pending; 2,029/2,029 API-surface symbols mapped
 
 The Stable scope is the bounded construction-document API for Point, Line,
 Segment with an optional numeric or JessieCode-string fixed-length parent,
@@ -21,17 +25,36 @@ Angle, including free Point drag, dependent updates, `nonnegativeOnly` dynamic
 string Circle radii, dynamic Segment length updates, fixed-length endpoint
 coupling, Midpoint and orthogonal-construction parent updates, and
 interaction-state capture/restore. The remaining JSXGraph API and element
-families are not included.
+families are translated previews or explicit platform/CAS/license exclusions;
+they are not included in this Stable contract.
 
 The public `JsxGraphJessieCode` one-shot and stateful source APIs are a
 resource-bounded preview. They execute only the translated JessieCode subset,
 never arbitrary JavaScript, and are not included in the current Stable rating.
+The public `JsxGraphReader.parse` API accepts already loaded text for the
+registered built-in readers and snapshots their final Board state as a
+portable scene with reader-created labels, structured failures, and resource
+limits. GeoGebra imports consume the official `setDefaultOptions` values and
+per-output XML visual properties. Network, filesystem, permission, and
+decoding policy remain host-owned. Custom reader registration and independent
+Stable qualification remain pending; unsupported inputs outside audited
+source branches stay explicit structured failures or diagnostics.
+The Board navigation control surface is verified outside that Stable scope.
+Core preserves the official control order, symbols, portable navbar style,
+zoom/reset/pan/clear-traces commands, and structured unavailable-control
+failures. Compose renders and consumes the controls; fullscreen, screenshot,
+and reload remain explicit host callbacks. Construction-document and
+JessieCode sessions require `showNavigation` opt-in so existing scenes retain
+their prior defaults.
 Post-`0.1.0` construction-document and JessieCode preview work includes
 ParallelPoint/Parallel and Bisector/Incenter/Incircle with source-mapped tests
-and focused same-source parity. Static Arrow/ArrowParallel creation and Canvas
-head types `1..7` now have source-mapped creator, geometry, and focused
-static/parent-drag parity evidence. Dynamic/highlight and non-Line arrows
-remain pending. The non-Board Composition subset and
+and focused same-source parity. Arrow/ArrowParallel creation and Canvas head
+types `1..7` now have source-mapped creator, geometry, highlight, and focused
+static/parent-drag parity evidence. Curve/Arc/Sector static arrows and
+function-valued Segment/Curve whole arrow objects plus nested `type`, `size`,
+and `highlightSize` functions have source-mapped scene, official-fixture, and
+JVM/Wasm evidence, including dynamic Arc/Sector permutations.
+The non-Board Composition subset and
 JessieCode-only BisectorLines creator now have source-mapped construction,
 update, removal, nested-attribute, and focused parity evidence; the JSON
 document path continues to reject that compound return explicitly.
@@ -86,9 +109,19 @@ accepts vector and component functions, dynamic ranges, transformed parents,
 wireframe sampling, rectangle/triangle tiling, and color-array, Shader, and
 colormap faces through Curve and Polyhedron3D proxies. Curve3D, Circle3D, and
 Surface3D parametric projection use the source-mapped `math/nlp.js` COBYLA
-translation and match official numerical fixtures. Global View3D
-`depthOrder`/layer configuration, camera controls, Point3D gliders and
-animations, and the remaining 3D APIs are still pending.
+translation and match official numerical fixtures. View3D global Canvas
+ordering now follows `depthOrder.enabled/layers`, 3D ownership, z-index, and
+creation order. Its host-neutral stored-view, pointer, keyboard, bank,
+trackball, and azimuth-animation kernels have official numerical fixtures.
+Construction-document and JessieCode sessions expose structured View3D input
+in user coordinates, and Compose routes pointer drag, wheel, and hardware-key
+events through that contract. Point3D gliders on Line3D, Plane3D, Curve3D,
+Circle3D, Sphere3D, and Surface3D preserve official position state, host-update
+projection, proxy-drag projection, and finite-range clamping where applicable
+through direct, construction-document, and JessieCode paths. Point3D
+`moveTo`/`moveAlong` easing, path replacement, interval, callback, typed
+session trigger, host-driven scene snapshots, and Compose frame-clock
+scheduling have focused coverage.
 The standalone `math/extrapolate.js` translation covers Wynn epsilon, Aitken,
 iterated Brezinski, and Levin transforms, both iterative limit paths,
 classification, reliability, mutable upstream settings, and sparse-array
@@ -110,13 +143,14 @@ Curve, Arc, Sector, Polygon/Line, and Polygon/path dispatch, including finite
 clipping, arbitrary numeric indices, ideal/non-real outputs, dependency
 updates, and focused same-source parity evidence. The translated
 `Clip.findIntersections` phase covers Circle, Curve, Arc, Sector, and Polygon
-paths. Translated Conic Intersection and OtherIntersection dispatch remains
-explicitly unsupported pending dedicated numerical, lifecycle, resource, and
-parity evidence. CurveIntersection, CurveUnion, and CurveDifference now cover the
+paths. Ellipse, Hyperbola, and Parabola Intersection and OtherIntersection
+dispatch is covered through parent updates and removal. CurveIntersection,
+CurveUnion, and CurveDifference now cover the
 Greiner-Hormann degenerate classification, entry/exit, empty/containment,
 multi-component, and tracing chain, regular Board updates, structured
-topology failures, and focused static/parent-drag parity. Raw coordinate-array
-path inputs and Stable qualification remain pending.
+topology failures, raw coordinate-array path inputs, and focused
+static/parent-drag parity. Stable qualification remains outside the current
+corpus.
 StepFunction now has source-mapped `updateDataArray` expansion, retained
 JessieCode array identity, missing-Y path breaks, JSON/JessieCode resource
 checks on expanded output size, and focused Desktop/Compact same-source
@@ -127,8 +161,8 @@ square forcing, boundary and zero-axis controls, explicit Axis-derived
 automatic spacing, persistent-session snapshots, viewport-resolved Compose
 geometry, pre-allocation limits, and atomic rollback. Its focused
 Desktop/Compact parity scores are `0.988817` and `0.980518`. Default
-Board-axis fallback, runtime mutation, hit testing, complete APIs, and
-independent Stable qualification remain pending.
+Board-axis fallback, runtime mutation, and hit testing are translated;
+independent Stable qualification remains outside the current corpus.
 Image now has source-mapped `Image/createImage`, update, size, span,
 `setSize`, and five-transform rotation behavior. JSON and native JessieCode
 support static sources; native JessieCode also supports function-valued
@@ -137,26 +171,33 @@ construction, Scene snapshots, and affine Compose rendering are covered by
 official fixtures and common tests. The default resolver accepts bounded
 base64 image data URIs only; callers explicitly own network or
 application-resource loading. Its focused Desktop/Compact parity scores are
-`0.985178` and `0.985329`. Dragging, hit testing, arbitrary transform mutation,
-non-data-URI loading, complete APIs, and independent Stable qualification
-remain pending.
+`0.985178` and `0.985329`. Dragging, transformed hit testing, and arbitrary
+transform mutation are translated; non-data-URI loading is host-owned, and
+independent Stable qualification remains outside the current corpus.
 Glider and Slider now have source-mapped finite-coordinate Line/Segment
 projection, finite-end clamping, parent updates, helper ownership/removal,
 labels, ticks, snapping, value mutation, native JessieCode and construction-
 document entry points, bounded scene expansion, and structured atomic
 failures. Their focused Desktop/Compact parity scores are `0.987490` and
-`0.980515`. Circle, Curve, Polygon, Ticks, Turtle, Point, transformed-slide,
-attractor, animation, baseline-click, locale, complete mutation, and
-independent Stable qualification remain pending.
+`0.980515`. Point, Circle, Line/Segment, ordinary Curve, Arc/Sector, and
+Polygon attractor conversion and detaching match the official fixture.
+Array- and function-path movement, property animation, bounded Glider
+stepping, host-driven session frames, and Compose frame-clock scheduling are
+implemented with official and focused session evidence. Ticks and Turtle
+preserve their upstream-invalid creation behavior as structured failures;
+locale-aware formatting and portable mutation are translated. Hyperbola/
+Parabola Glider projection and lifecycle plus Slider
+baseline pointer-up, `moveOnUp`, and fixed gating have official fixture and
+focused common-test coverage.
 Tapemeasure now has source-mapped coordinate endpoint creation, finite Segment
 composition, optional dynamic value labels and equidistant Ticks, nested
 helper identity, `subs`/`inherits`, `Value()`/`V`, endpoint dependency updates,
 official helper-removal behavior, bounded JSON/JessieCode scene expansion, and
 structured atomic failures. Its focused static Desktop/Compact parity scores
 are `0.984781` and `0.969197`; after dragging one endpoint they are `0.985490`
-and `0.969261`. Automatic/none digits, locale and `formatValue`,
-function-valued visual attributes, hit testing, complete APIs, and independent
-Stable qualification remain pending.
+and `0.969261`. Automatic/none digits, locale-aware `formatValue`,
+function-valued visual attributes, and hit testing are translated; independent
+Stable qualification remains outside the current corpus.
 SmartLabel now has source-mapped Point, Line, Circle, Polygon, and Angle
 construction; parent-specific measure defaults and placement; dynamic
 Point/Angle measures; units, prefix/suffix visibility, fixed digits, custom
@@ -165,8 +206,9 @@ Angle rotation and final-viewport 12 CSS-pixel offset, CSS box kinds,
 method-map access, dependency updates, JessieCode HTML sanitization, and
 structured atomic failures. Its focused static Desktop/Compact parity scores
 are `0.984719` and `0.974114`; after dragging the Angle parent they are
-`0.984582` and `0.975467`. Locale, MathJax/KaTeX, user-defined CSS, complete
-Text APIs, and independent Stable qualification remain pending.
+`0.984582` and `0.975467`. Locale and portable Text methods are translated;
+MathJax/KaTeX and arbitrary browser CSS are renderer-owned. Independent Stable
+qualification remains outside the current corpus.
 Integral now has source-mapped Curve/interval construction, fixed and
 string/function bounds, hidden constrained dynamic-bound Gliders, draggable
 fixed-bound Gliders, x/y-axis base Points and closed fill geometry, reverse
@@ -175,8 +217,8 @@ signed values, optional fixed-digit labels, helper identity/order,
 bounded JSON/JessieCode scene expansion, and structured atomic failures. Its
 focused static Desktop/Compact parity scores are `0.984526` and `0.974454`;
 after dragging the bound driver they are `0.984815` and `0.975287`. Adaptive
-plotting, locale and automatic/none digits, complete attributes/APIs, and
-independent Stable qualification remain pending.
+plotting, locale-aware formatting, and automatic/none digits are translated;
+independent Stable qualification remains outside the current corpus.
 SlopeTriangle now has source-mapped Tangent, Glider, and Line/Point parent
 forms within that translated subset. It preserves private-Tangent ownership,
 helper and border order, finite Segment borders, default fill/arrows,
@@ -184,8 +226,9 @@ helper and border order, finite Segment borders, default fill/arrows,
 dynamic fixed-digit labels, final-viewport 10 CSS-pixel label offset, bounded
 scene expansion, and structured atomic failures. Its focused
 Desktop/Compact parity scores are `0.982474` and `0.966707`. Automatic/none
-digits, locale and `formatValue`, function-valued visual attributes, complete
-APIs, and independent Stable qualification remain pending.
+digits, locale-aware `formatValue`, function-valued visual attributes, and hit
+testing are translated; independent Stable qualification remains outside the
+current corpus.
 PolygonalChain now has source-mapped wrapper construction, official border
 ordering, open vertices and Segment border rendering, explicit/helper Point
 ownership and removal, JSON/JessieCode vertex limits, and focused static plus
@@ -209,14 +252,13 @@ official removal and degenerate arithmetic, nested helper identity,
 bounded JSON/JessieCode paths, atomic duplicate-ID rollback, and focused
 static plus radius-Point-drag Desktop/Compact parity. It remains outside the
 independent Stable corpus.
-PolePoint now has source-mapped Circle/Line construction in either parent
-order, canonical parent metadata, the exact determinant coordinate closure,
-dependency and removal behavior, non-finite degenerate arithmetic, bounded
-JSON/JessieCode paths, structured atomic rollback, and focused static plus
-four-parent-drag Desktop/Compact parity. Ellipse, Hyperbola, and Parabola
-construction are translated, but their Conic/Line PolePoint forms remain
-explicitly unsupported pending dedicated interop evidence. The translated
-subset remains outside the independent Stable corpus.
+PolePoint now has source-mapped Circle/Ellipse/Hyperbola/Parabola and Line
+construction in either parent order, canonical parent metadata, the exact
+determinant coordinate closure, dependency and removal behavior, non-finite
+degenerate arithmetic, bounded JSON/JessieCode paths, structured atomic
+rollback, and focused static plus four-parent-drag Desktop/Compact parity.
+All Open Conic branches have parent-update and removal evidence. The
+translated slice remains outside the independent Stable corpus.
 The Circle/Point, Line/Point, and Curve/Point branches of Tangent now have
 source-mapped construction, the registered Polar alias, and the Circle-only
 PolarLine wrapper. Circle/Point preserves exact hidden one-function Line
@@ -229,19 +271,19 @@ parametric Curves, nearest-segment projection for data Plots, upstream
 FunctionGraph classification for JessieCode string x-terms, hidden helpers,
 and Point-only ownership. All three branches have bounded JSON/JessieCode
 paths, structured atomic failure handling, and focused static plus parent-drag
-Desktop/Compact parity. Ellipse/Hyperbola/Parabola Tangent/Polar and PolarLine
-Conic forms plus Turtle and Glider Tangent/Polar branches remain explicitly
-unsupported, and this slice remains outside the independent Stable corpus.
-TangentTo now has source-mapped Circle-only
+Desktop/Compact parity. Ellipse, Hyperbola, and Parabola Tangent/Polar
+interoperation is covered through parent updates and removal. PolarLine
+remains Circle-only as upstream defines it; upstream-invalid Turtle/Glider
+branches return structured failures. This slice remains outside the
+independent Stable corpus.
+TangentTo now has source-mapped Circle, Ellipse, Hyperbola, and Parabola
 `polar -> intersection -> tangent` composition, numeric truthiness for
 selecting either contact Point, exposed polar/contact identities, nested
 attributes, dependency and removal behavior, non-real/degenerate arithmetic,
 bounded three-object JSON/JessieCode scene expansion, and atomic rollback.
-Focused static and source-Point-drag Desktop/Compact parity passes. Ellipse,
-Hyperbola, and Parabola construction are translated, but their TangentTo Conic
-branches remain explicitly
-unsupported pending dedicated interop evidence. This slice remains outside
-the independent Stable corpus.
+Focused static and source-Point-drag Desktop/Compact parity passes. All four
+Conic branches have parent-update and removal evidence. This slice remains
+outside the independent Stable corpus.
 Ellipse now has source-mapped `src/element/conic.js -> createEllipse`
 construction from Point/reference/coordinate foci and either a Point on the
 Ellipse or a numeric/function-valued major axis. It preserves optional numeric
@@ -250,10 +292,11 @@ quadratic-form and parent updates, helper ownership/removal, and degenerate
 JavaScript `Double` arithmetic. JSON/JessieCode limits, native session
 updates, duplicate-ID rejection, structured failures, atomic rollback, and
 focused static plus point-parent-drag Desktop/Compact parity pass. Adaptive
-plotting and independent Stable qualification remain pending. Tangent, Polar,
-PolarLine, PolePoint, TangentTo, Normal, Intersection, and OtherIntersection
-Conic forms remain explicitly unsupported until their own source-mapped
-translation and evidence are complete.
+plotting is translated. Tangent, Polar,
+PolePoint, TangentTo, Normal, Intersection, OtherIntersection, and Glider
+interoperation are covered through parent updates and removal. PolarLine
+remains Circle-only. Independent Stable qualification is outside the current
+corpus.
 Hyperbola now has source-mapped
 `src/element/conic.js -> createHyperbola` construction from
 Point/reference/coordinate foci and either a Point on the Hyperbola or a
@@ -263,11 +306,10 @@ foci/center/midpoint/major-axis metadata, quadratic-form and parent updates,
 helper ownership/removal, and degenerate JavaScript `Double` arithmetic.
 JSON/JessieCode limits, native session updates, duplicate-ID rejection,
 structured failures, atomic rollback, and focused static plus
-point-parent-drag Desktop/Compact parity pass. Adaptive plotting and
-independent Stable qualification remain pending. Tangent, Polar, PolarLine,
-PolePoint, TangentTo, Normal, Intersection, and OtherIntersection Conic forms
-remain explicitly unsupported until their own source-mapped translation and
-evidence are complete.
+point-parent-drag Desktop/Compact parity pass. Adaptive plotting plus Tangent,
+Polar, PolePoint, TangentTo, Normal, Intersection, OtherIntersection, and
+Glider interoperation are translated and lifecycle-tested. PolarLine remains
+Circle-only. Independent Stable qualification is outside the current corpus.
 Parabola now has source-mapped
 `src/element/conic.js -> createParabola` construction from a
 Point/reference/function-returning-Point or coordinate focus and either a
@@ -279,11 +321,11 @@ focus/directrix updates, helper ownership/removal, and degenerate JavaScript
 duplicate-ID rejection, structured failures, atomic rollback, and focused
 static plus focus-drag Desktop/Compact parity pass. The visual fixture uses a
 finite domain around the visible branch; Core and official fixture tests
-retain coverage of the default-domain singularity. Adaptive plotting, richer
-implicit-Line attributes, and independent Stable qualification remain
-pending. Tangent, Polar, PolarLine, PolePoint, TangentTo, Normal,
-Intersection, and OtherIntersection Conic forms remain explicitly unsupported
-until their own source-mapped translation and evidence are complete.
+retain coverage of the default-domain singularity. Adaptive plotting, implicit
+Line attributes, and Tangent, Polar, PolePoint, TangentTo, Normal,
+Intersection, OtherIntersection, and Glider interoperation are translated and
+lifecycle-tested. PolarLine remains Circle-only. Independent Stable
+qualification is outside the current corpus.
 Derivative now has source-mapped `createDerivative` construction over
 `Numerics.D`, FunctionGraph/parametric/data-Plot coverage, linear array
 interpolation and viewport-padded data domains, infinite-slope preservation,
@@ -291,17 +333,18 @@ regular Board recomputation, metadata-only source parents, source-removal
 survival, bounded JSON/JessieCode paths, structured atomic failures, and
 focused static plus coefficient-Point-drag Desktop/Compact parity. It remains
 outside the independent Stable corpus.
-Normal now has source-mapped Line/Point, Circle/Point, and Curve/Point
+Normal now has source-mapped Line/Point, Circle/Point, Ellipse/Point, and
+non-Conic Curve/Point
 construction in either parent order. It preserves ideal or hidden helper
 identity, `point`/`subs`/`inherits` metadata, FunctionGraph derivatives,
 parametric and data-Plot projection, explicit-parent ownership, removal
 behavior, bounded JSON/JessieCode paths, and structured atomic rollback.
 Focused static plus parent-drag Desktop/Compact parity passes. Coordinate-array
 Point inputs are explicitly rejected instead of reproducing the JSXGraph
-`1.13.3` stack overflow; Glider, Turtle, transformed-Curve, degree-three
-Plot/Bezier, and translated Conic branches remain unsupported. Those branches
-require dedicated interop evidence rather than implicit use of the generic
-Curve path. This slice remains outside the independent Stable corpus.
+`1.13.3` stack overflow; transformed-Curve, degree-three Plot/Bezier, and all
+Open Conic branches have dedicated evidence rather than implicitly using the
+generic Curve path. Upstream-invalid Glider/Turtle forms return structured
+failures. This slice remains outside the independent Stable corpus.
 Spline and CardinalSpline now have source-mapped natural-cubic and cardinal
 interpolation, dynamic Point and tension updates, Point ownership/removal
 semantics, coordinate and parallel-array modes, bounded JSON/JessieCode paths,
@@ -342,9 +385,9 @@ static and driver-drag parity passes at Desktop and Compact sizes. SlopeField
 now wraps that path with one scalar function/expression, the exact upstream
 unit-direction normalization, disabled-arrow default, non-finite arithmetic,
 bounded output, and structured atomic failures. Its focused static and
-driver-drag parity also passes at Desktop and Compact sizes. Runtime `setF`,
-independent production qualification, and Stable promotion remain pending, so
-both slices are outside the Stable corpus.
+driver-drag parity also passes at Desktop and Compact sizes. Runtime `setF` is
+translated; both slices remain outside the independently qualified Stable
+corpus.
 Supported Canvas render items also follow the translated default/explicit
 layer order, including independent Polygon sub-elements. These additions do
 not expand the independent 30-case Stable corpus or this document's release
@@ -453,6 +496,7 @@ known in the supported contract.
 
 All current code-level gates pass for the documented JSXGraph `1.13.3` subset.
 CMP JSXGraph is therefore rated **Stable for that support scope**. This does
-not imply complete JSXGraph compatibility; unsupported features remain listed
-in [`translation-status.md`](translation-status.md) and
+not promote translated preview APIs or platform/CAS/license exclusions.
+Their boundaries remain listed in
+[`translation-status.md`](translation-status.md) and
 [`translation-deviations.md`](translation-deviations.md).

@@ -20,6 +20,7 @@ package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.JsxGraphGrid2D
+import com.swithun.jsxgraph.core.JsxGraphGridResolveError
 import com.swithun.jsxgraph.core.math.Clip
 import com.swithun.jsxgraph.core.math.ClipBooleanOperation
 import com.swithun.jsxgraph.core.math.ClipError
@@ -49,7 +50,9 @@ import com.swithun.jsxgraph.core.parser.JessieCodeExpressionFunction
 import com.swithun.jsxgraph.core.parser.JessieCodeIntervalEvaluation
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeError
 import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.parser.JessieCodeSourceBackedFunction
 import com.swithun.jsxgraph.core.utils.Type
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -196,15 +199,51 @@ internal sealed interface CurveError {
     data class DataUpdate(
         val error: CurveDataUpdateError,
     ) : CurveError
+
+    data object NotVectorField : CurveError
 }
 
 internal data class CurvePlotOptions(
-    val doAdvancedPlot: Boolean = false,
+    // JSXGraph 1.13.3: src/options.js -> curve.doAdvancedPlot.
+    val doAdvancedPlot: Boolean = true,
     val plotVersion: Int = 2,
     val recursionDepthHigh: Int = 17,
     val rdpSmoothing: Boolean = false,
     val rdpThreshold: Double = 0.2,
 )
+
+// JSXGraph 1.13.3: src/base/curve.js -> generateTerm.
+internal sealed interface CurveGeneratedTerm {
+    val minimumTerm: JessieCodeCoordinateFunction?
+    val maximumTerm: JessieCodeCoordinateFunction?
+
+    data class Data(
+        val xTerms: List<JessieCodeCoordinateFunction>,
+        val yTerms: List<JessieCodeCoordinateFunction>?,
+        val continuousYTerm: JessieCodeCoordinateFunction?,
+        override val minimumTerm: JessieCodeCoordinateFunction?,
+        override val maximumTerm: JessieCodeCoordinateFunction?,
+    ) : CurveGeneratedTerm
+
+    data class Continuous(
+        val xTerm: JessieCodeCoordinateFunction,
+        val yTerm: JessieCodeCoordinateFunction?,
+        val yTerms: List<JessieCodeCoordinateFunction>?,
+        val functionGraph: Boolean,
+        val identityXTerm: Boolean,
+        override val minimumTerm: JessieCodeCoordinateFunction?,
+        override val maximumTerm: JessieCodeCoordinateFunction?,
+    ) : CurveGeneratedTerm
+
+    data class Polar(
+        val radiusTerm: JessieCodeCoordinateFunction,
+        val xOffsetTerm: JessieCodeCoordinateFunction,
+        val yOffsetTerm: JessieCodeCoordinateFunction,
+        val yTerms: List<JessieCodeCoordinateFunction>,
+        override val minimumTerm: JessieCodeCoordinateFunction?,
+        override val maximumTerm: JessieCodeCoordinateFunction?,
+    ) : CurveGeneratedTerm
+}
 
 internal data class CurveTraceSnapshot(
     val points: List<DoubleArray>,
@@ -213,6 +252,10 @@ internal data class CurveTraceSnapshot(
 )
 
 internal sealed interface CurveDataUpdateError {
+    data class Grid(
+        val error: JsxGraphGridResolveError,
+    ) : CurveDataUpdateError
+
     data class Face3D(
         val error: Face3DError,
     ) : CurveDataUpdateError
@@ -731,7 +774,7 @@ internal data class CurveVectorFieldSnapshot(
 
 private data class CurveVectorFieldDefinition(
     val elementType: String,
-    val field: CurveVectorFieldFunction,
+    var field: CurveVectorFieldFunction,
     val xData: List<JessieCodeCoordinateFunction>,
     val yData: List<JessieCodeCoordinateFunction>,
     val scaleTerm: JessieCodeCoordinateFunction,
@@ -743,27 +786,34 @@ private data class CurveVectorFieldDefinition(
 )
 
 /**
- * Initial translated slice of JXG.Curve.
+ * Translated JXG.Curve lifecycle.
  *
- * This slice covers data and function plots, all four translated samplers,
+ * This implementation covers data and function plots, all four samplers,
  * RDP smoothing, transforms, polar and cubic paths, fills, arrows, labels,
  * hit testing, traces, mutable data, StepFunction, RiemannSum, Integral,
  * BoxPlot, spline, vector-field, inequality, and Boolean-clipping behavior.
- * Unsupported mixed-array, non-round-cap, and specialized mutation forms
- * remain explicit at their boundaries.
+ * Malformed mixed-array and unsupported line-cap inputs remain explicit
+ * structured failures at the public boundary.
  */
+internal interface CurveTransformationSource {
+    val transformationElement: GeometryElement
+    val transformationPoints: List<Coords>
+    val transformationPointCount: Int
+    val transformationBezierDegree: Int
+}
+
 internal class Curve private constructor(
     board: Board,
-    internal val curveType: String,
-    private val xTerm: JessieCodeCoordinateFunction?,
-    private val yTerm: JessieCodeCoordinateFunction?,
-    private val minimumTerm: JessieCodeCoordinateFunction?,
-    private val maximumTerm: JessieCodeCoordinateFunction?,
+    curveType: String,
+    xTerm: JessieCodeCoordinateFunction?,
+    yTerm: JessieCodeCoordinateFunction?,
+    minimumTerm: JessieCodeCoordinateFunction?,
+    maximumTerm: JessieCodeCoordinateFunction?,
     dataX: DoubleArray?,
     dataY: DoubleArray?,
     internal val sampleCount: Int,
     private val plotOptions: CurvePlotOptions = CurvePlotOptions(),
-    private val identityXTerm: Boolean = false,
+    identityXTerm: Boolean = false,
     private val booleanDefinition: CurveBooleanDefinition? = null,
     private val traceDefinition: CurveTraceDefinition? = null,
     private val stepDefinition: CurveStepDefinition? = null,
@@ -792,7 +842,15 @@ internal class Curve private constructor(
     type = Const.OBJECT_TYPE_CURVE,
     elementClass = Const.OBJECT_CLASS_CURVE,
     needsRegularUpdate = needsRegularUpdate,
-) {
+), CurveTransformationSource {
+    internal var curveType: String = curveType
+        private set
+    private var xTerm: JessieCodeCoordinateFunction? = xTerm
+    private var yTerm: JessieCodeCoordinateFunction? = yTerm
+    private var minimumTerm: JessieCodeCoordinateFunction? = minimumTerm
+    private var maximumTerm: JessieCodeCoordinateFunction? = maximumTerm
+    private var identityXTerm: Boolean = identityXTerm
+    private var generatedTerm: CurveGeneratedTerm? = null
     internal var dataX: DoubleArray? = dataX
         private set
     internal var dataY: DoubleArray? = dataY
@@ -804,10 +862,18 @@ internal class Curve private constructor(
         private set
     internal var transformMat: Array<DoubleArray> = Mat.identity(3)
         private set
-    internal var transformationSource: Curve? = null
+    internal var transformationSource: CurveTransformationSource? = null
         private set
     internal var evaluationError: CurveError? = null
         private set
+    override val transformationElement: GeometryElement
+        get() = this
+    override val transformationPoints: List<Coords>
+        get() = points
+    override val transformationPointCount: Int
+        get() = numberPoints
+    override val transformationBezierDegree: Int
+        get() = bezierDegree
     // JSXGraph 1.13.3: src/base/curve.js -> updateRenderer;
     // src/math/plot.js -> checkReal.
     internal var isReal: Boolean = false
@@ -885,7 +951,6 @@ internal class Curve private constructor(
     internal override val inherits = mutableListOf<GeometryElement>()
     internal val subs = linkedMapOf<String, GeometryElement>()
     internal var gridDefinition: JsxGraphGrid2D? = null
-        private set
     internal var minorGrid: Curve? = null
     internal var majorGrid: Curve? = null
     private var dataUpdater: CurveDataUpdater? = null
@@ -972,18 +1037,39 @@ internal class Curve private constructor(
         screenY: Double,
         precision: Double = DEFAULT_HIT_PRECISION,
     ): Boolean {
+        // JSXGraph 1.13.3: src/element/grid.js -> createGrid hasPoint;
+        // src/element/composition.js -> createInequality hasPoint.
+        if (isGrid || isInequality) {
+            return false
+        }
         val point = Coords(
             method = Const.COORDS_BY_SCREEN,
             coordinates = doubleArrayOf(screenX, screenY),
             board = board,
             emitter = false,
         )
+        // JSXGraph 1.13.3: src/element/conic.js -> createEllipse.hasPoint.
+        if (
+            ellipseDefinition != null &&
+            evalVisProp("hasinnerpoints") == true
+        ) {
+            val distance =
+                point.distance(
+                    Const.COORDS_BY_USER,
+                    ellipseDefinition.focus1.coords,
+                ) +
+                    point.distance(
+                        Const.COORDS_BY_USER,
+                        ellipseDefinition.focus2.coords,
+                    )
+            return distance <= majorAxis()
+        }
         val usedPoints = points
             .take(minOf(numberPoints, points.size))
             .map { it.usrCoords.copyOf() }
         if (
             bezierDegree == 1 &&
-            ((getAttribute("hasinnerpoints") as? Boolean) == true) &&
+            evalVisProp("hasinnerpoints") == true &&
             Geometry.windingNumber(
                 point = point.usrCoords,
                 path = usedPoints,
@@ -1025,17 +1111,88 @@ internal class Curve private constructor(
             is GMResult.Ok -> Unit
             is GMResult.Err -> return result
         }
-        transformationSource?.let { source ->
-            val count = minOf(source.numberPoints, source.points.size)
+        val activeGeneratedTerm = generatedTerm
+        when (activeGeneratedTerm) {
+            is CurveGeneratedTerm.Data -> {
+                dataX = when (
+                    val result = evaluateGeneratedData(
+                        termName = "xterm",
+                        terms = activeGeneratedTerm.xTerms,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                activeGeneratedTerm.yTerms?.let { terms ->
+                    dataY = when (
+                        val result = evaluateGeneratedData(
+                            termName = "yterm",
+                            terms = terms,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+            }
+            is CurveGeneratedTerm.Continuous ->
+                activeGeneratedTerm.yTerms?.let { terms ->
+                    dataY = when (
+                        val result = evaluateGeneratedData(
+                            termName = "yterm",
+                            terms = terms,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+            is CurveGeneratedTerm.Polar -> {
+                dataY = when (
+                    val result = evaluateGeneratedData(
+                        termName = "yterm",
+                        terms = activeGeneratedTerm.yTerms,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+            }
+            null -> Unit
+        }
+        transformationSource?.takeIf {
+            activeGeneratedTerm == null
+        }?.let { source ->
+            val count = minOf(
+                source.transformationPointCount,
+                source.transformationPoints.size,
+            )
             dataX = DoubleArray(count) { index ->
-                source.points[index].usrCoords[1]
+                source.transformationPoints[index].usrCoords[1]
             }
             dataY = DoubleArray(count) { index ->
-                source.points[index].usrCoords[2]
+                source.transformationPoints[index].usrCoords[2]
             }
-            bezierDegree = source.bezierDegree
+            bezierDegree = source.transformationBezierDegree
         }
-        dataUpdater?.let { updater ->
+        gridDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }?.let {
+            when (val result = Grid.updateData(this)) {
+                is GMResult.Ok -> {
+                    dataX = result.value.x.copyOf()
+                    dataY = result.value.y.copyOf()
+                }
+                is GMResult.Err -> return GMResult.Err(
+                    CurveError.DataUpdate(
+                        CurveDataUpdateError.Grid(result.error),
+                    ),
+                )
+            }
+        }
+        dataUpdater?.takeIf {
+            activeGeneratedTerm == null
+        }?.let { updater ->
             when (val result = updater.update()) {
                 is GMResult.Ok -> {
                     dataX = result.value.x.copyOf()
@@ -1046,13 +1203,17 @@ internal class Curve private constructor(
                 )
             }
         }
-        traceDefinition?.let { definition ->
+        traceDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }?.let { definition ->
             when (val result = updateTraceDefinition(definition)) {
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
             }
         }
-        val clipping = booleanDefinition
+        val clipping = booleanDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (clipping != null) {
             return when (
                 val result = Clip.booleanOperation(
@@ -1071,7 +1232,9 @@ internal class Curve private constructor(
             }
         }
 
-        val step = stepDefinition
+        val step = stepDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (step != null) {
             when (val result = updateStepDataArray(step)) {
                 is GMResult.Ok -> Unit
@@ -1079,7 +1242,9 @@ internal class Curve private constructor(
             }
         }
 
-        val comb = combDefinition
+        val comb = combDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (comb != null) {
             when (val result = updateCombDefinition(comb)) {
                 is GMResult.Ok -> Unit
@@ -1087,7 +1252,9 @@ internal class Curve private constructor(
             }
         }
 
-        val inequality = inequalityDefinition
+        val inequality = inequalityDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (inequality != null) {
             when (val result = updateInequalityDefinition(inequality)) {
                 is GMResult.Ok -> Unit
@@ -1095,7 +1262,9 @@ internal class Curve private constructor(
             }
         }
 
-        val vectorField = vectorFieldDefinition
+        val vectorField = vectorFieldDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (vectorField != null) {
             when (val result = updateVectorFieldDefinition(vectorField)) {
                 is GMResult.Ok -> Unit
@@ -1103,7 +1272,9 @@ internal class Curve private constructor(
             }
         }
 
-        val boxPlot = boxPlotDefinition
+        val boxPlot = boxPlotDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (boxPlot != null) {
             when (val result = updateBoxPlotDefinition(boxPlot)) {
                 is GMResult.Ok -> Unit
@@ -1111,7 +1282,9 @@ internal class Curve private constructor(
             }
         }
 
-        val riemann = riemannDefinition
+        val riemann = riemannDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (riemann != null) {
             when (val result = updateRiemannDefinition(riemann)) {
                 is GMResult.Ok -> Unit
@@ -1119,12 +1292,16 @@ internal class Curve private constructor(
             }
         }
 
-        val integral = integralDefinition
+        val integral = integralDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (integral != null) {
             updateIntegralDefinition(integral)
         }
 
-        val spline = splineDefinition
+        val spline = splineDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (spline != null) {
             when (val result = updateSplineDefinition(spline)) {
                 is GMResult.Ok -> Unit
@@ -1132,7 +1309,9 @@ internal class Curve private constructor(
             }
         }
 
-        val cardinalSpline = cardinalSplineDefinition
+        val cardinalSpline = cardinalSplineDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (cardinalSpline != null) {
             when (val result = updateCardinalSplineDefinition(cardinalSpline)) {
                 is GMResult.Ok -> Unit
@@ -1140,7 +1319,9 @@ internal class Curve private constructor(
             }
         }
 
-        val metaPostSpline = metaPostSplineDefinition
+        val metaPostSpline = metaPostSplineDefinition?.takeIf {
+            activeGeneratedTerm == null
+        }
         if (metaPostSpline != null) {
             when (val result = updateMetaPostSplineDefinition(metaPostSpline)) {
                 is GMResult.Ok -> Unit
@@ -1150,7 +1331,30 @@ internal class Curve private constructor(
 
         val xData = dataX
         if (xData != null) {
-            replaceDataPoints(xData, dataY ?: DoubleArray(0))
+            val yData = dataY ?: yTerm?.let { term ->
+                val values = DoubleArray(xData.size)
+                for (index in xData.indices) {
+                    values[index] = when (
+                        val result = evaluateNumber(
+                            term = "yterm",
+                            expression = term,
+                            arguments = listOf(
+                                JessieCodeRuntimeValue.NumberValue(
+                                    interpolateData(
+                                        values = xData,
+                                        parameter = index.toDouble(),
+                                    ),
+                                ),
+                            ),
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                }
+                values
+            } ?: DoubleArray(0)
+            replaceDataPoints(xData, yData)
             return finishCurveUpdate()
         }
 
@@ -1522,6 +1726,8 @@ internal class Curve private constructor(
 
     // JSXGraph 1.13.3:
     // src/base/curve.js -> createCardinalSpline and
+    // createCardinalSpline closures getPointLike / Dist;
+    // createMetapostSpline closure getPointLike;
     // src/math/numerics.js -> CardinalSpline.
     private fun updateCardinalSplineDefinition(
         definition: CurveCardinalSplineDefinition,
@@ -2559,10 +2765,17 @@ internal class Curve private constructor(
         when (
             val result = label.setText(
                 "\u222b = " +
-                    com.swithun.jsxgraph.core.utils.JsNumberFormat.fixed(
-                        integralValue(definition),
-                        definition.labelDigits,
-                    ),
+                    if (label.useLocale()) {
+                        label.formatNumberLocaleText(
+                            integralValue(definition),
+                            definition.labelDigits,
+                        )
+                    } else {
+                        com.swithun.jsxgraph.core.utils.JsNumberFormat.fixed(
+                            integralValue(definition),
+                            definition.labelDigits,
+                        )
+                    },
             )
         ) {
             is GMResult.Ok -> definition.labelUpdateError = null
@@ -2838,6 +3051,25 @@ internal class Curve private constructor(
             }
         }
 
+    private fun evaluateGeneratedData(
+        termName: String,
+        terms: List<JessieCodeCoordinateFunction>,
+    ): GMResult<DoubleArray, CurveError> {
+        val values = DoubleArray(terms.size)
+        for ((index, term) in terms.withIndex()) {
+            values[index] = when (
+                val result = evaluateCoordinateNumber(
+                    termName = "$termName[$index]",
+                    term = term,
+                )
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+        }
+        return GMResult.Ok(values)
+    }
+
     private fun evaluateCoordinateBoolean(
         termName: String,
         term: JessieCodeCoordinateFunction,
@@ -2925,6 +3157,73 @@ internal class Curve private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/curve.js -> generateTerm / setTerm.
+    internal fun generateTerm(term: CurveGeneratedTerm): Curve {
+        generatedTerm = term
+        minimumTerm = term.minimumTerm
+        maximumTerm = term.maximumTerm
+        when (term) {
+            is CurveGeneratedTerm.Data -> {
+                curveType = DATA_CURVE_TYPE
+                xTerm = null
+                yTerm = term.continuousYTerm
+                identityXTerm = false
+                dataX = DoubleArray(term.xTerms.size)
+                if (term.yTerms != null) {
+                    dataY = DoubleArray(term.yTerms.size)
+                }
+                numberPoints = term.xTerms.size
+            }
+            is CurveGeneratedTerm.Continuous -> {
+                curveType =
+                    if (term.functionGraph) {
+                        FUNCTION_GRAPH_CURVE_TYPE
+                    } else {
+                        PARAMETRIC_CURVE_TYPE
+                    }
+                xTerm = term.xTerm
+                yTerm = term.yTerm
+                identityXTerm = term.identityXTerm
+            }
+            is CurveGeneratedTerm.Polar -> {
+                curveType = POLAR_CURVE_TYPE
+                xTerm = term.radiusTerm
+                yTerm = null
+                identityXTerm = false
+                dataY = DoubleArray(term.yTerms.size)
+            }
+        }
+        visualProperties["curvetype"] = curveType
+        addParentsFromJCFunctions(
+            when (term) {
+                is CurveGeneratedTerm.Data ->
+                    term.xTerms +
+                        term.yTerms.orEmpty() +
+                        listOfNotNull(
+                            term.continuousYTerm,
+                            term.minimumTerm,
+                            term.maximumTerm,
+                        )
+                is CurveGeneratedTerm.Continuous ->
+                    listOfNotNull(
+                        term.xTerm,
+                        term.yTerm,
+                        term.minimumTerm,
+                        term.maximumTerm,
+                    ) + term.yTerms.orEmpty()
+                is CurveGeneratedTerm.Polar ->
+                    term.yTerms + listOfNotNull(
+                        term.radiusTerm,
+                        term.minimumTerm,
+                        term.maximumTerm,
+                    )
+            },
+        )
+        evaluationError = null
+        prepareUpdate()
+        return this
+    }
+
     // JSXGraph 1.13.3: src/base/turtle.js -> forward / moveTo,
     // curve.dataX.push / curve.dataY.push.
     internal fun appendDataPoint(
@@ -2965,6 +3264,21 @@ internal class Curve private constructor(
         return this
     }
 
+    // JSXGraph 1.13.3: src/element/grid.js ->
+    // createDataArrayForFace / updateDataArray.
+    internal fun updateGridDefinition(
+        definition: JsxGraphGrid2D,
+        bezierDegree: Int,
+    ): Curve {
+        gridDefinition = definition
+        if (bezierDegree == 3) {
+            // The upstream Curve remains cubic after a circle face has been
+            // selected, even if a later face uses straight segments.
+            this.bezierDegree = 3
+        }
+        return this
+    }
+
     internal fun minX(): Double = evaluateMinimum().valueOrNaN()
 
     internal fun maxX(): Double = evaluateMaximum().valueOrNaN()
@@ -2973,7 +3287,31 @@ internal class Curve private constructor(
     @Suppress("UNUSED_PARAMETER")
     internal fun notifyParents(content: String): Curve {
         addParentsFromJCFunctions(
-            listOfNotNull(
+            generatedTerm?.let { term ->
+                when (term) {
+                    is CurveGeneratedTerm.Data ->
+                        term.xTerms +
+                            term.yTerms.orEmpty() +
+                            listOfNotNull(
+                                term.continuousYTerm,
+                                term.minimumTerm,
+                                term.maximumTerm,
+                            )
+                    is CurveGeneratedTerm.Continuous ->
+                        listOfNotNull(
+                            term.xTerm,
+                            term.yTerm,
+                            term.minimumTerm,
+                            term.maximumTerm,
+                        ) + term.yTerms.orEmpty()
+                    is CurveGeneratedTerm.Polar ->
+                        term.yTerms + listOfNotNull(
+                            term.radiusTerm,
+                            term.minimumTerm,
+                            term.maximumTerm,
+                        )
+                }
+            } ?: listOfNotNull(
                 xTerm,
                 yTerm,
                 minimumTerm,
@@ -3186,13 +3524,18 @@ internal class Curve private constructor(
     }
 
     // JSXGraph 1.13.3: src/base/curve.js -> getParents.
-    // GeometryElement.parents already owns the JVM getParents signature.
-    internal fun parentData(): List<Any?> =
-        if (parents.isNotEmpty()) {
-            parents.toList()
-        } else {
-            listOf(xTerm, yTerm, minX(), maxX())
-        }
+    internal override fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(
+            if (parents.isNotEmpty()) {
+                parents.toList()
+            } else {
+                listOf(xTerm, yTerm, minX(), maxX())
+            },
+        )
+
+    internal override fun dumpSubElements():
+        Map<String, GeometryElement> = subs
 
     // JSXGraph 1.13.3: src/base/curve.js -> moveTo.
     internal fun moveTo(
@@ -3229,9 +3572,13 @@ internal class Curve private constructor(
 
     // JSXGraph 1.13.3: src/base/curve.js -> getTransformationSource.
     // The Kotlin property owns the JVM getter name.
-    internal fun transformationSourceInfo(): Pair<Boolean, Curve?> {
+    internal fun transformationSourceInfo():
+        Pair<Boolean, GeometryElement?> {
         val source = transformationSource
-        return (source?.elementClass == Const.OBJECT_CLASS_CURVE) to source
+        return (
+            source?.transformationElement?.elementClass ==
+                Const.OBJECT_CLASS_CURVE
+            ) to source?.transformationElement
     }
 
     // JSXGraph 1.13.3: src/base/curve.js -> getCoords.
@@ -3250,6 +3597,20 @@ internal class Curve private constructor(
 
     internal fun vectorFieldSnapshot(): CurveVectorFieldSnapshot? =
         vectorFieldDefinition?.snapshot
+
+    // JSXGraph 1.13.3:
+    // src/element/vectorfield.js -> createVectorField.setF /
+    // createSlopeField.setF.
+    internal fun setF(
+        field: CurveVectorFieldFunction,
+    ): GMResult<Curve, CurveError> {
+        val definition = vectorFieldDefinition
+            ?: return GMResult.Err(CurveError.NotVectorField)
+        definition.field = field
+        evaluationError = null
+        prepareUpdate()
+        return GMResult.Ok(this)
+    }
 
     internal fun initializeConic(): GMResult<Curve, CurveError> =
         when (val result = updateCurve()) {
@@ -3408,6 +3769,18 @@ internal class Curve private constructor(
     }
 
     private fun evaluateMinimum(): GMResult<Double, CurveError> {
+        generatedTerm?.let { term ->
+            term.minimumTerm?.let {
+                return evaluateNumber("minX", it)
+            }
+            return GMResult.Ok(
+                if (term is CurveGeneratedTerm.Polar) {
+                    0.0
+                } else {
+                    board.defaultCurveMinimum
+                },
+            )
+        }
         conicDefinition?.let { definition ->
             return GMResult.Ok(definition.minimum)
         }
@@ -3444,6 +3817,18 @@ internal class Curve private constructor(
     }
 
     private fun evaluateMaximum(): GMResult<Double, CurveError> {
+        generatedTerm?.let { term ->
+            term.maximumTerm?.let {
+                return evaluateNumber("maxX", it)
+            }
+            return GMResult.Ok(
+                if (term is CurveGeneratedTerm.Polar) {
+                    2.0 * PI
+                } else {
+                    board.defaultCurveMaximum
+                },
+            )
+        }
         conicDefinition?.let { definition ->
             return GMResult.Ok(definition.maximum)
         }
@@ -3484,6 +3869,37 @@ internal class Curve private constructor(
         arguments: List<JessieCodeRuntimeValue>,
         suspendedUpdate: Boolean = false,
     ): GMResult<Double, CurveError> {
+        generatedTerm?.let { term ->
+            return when (term) {
+                is CurveGeneratedTerm.Data -> dataX?.let { values ->
+                    GMResult.Ok(interpolateData(values, parameter))
+                } ?: GMResult.Ok(Double.NaN)
+                is CurveGeneratedTerm.Continuous ->
+                    evaluateNumber("xterm", term.xTerm, arguments)
+                is CurveGeneratedTerm.Polar -> {
+                    val radius = when (
+                        val result = evaluateNumber(
+                            "xterm",
+                            term.radiusTerm,
+                            arguments,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    val offset = when (
+                        val result = evaluateNumber(
+                            "xoffset",
+                            term.xOffsetTerm,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    GMResult.Ok(radius * cos(parameter) + offset)
+                }
+            }
+        }
         conicDefinition?.let { definition ->
             return when (
                 val result = evaluateConic(
@@ -3601,6 +4017,57 @@ internal class Curve private constructor(
         arguments: List<JessieCodeRuntimeValue>,
         suspendedUpdate: Boolean = false,
     ): GMResult<Double, CurveError> {
+        generatedTerm?.let { term ->
+            return when (term) {
+                is CurveGeneratedTerm.Data -> {
+                    term.continuousYTerm?.let { function ->
+                        return evaluateNumber(
+                            "yterm",
+                            function,
+                            arguments,
+                        )
+                    }
+                    dataY?.let { values ->
+                        return GMResult.Ok(
+                            interpolateData(values, parameter),
+                        )
+                    }
+                    GMResult.Ok(Double.NaN)
+                }
+                is CurveGeneratedTerm.Continuous -> {
+                    term.yTerms?.let {
+                        return dataY?.let {
+                            GMResult.Ok(interpolateData(it, parameter))
+                        } ?: GMResult.Ok(Double.NaN)
+                    }
+                    val function = term.yTerm
+                        ?: return GMResult.Ok(Double.NaN)
+                    evaluateNumber("yterm", function, arguments)
+                }
+                is CurveGeneratedTerm.Polar -> {
+                    val radius = when (
+                        val result = evaluateNumber(
+                            "xterm",
+                            term.radiusTerm,
+                            arguments,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    val offset = when (
+                        val result = evaluateNumber(
+                            "yoffset",
+                            term.yOffsetTerm,
+                        )
+                    ) {
+                        is GMResult.Ok -> result.value
+                        is GMResult.Err -> return result
+                    }
+                    GMResult.Ok(radius * sin(parameter) + offset)
+                }
+            }
+        }
         conicDefinition?.let { definition ->
             return when (
                 val result = evaluateConic(
@@ -4230,6 +4697,7 @@ internal class Curve private constructor(
         private const val INTEGRAL_ELEMENT_TYPE = "integral"
         private const val PARAMETRIC_CURVE_TYPE = "parameter"
         private const val FUNCTION_GRAPH_CURVE_TYPE = "functiongraph"
+        private const val POLAR_CURVE_TYPE = "polar"
         private const val COMB_POINTS_PER_TOOTH = 3
         private const val INEQUALITY_LINE_POINT_COUNT = 5
         private const val INEQUALITY_SEGMENT_EXTRA_POINT_COUNT = 5L
@@ -4674,7 +5142,7 @@ internal class Curve private constructor(
         // curve branch / updateDataArray.
         internal fun createTransformed(
             board: Board,
-            source: Curve,
+            source: CurveTransformationSource,
             transformations: List<Transformation>,
             id: String = "",
             name: String? = null,
@@ -4683,17 +5151,20 @@ internal class Curve private constructor(
             if (transformations.isEmpty()) {
                 return GMResult.Err(CurveError.EmptyTransformationList)
             }
-            if (source.board !== board) {
+            val sourceElement = source.transformationElement
+            if (sourceElement.board !== board) {
                 return GMResult.Err(
                     CurveError.TransformationSourceBoardMismatch,
                 )
             }
             if (
-                source.id.isEmpty() ||
-                board.elementById(source.id) !== source
+                sourceElement.id.isEmpty() ||
+                board.elementById(sourceElement.id) !== sourceElement
             ) {
                 return GMResult.Err(
-                    CurveError.TransformationSourceNotRegistered(source.id),
+                    CurveError.TransformationSourceNotRegistered(
+                        sourceElement.id,
+                    ),
                 )
             }
 
@@ -4706,7 +5177,7 @@ internal class Curve private constructor(
                 maximumTerm = null,
                 dataX = doubleArrayOf(),
                 dataY = doubleArrayOf(),
-                sampleCount = source.numberPoints,
+                sampleCount = source.transformationPointCount,
                 id = id,
                 name = name,
                 needsRegularUpdate = needsRegularUpdate,
@@ -4721,8 +5192,8 @@ internal class Curve private constructor(
                 )
             ) {
                 is GMResult.Ok -> {
-                    source.addChild(curve)
-                    curve.setParents(listOf(source))
+                    sourceElement.addChild(curve)
+                    curve.setParents(listOf(sourceElement))
                     result
                 }
                 is GMResult.Err -> result
@@ -5425,8 +5896,16 @@ internal class Curve private constructor(
                 is GMResult.Ok -> Unit
                 is GMResult.Err -> return result
             }
-            val xTerm = object : JessieCodeCoordinateFunction {
-                override val origin: String? = null
+            val xTerm = object :
+                JessieCodeCoordinateFunction,
+                JessieCodeSourceBackedFunction {
+                // JSXGraph 1.13.3: src/base/curve.js ->
+                // createFunctiongraph injects the x identity term before the
+                // user-supplied function parent.
+                override val origin: String =
+                    "function (x) { return x; }"
+                override val sourceExpression: String = origin
+                override val javaScriptSourceExpression: String = origin
                 override val dependencies: Map<String, GeometryElement> =
                     emptyMap()
 

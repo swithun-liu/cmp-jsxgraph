@@ -237,6 +237,7 @@ private fun parseBoardOptions(
             axis = axis,
             grid = grid,
             keepAspectRatio = keepAspectRatio,
+            showNavigation = false,
         ),
     )
 }

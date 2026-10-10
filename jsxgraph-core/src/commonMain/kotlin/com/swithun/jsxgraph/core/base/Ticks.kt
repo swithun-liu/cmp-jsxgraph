@@ -105,6 +105,11 @@ internal data class TicksCurveLocation(
     val label: String?,
 )
 
+internal data class SliderTicksLabelRange(
+    val minimum: Double,
+    val maximum: Double,
+)
+
 /**
  * JXG.Ticks state and lifecycle. Pixel-sized paths are resolved by the scene
  * model because Compose determines the final viewport size.
@@ -130,10 +135,22 @@ internal class Ticks private constructor(
         private set
     internal var evaluationError: TicksError? = null
         private set
+    private var axisOriginalLabelOffset: DoubleArray? = null
+    private var axisOriginalLabelAnchorX: String? = null
+    private var axisOriginalLabelAnchorY: String? = null
+    private var axisOriginalLabelSide: String? = null
+    private var sliderLabelOwner: Slider? = null
 
     init {
         elType = TICKS_ELEMENT_TYPE
         isDraggable = true
+        _set(
+            "intl",
+            linkedMapOf(
+                "enabled" to "inherit",
+                "options" to linkedMapOf<String, Any?>(),
+            ),
+        )
     }
 
     // JSXGraph 1.13.3: src/options.js -> useStandardOptions line ticks.
@@ -163,6 +180,9 @@ internal class Ticks private constructor(
         if (!needsUpdate) {
             return this
         }
+        resolveLiveAttributes()?.let {
+            attributes = it
+        }
         val curve = parent as? Curve
         if (curve == null) {
             curveLocations = emptyList()
@@ -180,6 +200,163 @@ internal class Ticks private constructor(
             }
         }
         return this
+    }
+
+    // JSXGraph 1.13.3: src/base/element.js -> setAttribute;
+    // src/base/ticks.js -> calculateTicksCoordinates.
+    override fun setAttribute(
+        attributes: Map<String, Any?>,
+    ): Ticks {
+        super.setAttribute(attributes)
+        resolveLiveAttributes()?.let {
+            this.attributes = it
+        }
+        return this
+    }
+
+    // JSXGraph 1.13.3: src/base/line.js -> createAxis.update
+    // ticksAutoPos label placement.
+    internal fun updateAxisLabelPosition(
+        horizontal: Boolean,
+        vertical: Boolean,
+        enabled: Boolean,
+        threshold: AxisDistance,
+        axisScreenX: Double,
+        axisScreenY: Double,
+    ): Ticks {
+        if (!enabled || (!horizontal && !vertical)) {
+            clearAxisLabelPositionState()
+            return this
+        }
+        val originalOffset = axisOriginalLabelOffset
+            ?: attributes.labelOffset.copyOf().also {
+                axisOriginalLabelOffset = it
+                axisOriginalLabelAnchorX = attributes.labelAnchorX
+                axisOriginalLabelAnchorY = attributes.labelAnchorY
+            }
+        val boundingBox = board.getBoundingBox()
+        val thresholdPixels =
+            if (horizontal) {
+                threshold.resolve(
+                    relativeTo = abs(boundingBox[1] - boundingBox[3]),
+                    pixelsToUser = 1.0 / board.unitX,
+                ) * board.unitX
+            } else {
+                threshold.resolve(
+                    relativeTo = abs(boundingBox[1] - boundingBox[3]),
+                    pixelsToUser = 1.0 / board.unitY,
+                ) * board.unitY
+            }
+        var offset = attributes.labelOffset.copyOf()
+        var anchorX = attributes.labelAnchorX
+        var anchorY = attributes.labelAnchorY
+        var side = axisOriginalLabelSide
+        if (horizontal) {
+            val distance = axisScreenY - board.canvasHeight * 0.5
+            when {
+                distance < 0.0 && abs(distance) > thresholdPixels -> {
+                    if (side == "bottom") {
+                        if (anchorY == "top") {
+                            anchorY = "bottom"
+                        }
+                        offset[1] *= -1.0
+                        side = "top"
+                    }
+                }
+                distance > 0.0 && abs(distance) > thresholdPixels -> {
+                    if (side == "top") {
+                        if (anchorY == "bottom") {
+                            anchorY = "top"
+                        }
+                        offset[1] *= -1.0
+                        side = "bottom"
+                    }
+                }
+                else -> {
+                    anchorY =
+                        axisOriginalLabelAnchorY ?: attributes.labelAnchorY
+                    offset = originalOffset.copyOf()
+                    side = originalLabelSide(
+                        horizontal = true,
+                        anchorX = anchorX,
+                        anchorY = anchorY,
+                        offset = offset,
+                    )
+                }
+            }
+        } else {
+            val distance = axisScreenX - board.canvasWidth * 0.5
+            when {
+                distance < 0.0 && abs(distance) > thresholdPixels -> {
+                    if (side == "right") {
+                        if (anchorX == "left") {
+                            anchorX = "right"
+                        }
+                        offset[0] *= -1.0
+                        side = "left"
+                    }
+                }
+                distance > 0.0 && abs(distance) > thresholdPixels -> {
+                    if (side == "left") {
+                        if (anchorX == "right") {
+                            anchorX = "left"
+                        }
+                        offset[0] *= -1.0
+                        side = "right"
+                    }
+                }
+                else -> {
+                    anchorX =
+                        axisOriginalLabelAnchorX ?: attributes.labelAnchorX
+                    offset = originalOffset.copyOf()
+                    side = originalLabelSide(
+                        horizontal = false,
+                        anchorX = anchorX,
+                        anchorY = anchorY,
+                        offset = offset,
+                    )
+                }
+            }
+        }
+        axisOriginalLabelSide = side
+        attributes = attributes.copy(
+            labelOffset = offset,
+            labelAnchorX = anchorX,
+            labelAnchorY = anchorY,
+        )
+        _set("label.offset", offset)
+        _set("label.anchorx", anchorX)
+        _set("label.anchory", anchorY)
+        return this
+    }
+
+    private fun originalLabelSide(
+        horizontal: Boolean,
+        anchorX: String,
+        anchorY: String,
+        offset: DoubleArray,
+    ): String =
+        if (horizontal) {
+            when {
+                anchorY == "top" -> "bottom"
+                anchorY == "bottom" -> "top"
+                offset[1] < 0.0 -> "bottom"
+                else -> "top"
+            }
+        } else {
+            when {
+                anchorX == "left" -> "right"
+                anchorX == "right" -> "left"
+                offset[0] < 0.0 -> "left"
+                else -> "right"
+            }
+        }
+
+    private fun clearAxisLabelPositionState() {
+        axisOriginalLabelOffset = null
+        axisOriginalLabelAnchorX = null
+        axisOriginalLabelAnchorY = null
+        axisOriginalLabelSide = null
     }
 
     // JSXGraph 1.13.3: src/base/ticks.js -> updateRenderer.
@@ -662,16 +839,66 @@ internal class Ticks private constructor(
         }
 
     internal fun formatLabel(value: Double): String =
-        formatTicksLabel(
-            value = value,
-            maxLabelLength = attributes.maxLabelLength,
-            precision = attributes.precision,
-            digits = attributes.digits,
-            scaleSymbol = attributes.scaleSymbol,
-            beautifulScientificTickLabels =
-                attributes.beautifulScientificTickLabels,
-            useUnicodeMinus = attributes.useUnicodeMinus,
+        if (useLocale()) {
+            val formatted = formatNumberLocale(
+                value = value,
+                digits = attributes.digits,
+            )
+            (
+                when (formatted) {
+                    is String -> formatted
+                    is Number ->
+                        JsNumberFormat.compact(formatted.toDouble())
+                    else -> formatted.toString()
+                } + attributes.scaleSymbol
+                ).let { text ->
+                if (attributes.useUnicodeMinus) {
+                    text.replace('-', '\u2212')
+                } else {
+                    text
+                }
+            }
+        } else {
+            formatTicksLabel(
+                value = value,
+                maxLabelLength = attributes.maxLabelLength,
+                precision = attributes.precision,
+                digits = attributes.digits,
+                scaleSymbol = attributes.scaleSymbol,
+                beautifulScientificTickLabels =
+                    attributes.beautifulScientificTickLabels,
+                useUnicodeMinus = attributes.useUnicodeMinus,
+            )
+        }
+
+    // JSXGraph 1.13.3: src/element/slider.js ->
+    // createSlider generateLabelText.
+    internal fun bindSliderLabelRange(slider: Slider): Ticks {
+        sliderLabelOwner = slider
+        return this
+    }
+
+    internal fun sliderLabelRange(): SliderTicksLabelRange? {
+        val slider = sliderLabelOwner ?: return null
+        return SliderTicksLabelRange(
+            minimum = slider.sliderMinimum ?: Double.NaN,
+            maximum = slider.sliderMaximum ?: Double.NaN,
         )
+    }
+
+    internal fun generateSliderLabelText(
+        signedDistanceFromZero: Double,
+        fullDistance: Double,
+    ): String? {
+        val range = sliderLabelRange() ?: return null
+        return formatSliderTicksLabel(
+            minimum = range.minimum,
+            maximum = range.maximum,
+            signedDistanceFromZero = signedDistanceFromZero,
+            fullDistance = fullDistance,
+            formatLabel = ::formatLabel,
+        )
+    }
 
     internal fun shouldLabel(
         tickPosition: Double,
@@ -682,6 +909,170 @@ internal class Ticks private constructor(
                 ?: (attributes.minorTicks.toLong() + 1L)
         return round(tickPosition / minorDistance).toLong() %
             ticksPerLabel == 0L
+    }
+
+    private fun resolveLiveAttributes(): TicksAttributes? {
+        val current = attributes
+        val candidate = current.copy(
+            anchor = liveAnchor(current.anchor),
+            drawZero = liveBoolean("drawzero", current.drawZero),
+            insertTicks = liveBoolean("insertticks", current.insertTicks),
+            minTicksDistance =
+                liveDouble("minticksdistance", current.minTicksDistance),
+            minorHeight = liveDouble("minorheight", current.minorHeight),
+            majorHeight = liveDouble("majorheight", current.majorHeight),
+            tickEndings =
+                liveDoublePair("tickendings", current.tickEndings),
+            majorTickEndings =
+                liveDoublePair(
+                    "majortickendings",
+                    current.majorTickEndings,
+                ),
+            ignoreInfiniteTickEndings =
+                liveBoolean(
+                    "ignoreinfinitetickendings",
+                    current.ignoreInfiniteTickEndings,
+                ),
+            minorTicks = liveInt("minorticks", current.minorTicks),
+            ticksPerLabel =
+                liveNullablePositiveInt(
+                    "ticksperlabel",
+                    current.ticksPerLabel,
+                ),
+            scale = liveDouble("scale", current.scale),
+            scaleSymbol = liveString("scalesymbol", current.scaleSymbol),
+            labels = liveLabels(current.labels),
+            maxLabelLength =
+                liveInt("maxlabellength", current.maxLabelLength),
+            precision = liveInt("precision", current.precision),
+            digits = liveInt("digits", current.digits),
+            beautifulScientificTickLabels =
+                liveBoolean(
+                    "beautifulscientificticklabels",
+                    current.beautifulScientificTickLabels,
+                ),
+            useUnicodeMinus =
+                liveBoolean("useunicodeminus", current.useUnicodeMinus),
+            includeBoundaries =
+                liveBoolean(
+                    "includeboundaries",
+                    current.includeBoundaries,
+                ),
+            ticksType = liveString("type", current.ticksType),
+            ticksDistance =
+                liveDouble("ticksdistance", current.ticksDistance),
+            drawLabels = liveBoolean("drawlabels", current.drawLabels),
+            clip = liveBoolean("clip", current.clip),
+            labelOffset =
+                liveDoublePair("label.offset", current.labelOffset),
+            labelFontSize =
+                liveDouble("label.fontsize", current.labelFontSize),
+            labelAnchorX =
+                liveString("label.anchorx", current.labelAnchorX),
+            labelAnchorY =
+                liveString("label.anchory", current.labelAnchorY),
+        )
+        return candidate.takeIf { validateAttributes(it) == null }
+    }
+
+    private fun liveAnchor(fallback: TicksAnchor): TicksAnchor =
+        when (val value = evalVisProp("anchor")) {
+            is Number -> TicksAnchor.Fraction(value.toDouble())
+            is String -> when (value.lowercase()) {
+                "left" -> TicksAnchor.Left
+                "right" -> TicksAnchor.Right
+                "middle" -> TicksAnchor.Middle
+                else -> value.toDoubleOrNull()
+                    ?.let(TicksAnchor::Fraction)
+                    ?: fallback
+            }
+            else -> fallback
+        }
+
+    private fun liveBoolean(
+        key: String,
+        fallback: Boolean,
+    ): Boolean = evalVisProp(key) as? Boolean ?: fallback
+
+    private fun liveDouble(
+        key: String,
+        fallback: Double,
+    ): Double =
+        (evalVisProp(key) as? Number)?.toDouble()
+            ?.takeIf(Double::isFinite)
+            ?: fallback
+
+    private fun liveInt(
+        key: String,
+        fallback: Int,
+    ): Int {
+        val value = (evalVisProp(key) as? Number)?.toDouble()
+        val integer = value?.toInt()
+        return if (
+            value != null &&
+            value.isFinite() &&
+            integer != null &&
+            integer.toDouble() == value
+        ) {
+            integer
+        } else {
+            fallback
+        }
+    }
+
+    private fun liveNullablePositiveInt(
+        key: String,
+        fallback: Int?,
+    ): Int? {
+        val value = evalVisProp(key) ?: return fallback
+        val number = (value as? Number)?.toDouble() ?: return fallback
+        val integer = number.toInt()
+        return if (
+            number.isFinite() &&
+            integer.toDouble() == number &&
+            integer > 0
+        ) {
+            integer
+        } else {
+            fallback
+        }
+    }
+
+    private fun liveString(
+        key: String,
+        fallback: String,
+    ): String = evalVisProp(key) as? String ?: fallback
+
+    private fun liveDoublePair(
+        key: String,
+        fallback: DoubleArray,
+    ): DoubleArray {
+        val value = evalVisProp(key)
+        val values = when (value) {
+            is DoubleArray -> value.toList()
+            is List<*> -> value
+            else -> return fallback
+        }
+        if (values.size != 2) {
+            return fallback
+        }
+        val numbers = values.map { (it as? Number)?.toDouble() }
+        return if (numbers.all { it != null && it.isFinite() }) {
+            numbers.filterNotNull().toDoubleArray()
+        } else {
+            fallback
+        }
+    }
+
+    private fun liveLabels(
+        fallback: List<String?>,
+    ): List<String?> {
+        val values = evalVisProp("labels") as? List<*> ?: return fallback
+        return if (values.all { it == null || it is String }) {
+            values.map { it as? String }
+        } else {
+            fallback
+        }
     }
 
     internal companion object {
@@ -889,6 +1280,29 @@ internal fun isMajorTick(
 ): Boolean =
     round(tickPosition / minorDistance).toLong() %
         (minorTicks.toLong() + 1L) == 0L
+
+// JSXGraph 1.13.3: src/element/slider.js ->
+// createSlider generateLabelText.
+internal fun formatSliderTicksLabel(
+    minimum: Double,
+    maximum: Double,
+    signedDistanceFromZero: Double,
+    fullDistance: Double,
+    formatLabel: (Double) -> String,
+): String {
+    val value =
+        signedDistanceFromZero * (maximum - minimum) /
+            fullDistance +
+            minimum
+    return if (
+        fullDistance < Mat.eps ||
+        abs(value) < Mat.eps
+    ) {
+        "0"
+    } else {
+        formatLabel(value)
+    }
+}
 
 // JSXGraph 1.13.3: src/base/ticks.js -> formatLabelText /
 // beautifyScientificNotationLabel.

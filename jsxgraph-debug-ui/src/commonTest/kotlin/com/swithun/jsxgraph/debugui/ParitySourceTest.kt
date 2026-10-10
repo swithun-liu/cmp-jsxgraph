@@ -2208,9 +2208,9 @@ class ParitySourceTest {
                 "minorRegion",
                 "majorRegion",
                 "nonreflexRegion",
-                "jxgBoardP8",
+                "jxgBoardP16",
                 "reflexRegion",
-                "jxgBoardP10",
+                "jxgBoardP18",
             ),
             jessieCodeSession.scene.elements.map { element -> element.id },
         )

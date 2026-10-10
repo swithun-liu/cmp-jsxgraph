@@ -39,8 +39,11 @@ internal class TypeCloneObject(
     override var visPropOld: MutableMap<String, Any?> = linkedMapOf(),
     val visPropCalc: MutableMap<String, Any?> = linkedMapOf(),
 ) : TypeVisualPropertyCacheOwner {
+    // JSXGraph 1.13.3: src/utils/type.js ->
+    // getCloneObject closure evalVisProp.
     fun evalVisProp(property: String): Any? = visProp[property]
 
+    // JSXGraph 1.13.3: src/utils/type.js -> getCloneObject closure eval.
     fun eval(value: Any?): Any? = value
 }
 

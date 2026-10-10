@@ -9,6 +9,12 @@ package com.swithun.jsxgraph.core.utils
 
 import com.swithun.jsxgraph.core.GMResult
 import com.swithun.jsxgraph.core.base.Board
+import com.swithun.jsxgraph.core.base.CoordsElement
+import com.swithun.jsxgraph.core.base.GeometryElement
+import com.swithun.jsxgraph.core.base.GeometryElementDumpError
+import com.swithun.jsxgraph.core.base.Line
+import com.swithun.jsxgraph.core.parser.JessieCodeRuntimeValue
+import com.swithun.jsxgraph.core.parser.JessieCodeSourceBackedFunction
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -19,6 +25,7 @@ import kotlinx.serialization.json.doubleOrNull
 internal data class DumpLimits(
     val maxDepth: Int = 64,
     val maxValues: Int = 100_000,
+    val maxElements: Int = 10_000,
     val maxOutputLength: Int = 1_000_000,
 )
 
@@ -36,6 +43,10 @@ internal sealed interface DumpError {
         val limit: Int,
     ) : DumpError
 
+    data class ElementLimitExceeded(
+        val limit: Int,
+    ) : DumpError
+
     data class OutputLimitExceeded(
         val limit: Int,
     ) : DumpError
@@ -45,6 +56,14 @@ internal sealed interface DumpError {
     ) : DumpError
 
     data class AttributeOperation(
+        val error: TypeError,
+    ) : DumpError
+
+    data class ParentEvaluation(
+        val error: GeometryElementDumpError,
+    ) : DumpError
+
+    data class Serialization(
         val error: TypeError,
     ) : DumpError
 
@@ -70,17 +89,43 @@ internal data class DumpMethodCall(
     val params: List<Any?>,
 )
 
+internal data class DumpPropertyAssignment(
+    val obj: String,
+    val property: String,
+    val value: Any?,
+)
+
+internal data class DumpedElement(
+    val type: String,
+    val parents: List<Any?>,
+    val children: List<String>,
+    val attributes: Map<String, Any?>,
+    val properties: Map<String, Any?> = emptyMap(),
+    val ancestors: List<String> = emptyList(),
+)
+
+internal data class DumpBoardSnapshot(
+    val elements: List<DumpedElement>,
+    val properties: List<DumpPropertyAssignment>,
+    val methods: List<DumpMethodCall>,
+    val userLog: List<Map<String, Any?>> = emptyList(),
+)
+
 /**
  * Typed marker for JavaScript's `undefined` value.
  */
 internal data object DumpUndefined
 
 /**
- * Source-mapped pure serialization kernel from `JXG.Dump`.
- *
- * Board traversal and attribute minimization remain separate because the
- * translated element model does not yet expose a complete upstream-compatible
- * visual-property snapshot.
+ * Raw function source used where JavaScript joins function-valued parents via
+ * `Function.prototype.toString()`.
+ */
+private data class DumpCodeExpression(
+    val source: String,
+)
+
+/**
+ * Source-mapped pure-KMP translation of `JXG.Dump`.
  */
 internal object Dump {
     // JSXGraph 1.13.3: src/utils/dump.js -> addMarkers.
@@ -444,6 +489,320 @@ internal object Dump {
         return methods
     }
 
+    // JSXGraph 1.13.3: src/utils/dump.js -> dump.
+    fun dump(
+        board: Board,
+        json: Boolean = false,
+        javaScript: Boolean = false,
+        options: Map<String, Any?> = emptyMap(),
+        limits: DumpLimits = DumpLimits(),
+    ): GMResult<DumpBoardSnapshot, DumpError> {
+        validateLimits(limits)?.let { return GMResult.Err(it) }
+        val elements = mutableListOf<DumpedElement>()
+        val properties = mutableListOf<DumpPropertyAssignment>()
+        val methods = mutableListOf<DumpMethodCall>()
+
+        addMarkers(board, "dumped", false)
+        try {
+            for (element in board.objectsList) {
+                if (
+                    element.dumpMarkers["dumped"] == true ||
+                    !element.dump
+                ) {
+                    continue
+                }
+                if (elements.size >= limits.maxElements) {
+                    return GMResult.Err(
+                        DumpError.ElementLimitExceeded(limits.maxElements),
+                    )
+                }
+                val rawParents = when (val result = element.dumpParents()) {
+                    is GMResult.Ok -> result.value.toMutableList()
+                    is GMResult.Err ->
+                        return GMResult.Err(
+                            DumpError.ParentEvaluation(result.error),
+                        )
+                }
+                if (
+                    element.getType() == "point" &&
+                    (rawParents.firstOrNull() as? Number)
+                        ?.toDouble() == 1.0
+                ) {
+                    rawParents.removeAt(0)
+                }
+                val parents =
+                    if (json) {
+                        rawParents.map(::normalizeJsonParent)
+                    } else {
+                        val prepared = mutableListOf<Any?>()
+                        for (parent in rawParents) {
+                            when (
+                                val result = prepareCodeParent(
+                                    parent,
+                                    javaScript,
+                                )
+                            ) {
+                                is GMResult.Ok -> prepared += result.value
+                                is GMResult.Err -> return result
+                            }
+                        }
+                        prepared
+                    }
+                val attributes = when (
+                    val result = prepareAttributes(
+                        snapshot = element.attributeSnapshot(),
+                        options = options,
+                    )
+                ) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return result
+                }
+                if (
+                    element.getType() == "glider" &&
+                    (element as? CoordsElement)?.onPolygon == true
+                ) {
+                    properties += DumpPropertyAssignment(
+                        obj = element.id,
+                        property = "onPolygon",
+                        value = true,
+                    )
+                }
+                elements += DumpedElement(
+                    type = element.getType(),
+                    parents = parents,
+                    children = emptyList(),
+                    attributes = attributes,
+                )
+            }
+        } finally {
+            deleteMarkers(board, "dumped")
+        }
+        return GMResult.Ok(
+            DumpBoardSnapshot(
+                elements = elements,
+                properties = properties,
+                methods = methods,
+            ),
+        )
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> toJessie.
+    fun toJessie(
+        board: Board,
+        noAttributes: Boolean = false,
+        options: Map<String, Any?> = emptyMap(),
+        limits: DumpLimits = DumpLimits(),
+    ): GMResult<String, DumpError> {
+        val dumped = when (
+            val result = dump(
+                board = board,
+                options = options,
+                limits = limits,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val methods = dumped.methods.toMutableList()
+        setBoundingBox(methods, board, "\$board")
+        val output = BoundedOutput(limits.maxOutputLength)
+
+        for ((index, element) in dumped.elements.withIndex()) {
+            val attributes =
+                if (noAttributes) {
+                    element.attributes.filterKeys { key ->
+                        key == "id" || key == "name"
+                    }
+                } else {
+                    element.attributes
+                }
+            val name = attributes["name"] as? String
+            if (!name.isNullOrEmpty()) {
+                output.line("// $name")?.let { return GMResult.Err(it) }
+            }
+            val serializedAttributes = when (
+                val result = toJCAN(attributes, limits)
+            ) {
+                is GMResult.Ok -> result.value.replaceFirst("\n", "\\n")
+                is GMResult.Err -> return result
+            }
+            output.line(
+                "s$index = ${element.type}(" +
+                    element.parents.joinToString(", ", transform = ::jsString) +
+                    ") $serializedAttributes;",
+            )?.let { return GMResult.Err(it) }
+            if (element.type == "axis") {
+                val id = attributes["id"] as? String
+                val line = id?.let(board.objects::get) as? Line
+                if (line != null && line.defaultTicks == null) {
+                    output.line("s$index.removeAllTicks();")?.let {
+                        return GMResult.Err(it)
+                    }
+                }
+            }
+            output.line("")?.let { return GMResult.Err(it) }
+        }
+
+        for (method in methods) {
+            val params = when (
+                val result = arrayToParamStr(method.params, limits)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            output.line(
+                "${method.obj}.${method.method}($params);",
+            )?.let { return GMResult.Err(it) }
+            output.line("")?.let { return GMResult.Err(it) }
+        }
+        for (property in dumped.properties) {
+            val value = when (
+                val result = toJCAN(property.value, limits)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            output.line(
+                "${property.obj}.${property.property} = $value;",
+            )?.let { return GMResult.Err(it) }
+            output.line("")?.let { return GMResult.Err(it) }
+        }
+        return GMResult.Ok(output.value())
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> toJSON.
+    fun toJSON(
+        board: Board,
+        options: Map<String, Any?> = emptyMap(),
+        limits: DumpLimits = DumpLimits(),
+    ): GMResult<String, DumpError> {
+        val dumped = when (
+            val result = dump(
+                board = board,
+                json = true,
+                options = options,
+                limits = limits,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val enriched = dumped.elements.map { element ->
+            val id = element.attributes["id"] as? String
+            val source = id?.let(board.objects::get)
+            if (source == null) {
+                element
+            } else {
+                element.copy(
+                    children = source.childElements.values
+                        .filter(GeometryElement::dump)
+                        .map(GeometryElement::id)
+                        .distinct(),
+                    properties = linkedMapOf(
+                        "isDraggable" to (
+                            source.isDraggable &&
+                                source.visualPropertiesCalculated["visible"] ==
+                                true
+                            ),
+                        "elType" to source.elType,
+                    ),
+                    ancestors = source.ancestors.values
+                        .filter(GeometryElement::dump)
+                        .map(GeometryElement::id)
+                        .distinct(),
+                )
+            }
+        }
+        val serializable = linkedMapOf<String, Any?>(
+            "elements" to enriched.map { element -> element.toMap() },
+            "props" to dumped.properties.map { property ->
+                property.toMap()
+            },
+            "methods" to dumped.methods.map { method -> method.toMap() },
+            "userLog" to board.userLog.map { entry ->
+                linkedMapOf(
+                    "type" to entry.type,
+                    "id" to entry.elementId,
+                    "start" to entry.startMilliseconds,
+                    "end" to entry.endMilliseconds,
+                )
+            },
+        )
+        return serializeJSON(serializable, limits)
+    }
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> toJavaScript.
+    fun toJavaScript(
+        board: Board,
+        options: Map<String, Any?> = emptyMap(),
+        limits: DumpLimits = DumpLimits(),
+    ): GMResult<String, DumpError> {
+        val dumped = when (
+            val result = dump(
+                board = board,
+                javaScript = true,
+                options = options,
+                limits = limits,
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val methods = dumped.methods.toMutableList()
+        setBoundingBox(methods, board, "board")
+        val output = BoundedOutput(limits.maxOutputLength)
+
+        for (element in dumped.elements) {
+            val attributes = when (
+                val result = serializeJSON(element.attributes, limits)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            output.line(
+                "board.create(\"${element.type}\", [" +
+                    element.parents.joinToString(", ", transform = ::jsString) +
+                    "], $attributes);",
+            )?.let { return GMResult.Err(it) }
+            if (element.type == "axis") {
+                val id = element.attributes["id"] as? String
+                val line = id?.let(board.objects::get) as? Line
+                if (line != null && line.defaultTicks == null) {
+                    output.line(
+                        "board.objects[\"$id\"].removeTicks(" +
+                            "board.objects[\"$id\"].defaultTicks);",
+                    )?.let { return GMResult.Err(it) }
+                }
+            }
+        }
+        for (method in methods) {
+            val params = mutableListOf<String>()
+            for (parameter in method.params) {
+                when (val result = serializeJSON(parameter, limits)) {
+                    is GMResult.Ok -> params += result.value
+                    is GMResult.Err -> return result
+                }
+            }
+            output.line(
+                "${method.obj}.${method.method}(${params.joinToString(", ")});",
+            )?.let { return GMResult.Err(it) }
+            output.line("")?.let { return GMResult.Err(it) }
+        }
+        for (property in dumped.properties) {
+            val value = when (
+                val result = serializeJSON(property.value, limits)
+            ) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return result
+            }
+            output.line(
+                "${property.obj}.${property.property} = $value;",
+            )?.let { return GMResult.Err(it) }
+            output.line("")?.let { return GMResult.Err(it) }
+        }
+        return GMResult.Ok(output.value())
+    }
+
     private fun appendJCAN(
         value: Any?,
         state: DumpState,
@@ -682,6 +1041,206 @@ internal object Dump {
             else -> null
         }
 
+    private fun GeometryElement.attributeSnapshot(): DumpElementSnapshot =
+        DumpElementSnapshot(
+            id = id,
+            name = name,
+            elType = elType,
+            attributes = getAttributes(),
+            subs = dumpSubElements().mapValuesTo(linkedMapOf()) {
+                (_, element) ->
+                DumpElementSnapshot(
+                    id = element.id,
+                    name = element.name,
+                    elType = element.elType,
+                    attributes = element.getAttributes(),
+                )
+            },
+        )
+
+    private fun prepareCodeParent(
+        value: Any?,
+        javaScript: Boolean,
+    ): GMResult<Any?, DumpError> =
+        when (value) {
+            is JessieCodeRuntimeValue.FunctionValue ->
+                (
+                    if (javaScript) {
+                        value.javaScriptSourceExpression
+                    } else {
+                        value.sourceExpression
+                    }
+                    )?.let {
+                    GMResult.Ok(DumpCodeExpression(it))
+                } ?: GMResult.Err(DumpError.UnsupportedValue)
+            is JessieCodeSourceBackedFunction ->
+                (
+                    if (javaScript) {
+                        value.javaScriptSourceExpression
+                    } else {
+                        value.sourceExpression
+                    }
+                    )?.let {
+                    GMResult.Ok(DumpCodeExpression(it))
+                } ?: GMResult.Err(DumpError.UnsupportedValue)
+            is String ->
+                if (
+                    value.startsWith("'") ||
+                    value.startsWith("\"")
+                ) {
+                    GMResult.Ok(value)
+                } else {
+                    GMResult.Ok("\"$value\"")
+                }
+            null,
+            DumpUndefined,
+            JsonNull,
+            is Number,
+            is Boolean,
+            -> GMResult.Ok(value)
+            is JsonPrimitive ->
+                if (value.isString) {
+                    prepareCodeParent(value.content, javaScript)
+                } else {
+                    GMResult.Ok(value)
+                }
+            else -> {
+                val values = arrayValues(value)
+                    ?: return GMResult.Err(DumpError.UnsupportedValue)
+                when (
+                    val result = jsArrayToString(values, javaScript)
+                ) {
+                    is GMResult.Ok -> GMResult.Ok("[${result.value}]")
+                    is GMResult.Err -> result
+                }
+            }
+        }
+
+    private fun jsArrayToString(
+        values: List<Any?>,
+        javaScript: Boolean,
+    ): GMResult<String, DumpError> {
+        val output = mutableListOf<String>()
+        for (value in values) {
+            when {
+                value == null ||
+                    value === DumpUndefined ||
+                    value === JsonNull ->
+                    output += ""
+                sourceExpression(value, javaScript) != null ->
+                    output +=
+                        sourceExpression(value, javaScript).orEmpty()
+                arrayValues(value) != null ->
+                    when (
+                        val result =
+                            jsArrayToString(
+                                arrayValues(value).orEmpty(),
+                                javaScript,
+                            )
+                    ) {
+                        is GMResult.Ok -> output += result.value
+                        is GMResult.Err -> return result
+                    }
+                value is String ||
+                    value is Number ||
+                    value is Boolean ||
+                    value is JsonPrimitive ->
+                    output += jsString(value)
+                else -> return GMResult.Err(DumpError.UnsupportedValue)
+            }
+        }
+        return GMResult.Ok(output.joinToString(","))
+    }
+
+    private fun jsString(value: Any?): String =
+        when (value) {
+            null -> "null"
+            DumpUndefined -> "undefined"
+            JsonNull -> "null"
+            is DumpCodeExpression -> value.source
+            is String -> value
+            is Number -> JsNumberFormat.compact(value.toDouble())
+            is Boolean -> value.toString()
+            is JsonPrimitive -> value.content
+            else -> ""
+        }
+
+    private fun normalizeJsonParent(value: Any?): Any? =
+        when {
+            sourceExpression(value, javaScript = false) != null ||
+                sourceExpression(value, javaScript = true) != null -> null
+            value is List<*> -> value.map(::normalizeJsonParent)
+            value is Array<*> -> value.map(::normalizeJsonParent)
+            else -> value
+        }
+
+    private fun sourceExpression(
+        value: Any?,
+        javaScript: Boolean,
+    ): String? =
+        when (value) {
+            is JessieCodeRuntimeValue.FunctionValue ->
+                if (javaScript) {
+                    value.javaScriptSourceExpression
+                } else {
+                    value.sourceExpression
+                }
+            is JessieCodeSourceBackedFunction ->
+                if (javaScript) {
+                    value.javaScriptSourceExpression
+                } else {
+                    value.sourceExpression
+                }
+            else -> null
+        }
+
+    private fun DumpedElement.toMap(): Map<String, Any?> =
+        linkedMapOf(
+            "type" to type,
+            "parents" to parents,
+            "children" to children,
+            "attributes" to attributes,
+            "properties" to properties,
+            "ancestors" to ancestors,
+        )
+
+    private fun DumpPropertyAssignment.toMap(): Map<String, Any?> =
+        linkedMapOf(
+            "obj" to obj,
+            "prop" to property,
+            "val" to value,
+        )
+
+    private fun DumpMethodCall.toMap(): Map<String, Any?> =
+        linkedMapOf(
+            "obj" to obj,
+            "method" to method,
+            "params" to params,
+        )
+
+    private fun serializeJSON(
+        value: Any?,
+        limits: DumpLimits,
+    ): GMResult<String, DumpError> =
+        when (
+            val result = Type.toJSON(
+                value = value,
+                limits = TypeJsonLimits(
+                    maxDepth = limits.maxDepth,
+                    maxValues = limits.maxValues,
+                    maxOutputLength = limits.maxOutputLength,
+                ),
+            )
+        ) {
+            is GMResult.Ok ->
+                when (val json = result.value) {
+                    is TypeJsonValue.Serialized -> GMResult.Ok(json.value)
+                    TypeJsonValue.Undefined -> GMResult.Ok("undefined")
+                }
+            is GMResult.Err ->
+                GMResult.Err(DumpError.Serialization(result.error))
+        }
+
     private fun validateLimits(
         limits: DumpLimits,
     ): DumpError.InvalidLimit? =
@@ -690,6 +1249,11 @@ internal object Dump {
                 DumpError.InvalidLimit("maxDepth", limits.maxDepth)
             limits.maxValues <= 0 ->
                 DumpError.InvalidLimit("maxValues", limits.maxValues)
+            limits.maxElements <= 0 ->
+                DumpError.InvalidLimit(
+                    "maxElements",
+                    limits.maxElements,
+                )
             limits.maxOutputLength <= 0 ->
                 DumpError.InvalidLimit(
                     "maxOutputLength",
@@ -703,6 +1267,31 @@ internal object Dump {
     ) {
         val output = StringBuilder()
         var valueCount: Int = 0
+    }
+
+    private class BoundedOutput(
+        private val limit: Int,
+    ) {
+        private val output = StringBuilder()
+        private var hasLine = false
+
+        fun line(value: String): DumpError.OutputLimitExceeded? {
+            val separatorLength = if (hasLine) 1 else 0
+            if (
+                output.length >
+                limit - separatorLength - value.length
+            ) {
+                return DumpError.OutputLimitExceeded(limit)
+            }
+            if (hasLine) {
+                output.append('\n')
+            }
+            output.append(value)
+            hasLine = true
+            return null
+        }
+
+        fun value(): String = output.toString()
     }
 
     private const val FUNCTION_PREFIX = "function"

@@ -709,6 +709,7 @@ internal object GeonextParser {
             .replace("&gt;", ">")
             .replace("&amp;", "&")
 
+    // JSXGraph 1.13.3: src/parser/geonext.js -> printId.
     private fun printId(
         id: String,
         jessieCode: Boolean,

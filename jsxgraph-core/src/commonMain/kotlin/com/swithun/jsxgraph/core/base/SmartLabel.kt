@@ -282,6 +282,8 @@ internal class SmartLabelDefinition(
         return stringAttribute("measure", default)
     }
 
+    // JSXGraph 1.13.3: src/element/smartlabel.js ->
+    // smart-label attribute closures rotate / anchorX.
     internal fun rotation(): GMResult<Double, SmartLabelError> =
         when (parentKind) {
             SmartLabelParentKind.LINE -> {
@@ -457,14 +459,28 @@ internal class SmartLabelDefinition(
         var formatted: JessieCodeRuntimeValue = when (value) {
             is JessieCodeRuntimeValue.NumberValue ->
                 JessieCodeRuntimeValue.StringValue(
-                    JsNumberFormat.fixed(value.value, digits),
+                    if (text.useLocale()) {
+                        text.formatNumberLocaleText(value.value, digits)
+                    } else {
+                        JsNumberFormat.fixed(value.value, digits)
+                    },
                 )
             is JessieCodeRuntimeValue.ArrayValue ->
                 JessieCodeRuntimeValue.ArrayValue(
                     value.values.map { item ->
                         if (item is JessieCodeRuntimeValue.NumberValue) {
                             JessieCodeRuntimeValue.StringValue(
-                                JsNumberFormat.fixed(item.value, digits),
+                                if (text.useLocale()) {
+                                    text.formatNumberLocaleText(
+                                        item.value,
+                                        digits,
+                                    )
+                                } else {
+                                    JsNumberFormat.fixed(
+                                        item.value,
+                                        digits,
+                                    )
+                                },
                             )
                         } else {
                             item

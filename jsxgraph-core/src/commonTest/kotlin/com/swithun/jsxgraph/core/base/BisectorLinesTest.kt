@@ -166,6 +166,49 @@ class BisectorLinesTest {
     }
 
     @Test
+    fun compositionForwardsHighlightStateAndReservesGeneratedMethods() {
+        val fixture = fixture("highlight")
+        val composition = bisectorLines(
+            BisectorLines.create(
+                board = fixture.board,
+                first = fixture.first,
+                second = fixture.second,
+                line1Attributes = BisectorLineAttributes(
+                    id = "firstBisector",
+                    name = "",
+                ),
+                line2Attributes = BisectorLineAttributes(
+                    id = "secondBisector",
+                    name = "",
+                ),
+            ),
+        )
+        val firstBisector = requireLine(composition.line1)
+        val secondBisector = requireLine(composition.line2)
+
+        assertFalse(composition.add("highlight", fixture.first))
+        assertFalse(composition.add("noHighlight", fixture.second))
+
+        assertSame(composition, composition.highlight(force = true))
+        assertTrue(firstBisector.highlighted)
+        assertTrue(secondBisector.highlighted)
+        assertSame(
+            firstBisector,
+            fixture.board.highlightedObjects[firstBisector.id],
+        )
+        assertSame(
+            secondBisector,
+            fixture.board.highlightedObjects[secondBisector.id],
+        )
+
+        assertSame(composition, composition.noHighlight())
+        assertFalse(firstBisector.highlighted)
+        assertFalse(secondBisector.highlighted)
+        assertFalse(firstBisector.id in fixture.board.highlightedObjects)
+        assertFalse(secondBisector.id in fixture.board.highlightedObjects)
+    }
+
+    @Test
     fun duplicateOutputIdRollsBackEveryCreatedObject() {
         val fixture = fixture("duplicate")
         val before = fixture.board.objects.keys.toList()

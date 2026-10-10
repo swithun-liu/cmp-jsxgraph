@@ -310,6 +310,42 @@ try {
                 (element) => element.id
             )
         };
+        const coordinateDefaultBoard = createBoard();
+        const coordinateDefaultA = point(
+            coordinateDefaultBoard,
+            [-2, -1],
+            "coordinateDefaultA"
+        );
+        const coordinateDefaultB = point(
+            coordinateDefaultBoard,
+            [3, 2],
+            "coordinateDefaultB"
+        );
+        const coordinateDefaultLine = coordinateDefaultBoard.create(
+            "line",
+            [coordinateDefaultA, coordinateDefaultB],
+            {
+                id: "coordinateDefaultLine",
+                name: "",
+                withLabel: false
+            }
+        );
+        const coordinateDefault = {
+            result: captureError(() =>
+                coordinateDefaultBoard.create(
+                    "normal",
+                    [coordinateDefaultLine, [1, 4]],
+                    {
+                        id: "coordinateDefaultNormal",
+                        name: "",
+                        withLabel: false
+                    }
+                )
+            ),
+            objectOrder: coordinateDefaultBoard.objectsList.map(
+                (element) => element.id
+            )
+        };
 
         const removalCases = {};
         for (const kind of ["line", "circle", "curve"]) {
@@ -435,6 +471,7 @@ try {
             initial,
             moved,
             coordinate,
+            coordinateDefault,
             removalCases,
             invalid
         };

@@ -30,6 +30,12 @@ const source = [
     "Y2=point(2,2);",
     "target=droite(X1,X2);",
     "direction=droite(Y1,Y2);",
+    "O=point(0,0);",
+    "R=point(2,0);",
+    "K=cercle(O,R);",
+    "I1=intersection(K,target,1);",
+    "I2=intersection(K,target,I1);",
+    "free=point();",
     "r=reel(0.5,0,2,0.25){sansnom};",
     "P=pointsur(A,B,r);",
     "midline=mediatrice(A,B);",
@@ -94,9 +100,12 @@ try {
             "tep"
         );
         const tep = {};
+        const randomValues = [0.25, 0.75];
+        const originalRandom = Math.random;
         try {
             reader.parseOptions(board);
             reader.board = board;
+            Math.random = () => randomValues.shift();
             new Function("that", "tep", generated)(reader, tep);
             for (const [name, value] of Object.entries(tep)) {
                 if (typeof value?.setAttribute === "function") {
@@ -109,6 +118,8 @@ try {
                 generated,
                 error: error.message
             };
+        } finally {
+            Math.random = originalRandom;
         }
         board.update();
 
@@ -152,6 +163,8 @@ try {
             },
             midpointBisector: line("midline"),
             parallelProjection: point("Q"),
+            freePoint: point("free"),
+            intersections: [point("I1"), point("I2")],
             homothety: point("hImage"),
             rotation: point("rImage"),
             symmetry: point("sImage"),
@@ -172,6 +185,9 @@ try {
                 "P",
                 "midline",
                 "Q",
+                "free",
+                "I1",
+                "I2",
                 "f",
                 "tanline",
                 "hImage",

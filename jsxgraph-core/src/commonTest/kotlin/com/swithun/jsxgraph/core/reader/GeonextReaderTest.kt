@@ -9,11 +9,13 @@ import com.swithun.jsxgraph.core.base.Arc
 import com.swithun.jsxgraph.core.base.Board
 import com.swithun.jsxgraph.core.base.BisectorLine
 import com.swithun.jsxgraph.core.base.Circle
+import com.swithun.jsxgraph.core.base.Const
 import com.swithun.jsxgraph.core.base.CircumcenterPoint
 import com.swithun.jsxgraph.core.base.Curve
 import com.swithun.jsxgraph.core.base.CurveError
 import com.swithun.jsxgraph.core.base.Glider
 import com.swithun.jsxgraph.core.base.Group
+import com.swithun.jsxgraph.core.base.Image
 import com.swithun.jsxgraph.core.base.IntersectionPoint
 import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.MidpointPoint
@@ -140,6 +142,44 @@ class GeonextReaderTest {
         assertFalse(arrow.straightLast)
         assertFalse(arrow.firstArrowEnabled)
         assertTrue(arrow.lastArrowEnabled)
+    }
+
+    @Test
+    fun casBranchCreatesTheOfficialPointAndBoundImage() {
+        val source = geonext(
+            listOf(
+                "<cas><name>Q</name><id>CAS1</id>",
+                "<data><x>-2.5</x><y>3.5</y></data>",
+                "<fix>true</fix><visible>true</visible><trace>false</trace>",
+                "<image>$TINY_PNG</image></cas>",
+            ).joinToString(""),
+        )
+        val parseResult = GeonextReader(source).parse()
+        val parsed = assertIs<GMResult.Ok<ParsedGeonext>>(
+            parseResult,
+            parseResult.toString(),
+        ).value
+        val definition = assertIs<GeonextPointDefinition>(
+            parsed.definitions.single(),
+        )
+        assertEquals("CAS1", definition.id)
+        assertEquals("Q", definition.name)
+        assertEquals(-2.5, definition.x)
+        assertEquals(3.5, definition.y)
+        assertTrue(definition.fixed)
+
+        val board = board()
+        val drawn = assertIs<GMResult.Ok<DrawnGeonext>>(
+            GeonextReader(source).read(board),
+        ).value
+        val point = assertIs<Point>(drawn.objects.getValue("CAS1"))
+        val image = assertIs<Image>(
+            drawn.objects.getValue("CAS1_image"),
+        )
+        assertEquals(-2.5, point.X())
+        assertEquals(3.5, point.Y())
+        assertTrue(point.isFixed)
+        assertEquals(point, image.ancestors["CAS1"])
     }
 
     @Test
@@ -581,6 +621,170 @@ class GeonextReaderTest {
     }
 
     @Test
+    fun parseReadsEmbeddedImagesAndConditionsLikeOfficialReader() {
+        val parsed = assertIs<GMResult.Ok<ParsedGeonext>>(
+            GeonextReader(IMAGE_SOURCE_WITH_CONDITIONS).parse(),
+        ).value
+
+        assertEquals(
+            GeonextBackgroundImage(
+                source = TINY_PNG,
+                x = -4.0,
+                y = 3.0,
+                width = 6.0,
+                height = 2.0,
+            ),
+            parsed.backgroundImage,
+        )
+        assertEquals(
+            setOf("P1", "L1", "C1"),
+            parsed.boundImages.keys,
+        )
+        for (image in parsed.boundImages.values) {
+            assertEquals(TINY_PNG, image.source)
+            assertEquals(2, image.widthPixels)
+            assertEquals(1, image.heightPixels)
+        }
+        assertEquals(
+            "<data>A.visible=false</data>" +
+                "<data>&lt;![CDATA[A.x=2]]&gt;</data>",
+            parsed.conditions,
+        )
+    }
+
+    @Test
+    fun readCreatesDynamicBackgroundPointLineAndCircleImages() {
+        val board = board()
+        val drawn = assertIs<GMResult.Ok<DrawnGeonext>>(
+            GeonextReader(IMAGE_SOURCE).read(board),
+        ).value
+
+        val background = drawn.objects.values
+            .filterIsInstance<Image>()
+            .single { image -> !image.id.endsWith("_image") }
+        assertImageGeometry(
+            image = background,
+            x = -4.0,
+            y = 3.0,
+            width = 6.0,
+            height = 2.0,
+        )
+
+        val pointImage = assertIs<Image>(
+            drawn.objects.getValue("P1_image"),
+        )
+        assertImageGeometry(
+            image = pointImage,
+            x = 0.98,
+            y = 1.99,
+            width = 0.04,
+            height = 0.02,
+        )
+        val lineImage = assertIs<Image>(
+            drawn.objects.getValue("L1_image"),
+        )
+        assertImageGeometry(
+            image = lineImage,
+            x = 1.0,
+            y = 1.25,
+            width = 3.0,
+            height = 1.5,
+        )
+        val circleImage = assertIs<Image>(
+            drawn.objects.getValue("C1_image"),
+        )
+        assertImageGeometry(
+            image = circleImage,
+            x = -2.0,
+            y = 0.5,
+            width = 6.0,
+            height = 3.0,
+        )
+
+        val first = assertIs<Point>(drawn.objects.getValue("P1"))
+        val second = assertIs<Point>(drawn.objects.getValue("P2"))
+        first.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(2.0, 3.0),
+        )
+        second.setPositionDirectly(
+            Const.COORDS_BY_USER,
+            doubleArrayOf(5.0, 4.0),
+        )
+        board.update()
+
+        assertImageGeometry(
+            image = pointImage,
+            x = 1.98,
+            y = 2.99,
+            width = 0.04,
+            height = 0.02,
+        )
+        assertImageGeometry(
+            image = circleImage,
+            x = -1.1622776601683795,
+            y = 1.4188611699158102,
+            width = 6.324555320336759,
+            height = 3.1622776601683795,
+        )
+        assertEquals(2.25, lineImage.renderSpan[0][1], 1e-12)
+        assertEquals(2.25, lineImage.renderSpan[0][2], 1e-12)
+        assertEquals(3.0, lineImage.renderSpan[1][1], 1e-12)
+        assertEquals(1.0, lineImage.renderSpan[1][2], 1e-12)
+        assertEquals(-0.5, lineImage.renderSpan[2][1], 1e-12)
+        assertEquals(1.5, lineImage.renderSpan[2][2], 1e-12)
+        assertEquals(first, pointImage.ancestors["P1"])
+        assertEquals(drawn.objects.getValue("L1"), lineImage.ancestors["L1"])
+        assertEquals(
+            drawn.objects.getValue("C1"),
+            circleImage.ancestors["C1"],
+        )
+    }
+
+    @Test
+    fun nonEmptyConditionsApplyWithoutDiscardingImagesAndElements() {
+        val board = board()
+        val drawn = assertIs<GMResult.Ok<DrawnGeonext>>(
+            GeonextReader(IMAGE_SOURCE_WITH_CONDITIONS).read(board),
+        ).value
+
+        val point = assertIs<Point>(drawn.objects.getValue("P1"))
+        assertEquals(1.0, point.X())
+        assertFalse(point.visualPropertiesCalculated["visible"] == true)
+        assertIs<Image>(drawn.objects.getValue("P1_image"))
+        assertFalse(board.isSuspendedUpdate)
+    }
+
+    @Test
+    fun malformedConditionsRollbackImagesAndElements() {
+        val board = board()
+        val existing = assertIs<GMResult.Ok<Point>>(
+            Point.create(
+                board = board,
+                coordinates = doubleArrayOf(-1.0, -1.0),
+                id = "existing",
+                name = "Existing",
+            ),
+        ).value
+
+        val error = assertIs<
+            GMResult.Err<GeonextReaderError.ConditionApplicationFailed>,
+            >(
+            GeonextReader(
+                IMAGE_SOURCE_WITH_INVALID_CONDITIONS,
+            ).read(board),
+        ).error
+
+        assertEquals(
+            "<data>A.x=(</data>",
+            error.expression,
+        )
+        assertEquals(listOf("existing"), board.objects.keys.toList())
+        assertEquals(existing, board.elementByName("Existing"))
+        assertFalse(board.isSuspendedUpdate)
+    }
+
+    @Test
     fun missingReferenceRollsBackTheWholeRead() {
         val board = board()
         val existing = assertIs<GMResult.Ok<Point>>(
@@ -1013,6 +1217,24 @@ class GeonextReaderTest {
                 GeonextReaderLimits(maxElements = 1),
             ),
         )
+        assertIs<GMResult.Err<GeonextReaderError.InvalidLimits>>(
+            GeonextReader(SUPPORTED_SOURCE).parse(
+                GeonextReaderLimits(maxImageCharacters = -1),
+            ),
+        )
+        assertIs<GMResult.Err<GeonextReaderError.ImageParsingFailed>>(
+            GeonextReader(IMAGE_SOURCE).parse(
+                GeonextReaderLimits(maxImageCharacters = 1),
+            ),
+        )
+        assertIs<GMResult.Err<GeonextReaderError.ImageParsingFailed>>(
+            GeonextReader(
+                imageDocument(
+                    pointImage = "AAAA",
+                    conditions = "",
+                ),
+            ).parse(),
+        )
     }
 
     @Test
@@ -1046,7 +1268,27 @@ class GeonextReaderTest {
         unitY = 50.0,
     )
 
+    private fun assertImageGeometry(
+        image: Image,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+    ) {
+        assertEquals(PNG_DATA_URI_PREFIX + TINY_PNG, image.url)
+        assertEquals(x, image.X(), 1e-12)
+        assertEquals(y, image.Y(), 1e-12)
+        assertEquals(width, image.W(), 1e-12)
+        assertEquals(height, image.H(), 1e-12)
+    }
+
     private companion object {
+        const val PNG_DATA_URI_PREFIX = "data:image/png;base64,"
+        const val TINY_PNG =
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+K" +
+                "AAAAD0lEQVR4AWL6z8AAQv8BAAAA//9sOzN4AAAABklE" +
+                "QVQDABALA//sAW9eAAAAAElFTkSuQmCC"
+
         val COLOR = listOf(
             "<color>",
             "<stroke>#102030FF</stroke>",
@@ -1341,6 +1583,36 @@ class GeonextReaderTest {
             "<GEONEXT><elements>" +
                 elements.joinToString("") +
                 "</elements></GEONEXT>"
+
+        fun imageDocument(
+            pointImage: String = TINY_PNG,
+            conditions: String,
+        ): String = listOf(
+            "<GEONEXT><board><background><file>",
+            "<src>$TINY_PNG</src><x>-4</x><y>3</y>",
+            "<width>6</width><height>2</height>",
+            "</file></background><conditions>",
+            conditions,
+            "</conditions><elements>",
+            point("P1", "A", 1.0, 2.0)
+                .replace("</point>", "<image>$pointImage</image></point>"),
+            point("P2", "B", 4.0, 2.0),
+            line("L1", "l", "P1", "P2")
+                .replace("</line>", "<image>$TINY_PNG</image></line>"),
+            circle("C1", "c", "P1", "radius", "P2")
+                .replace("</circle>", "<image>$TINY_PNG</image></circle>"),
+            "</elements></board></GEONEXT>",
+        ).joinToString("")
+
+        val IMAGE_SOURCE = imageDocument(conditions = "")
+        val IMAGE_SOURCE_WITH_CONDITIONS = imageDocument(
+            conditions =
+                "<data>A.visible=false</data>" +
+                    "<data><![CDATA[A.x=2]]></data>",
+        )
+        val IMAGE_SOURCE_WITH_INVALID_CONDITIONS = imageDocument(
+            conditions = "<data>A.x=(</data>",
+        )
 
         val SUPPORTED_SOURCE = geonext(
             point("P1", "A", 1.0, 2.0, fixed = true),

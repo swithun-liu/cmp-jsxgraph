@@ -70,6 +70,21 @@ try {
             slideObjects: point.slideObjects.map((element) => element.id),
             relations: relations(point)
         });
+        const triggerBaselineUp = (slider, userCoordinates) => {
+            const screen = new JXG.Coords(
+                JXG.COORDS_BY_USER,
+                userCoordinates,
+                slider.board
+            ).scrCoords;
+            const bounds = slider.board.containerObj.getBoundingClientRect();
+            const event = new PointerEvent("pointerup", {
+                clientX: bounds.left + screen[1],
+                clientY: bounds.top + screen[2],
+                bubbles: true
+            });
+            slider.baseline.triggerEventHandlers(["up"], [event]);
+            slider.board.update();
+        };
         const captureFailure = (create) => {
             const board = createBoard();
             const before = board.objectsList.map((element) => element.id);
@@ -149,11 +164,32 @@ try {
             }
         );
         sliderBoard.update();
+        const sliderTickLabels = () => {
+            const start = slider.point1.coords.usrCoords;
+            const end = slider.point2.coords.usrCoords;
+            const deltaX = end[1] - start[1];
+            const deltaY = end[2] - start[2];
+            return [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+                const tick = new JXG.Coords(
+                    JXG.COORDS_BY_USER,
+                    [
+                        start[1] + deltaX * fraction,
+                        start[2] + deltaY * fraction
+                    ],
+                    sliderBoard
+                );
+                return slider.ticks.generateLabelText(
+                    tick,
+                    slider.point1.coords
+                );
+            });
+        };
         const sliderSnapshot = () => ({
             point: pointSnapshot(slider),
             value: slider.Value(),
             smin: slider._smin,
             smax: slider._smax,
+            tickLabels: sliderTickLabels(),
             point1: pointSnapshot(slider.point1),
             point2: pointSnapshot(slider.point2),
             baseline: {
@@ -227,6 +263,63 @@ try {
             value: snapSlider.Value()
         };
 
+        const baselineBoard = createBoard();
+        const baselineSlider = baselineBoard.create(
+            "slider",
+            [[-4, 2], [4, 2], [0, 2, 10]],
+            {
+                id: "baselineSlider",
+                name: "",
+                withLabel: false,
+                withTicks: false
+            }
+        );
+        let baselineDragCount = 0;
+        baselineSlider.on("drag", () => {
+            baselineDragCount += 1;
+        });
+        const disabledSlider = baselineBoard.create(
+            "slider",
+            [[-4, 0], [4, 0], [0, 2, 10]],
+            {
+                id: "disabledSlider",
+                name: "",
+                moveOnUp: false,
+                withLabel: false,
+                withTicks: false
+            }
+        );
+        const fixedSlider = baselineBoard.create(
+            "slider",
+            [[-4, -2], [4, -2], [0, 2, 10]],
+            {
+                id: "fixedSlider",
+                name: "",
+                fixed: true,
+                withLabel: false,
+                withTicks: false
+            }
+        );
+        baselineBoard.update();
+        const baselineBefore = {
+            movable: pointSnapshot(baselineSlider),
+            disabled: pointSnapshot(disabledSlider),
+            fixed: pointSnapshot(fixedSlider)
+        };
+        triggerBaselineUp(baselineSlider, [2, 2]);
+        triggerBaselineUp(disabledSlider, [2, 0]);
+        triggerBaselineUp(fixedSlider, [2, -2]);
+        const baselineAfter = {
+            movable: pointSnapshot(baselineSlider),
+            disabled: pointSnapshot(disabledSlider),
+            fixed: pointSnapshot(fixedSlider),
+            movableValue: baselineSlider.Value(),
+            disabledValue: disabledSlider.Value(),
+            fixedValue: fixedSlider.Value(),
+            dragCount: baselineDragCount,
+            moveOnUp: baselineSlider.evalVisProp("moveonup")
+        };
+
         const removalOrder = sliderBoard.objectsList.map(
             (element) => element.id
         );
@@ -279,6 +372,8 @@ try {
                 rangeChanged: sliderRangeChanged,
                 snapInitial,
                 snapValues,
+                baselineBefore,
+                baselineAfter,
                 removalOrder,
                 afterRemoval
             },

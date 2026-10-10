@@ -8,13 +8,24 @@
 package com.swithun.jsxgraph.core.base
 
 import com.swithun.jsxgraph.core.GMResult
+import com.swithun.jsxgraph.core.JsxGraphLocaleNumberFormatError
+import com.swithun.jsxgraph.core.JsxGraphLocaleNumberFormatRequest
+import com.swithun.jsxgraph.core.JsxGraphLocaleOptionValue
 import com.swithun.jsxgraph.core.math.Mat
 import com.swithun.jsxgraph.core.parser.JessieCodeCoordinateFunction
 import com.swithun.jsxgraph.core.utils.Color
 import com.swithun.jsxgraph.core.utils.ColorError
 import com.swithun.jsxgraph.core.utils.EventEmitter
 import com.swithun.jsxgraph.core.utils.EventHandler
+import com.swithun.jsxgraph.core.utils.JsNumberFormat
 import com.swithun.jsxgraph.core.utils.Type
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -57,6 +68,13 @@ internal sealed interface GeometryElementLabelError {
     data class Creation(
         val error: TextError,
     ) : GeometryElementLabelError
+}
+
+internal sealed interface GeometryElementDumpError {
+    data class ParentEvaluation(
+        val elementId: String,
+        val reason: String,
+    ) : GeometryElementDumpError
 }
 
 internal fun interface GeometryElementPropertyEvaluator {
@@ -112,7 +130,10 @@ internal open class GeometryElement(
     internal var labelError: GeometryElementLabelError? = null
         private set
     internal var highlighted: Boolean = false
+    private var highlightHandler: ((force: Boolean) -> Unit)? = null
+    private var noHighlightHandler: (() -> Unit)? = null
     internal var mouseover: Boolean = false
+    internal var hitTestEnabled: Boolean = true
     internal var displayed: Boolean = false
         private set
     // JSXGraph 1.13.3: src/base/element.js -> inherits.
@@ -130,6 +151,9 @@ internal open class GeometryElement(
         private set
     internal var animationError: GeometryElementAnimationError? = null
         private set
+    internal var localeNumberFormatError:
+        JsxGraphLocaleNumberFormatError? = null
+        private set
     internal val animationData =
         linkedMapOf<String, MutableList<Any?>>()
     private var animationCallback: (() -> Unit)? = null
@@ -139,6 +163,10 @@ internal open class GeometryElement(
     internal var dump: Boolean = true
     // JSXGraph: src/base/element.js -> visProp.
     internal val visualProperties = linkedMapOf<String, Any?>()
+    // JSXGraph 1.13.3: src/jxg.js -> JSXGraph.createElement attribute copy.
+    // The translated engine keeps source attributes separately for scene
+    // construction, so Dump mirrors that source state here.
+    private val dumpCreationAttributes = linkedMapOf<String, Any?>()
     // JSXGraph 1.13.3: src/base/board.js -> emulateColorblindness /
     // visPropOriginal.
     internal var originalVisualProperties: Map<String, Any?>? = null
@@ -241,6 +269,14 @@ internal open class GeometryElement(
                         mapOf("strokecolor" to value),
                     )
                 }
+                "face" -> {
+                    // JSXGraph 1.13.3 only applies runtime face changes to
+                    // Point elements. Curves such as Grid retain their
+                    // creation-time face.
+                    if (this is Point) {
+                        setVisualProperty(key, value)
+                    }
+                }
                 "trace" -> when (value) {
                     false -> {
                         clearTrace()
@@ -323,10 +359,22 @@ internal open class GeometryElement(
 
     // JSXGraph: src/base/element.js -> getAttributes.
     internal open fun getAttributes(): Map<String, Any?> =
-        copyAttributeMap(visualProperties).toMutableMap().apply {
+        copyAttributeMap(dumpCreationAttributes).toMutableMap().apply {
+            putAll(copyAttributeMap(visualProperties))
             this["id"] = id
             this["name"] = name
         }
+
+    internal fun setDumpCreationAttributes(
+        attributes: Map<String, Any?>,
+    ): GeometryElement {
+        dumpCreationAttributes.clear()
+        for ((key, value) in attributes) {
+            dumpCreationAttributes[normalizeAttributeKey(key)] =
+                copyDumpAttributeValue(value)
+        }
+        return this
+    }
 
     private fun setVisualProperty(
         key: String,
@@ -759,6 +807,8 @@ internal open class GeometryElement(
         return this
     }
 
+    // JSXGraph 1.13.3: src/base/element.js ->
+    // animate closures animateColor / animateFloat.
     internal fun animateResult(
         targetAttributes: Map<String, Any?>,
         timeMilliseconds: Double,
@@ -852,8 +902,8 @@ internal open class GeometryElement(
                 setAttribute(attributes)
             }
             animationFrameIndex += 1
-        }
-        if (animationFrameIndex < frameCount) {
+            // src/base/board.js removes an exhausted animationData object and
+            // invokes its callback on the tick after the final value is used.
             return true
         }
         animationData.clear()
@@ -878,6 +928,12 @@ internal open class GeometryElement(
         animationData.clear()
         animationFrameIndex = 0
         animationCallback = null
+    }
+
+    internal fun takeAnimationError(): GeometryElementAnimationError? {
+        val error = animationError
+        animationError = null
+        return error
     }
 
     private fun addNumericAnimation(
@@ -1047,8 +1103,12 @@ internal open class GeometryElement(
 
     // JSXGraph 1.13.3: src/base/element.js -> highlight / noHighlight.
     internal fun highlight(force: Boolean = false): GeometryElement {
+        highlightHandler?.let {
+            it(force)
+            return this
+        }
         if (
-            evalVisProp("highlight") == true &&
+            evalVisProp("highlight") != false &&
             (!highlighted || force)
         ) {
             highlighted = true
@@ -1058,10 +1118,23 @@ internal open class GeometryElement(
     }
 
     internal fun noHighlight(): GeometryElement {
+        noHighlightHandler?.let {
+            it()
+            return this
+        }
         if (highlighted) {
             highlighted = false
             board.highlightedObjects.remove(id)
         }
+        return this
+    }
+
+    internal fun installHighlightHandlers(
+        onHighlight: (force: Boolean) -> Unit,
+        onNoHighlight: () -> Unit,
+    ): GeometryElement {
+        highlightHandler = onHighlight
+        noHighlightHandler = onNoHighlight
         return this
     }
 
@@ -1083,11 +1156,16 @@ internal open class GeometryElement(
     internal open fun hasPoint(
         screenX: Double,
         screenY: Double,
-    ): Boolean =
-        when (this) {
+    ): Boolean {
+        if (!hitTestEnabled) {
+            return false
+        }
+        return when (this) {
             is Point -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
             is Line -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
             is Circle -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
+            is Arc -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
+            is Sector -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
             is Polygon -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
             is Curve -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
             is Ticks -> hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
@@ -1098,6 +1176,7 @@ internal open class GeometryElement(
                 hasPoint(screenX, screenY, DEFAULT_HIT_PRECISION)
             else -> false
         }
+    }
 
     // JSXGraph 1.13.3: src/base/element.js ->
     // on / off / trigger / addEvent / removeEvent.
@@ -1252,6 +1331,16 @@ internal open class GeometryElement(
 
     internal fun parentIds(): List<String> = parents.toList()
 
+    internal open fun dumpParents():
+        GMResult<List<Any?>, GeometryElementDumpError> =
+        GMResult.Ok(parents.toList())
+
+    // JSXGraph 1.13.3: src/utils/dump.js -> prepareAttributes(obj.subs).
+    // Kotlin keeps the source's dynamic `subs` property behind a virtual
+    // accessor so Dump does not need element-type switches.
+    internal open fun dumpSubElements(): Map<String, GeometryElement> =
+        emptyMap()
+
     // JSXGraph 1.13.3: src/base/element.js ->
     // addTicks / removeAllTicks / removeTicks.
     internal fun addTicks(value: Ticks): String {
@@ -1271,6 +1360,9 @@ internal open class GeometryElement(
     }
 
     internal fun removeTicks(tick: Ticks): GeometryElement {
+        if (this is Line && defaultTicks === tick) {
+            defaultTicks = null
+        }
         if (ticks.remove(tick)) {
             board.removeObject(tick)
         }
@@ -1298,18 +1390,202 @@ internal open class GeometryElement(
     internal fun formatNumberLocale(
         value: Number,
         digits: Int? = null,
-    ): Any {
-        /*
-         * commonMain has no locale formatter. Returning the number is the
-         * exact upstream fallback when Intl is unavailable.
-         */
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredDigits = digits
-        return value
+    ): Any =
+        when (val result = formatNumberLocaleResult(value, digits)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> value
+        }
+
+    // JavaScript string concatenation coerces the numeric fallback returned
+    // by formatNumberLocale when Intl is unavailable or rejects the request.
+    internal fun formatNumberLocaleText(
+        value: Number,
+        digits: Int? = null,
+    ): String =
+        when (val formatted = formatNumberLocale(value, digits)) {
+            is String -> formatted
+            is Number -> JsNumberFormat.compact(formatted.toDouble())
+            else -> formatted.toString()
+        }
+
+    internal fun formatNumberLocaleResult(
+        value: Number,
+        digits: Int? = null,
+    ): GMResult<Any, JsxGraphLocaleNumberFormatError> {
+        if (!useLocale()) {
+            localeNumberFormatError = null
+            return GMResult.Ok(value)
+        }
+        val formatter = board.localeNumberFormatter
+        if (formatter == null) {
+            localeNumberFormatError = null
+            return GMResult.Ok(value)
+        }
+        val request = when (
+            val result = localeNumberFormatRequest(value, digits)
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> {
+                localeNumberFormatError = result.error
+                return result
+            }
+        }
+        val result = try {
+            formatter.format(request)
+        } catch (exception: Exception) {
+            GMResult.Err(
+                JsxGraphLocaleNumberFormatError.CallbackFailed(
+                    exception.message
+                        ?: exception::class.simpleName.orEmpty(),
+                ),
+            )
+        }
+        localeNumberFormatError = when (result) {
+            is GMResult.Ok -> null
+            is GMResult.Err -> result.error
+        }
+        return result
     }
 
-    internal fun useLocale(): Boolean =
-        evalVisProp("intl.enabled") == true
+    internal fun useLocale(): Boolean {
+        val intl = visualProperties["intl"] as? Map<*, *>
+            ?: return false
+        if (!intl.containsKey("enabled")) {
+            return false
+        }
+        return when (eval(intl["enabled"])) {
+            true -> true
+            "inherit" -> {
+                val boardIntl = board.attributes["intl"] as? Map<*, *>
+                eval(boardIntl?.get("enabled")) == true
+            }
+            else -> false
+        }
+    }
+
+    private fun localeNumberFormatRequest(
+        value: Number,
+        digits: Int?,
+    ): GMResult<
+        JsxGraphLocaleNumberFormatRequest,
+        JsxGraphLocaleNumberFormatError,
+        > {
+        val intl = visualProperties["intl"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val locale = when (
+            val result = localeValue(
+                elementValue = intl["locale"],
+                boardValue =
+                    (board.attributes["intl"] as? Map<*, *>)
+                        ?.get("locale"),
+            )
+        ) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return result
+        }
+        val rawOptions = intl["options"] as? Map<*, *> ?: emptyMap<Any, Any>()
+        val options =
+            linkedMapOf<String, JsxGraphLocaleOptionValue>()
+        for ((rawName, rawValue) in rawOptions) {
+            val name = normalizeAttributeKey(rawName.toString())
+            val evaluated = when (val result = evalResult(rawValue)) {
+                is GMResult.Ok -> result.value
+                is GMResult.Err -> return GMResult.Err(
+                    JsxGraphLocaleNumberFormatError
+                        .AttributeEvaluationFailed(
+                            attribute = "intl.options.$name",
+                            reason = result.error.toString(),
+                        ),
+                )
+            }
+            if (evaluated == null) {
+                continue
+            }
+            val option = when (evaluated) {
+                is String ->
+                    JsxGraphLocaleOptionValue.StringValue(evaluated)
+                is Number ->
+                    JsxGraphLocaleOptionValue.NumberValue(
+                        evaluated.toDouble(),
+                    )
+                is Boolean ->
+                    JsxGraphLocaleOptionValue.BooleanValue(evaluated)
+                else -> return GMResult.Err(
+                    JsxGraphLocaleNumberFormatError.InvalidOption(
+                        name = name,
+                        actualType = localeValueType(evaluated),
+                    ),
+                )
+            }
+            options[LOCALE_OPTION_NAMES[name] ?: rawName.toString()] =
+                option
+        }
+        if (
+            "maximumfractiondigits" !in rawOptions.keys.map {
+                normalizeAttributeKey(it.toString())
+            } &&
+            digits != null
+        ) {
+            options["maximumFractionDigits"] =
+                JsxGraphLocaleOptionValue.NumberValue(digits.toDouble())
+        }
+        return GMResult.Ok(
+            JsxGraphLocaleNumberFormatRequest(
+                value = value.toDouble(),
+                locale = locale,
+                options = options,
+            ),
+        )
+    }
+
+    private fun localeValue(
+        elementValue: Any?,
+        boardValue: Any?,
+    ): GMResult<String?, JsxGraphLocaleNumberFormatError> {
+        val elementLocale = when (val result = evalResult(elementValue)) {
+            is GMResult.Ok -> result.value
+            is GMResult.Err -> return GMResult.Err(
+                JsxGraphLocaleNumberFormatError.AttributeEvaluationFailed(
+                    attribute = "intl.locale",
+                    reason = result.error.toString(),
+                ),
+            )
+        }
+        val selected =
+            if (elementLocale == null || elementLocale == "") {
+                when (val result = evalResult(boardValue)) {
+                    is GMResult.Ok -> result.value
+                    is GMResult.Err -> return GMResult.Err(
+                        JsxGraphLocaleNumberFormatError
+                            .AttributeEvaluationFailed(
+                                attribute = "board.intl.locale",
+                                reason = result.error.toString(),
+                            ),
+                    )
+                }
+            } else {
+                elementLocale
+            }
+        return when (selected) {
+            null -> GMResult.Ok(null)
+            is String -> GMResult.Ok(selected)
+            else -> GMResult.Err(
+                JsxGraphLocaleNumberFormatError.InvalidLocale(
+                    actualType = localeValueType(selected),
+                ),
+            )
+        }
+    }
+
+    private fun localeValueType(value: Any?): String =
+        when (value) {
+            null -> "null"
+            is String -> "string"
+            is Number -> "number"
+            is Boolean -> "boolean"
+            is Map<*, *> -> "object"
+            is Iterable<*> -> "array"
+            else -> value::class.simpleName ?: "unknown"
+        }
 
     // JSXGraph: src/base/element.js -> normalize
     internal fun normalize(): GeometryElement {
@@ -1374,12 +1650,16 @@ internal open class GeometryElement(
     private fun normalizeAttributeKey(key: String): String =
         key.filterNot(Char::isWhitespace).lowercase()
 
-    private fun normalizeBooleanString(value: Any?): Any? =
-        when (value) {
+    private fun normalizeBooleanString(value: Any?): Any? {
+        if (value !is String) {
+            return value
+        }
+        return when (value) {
             "true" -> true
             "false" -> false
             else -> value
         }
+    }
 
     private fun parseAnimationNumber(value: Any?): Double? =
         when (value) {
@@ -1433,6 +1713,26 @@ internal open class GeometryElement(
             is DoubleArray -> value.copyOf()
             is IntArray -> value.copyOf()
             else -> value
+        }
+
+    private fun copyDumpAttributeValue(value: Any?): Any? =
+        when (value) {
+            JsonNull -> null
+            is JsonPrimitive ->
+                when {
+                    value.isString -> value.content
+                    value.booleanOrNull != null -> value.booleanOrNull
+                    value.longOrNull != null -> value.longOrNull
+                    value.doubleOrNull != null -> value.doubleOrNull
+                    else -> value.content
+                }
+            is JsonArray -> value.map(::copyDumpAttributeValue)
+            is JsonObject -> value.entries.associateTo(linkedMapOf()) {
+                (key, nestedValue) ->
+                normalizeAttributeKey(key) to
+                    copyDumpAttributeValue(nestedValue)
+            }
+            else -> copyAttributeValue(value)
         }
 
     private fun jsonValue(value: Any?): String =
@@ -1497,6 +1797,26 @@ internal open class GeometryElement(
                 "strokeWidth",
                 "highlightStrokeWidth",
             ),
+        )
+
+        val LOCALE_OPTION_NAMES = mapOf(
+            "maximumfractiondigits" to "maximumFractionDigits",
+            "minimumfractiondigits" to "minimumFractionDigits",
+            "compactdisplay" to "compactDisplay",
+            "currencydisplay" to "currencyDisplay",
+            "currencysign" to "currencySign",
+            "localematcher" to "localeMatcher",
+            "numberingsystem" to "numberingSystem",
+            "signdisplay" to "signDisplay",
+            "unitdisplay" to "unitDisplay",
+            "usegrouping" to "useGrouping",
+            "roundingmode" to "roundingMode",
+            "roundingpriority" to "roundingPriority",
+            "roundingincrement" to "roundingIncrement",
+            "trailingzerodisplay" to "trailingZeroDisplay",
+            "minimumintegerdigits" to "minimumIntegerDigits",
+            "minimumsignificantdigits" to "minimumSignificantDigits",
+            "maximumsignificantdigits" to "maximumSignificantDigits",
         )
     }
 }

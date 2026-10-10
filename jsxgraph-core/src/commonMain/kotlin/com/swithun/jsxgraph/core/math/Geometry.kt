@@ -108,6 +108,8 @@ internal class ReuleauxPolygonInterpolation internal constructor(
         trigonometricFunction = { value -> kotlin.math.sin(value) },
     )
 
+    // JSXGraph 1.13.3: src/math/geometry.js -> reuleauxPolygon local
+    // makeFct and its returned coordinate function.
     private fun evaluate(
         parameter: Double,
         suspendedUpdate: Boolean,
@@ -2378,7 +2380,8 @@ object Geometry {
         return GMResult.Ok(nonRealIntersection())
     }
 
-    // JSXGraph: src/math/geometry.js -> meetCurveLineContinuous
+    // JSXGraph 1.13.3: src/math/geometry.js -> meetCurveLineContinuous
+    // local func0 / func1 objective functions.
     internal fun meetCurveLineContinuous(
         curve: ContinuousCurve2D,
         discreteCurve: DiscreteCurve2D,
@@ -2608,7 +2611,8 @@ object Geometry {
         )
     }
 
-    // JSXGraph: src/math/geometry.js -> projectCoordsToBeziersegment
+    // JSXGraph 1.13.3: src/math/geometry.js ->
+    // projectCoordsToBeziersegment local minfunc.
     internal fun projectCoordsToBeziersegment(
         point: DoubleArray,
         curve: ParametricCurve2D,
@@ -2776,7 +2780,8 @@ object Geometry {
         )
     }
 
-    // JSXGraph: src/math/geometry.js -> projectCoordsToCurve (continuous branch)
+    // JSXGraph 1.13.3: src/math/geometry.js -> projectCoordsToCurve
+    // continuous-branch local minfunc.
     internal fun projectCoordsToCurve(
         horizontal: Double,
         vertical: Double,
@@ -3415,7 +3420,8 @@ object Geometry {
                     )
             )
 
-    // JSXGraph: src/math/geometry.js -> projectCoordsToParametric.
+    // JSXGraph 1.13.3: src/math/geometry.js -> projectCoordsToParametric
+    // local _minFunc objective.
     internal fun <E> projectCoordsToParametric(
         coordinates: DoubleArray,
         evaluator: Parametric3DEvaluator<E>,
@@ -3656,7 +3662,7 @@ object Geometry {
     }
 
     // JSXGraph 1.13.3: src/math/geometry.js ->
-    // projectScreenCoordsToParametric.
+    // projectScreenCoordsToParametric local _minFunc objective.
     internal fun <E> projectScreenCoordsToParametric(
         screenCoordinates: DoubleArray,
         evaluator: Parametric3DEvaluator<E>,
@@ -4031,6 +4037,9 @@ object Geometry {
         val squaredResidual: Double,
     )
 
+    // JSXGraph 1.13.3: src/math/geometry.js -> meetCurveCurveNewton local
+    // F / D closures. Numerics.generalizedDampedNewtonCurves preserves their
+    // curve-difference vector and centered finite-difference Jacobian.
     private fun meetCurveCurveNewton(
         first: ContinuousCurve2D,
         second: ContinuousCurve2D,

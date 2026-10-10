@@ -12,6 +12,8 @@ import com.swithun.jsxgraph.core.base.Line
 import com.swithun.jsxgraph.core.base.Point
 import com.swithun.jsxgraph.core.base.Polygon
 import com.swithun.jsxgraph.core.base.Slider
+import com.swithun.jsxgraph.core.math.RandomSource
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -172,6 +174,50 @@ class TracenpocheReaderTest {
     }
 
     @Test
+    fun freePointAndOtherIntersectionBranchesMatchOfficial() {
+        val randomValues = doubleArrayOf(0.25, 0.75)
+        var randomIndex = 0
+        val freePoint = assertIs<GMResult.Ok<DrawnTracenpoche>>(
+            TracenpocheReader(
+                data = "@figure;A=point();",
+                randomSource = RandomSource {
+                    randomValues[randomIndex++]
+                },
+            ).read(board()),
+        ).value
+
+        assertPoint(
+            expectedX = 0.25,
+            expectedY = 0.75,
+            actual = assertIs(freePoint.objects.getValue("A")),
+        )
+        assertEquals(2, randomIndex)
+
+        val intersections = read(
+            """
+            @figure;
+              O=point(0,0);
+              R=point(2,0);
+              A=point(-3,0);
+              B=point(3,0);
+              c=cercle(O,R);
+              l=droite(A,B);
+              I1=intersection(c,l,1);
+              I2=intersection(c,l,I1);
+            """.trimIndent(),
+        )
+        val first = assertIs<Point>(intersections.objects.getValue("I1"))
+        val other = assertIs<Point>(intersections.objects.getValue("I2"))
+
+        assertEquals(2.0, abs(first.X()), TOLERANCE)
+        assertEquals(2.0, abs(other.X()), TOLERANCE)
+        assertEquals(0.0, first.Y(), TOLERANCE)
+        assertEquals(0.0, other.Y(), TOLERANCE)
+        assertTrue(first.X() * other.X() < 0.0)
+        assertEquals("otherintersection", other.elType)
+    }
+
+    @Test
     fun failuresRollbackBoardAndResourceLimitsAreStructured() {
         val board = board()
         val seed = assertIs<GMResult.Ok<Point>>(
@@ -224,6 +270,16 @@ class TracenpocheReaderTest {
                 board = board,
                 limits = TracenpocheReaderLimits(maxObjects = -1),
             ),
+        )
+        assertIs<
+            GMResult.Err<TracenpocheReaderError.RandomCoordinateFailed>
+        >(
+            TracenpocheReader(
+                data = "@figure;A=point();",
+                randomSource = RandomSource {
+                    throw IllegalStateException("random unavailable")
+                },
+            ).read(board()),
         )
     }
 

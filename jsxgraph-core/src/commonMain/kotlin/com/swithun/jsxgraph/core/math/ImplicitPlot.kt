@@ -137,6 +137,8 @@ internal class ImplicitPlot(
         delta *= 1.0 + Mat.eps
         var x = minimumX
         while (x < maximumX) {
+            // JSXGraph 1.13.3: src/math/implicitplot.js ->
+            // plot closures fmi_x / fma_x.
             when (
                 val result = searchLine(
                     minimizationFunction = { coordinate -> f(x, coordinate) },
@@ -158,6 +160,8 @@ internal class ImplicitPlot(
         delta *= 1.0 + Mat.eps
         var y = minimumY
         while (y < maximumY) {
+            // JSXGraph 1.13.3: src/math/implicitplot.js ->
+            // plot closures fmi_y / fma_y.
             when (
                 val result = searchLine(
                     minimizationFunction = { coordinate -> f(coordinate, y) },
@@ -699,6 +703,8 @@ internal class ImplicitPlot(
         omega: Double,
     ): DoubleArray {
         val angle = atan2(omega * tangent[1], omega * tangent[0])
+        // JSXGraph 1.13.3: src/math/implicitplot.js ->
+        // handleCriticalPoint closure f_circ.
         val root = Numerics.root(
             function = { parameter ->
                 val x = point[0] + radius * cos(parameter)

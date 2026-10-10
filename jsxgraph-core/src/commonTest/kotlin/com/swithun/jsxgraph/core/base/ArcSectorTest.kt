@@ -15,6 +15,130 @@ import kotlin.test.assertTrue
 
 class ArcSectorTest {
     @Test
+    fun arcMeasurementsHitTestingAndAnchorsMatchOfficialMethods() {
+        val board = Board(
+            originX = 320.0,
+            originY = 240.0,
+            unitX = 40.0,
+            unitY = 40.0,
+            id = "arc-methods",
+        )
+        val center = point(board, 0.0, 0.0)
+        val radiusPoint = point(board, 3.0, 0.0)
+        val anglePoint = point(board, 0.0, 3.0)
+        val arc = assertIs<GMResult.Ok<Arc>>(
+            Arc.create(
+                board = board,
+                center = center,
+                radiuspoint = radiusPoint,
+                anglepoint = anglePoint,
+                name = "",
+            ),
+        ).value
+
+        assertEquals(3.0, arc.Radius())
+        assertEquals(3.0, arc.getRadius())
+        assertEquals(PI * 0.5, arc.Value("radians"), 1.0e-12)
+        assertEquals(PI * 1.5, arc.L(), 1.0e-12)
+        assertSame(center.coords, arc.getTextAnchor())
+        assertPoint(
+            arc.getLabelAnchor(position = "top"),
+            2.29809703885628,
+            2.2980970388562794,
+        )
+
+        assertTrue(
+            arc.hasPoint(
+                radiusPoint.coords.scrCoords[1],
+                radiusPoint.coords.scrCoords[2],
+            ),
+        )
+        assertFalse(arc.hasPoint(360.0, 200.0))
+        assertTrue(arc.hasPointSector(360.0, 200.0))
+        assertFalse(arc.hasPointSector(200.0, 240.0))
+        assertTrue(
+            (arc as GeometryElement).hasPoint(
+                radiusPoint.coords.scrCoords[1],
+                radiusPoint.coords.scrCoords[2],
+            ),
+        )
+    }
+
+    @Test
+    fun sectorMeasurementsRadiusMutationHitTestingAndAnchorsMatchOfficial() {
+        val board = Board(
+            originX = 320.0,
+            originY = 240.0,
+            unitX = 40.0,
+            unitY = 40.0,
+            id = "sector-methods",
+        )
+        val center = point(board, 0.0, 0.0)
+        val radiusPoint = point(board, 3.0, 0.0)
+        val anglePoint = point(board, 0.0, 3.0)
+        val sector = assertIs<GMResult.Ok<Sector>>(
+            Sector.create(
+                board = board,
+                center = center,
+                radiuspoint = radiusPoint,
+                anglepoint = anglePoint,
+                name = "",
+            ),
+        ).value
+
+        assertEquals(3.0, sector.getRadius())
+        assertEquals(PI * 1.5, sector.L(), 1.0e-12)
+        assertEquals(PI * 2.25, sector.Area(), 1.0e-12)
+        assertEquals(6.0 + PI * 1.5, sector.Perimeter(), 1.0e-12)
+        assertEquals(6.0, sector.maxX())
+        assertSame(center.coords, sector.getTextAnchor())
+        assertPoint(
+            sector.getLabelAnchor(position = "top"),
+            2.3511300474452708,
+            2.3511300474452703,
+        )
+
+        assertTrue(
+            sector.hasPointCurve(
+                radiusPoint.coords.scrCoords[1],
+                radiusPoint.coords.scrCoords[2],
+            ),
+        )
+        assertFalse(sector.hasPoint(360.0, 200.0))
+        assertTrue(sector.hasPointSector(360.0, 200.0))
+        assertTrue(
+            sector.hasPoint(
+                screenX = 360.0,
+                screenY = 200.0,
+                hasInnerPoints = true,
+            ),
+        )
+
+        assertIs<GMResult.Ok<Sector>>(sector.setRadius(2.0))
+        assertEquals(2.0, sector.Radius())
+        assertEquals(PI, sector.L(), 1.0e-12)
+        assertEquals(PI, sector.Area(), 1.0e-12)
+        assertEquals(4.0 + PI, sector.Perimeter(), 1.0e-12)
+        assertFalse(
+            sector.hasPointCurve(
+                radiusPoint.coords.scrCoords[1],
+                radiusPoint.coords.scrCoords[2],
+            ),
+        )
+
+        assertIs<GMResult.Ok<Sector>>(sector.setRadiusAuto())
+        assertEquals(0.9999, sector.Radius(), 1.0e-12)
+        val previousRadius = sector.Radius()
+        assertEquals(
+            SectorError.InvalidRadius(Double.NaN),
+            assertIs<GMResult.Err<SectorError>>(
+                sector.setRadius(Double.NaN),
+            ).error,
+        )
+        assertEquals(previousRadius, sector.Radius())
+    }
+
+    @Test
     fun arcUsesUpstreamCubicBezierGeometryAndTracksParents() {
         val board = board()
         val center = point(board, 0.0, 0.0)

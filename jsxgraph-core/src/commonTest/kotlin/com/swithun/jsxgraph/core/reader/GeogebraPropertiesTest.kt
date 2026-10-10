@@ -19,6 +19,52 @@ import kotlin.test.assertTrue
 
 class GeogebraPropertiesTest {
     @Test
+    fun defaultOptionsMatchOfficialFixture() {
+        val areaColor = "#993300"
+        assertEquals(
+            GeogebraDefaultOptions(
+                elements = linkedMapOf(
+                    "strokeWidth" to 1.0,
+                    "withLabel" to true,
+                ),
+                point = linkedMapOf(
+                    "face" to "circle",
+                    "size" to 3.0,
+                    "fillColor" to "blue",
+                    "fillOpacity" to 1.0,
+                    "highlightFillOpacity" to 1.0,
+                    "strokeColor" to "black",
+                    "highlightStrokeColor" to "black",
+                    "strokeWidth" to 2.0,
+                ),
+                line = linkedMapOf(
+                    "strokeWidth" to 1.0,
+                    "highlightStrokeColor" to "#000000",
+                    "strokeColor" to "#000000",
+                ),
+                polygon = linkedMapOf(
+                    "fillColor" to areaColor,
+                    "fillOpacity" to 0.1,
+                    "highlightFillColor" to areaColor,
+                    "highlightFillOpacity" to 0.1,
+                ),
+                sector = linkedMapOf(
+                    "fillColor" to areaColor,
+                    "fillOpacity" to 0.1,
+                    "highlightFillColor" to areaColor,
+                    "highlightFillOpacity" to 0.1,
+                ),
+                angle = linkedMapOf(
+                    "fillColor" to "#006400",
+                    "fillOpacity" to 0.1,
+                    "highlightFillOpacity" to 0.1,
+                ),
+            ),
+            GeogebraProperties.setDefaultOptions(),
+        )
+    }
+
+    @Test
     fun richVisualPropertiesMatchOfficialFixture() {
         assertEquals(
             GeogebraElementAttributes(
